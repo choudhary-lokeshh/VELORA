@@ -1,0 +1,47 @@
+# Figma source of truth
+
+## Purpose and authority
+
+Approved Figma files are Velora's visual source of truth. They own typography, colors, spacing, radius, elevation, iconography, grids, responsive behavior, components, variants, interaction states, and screen layouts. Documentation owns product meaning, phase, domain behavior, security, and compliance.
+
+## Approval states
+
+Figma work uses explicit status such as exploration, product review, accessibility review, approved for build, superseded, and archived. Only a named approved version/page/component is implementation authority. Draft explorations and AI-generated mockups are not approved design.
+
+Each approved handoff records:
+
+- surface, feature, product phase, and owning product/domain references;
+- Figma file/page/frame/component identifiers and version/date;
+- product, design, accessibility, and security/compliance reviewers as applicable;
+- responsive frames, states, prototype behavior, and content assumptions;
+- unresolved `DESIGN REQUIRED` or `DECISION REQUIRED` items;
+- assets and rights/source status;
+- implementation notes and superseded design links.
+
+## Source-of-truth precedence
+
+If Figma conflicts with product phase, authorization, domain ownership, payment/entitlement, privacy, or compliance documents, those authoritative documents prevail and design must be corrected before implementation. Figma cannot enable a future or gated capability.
+
+If code conflicts with approved Figma visual/interaction specification and no documented accessibility/platform exception exists, approved Figma prevails. If platform accessibility or native behavior requires deviation, document it in Figma and the relevant surface/design authority.
+
+## Agent and engineering rules
+
+Before UI work, coding agents read the relevant surface, flow, security, phase, design-system contract, and exact approved Figma handoff. They must not invent a theme, token value, component variant, screen layout, responsive behavior, or interaction when approved Figma exists.
+
+When no approved design exists, implementation pauses for design rather than silently generating production UI. Low-fidelity engineering scaffolds require explicit scope and must not be mistaken for approved visual design.
+
+## Design-to-code traceability
+
+Future implementation should map screen/component stories and tests to Figma identifiers and design-system versions. Code review checks visual/state coverage, responsive behavior, accessibility annotations, content extremes, and source authority. Design changes after implementation use versioned migration and visual regression review.
+
+## Security and privacy in design files
+
+Use synthetic/redacted sample data. Do not place real passwords, tokens, payment data, identity documents, private messages/media, moderation evidence, or production personal data in Figma. Restrict sensitive internal/Admin prototypes and review access. External share links follow project access policy.
+
+## Open design decisions
+
+`DESIGN REQUIRED`: Figma project/file structure, naming convention, component ownership, approval roles, branching/version process, developer handoff method, design QA workflow, prototype testing process, and archival policy.
+
+## Cross-references
+
+See [design principles](01-design-principles.md), [design-system contract](02-design-system-contract.md), [screen states](06-screen-state-requirements.md), [AGENTS](../../AGENTS.md), and [product phases](../product/01-product-phases.md).

@@ -1,0 +1,19 @@
+# Abuse controls and outbound networking
+
+## Purpose
+
+Define anti-abuse baseline and SSRF-safe external-request boundary. Applies to public APIs, auth, reports, messaging, media processing, webhooks, provider adapters, and Admin tools.
+
+## Abuse controls
+
+Rate limit by action/risk across account, session, IP/device and target dimensions without making any one signal sole truth. Bound payloads, uploads, pagination, fan-out, retries, and queues. Detect unusual signup, messaging, report, payment, invitation, upload and Admin activity; use progressive friction/restriction and auditable review. Do not reveal detection thresholds or enforcement details to abusive actors.
+
+## SSRF-safe outbound rule
+
+No component fetches arbitrary user/admin-supplied URL directly. When an approved feature requires outbound retrieval, use allowlisted schemes/hosts where feasible; validate controlled DNS resolution and every returned IPv4/IPv6 address, including IPv4-mapped IPv6; block loopback, private, link-local, multicast, unspecified, reserved, carrier-grade NAT and metadata endpoints; bind connection to a validated address with hostname/TLS verification to limit DNS rebinding; disable redirects or revalidate scheme/host/port/DNS/IP at every hop; constrain methods, ports, connect/read/total timeouts, response bytes, decompression, nested fetches and content type; strip credentials/cookies/internal headers; isolate egress from private networks; and redact URL query secrets from logs. Provider endpoints come from trusted config, not request data.
+
+AI models have no general-purpose network tool. User-supplied, admin-supplied, attachment-derived, retrieved, or model-generated URLs all use the same isolated egress service. Each redirect and nested fetch requires policy validation; returned content is quarantined, size/type limited, converted to inert data, and trust-labeled. Retrieved instructions cannot expand AI tools, permissions, budgets, or fetch scope.
+
+## Failure/security/phase
+
+Blocked request fails safely and is observable; retry only verified trusted endpoints. URL validation results are not authorization. V1 mandatory baseline. `DECISION REQUIRED`: rate-limit budgets, risk scoring, bot-challenge policy, egress protocols/ports/host rules, infrastructure, parser/sandbox policy, and incident thresholds. See [security baseline](01-security-baseline.md), [AI safety/security](../ai/04-ai-safety-security.md), [media](04-media-upload-delivery.md), [provider adapters](../architecture/06-provider-adapters.md).
