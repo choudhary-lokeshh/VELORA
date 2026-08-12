@@ -38,4 +38,4 @@ Owner performs object authorization. Cross-domain cached projections are non-aut
 
 ## Open questions and cross-references
 
-`DECISION REQUIRED`: event transport/outbox implementation. See [contracts/events](04-contracts-events.md), [data ownership](05-data-ownership.md), [AI platform](../ai/01-ai-platform-architecture.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and each `docs/domains/` specification.
+Event transport uses the PostgreSQL transactional outbox/inbox and pg-boss baseline from [ADR-0007](../decisions/ADR-0007-cache-jobs-events.md); an external broker is deferred until measured scale requires it. See [contracts/events](04-contracts-events.md), [data ownership](05-data-ownership.md), [AI platform](../ai/01-ai-platform-architecture.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and each `docs/domains/` specification.

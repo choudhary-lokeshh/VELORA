@@ -64,7 +64,7 @@ Routing considers required capability and modality, evaluated quality, data clas
 
 Fallback is allowed only to a route already approved for the same capability and an equal or stricter privacy, safety, schema, tool, residency, latency, and budget class. If no route qualifies, the run fails safely or enters approved human handling. Availability or price alone cannot justify fallback.
 
-Provider, model, embedding, hosting, pinning, and failover choices remain `DECISION REQUIRED`.
+Provider, model, embedding, hosting route, and approved fallback selections are `DEFER UNTIL PROVIDER INTEGRATION`; immutable route pinning and evaluated-fallback rules are locked by [ADR-0012](../decisions/ADR-0012-ai-platform-runtime.md).
 
 ## Prompt and output version management
 
@@ -82,4 +82,4 @@ A repeated model step may generate again, but a repeated run must not duplicate 
 
 Read [capabilities and tools](02-ai-capabilities-tools.md), [context/memory/RAG](03-ai-context-memory-rag.md), [AI safety/security](04-ai-safety-security.md), [AI observability/budgets/evaluations](05-ai-observability-budgets-evals.md), [AI product surfaces](06-ai-product-surfaces.md), and [AI-assisted action flow](../flows/ai-assisted-action.md).
 
-No AI product capability is V1. Moderation assistance is Phase 2; approved consumer, creator, and Admin assistance is Phase 3; broader autonomous capabilities are Future / Moonshot. `DECISION REQUIRED`: provider/model/hosting and routing, prompt registry workflow, structured-output strategy, orchestration/runtime technology, and async workflow technology.
+No AI product capability is V1. Moderation assistance is Phase 2; approved consumer, creator, and Admin assistance is Phase 3; broader autonomous capabilities are Future / Moonshot. [ADR-0012](../decisions/ADR-0012-ai-platform-runtime.md) locks NestJS Gateway admission, explicit bounded TypeScript orchestration, version-controlled prompt/JSON Schema releases, PostgreSQL run/registry/budget metadata, pg-boss async work, and OpenTelemetry. Provider/model/embedding/hosting routes are `DEFER UNTIL PROVIDER INTEGRATION`; capability-specific evaluation/routing policy, durable memory, and RAG/vector implementation are `DECISION REQUIRED BEFORE FEATURE`.

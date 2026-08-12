@@ -6,7 +6,7 @@ BILLING owns platform customer money lifecycle: commercial offers, pricing snaps
 
 ## Main flow/state
 
-Create immutable order/attempt with idempotency key: `created -> provider_pending -> financially_verified -> entitlement_pending -> finalized` or `reconciliation_pending/compensating/failed/cancelled/refunded/disputed`. Exact provider/product transitions may authorize/reserve before entitlement or verify payment before entitlement with compensation. Verify provider result/webhook before financial progression. Publish normalized financial fact; entitlement owner grants/revokes product-specific access. Sequencing and compensation are set per payment capability under [payment lifecycle](../flows/payment-lifecycle.md).
+Create immutable order/attempt with idempotency key: `created -> provider_pending -> financially_verified -> entitlement_pending -> finalized` or `reconciliation_pending/compensating/failed/cancelled/refunded/disputed`. Exact provider/product transitions may authorize/reserve before entitlement or verify payment before entitlement with compensation. Verify provider result/webhook before financial progression. Record balanced append-only customer-money journal entries using integer minor units and immutable currency/price/tax snapshots. Publish normalized financial fact; entitlement owner grants/revokes product-specific access. Sequencing and compensation are set per payment capability under [payment lifecycle](../flows/payment-lifecycle.md).
 
 ## Failure/concurrency/security
 
@@ -18,4 +18,4 @@ Consumer sees own customer-safe receipts/status; creators see only approved aggr
 
 ## Cross-references
 
-[monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [finance operations](../operations/03-finance-payout-operations.md), [PAYOUTS](payouts.md).
+[monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [PAYOUTS](payouts.md).

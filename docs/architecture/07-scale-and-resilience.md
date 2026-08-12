@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define system behavior under growth and partial failure. No specific cloud, database, broker, or deployment vendor is selected.
+Define system behavior under growth and partial failure. PostgreSQL, Valkey, pg-boss, OCI containers, and the managed-container topology are selected; cloud, managed-service, broker, and deployment vendors remain deferred.
 
 ## Baseline
 
@@ -18,4 +18,6 @@ Provider outage: record pending state, retry safe operation asynchronously, surf
 
 ## Observability and phase
 
-V1 needs correlation IDs, redacted logs, core SLO metrics, traces for high-risk flows, queue health, and audit separation. `DECISION REQUIRED`: SLO targets, RPO/RTO, regional topology, data residency, and incident response ownership before launch. See [observability](../engineering/04-observability.md), [jobs](../engineering/03-jobs-idempotency-concurrency.md), [platform health](../operations/05-platform-health.md), [incident response](../operations/04-incident-response.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).
+V1 needs correlation IDs, redacted logs, core SLO metrics, traces for high-risk flows, queue health, and audit separation. Initial deployment is one approved region. `DECISION REQUIRED`: SLO targets, RPO/RTO, recovery-region/failover posture, data residency, and incident response ownership before launch. See [observability](../engineering/04-observability.md), [jobs](../engineering/03-jobs-idempotency-concurrency.md), [platform health](../operations/05-platform-health.md), [incident response](../operations/04-incident-response.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).
+
+Scaling follows [technical stack](09-technical-stack.md): Phase A single-region modular monolith; Phase B horizontal API/workers and selective gateway/worker separation; Phase C service extraction only where metrics, security isolation, or ownership require it.

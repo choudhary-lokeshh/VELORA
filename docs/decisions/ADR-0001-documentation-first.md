@@ -9,11 +9,11 @@ Velora has multiple future clients, high-risk safety/financial paths, creator co
 
 ## Decision
 
-Before application code, maintain Markdown specifications as implementation authority: system/product phase, domain ownership, core flows, security, engineering discipline, and explicit open decisions. Future code changes must follow `AGENTS.md`, read `DOCS_INDEX.md`, and update relevant authority when behavior changes. Domains interact through documented contracts/services/events; runtime topology remains undecided.
+Before application code, maintain Markdown specifications as implementation authority: system/product phase, domain ownership, core flows, security, engineering discipline, accepted technical ADRs, and explicit open decisions. Future code changes must follow `AGENTS.md`, read `DOCS_INDEX.md`, and update relevant authority when behavior changes. Domains interact through documented contracts/services/events. Runtime topology is now selected by ADR-0003 through ADR-0014 without changing this documentation-first rule.
 
 ## Consequences
 
-Implementation is slower only until required choices become explicit, then vertical slices can be built/tested without guessing. Documentation needs ongoing review and may reveal decisions requiring an ADR. This ADR does not select a framework, database, cloud, provider, legal policy, or service topology.
+Implementation is slower only until required choices become explicit, then vertical slices can be built/tested without guessing. Documentation needs ongoing review and may reveal decisions requiring an ADR. This ADR itself did not select a framework, database, cloud, provider, legal policy, or service topology; later accepted ADRs select technical architecture while providers and policy remain gated.
 
 ## Cross-references
 

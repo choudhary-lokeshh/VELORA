@@ -28,3 +28,5 @@ docs/
 ```
 
 This tree is conceptual only. Application folders are deliberately not created in this phase. See [repository shape](docs/architecture/02-repository-shape.md).
+
+Technical choices are now locked for repository bootstrap in the [technical stack matrix](docs/architecture/09-technical-stack.md) and ADR-0003 through ADR-0014. This remains documentation only: no framework, dependency, schema, provider, or application code has been initialized.

@@ -22,7 +22,7 @@ Domain ownership matches Consumer Web: AUTH, USERS, DISCOVERY, MESSAGING, TRUST 
 
 ## Authentication, permissions, and app lifecycle
 
-Tokens/sessions use approved secure platform storage and revocation. Sensitive operations may require biometric/device confirmation only as an additional local step; server assurance and domain authorization remain decisive. App foreground/background, termination, reinstall, device change, and clock/network issues must not duplicate mutations or extend expired access.
+Mobile uses the short-lived access and rotating opaque refresh-token architecture from [ADR-0009](../decisions/ADR-0009-auth-authorization.md), with approved secure platform storage and per-device revocation. Sensitive operations may require biometric/device confirmation only as an additional local step; server assurance and domain authorization remain decisive. App foreground/background, termination, reinstall, device change, and clock/network issues must not duplicate mutations or extend expired access.
 
 Request device permission only at point of need with clear purpose and a usable denied path. Contacts/location are not collected by default and require separate product/privacy approval. Camera/microphone access for future RTC does not imply consent to record.
 

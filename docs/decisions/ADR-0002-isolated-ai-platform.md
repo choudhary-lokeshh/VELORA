@@ -1,6 +1,6 @@
 # ADR-0002: Isolated, provider-neutral AI platform
 
-- Status: Accepted architectural boundary; technical stack unresolved
+- Status: Accepted architectural boundary; runtime defined by ADR-0012
 - Date: 2026-08-12
 
 ## Context
@@ -13,7 +13,7 @@ Introduce AI PLATFORM as an isolated orchestration capability behind an AI Gatew
 
 AI output is untrusted and non-authoritative. Prompt/tool registries, structured validation, context provenance, optional consent-based non-authoritative memory, RAG projections, budgets, tracing, evaluation, and human approval boundaries are mandatory parts of the AI architecture. High-impact operations require deterministic domain authorization and governed human workflow; AI cannot approve its own recommendation.
 
-Product capability timing remains governed by `docs/product/01-product-phases.md`. This ADR does not select a vendor, model, hosting/runtime, vector store, orchestration framework, prompt/evaluation product, or provider.
+Product capability timing remains governed by `docs/product/01-product-phases.md`. This ADR does not select a vendor, model, hosting/runtime, vector store, orchestration framework, prompt/evaluation product, or provider. [ADR-0012](ADR-0012-ai-platform-runtime.md) later selects the provider-neutral Velora runtime shape without selecting a provider/model or enabling a product capability.
 
 ## Consequences
 

@@ -8,6 +8,8 @@ Authoritative implementation pattern for retryable work: notifications, webhooks
 
 Owner transaction writes business state plus outbox/job intent. Worker claims with lease, executes bounded work, records attempt/correlation/provider reference, and transitions `queued -> running -> succeeded` or `retry_wait -> dead_letter`. Lease expiry permits safe recovery. Dead letter retains enough redacted context for repair and alerts; repair is audited.
 
+Initial implementation uses PostgreSQL transactional outbox/inbox and pg-boss 12 under [ADR-0007](../decisions/ADR-0007-cache-jobs-events.md). Owner workflow tables remain authoritative for long waits/approvals. Valkey and process memory are never critical job truth. End-to-end effects are treated as at-least-once even when queue claim delivery is stronger.
+
 ## Idempotency rules
 
 Public mutation accepts stable client idempotency key scoped to actor/action; same key + same canonical input returns same result, mismatched input is conflict. Provider operation has separate unique external reference. Consumer records processed event IDs. Do not use a timestamp-only key. Store outcome long enough for client/provider retry window defined by policy.
@@ -20,4 +22,4 @@ AI jobs pin capability, prompt, schema, and approved route versions, but never p
 
 ## Security/phase/open questions
 
-Workers use least privilege, redacted payloads, encrypted queues where needed, retry budgets and safe DLQ access. V1 mandatory primitives. `DECISION REQUIRED`: queue/outbox technology, retry windows, idempotency retention, workflow engine. See [contracts/events](../architecture/04-contracts-events.md), [AI platform](../ai/01-ai-platform-architecture.md), [payment lifecycle](../flows/payment-lifecycle.md), [scale](../architecture/07-scale-and-resilience.md), [platform health](../operations/05-platform-health.md).
+Workers use least privilege, redacted payloads, retry budgets and safe DLQ access. Queue/outbox/workflow baseline is locked. Each owner still defines retry windows and idempotency retention from client/provider/legal behavior. External broker or workflow engine is deferred until measured scale/complexity and requires an ADR. See [contracts/events](../architecture/04-contracts-events.md), [AI platform](../ai/01-ai-platform-architecture.md), [payment lifecycle](../flows/payment-lifecycle.md), [scale](../architecture/07-scale-and-resilience.md), [platform health](../operations/05-platform-health.md).

@@ -30,6 +30,6 @@ Gate loss stops new commercial operations as defined while preserving lawful cus
 
 ## Open decisions and cross-references
 
-`DECISION REQUIRED / LEGAL REVIEW REQUIRED`: launch currencies/countries, providers, PCI scope, tax calculation/remittance, receipts, renewal/cancellation/refund/dispute terms, app-store billing, ledger/accounting model, creator commission, reserves, KYC/tax, payout countries, reconciliation, and finance approvals.
+Balanced owner-specific financial journals are locked by [ADR-0011](../decisions/ADR-0011-payments-payouts.md). `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: launch currencies/countries, providers, PCI scope, tax calculation/remittance, receipts, renewal/cancellation/refund/dispute terms, app-store billing, journal posting/accounting mappings and recognition policy, creator commission, reserves, KYC/tax, payout countries, reconciliation, and finance approvals.
 
 See [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [payment security](../security/05-payments-webhooks.md), [PAYOUTS](../domains/payouts.md), and [finance operations](../operations/03-finance-payout-operations.md).

@@ -38,6 +38,6 @@ Deployments/config/provider/model changes correlate with health. Canary and feat
 
 ## Open decisions and cross-references
 
-`DECISION REQUIRED`: SLOs/error budgets, telemetry stack, on-call ownership, alert thresholds, dashboard access, synthetic testing, capacity model, status page, runbooks, RPO/RTO, multi-region posture, and audit/telemetry retention.
+OpenTelemetry/OTLP, Pino logs, and separate audit architecture are locked by [ADR-0013](../decisions/ADR-0013-observability-testing.md). `DECISION REQUIRED`: telemetry/error/paging/archive vendors, SLOs/error budgets, on-call ownership, alert thresholds, dashboard access, synthetic testing, capacity model, status page, runbooks, RPO/RTO, recovery-region posture, and audit/telemetry retention durations.
 
 See [scale/resilience](../architecture/07-scale-and-resilience.md), [observability](../engineering/04-observability.md), [testing/release](../engineering/05-testing-release.md), and [incident response](04-incident-response.md).

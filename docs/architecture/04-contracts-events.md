@@ -20,6 +20,6 @@ Within owner transaction, persist state plus outbox record. Durable worker deliv
 
 Commands cause owner state transition. Events are facts, not remote-write instructions. Read models/projections are rebuildable and cannot become new source of truth. Contract changes require owner approval, compatibility test, observability update, and index update.
 
-## Phase and open questions
+## Technical implementation
 
-V1: contract registry, schema validation, outbox pattern, correlation IDs. `DECISION REQUIRED`: transport/broker and schema tooling. See [API contracts](../engineering/01-api-contracts.md), [AI capabilities/tools](../ai/02-ai-capabilities-tools.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), [analytics](../domains/analytics.md).
+V1 uses Zod 4 schemas, generated OpenAPI 3.1/TypeScript clients, PostgreSQL transactional outbox/inbox, and pg-boss dispatch under [ADR-0005](../decisions/ADR-0005-backend-api-architecture.md) and [ADR-0007](../decisions/ADR-0007-cache-jobs-events.md). An external broker is deferred until measured throughput, fan-out, retention, or extraction requires it. See [API contracts](../engineering/01-api-contracts.md), [AI capabilities/tools](../ai/02-ai-capabilities-tools.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), [analytics](../domains/analytics.md).

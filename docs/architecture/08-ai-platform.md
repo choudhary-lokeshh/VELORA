@@ -20,7 +20,7 @@ Payment/refund/payout, enforcement/ban, account/security, entitlement, deletion,
 
 AI run/context/memory/RAG data is derived and follows source authorization, classification, retention, deletion, and residency. AI emits minimized operational facts; ADMIN/owning workflow retains approval truth, owning domains retain operation/audit truth, and ANALYTICS owns metric definitions.
 
-No AI product capability is V1. Phase authority remains [product phases](../product/01-product-phases.md). No provider, model, runtime, vector store, or orchestration technology is selected.
+No AI product capability is V1. Phase authority remains [product phases](../product/01-product-phases.md). [ADR-0012](../decisions/ADR-0012-ai-platform-runtime.md) selects the TypeScript Gateway/orchestrator, PostgreSQL run state, pg-boss workers, JSON Schema outputs, and OpenTelemetry boundary. Provider, model, embedding, hosting, durable-memory, and vector/index choices remain deferred until their integration/feature gates.
 
 ## Required reading
 

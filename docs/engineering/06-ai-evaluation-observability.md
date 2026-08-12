@@ -17,4 +17,4 @@ Bind AI work to Velora's general jobs, observability, testing, and release disci
 
 Read [AI evaluation authority](../ai/05-ai-observability-budgets-evals.md), [jobs/idempotency](03-jobs-idempotency-concurrency.md), [general observability](04-observability.md), [testing/release](05-testing-release.md), and [AI platform](../ai/01-ai-platform-architecture.md).
 
-Evaluation technology, datasets, thresholds, SLOs, provider-cost source, and release governance remain `DECISION REQUIRED`.
+Evaluation runtime uses the repository-owned harness and provider adapters selected by [ADR-0012](../decisions/ADR-0012-ai-platform-runtime.md) and [ADR-0013](../decisions/ADR-0013-observability-testing.md). Datasets, thresholds, human labeling, SLOs, provider-cost source, sampling, and release governance remain `DECISION REQUIRED` before each AI release.

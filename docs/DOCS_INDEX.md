@@ -9,9 +9,10 @@ Read this index and [AGENTS](../AGENTS.md) before implementation, design handoff
 3. Named flow for cross-domain lifecycle and failure/concurrency behavior.
 4. Surface document for client responsibility and platform UX.
 5. Security, compliance, and operations authorities for stricter controls.
-6. Approved Figma for visual/interaction specification only; it cannot override product/domain/security/compliance authority.
+6. Accepted ADRs and the technical stack matrix for implementation mechanisms; they cannot override product/domain/flow/security/compliance authority.
+7. Approved Figma for visual/interaction specification only; it cannot override product/domain/security/compliance authority.
 
-If a choice is `DECISION REQUIRED`, `LEGAL REVIEW REQUIRED`, or `DESIGN REQUIRED`, do not replace it with an assumption. Each row names one primary authority; cross-references add constraints, not competing ownership.
+If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`, `DECISION REQUIRED BEFORE FEATURE`, `LEGAL REVIEW REQUIRED`, or `DESIGN REQUIRED`, do not replace it with an assumption. Each row names one primary authority; cross-references add constraints, not competing ownership.
 
 ## System and product authority
 
@@ -26,6 +27,7 @@ If a choice is `DECISION REQUIRED`, `LEGAL REVIEW REQUIRED`, or `DESIGN REQUIRED
 | [Provider adapters](architecture/06-provider-adapters.md) | Vendor-neutral ports, normalized adapters, mock/test rule |
 | [Scale and resilience](architecture/07-scale-and-resilience.md) | Scaling, failure containment, recoverability direction |
 | [AI integration boundary](architecture/08-ai-platform.md) | How isolated AI PLATFORM fits overall architecture; dedicated AI section owns AI details |
+| [Technical stack](architecture/09-technical-stack.md) | Concise locked stack, dependency map, initial topology, classifications, and replacement boundaries |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
@@ -149,6 +151,35 @@ These are architecture/product gates, not legal advice:
 | [Open decisions](decisions/DECISIONS_REQUIRED.md) | Unresolved technical/product/provider/design/legal decisions and deadlines |
 | [ADR-0001](decisions/ADR-0001-documentation-first.md) | Documentation-first, domain-boundary decision |
 | [ADR-0002](decisions/ADR-0002-isolated-ai-platform.md) | Accepted isolated/provider-neutral AI boundary |
+| [ADR-0003](decisions/ADR-0003-monorepo-runtime-language.md) | pnpm/Turborepo, Node.js, TypeScript, dependency strategy |
+| [ADR-0004](decisions/ADR-0004-client-frameworks.md) | Next.js Web surfaces and React Native/Expo Mobile |
+| [ADR-0005](decisions/ADR-0005-backend-api-architecture.md) | NestJS/Fastify modular monolith and REST/OpenAPI contracts |
+| [ADR-0006](decisions/ADR-0006-database-data-access-migrations.md) | PostgreSQL, Drizzle, constraints, and migrations |
+| [ADR-0007](decisions/ADR-0007-cache-jobs-events.md) | Valkey, pg-boss, outbox/inbox, and durable workflow state |
+| [ADR-0008](decisions/ADR-0008-realtime-rtc.md) | Socket.IO realtime and provider-neutral WebRTC boundary |
+| [ADR-0009](decisions/ADR-0009-auth-authorization.md) | Shared authentication/session architecture, owner authorization, approvals |
+| [ADR-0010](decisions/ADR-0010-media-storage-delivery.md) | Private object storage, media processing, and signed delivery |
+| [ADR-0011](decisions/ADR-0011-payments-payouts.md) | BILLING/PAYOUTS separation, journals, idempotency, reconciliation |
+| [ADR-0012](decisions/ADR-0012-ai-platform-runtime.md) | AI Gateway/orchestrator runtime, durable runs, provider/tool portability |
+| [ADR-0013](decisions/ADR-0013-observability-testing.md) | OpenTelemetry/Pino/audit and test frameworks |
+| [ADR-0014](decisions/ADR-0014-deployment-environments-cicd.md) | OCI/OpenTofu deployment, config/flags, egress, environments, CI/CD |
+
+## Technical implementation reading paths
+
+Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](architecture/09-technical-stack.md), [product phases](product/01-product-phases.md), the owning surface/domain/flow, and relevant security/compliance authority.
+
+- Backend foundation: repository shape, domain boundaries, contracts/events, data ownership, ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0013, ADR-0014.
+- Consumer Web bootstrap: Consumer Web surface, Design/Figma authority, ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014.
+- Consumer Mobile bootstrap: Consumer Mobile surface, notification/deep-link authority, Design/Figma authority, ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014.
+- Creator Studio bootstrap: Creator Studio surface, creator/club domains and flows, Design/Figma authority, ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0010, ADR-0013, ADR-0014.
+- Platform Admin bootstrap: Platform Admin surface/domain/flow, RBAC, operations authority, Design/Figma authority, ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014.
+- Database and migrations: data ownership, data/migrations, jobs/concurrency, ADR-0006, ADR-0007, affected domain/flow.
+- Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0007, observability/testing, affected domain/flow.
+- Realtime and RTC: REALTIME, RTC flow, provider adapters, Trust & Safety, ADR-0007, ADR-0008, ADR-0009, ADR-0013, ADR-0014.
+- Media/storage: media security, content owner/flow, outbound networking, ADR-0007, ADR-0010, ADR-0014.
+- Billing and payouts: monetisation, BILLING/PAYOUTS, payment flow/security/compliance/operations, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013.
+- AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
+- Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
 
 ## Implementer reading paths
 

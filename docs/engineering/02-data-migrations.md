@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define safe schema evolution while preserving domain ownership. Specific database technology is not selected.
+Define safe PostgreSQL 18 schema evolution while preserving domain ownership. Drizzle owns typed schema/query generation and committed SQL migrations remain review authority under [ADR-0006](../decisions/ADR-0006-database-data-access-migrations.md).
 
 ## Rules
 
@@ -17,4 +17,4 @@ Review ownership/privacy/performance, apply compatible schema, deploy code, run 
 
 ## Security/concurrency/phase
 
-Migrations use least-privilege credentials, no production secrets in repo/logs, and restrict sensitive data access. Locks/timeouts and online operations protect availability. V1 discipline. `DECISION REQUIRED`: database, tenancy/partitioning, migration tool, backup/RPO/RTO. See [data ownership](../architecture/05-data-ownership.md), [scale](../architecture/07-scale-and-resilience.md), [account deletion](../flows/account-deletion.md).
+Migrations use a dedicated least-privilege role, no production secrets in repo/logs, and restrict sensitive data access. Locks/timeouts and online operations protect availability. Generate and review committed SQL; never use schema push or application-startup auto-migration in shared/staging/production environments. Database, migration tool, and initial topology are locked; partitioning is deferred until scale and backup/RPO/RTO values remain decisions before production. See [data ownership](../architecture/05-data-ownership.md), [scale](../architecture/07-scale-and-resilience.md), [account deletion](../flows/account-deletion.md).

@@ -2,7 +2,7 @@
 
 ## Source of truth
 
-`docs/` is authoritative product and architecture specification. Read `docs/DOCS_INDEX.md` before implementation and every domain-specific reading path listed there. Do not invent behavior already defined in docs. If docs conflict, stop and update authoritative doc or record a `DECISION REQUIRED`; never choose silently.
+`docs/` is authoritative product and architecture specification. Read `docs/DOCS_INDEX.md` before implementation and every domain-specific reading path listed there. Do not invent behavior already defined in docs. If docs conflict, stop and update authoritative doc or record the appropriate unresolved classification; never choose silently.
 
 ## Boundaries
 
@@ -40,10 +40,19 @@
 - Run targeted tests, typecheck, and build before marking work complete.
 - Do not silently change architecture. Create or update an ADR and related authoritative docs first.
 - Do not commit secrets, use production credentials, or connect production providers unless explicitly requested.
-- Do not couple AI product code to one provider/model or enable an unevaluated provider/model route. Provider/model selection remains behind adapters and `DECISION REQUIRED` until approved.
+- Do not couple AI product code to one provider/model or enable an unevaluated provider/model route. Provider/model selection remains behind adapters and `DEFER UNTIL PROVIDER INTEGRATION` until approved.
 - Keep payment, RTC, storage, email, push, SMS/OTP, age/identity verification, moderation, analytics, AI, and creator-payout vendors behind owner-defined provider adapters. Domain logic must not embed vendor behavior. Local/mock/test adapters precede real integrations.
 - Do not connect a real provider until its technical ADR, security/privacy/compliance review, country/channel support, failure/reconciliation behavior, and operations ownership are approved.
 
+## Technical implementation
+
+- Before repository bootstrap or code changes, read `docs/architecture/09-technical-stack.md` and every ADR in its relevant technical implementation path in `docs/DOCS_INDEX.md`.
+- Do not add or replace a framework, runtime, database, queue, broker, workflow engine, API style, auth/session mechanism, realtime protocol, deployment topology, or infrastructure tool without amending or superseding its ADR.
+- Clients import only client-safe contracts/packages. They never import `packages/domain`, repositories, Drizzle schemas, NestJS modules, workers, or provider SDKs.
+- Domain modules never import another domain's private repository/table/entity/provider implementation. Admin, AI, jobs, and migrations use owning application services/contracts for business mutation.
+- No correctness-critical state or job may live only in process memory or Valkey. No provider-specific business rule may escape its adapter.
+- No migration ships without real PostgreSQL migration/compatibility tests. No financial or external-effect flow ships without documented idempotency, concurrency, ambiguous-outcome, reconciliation, and compensation tests.
+
 ## Documentation changes
 
-When behavior, boundary, risk, or lifecycle changes, update its authoritative document, its flow/security cross-reference, `docs/DOCS_INDEX.md`, and tests. Mark unresolved product, provider, legal, or technology choices as `DECISION REQUIRED` with options, impact, and decision deadline.
+When behavior, boundary, risk, or lifecycle changes, update its authoritative document, its flow/security cross-reference, `docs/DOCS_INDEX.md`, and tests. Classify unresolved choices using the technical stack vocabulary where applicable; record options, impact, and decision deadline.

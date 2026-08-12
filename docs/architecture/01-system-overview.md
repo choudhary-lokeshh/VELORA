@@ -31,11 +31,11 @@ Surface navigation and UI responsibility are authoritative in `docs/surfaces/`. 
 
 ## Architectural direction
 
-Begin with independently deployable *logical* modules and explicit contracts. Runtime topology is `DECISION REQUIRED`; start as modular monolith or split services only when load, team boundaries, or isolation evidence demands it. Never make client-to-database or client-to-provider shortcuts.
+Begin with a NestJS/Fastify modular monolith, separate durable worker role, PostgreSQL/Valkey foundations, and explicit domain contracts under [technical stack authority](09-technical-stack.md). Split services only when load, team boundaries, or isolation evidence demands it. Never make client-to-database or client-to-provider shortcuts.
 
 ## Non-goals
 
-No vendor selection, framework selection, global content policy approval, real payout connection, or UI design. Club content and mature/explicit capability are not V1 defaults.
+No production vendor selection, global content policy approval, real payout connection, or UI design. Club content and mature/explicit capability are not V1 defaults.
 
 ## Data and security
 
@@ -47,7 +47,7 @@ Depends on domain boundaries, contracts, data ownership, and security baseline. 
 
 ## Open questions
 
-See [open decisions](../decisions/DECISIONS_REQUIRED.md): jurisdiction launch list, runtime topology, identity/age provider, provider choices.
+See [open decisions](../decisions/DECISIONS_REQUIRED.md): jurisdiction launch list, identity/age provider, production infrastructure/providers, product policies, and legal/design gates.
 
 ## Cross-references
 

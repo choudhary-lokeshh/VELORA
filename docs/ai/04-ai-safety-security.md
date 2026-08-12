@@ -65,4 +65,4 @@ Suspected injection, data leakage, unsafe tool attempt, poisoned corpus, route c
 
 Controls are required before any AI capability in its approved phase. See [AI platform](01-ai-platform-architecture.md), [context/memory/RAG](03-ai-context-memory-rag.md), [outbound networking](../security/06-abuse-outbound-networking.md), and [incident response](../operations/04-incident-response.md).
 
-`DECISION REQUIRED`: threat-review owner, approved egress protocols/ports/host policies, provider data terms, content-sampling policy, AI incident severity/SLA, protected-trait inference policy, and per-capability safety/refusal standards. Country-specific questions require `LEGAL REVIEW REQUIRED`.
+HTTPS-only controlled egress and isolated retrieval are locked by [ADR-0014](../decisions/ADR-0014-deployment-environments-cicd.md). `DECISION REQUIRED`: threat-review owner, feature-specific destination/port allowlists or protocol exceptions, provider data terms, content-sampling policy, AI incident severity/SLA, protected-trait inference policy, and per-capability safety/refusal standards. Country-specific questions require `LEGAL REVIEW REQUIRED`.
