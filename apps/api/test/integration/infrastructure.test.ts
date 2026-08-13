@@ -63,16 +63,64 @@ async function runCommand(
   return { exitCode, stderr, stdout };
 }
 
+// Container lifecycle on a shared CI runner is slower than on a developer
+// machine, so lifecycle waits are bounded by a real condition rather than a
+// fixed sleep, and the bound is generous enough to survive a loaded runner.
+const containerLifecycleTimeoutMilliseconds = 60_000;
+
 async function waitFor(
+  description: string,
   predicate: () => Promise<boolean>,
   timeoutMilliseconds = 10_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMilliseconds;
+  let lastError: unknown;
   while (Date.now() < deadline) {
-    if (await predicate()) return;
+    try {
+      if (await predicate()) return;
+    } catch (error) {
+      lastError = error;
+    }
     await Bun.sleep(50);
   }
-  throw new Error('Timed out waiting for integration condition');
+  throw new Error(
+    `Timed out after ${String(timeoutMilliseconds)}ms waiting for ${description}${
+      lastError instanceof Error ? `; last error: ${lastError.message}` : ''
+    }`,
+  );
+}
+
+/**
+ * Testcontainers publishes an ephemeral host port, and Docker re-allocates a
+ * new one on every container start. Any URL captured before a restart is
+ * therefore stale, so the current endpoint is resolved from Docker instead.
+ */
+async function publishedPort(
+  containerId: string,
+  containerPort: number,
+): Promise<string> {
+  const inspected = await runCommand(
+    [
+      'docker',
+      'inspect',
+      '-f',
+      `{{json (index .NetworkSettings.Ports "${String(containerPort)}/tcp")}}`,
+      containerId,
+    ],
+    {},
+  );
+  if (inspected.exitCode !== 0) {
+    throw new Error(`docker inspect failed for ${containerId}`);
+  }
+  const bindings = JSON.parse(inspected.stdout.trim()) as
+    { HostPort?: string }[] | null;
+  const port = bindings?.[0]?.HostPort;
+  if (port === undefined || port.length === 0) {
+    throw new Error(
+      `container ${containerId} publishes no host port for ${String(containerPort)}`,
+    );
+  }
+  return port;
 }
 
 function requiredEnvironment(name: string): string {
@@ -88,6 +136,7 @@ const config = testConfig(
   requiredEnvironment('TEST_REDIS_URL'),
 );
 const redisContainerId = requiredEnvironment('TEST_REDIS_CONTAINER_ID');
+const redisHost = requiredEnvironment('TEST_REDIS_HOST');
 
 describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
   it('runs actual migration command twice and creates no product tables', async () => {
@@ -216,10 +265,22 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         defaultOptionsForJob(registration),
       );
 
-      await waitFor(async () => (await success.getState()) === 'completed');
-      await waitFor(async () => (await transient.getState()) === 'completed');
-      await waitFor(async () => (await delayed.getState()) === 'completed');
-      await waitFor(async () => (await permanent.getState()) === 'failed');
+      await waitFor(
+        'success job to complete',
+        async () => (await success.getState()) === 'completed',
+      );
+      await waitFor(
+        'transient job to complete after one retry',
+        async () => (await transient.getState()) === 'completed',
+      );
+      await waitFor(
+        'delayed job to complete',
+        async () => (await delayed.getState()) === 'completed',
+      );
+      await waitFor(
+        'permanently failing job to exhaust its attempts',
+        async () => (await permanent.getState()) === 'failed',
+      );
       if (transient.id === undefined || permanent.id === undefined) {
         throw new Error('BullMQ did not assign job identifiers');
       }
@@ -236,6 +297,7 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
     const restarted = await createWorkerRuntime(config, registry, logger());
     try {
       await waitFor(
+        'job enqueued before worker restart to complete',
         async () => (await afterRestart.getState()) === 'completed',
       );
       expect(processed).toBe(4);
@@ -299,7 +361,9 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
       }
     })();
     await Promise.race([
-      waitFor(async () => Promise.resolve(output.includes('API started'))),
+      waitFor('API entrypoint to report started', async () =>
+        Promise.resolve(output.includes('API started')),
+      ),
       process.exited.then((code) => {
         throw new Error(
           `API exited before ready (${String(code)}): ${errorOutput}`,
@@ -347,7 +411,9 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
       }
     })();
     await Promise.race([
-      waitFor(async () => Promise.resolve(output.includes('worker started'))),
+      waitFor('worker entrypoint to report started', async () =>
+        Promise.resolve(output.includes('worker started')),
+      ),
       process.exited.then((code) => {
         throw new Error(
           `worker exited before ready (${String(code)}): ${errorOutput}`,
@@ -411,7 +477,9 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
       const jobId = job.id;
       await queue.disconnect();
 
-      await waitFor(async () => health.isReady());
+      await waitFor('ephemeral Redis to report ready', async () =>
+        health.isReady(),
+      );
       expect(await health.isReady()).toBe(true);
       const stop = await runCommand(
         ['docker', 'stop', '--time', '1', redisContainerId],
@@ -419,36 +487,79 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
       );
       containerStopped = stop.exitCode === 0;
       expect(stop.exitCode).toBe(0);
+      // The socket is not guaranteed to be torn down the instant `docker stop`
+      // returns, so the outage is asserted as an eventual condition.
+      await waitFor(
+        'ephemeral Redis to report unavailable while stopped',
+        async () => !(await health.isReady()),
+        containerLifecycleTimeoutMilliseconds,
+      );
       expect(await health.isReady()).toBe(false);
 
       const start = await runCommand(['docker', 'start', redisContainerId], {});
       if (start.exitCode === 0) containerStopped = false;
       expect(start.exitCode).toBe(0);
-      await waitFor(async () => {
-        const ping = await runCommand(
-          ['docker', 'exec', redisContainerId, 'redis-cli', 'ping'],
+      await waitFor(
+        'restarted Redis to answer PING',
+        async () => {
+          const ping = await runCommand(
+            ['docker', 'exec', redisContainerId, 'redis-cli', 'ping'],
+            {},
+          );
+          return ping.exitCode === 0 && ping.stdout.trim() === 'PONG';
+        },
+        containerLifecycleTimeoutMilliseconds,
+      );
+
+      // Docker publishes a new ephemeral host port on every start, so the
+      // endpoint is resolved again rather than reusing the pre-restart URL.
+      // In production the Redis address is stable; only this harness's port
+      // mapping moves, and reusing the stale one tests nothing but Docker.
+      const restartedPort = await publishedPort(redisContainerId, 6379);
+      const restartedRedisUrl = `redis://${redisHost}:${restartedPort}`;
+      const restartedHealth = new RedisHealthService(
+        `${restartedRedisUrl}/0`,
+        'ephemeral-readiness',
+      );
+      const restartedQueue = new Queue(queueName, {
+        connection: bullMqConnectionFromUrl(`${restartedRedisUrl}/1`),
+      });
+      try {
+        await waitFor(
+          'ephemeral Redis to recover after restart',
+          async () => restartedHealth.isReady(),
+          containerLifecycleTimeoutMilliseconds,
+        );
+        expect(await restartedHealth.isReady()).toBe(true);
+
+        // Durability is asserted twice: through the supported client, and
+        // directly against the key so the assertion cannot pass on a
+        // re-enqueued job.
+        const retained = await restartedQueue.getJob(jobId);
+        expect(retained?.id).toBe(jobId);
+        expect(retained?.data).toEqual({ durable: true });
+
+        const exists = await runCommand(
+          [
+            'docker',
+            'exec',
+            redisContainerId,
+            'redis-cli',
+            '-n',
+            '1',
+            'exists',
+            `bull:${queueName}:${jobId}`,
+          ],
           {},
         );
-        return ping.exitCode === 0 && ping.stdout.trim() === 'PONG';
-      });
-      await waitFor(async () => health.isReady());
-      expect(await health.isReady()).toBe(true);
-
-      const exists = await runCommand(
-        [
-          'docker',
-          'exec',
-          redisContainerId,
-          'redis-cli',
-          '-n',
-          '1',
-          'exists',
-          `bull:${queueName}:${jobId}`,
-        ],
-        {},
-      );
-      expect(exists.exitCode).toBe(0);
-      expect(exists.stdout.trim()).toBe('1');
+        expect(exists.exitCode).toBe(0);
+        expect(exists.stdout.trim()).toBe('1');
+      } finally {
+        await Promise.all([
+          restartedHealth.close(),
+          restartedQueue.disconnect(),
+        ]);
+      }
     } finally {
       if (containerStopped) {
         await runCommand(['docker', 'start', redisContainerId], {});
