@@ -16,12 +16,15 @@ import {
   type SafeLogger,
 } from '@velora/observability/server';
 
+import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
+import type { AuthRouteResult } from './auth/routes.js';
 import { RedisHealthService } from './cache/redis.service.js';
 import {
   DatabaseService,
   type HealthDependency,
 } from './database/database.service.js';
 import { normalizeCorrelationId } from './http/correlation.js';
+import { corsHeadersFor, isPreflight, preflightResponse } from './http/cors.js';
 import { apiSecurityHeaders } from './http/security-headers.js';
 import {
   DenyAllOutboundHttp,
@@ -31,6 +34,7 @@ import {
 export { maximumRequestBodyBytes } from '@velora/validation';
 
 export interface ApplicationDependencies {
+  readonly auth: AuthRuntime;
   readonly database: HealthDependency;
   readonly ephemeralRedis: HealthDependency;
   readonly logger: SafeLogger;
@@ -76,11 +80,37 @@ export function createApplication(
     options.dependencies?.logger ??
     createLogger({ level: config.LOG_LEVEL, serviceName: 'velora-api' });
   const ownedDependencies: HealthDependency[] = [];
-  const database =
-    options.dependencies?.database ?? new DatabaseService(config);
-  if (options.dependencies?.database === undefined) {
-    ownedDependencies.push(database);
+  const injectedDatabase = options.dependencies?.database;
+  const injectedAuth = options.dependencies?.auth;
+  const ownsAuth = injectedAuth === undefined;
+
+  let database: HealthDependency;
+  let auth: AuthRuntime;
+  if (injectedDatabase === undefined) {
+    const ownedDatabase = new DatabaseService(config);
+    ownedDependencies.push(ownedDatabase);
+    database = ownedDatabase;
+    auth =
+      injectedAuth ??
+      createAuthRuntime({
+        config,
+        database: ownedDatabase.database,
+        logger,
+      });
+  } else {
+    // AUTH needs typed data access, not a health probe. A caller that
+    // substitutes the database dependency must therefore supply the AUTH
+    // runtime too, rather than silently getting one wired to a database it did
+    // not provide.
+    if (injectedAuth === undefined) {
+      throw new Error(
+        'An injected database dependency requires an injected AUTH runtime',
+      );
+    }
+    database = injectedDatabase;
+    auth = injectedAuth;
   }
+
   const ephemeralRedis =
     options.dependencies?.ephemeralRedis ??
     new RedisHealthService(config.EPHEMERAL_REDIS_URL, 'ephemeral-readiness');
@@ -95,6 +125,7 @@ export function createApplication(
   }
 
   const dependencies: ApplicationDependencies = {
+    auth,
     database,
     ephemeralRedis,
     logger,
@@ -106,6 +137,22 @@ export function createApplication(
   const correlationIdFor = (request: Request) =>
     correlationIds.get(request) ?? crypto.randomUUID();
 
+  const requestBodies = new WeakMap<Request, string>();
+  const bodyFor = (request: Request) => requestBodies.get(request) ?? '';
+
+  // Elysia emits one `Set-Cookie` header per array entry, which is what the
+  // audience-scoped session and CSRF cookies require.
+  function applyAuthResult(
+    set: { headers: Record<string, unknown>; status?: unknown },
+    result: AuthRouteResult,
+  ): unknown {
+    set.status = result.status;
+    if (result.cookies !== undefined && result.cookies.length > 0) {
+      set.headers['set-cookie'] = [...result.cookies];
+    }
+    return result.body;
+  }
+
   const app = new Elysia({
     serve: {
       hostname: config.HOST,
@@ -113,6 +160,14 @@ export function createApplication(
       port: config.PORT,
     },
   })
+    // The body is read verbatim so AUTH can enforce its own smaller size limit
+    // and answer malformed input with one contract-declared status instead of a
+    // framework parse error.
+    .onParse(async ({ request }) => {
+      const raw = await request.text();
+      requestBodies.set(request, raw);
+      return raw;
+    })
     .onRequest(({ request, set }) => {
       const correlationId = normalizeCorrelationId(
         request.headers.get(correlationHeader),
@@ -121,6 +176,18 @@ export function createApplication(
       set.headers[correlationHeader] = correlationId;
       for (const [name, value] of Object.entries(apiSecurityHeaders)) {
         set.headers[name] = value;
+      }
+      for (const [name, value] of Object.entries(
+        corsHeadersFor(request.headers.get('origin'), auth.allowedOriginUnion),
+      )) {
+        set.headers[name] = value;
+      }
+
+      if (isPreflight(request)) {
+        return preflightResponse(request, auth.allowedOriginUnion, {
+          ...apiSecurityHeaders,
+          [correlationHeader]: correlationId,
+        });
       }
 
       const contentLength = Number(request.headers.get('content-length') ?? 0);
@@ -207,11 +274,92 @@ export function createApplication(
           }
         },
       ),
+    )
+    .post(apiRoutePaths.localWebSession, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.createLocalWebSession({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .post(apiRoutePaths.localMobileSession, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.createLocalMobileSession({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .get(apiRoutePaths.session, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.getSession({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .post(apiRoutePaths.mobileRefresh, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.refreshMobileSession({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .post(apiRoutePaths.logout, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.logout({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .post(apiRoutePaths.logoutAll, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.logoutAll({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .post(apiRoutePaths.recoveryStart, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.startAccountRecovery({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
+    )
+    .post(apiRoutePaths.recoveryCompletion, async ({ request, set }) =>
+      applyAuthResult(
+        set,
+        await auth.routes.completeAccountRecovery({
+          body: bodyFor(request),
+          correlationId: correlationIdFor(request),
+          request,
+        }),
+      ),
     );
 
   return {
     app,
     async close() {
+      if (ownsAuth) await auth.close();
       await Promise.all(
         ownedDependencies.map(async (dependency) => dependency.close()),
       );

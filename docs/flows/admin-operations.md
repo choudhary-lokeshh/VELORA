@@ -26,4 +26,6 @@ Log privileged reads/writes, delegation, approvals, break-glass use, exports, ro
 
 ## Phase/open questions
 
+The binding and execution-time re-authorization steps above are implemented in AUTH as a reusable primitive; the operations themselves belong to their owning domains and are not implemented. An authorization that names a different target, different arguments, or a different expected effect, or whose target state moved after it was issued, is refused at execution rather than proceeding.
+
 V1 limited support/moderation/enforcement/config operations. Finance/payout/dispute operations launch with domains. Operator session limits, step-up assurance age, approval binding fields, privileged recovery, and break-glass semantics follow [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md). `DECISION REQUIRED`: exact permission matrix, dual-control thresholds, emergency implementation and review cadence. See [ADMIN](../domains/admin.md), [Platform Admin product](../product/04-platform-admin.md), [Platform Admin surface](../surfaces/04-platform-admin.md), [operations authority](../DOCS_INDEX.md#operations-authority), [RBAC](../security/02-access-control-rbac.md).

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import CreatorStudioShell from '../app/page.js';
+import CreatorStudioShell from '../app/page';
 
 describe('Creator Studio shell', () => {
   it('identifies its isolated surface', () => {

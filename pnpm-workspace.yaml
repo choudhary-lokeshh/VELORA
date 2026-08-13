@@ -26,6 +26,7 @@ catalog:
   expo-doctor: 1.20.1
   expo-linking: 57.0.5
   expo-router: 57.0.12
+  expo-secure-store: 57.0.1
   expo-status-bar: 57.0.1
   bullmq: 5.81.3
   elysia: 1.4.29

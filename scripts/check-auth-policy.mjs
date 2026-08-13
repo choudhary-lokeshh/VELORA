@@ -4,6 +4,13 @@ import { join, relative } from 'node:path';
 const adrPath =
   'docs/decisions/ADR-0017-auth-session-recovery-security-policy.md';
 const documentationRoot = 'docs';
+/**
+ * The one module allowed to state a locked value in code. Everything else in
+ * the API must derive from it, so a constant cannot drift into a service, a
+ * route, or a client.
+ */
+const policyModulePath = 'apps/api/src/auth/policy.ts';
+const apiSourceRoot = 'apps/api/src';
 
 /**
  * The locked baseline. It is deliberately a second, independent copy of the
@@ -134,7 +141,60 @@ const authenticationKeywords = [
   'authenticator',
 ];
 
+/**
+ * Exact bindings the policy module must contain. They are literal because a
+ * value that is computed cannot be compared against the ADR by inspection, and
+ * each is matched with a terminator so `3` cannot be satisfied by `30`.
+ */
+const requiredCodeBindings = [
+  ['consumerMobileAccessToken', "'10m'"],
+  ['consumerMobileRefreshAbsolute', "'90d'"],
+  ['consumerMobileRefreshIdle', "'30d'"],
+  ['consumerWebAbsolute', "'30d'"],
+  ['consumerWebIdle', "'14d'"],
+  ['creatorStudioAbsolute', "'7d'"],
+  ['creatorStudioIdle', "'8h'"],
+  ['platformAdminAbsolute', "'8h'"],
+  ['platformAdminIdle', "'15m'"],
+  ['recoveryHighImpactCooldown', "'24h'"],
+  ['recoveryTokenExpiry', "'15m'"],
+  ['stepUpAssuranceAge', "'5m'"],
+  ['recoveryPerAccountPerDay', '5'],
+  ['recoveryPerAccountPerHour', '3'],
+  ['recoveryPerRequesterPerHour', '10'],
+];
+
+function bindingPattern(key, value) {
+  const escaped = `${key}: ${value}`.replaceAll(
+    /[.*+?^${}()|[\]\\]/gu,
+    String.raw`\$&`,
+  );
+  return new RegExp(`${escaped}(?![\\w'])`, 'u');
+}
+
+/** Duration literals no other API source file may contain. */
+const lockedCodeLiterals = [
+  "'14d'",
+  "'30d'",
+  "'90d'",
+  "'8h'",
+  "'7d'",
+  "'15m'",
+  "'10m'",
+  "'5m'",
+  "'24h'",
+];
+
 const failures = [];
+
+function sourceFiles(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return entry.name.endsWith('.ts') ? [path] : [];
+  });
+}
 
 function parsePolicyBlock(markdown) {
   const blocks = [...markdown.matchAll(/```json\n([\s\S]*?)```/gu)].map(
@@ -242,6 +302,33 @@ if (declared !== undefined) {
     }
   }
 
+  if (!existsSync(policyModulePath)) {
+    failures.push(
+      `${policyModulePath} is missing, so no code projection of ADR-0017 can be verified`,
+    );
+  } else {
+    const policySource = readFileSync(policyModulePath, 'utf8');
+    for (const [key, value] of requiredCodeBindings) {
+      if (!bindingPattern(key, value).test(policySource)) {
+        failures.push(
+          `${policyModulePath} no longer declares \`${key}: ${value}\`, so the runtime has drifted from ADR-0017`,
+        );
+      }
+    }
+    for (const file of sourceFiles(apiSourceRoot)) {
+      const relativePath = relative(process.cwd(), file);
+      if (relativePath === policyModulePath) continue;
+      const source = readFileSync(file, 'utf8');
+      for (const literal of lockedCodeLiterals) {
+        if (source.includes(literal)) {
+          failures.push(
+            `${relativePath} states the locked duration ${literal}; derive it from ${policyModulePath} instead`,
+          );
+        }
+      }
+    }
+  }
+
   const counts = [
     ['sessions', Object.keys(lockedPolicy.sessions).length],
     ['recovery', Object.keys(lockedPolicy.recovery).length],
@@ -262,7 +349,7 @@ if (declared !== undefined) {
         .map(([name, size]) => `${String(size)} ${name} values`)
         .join(
           ', ',
-        )} match ADR-0017, ${String(requiredProse.length)} prose bindings intact, and no other document restates a locked value.`,
+        )} match ADR-0017, ${String(requiredProse.length)} prose bindings intact, ${String(requiredCodeBindings.length)} code bindings intact in ${policyModulePath}, and no other document or API source restates a locked value.`,
     );
     console.log('');
     console.log('AUTH POLICY ASSERTIONS:');

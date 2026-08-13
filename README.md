@@ -1,6 +1,6 @@
 # VELORA
 
-Documentation-driven foundation for a globally scalable, adult social platform. The repository now contains the production workspace bootstrap, neutral application shells, shared contract/configuration/observability foundations, and local PostgreSQL/Redis development infrastructure. It intentionally contains no V1 product feature implementation or live provider integration.
+Documentation-driven foundation for a globally scalable, adult social platform. The repository contains the production workspace bootstrap, shared contract/configuration/observability foundations, local PostgreSQL/Redis development infrastructure, and the first vertical slice: AUTH. It intentionally contains no other V1 product feature and no live provider integration.
 
 Velora is one ecosystem with four separate product surfaces sharing backend/domain contracts:
 
@@ -48,5 +48,9 @@ pnpm infra:down
 CI is `.github/workflows/verify.yml`. It provisions the same pinned toolchain and runs `pnpm ci:verify` on every push, pull request, and once daily, so the dependency risk acceptance expiries fire without waiting for a commit. It has read-only permissions and deploys nothing.
 
 `pnpm ci:verify` ends with the dependency security gate. It audits the complete dependency graph, prints raw advisory evidence, and reports `PASS`, `PASS WITH EXPLICIT TEMPORARY ACCEPTED RISK`, or `FAIL`. An audit that cannot run is a failure, never a pass. Accepted findings are the exact, expiring, owner-signed records in [dependency risk acceptance](docs/security/08-dependency-risk-acceptance.md); anything else at high or critical severity fails.
+
+AUTH runs only on development and test adapters. Staging and production refuse them at configuration load and fail to start, because no identity, signing, recovery-delivery, or phishing-resistant authenticator provider is approved; see [open decisions](docs/decisions/DECISIONS_REQUIRED.md). Session, recovery, and privileged-access values come from [ADR-0017](docs/decisions/ADR-0017-auth-session-recovery-security-policy.md) and are asserted by `pnpm auth:policy` against the ADR, the API's policy module, and every document.
+
+Browser AUTH end-to-end tests start a real API, PostgreSQL, and Redis before the browsers. The session cookie keeps its production attributes everywhere. WebKit does not store a `Secure` cookie delivered over plain-HTTP loopback, so the specs that need the browser to hold a session run on Chromium and Firefox; WebKit runs the transport, security-header, and surface-isolation specs. Access tokens are signed with Ed25519, so verifying one never requires material that could mint one.
 
 Copy `.env.example` only for local development. It contains safe local placeholders, never production credentials. If host services already use 5432 or 6379, set `VELORA_POSTGRES_PORT` or `VELORA_REDIS_PORT` before Compose and use the same ports in the local service URLs. Local Redis persists AOF/RDB data in a named volume so BullMQ restart durability can be tested; it is not a production topology or backup policy. `EPHEMERAL_REDIS_URL` and `QUEUE_REDIS_URL` must remain logically separate even when local development uses different logical databases on one instance.

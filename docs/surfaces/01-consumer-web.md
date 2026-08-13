@@ -27,7 +27,11 @@ AUTH owns identity/session; USERS owns profile/account; DISCOVERY owns candidate
 
 ## Authentication and permissions
 
-Protected routes require a valid session and server-side object/action authorization. Sensitive account/security changes may require re-authentication. Web uses the opaque secure cookie session and CSRF architecture from [ADR-0009](../decisions/ADR-0009-auth-authorization.md) with the exact lifetimes, cookie attributes, and rotation triggers locked in [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md). Deep links must restore intended destination only after authentication, validation, and current feature/country/permission checks; unsafe or stale links land on a safe state.
+Protected routes require a valid session and server-side object/action authorization. Sensitive account/security changes may require re-authentication. Web uses the opaque secure cookie session and CSRF architecture from [ADR-0009](../decisions/ADR-0009-auth-authorization.md) with the exact lifetimes, cookie attributes, and rotation triggers locked in [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md).
+
+The session cookie is `HttpOnly` and carries an audience-scoped name, so one browser cannot present a Creator Studio or Platform Admin session as a consumer one and no page script can read the session credential. A companion CSRF cookie is deliberately readable by the surface's own script and is echoed on state-changing requests, where the server compares it against the value bound to the session record. The API endpoint is resolved on the server at request time and handed to the browser, so one build artifact serves every environment.
+
+Authentication state distinguishes bootstrap, authenticated, signed out on this device, signed out everywhere, session ended, request refused, and service unavailable. It never claims to know why a session ended: the API answers every failed session check identically so it discloses nothing, and the surface reports only what it can observe. Deep links must restore intended destination only after authentication, validation, and current feature/country/permission checks; unsafe or stale links land on a safe state.
 
 Users may access only their account and authorized shared objects. Public pages expose only published, policy-approved fields. Web must never expose Admin routes, creator-only mutation, provider secrets, raw payment data, private identity evidence, or another user's restriction reason.
 

@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import {
-  apiErrorSchema,
   apiOperations,
-  livenessResponseSchema,
-  readinessResponseSchema,
+  apiSchemas,
+  apiSecurityRequirements,
+  browserSessionCookieNames,
+  correlationResponseHeader,
 } from '../src/index.js';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,11 +28,43 @@ const correlationHeader = {
   schema: { type: 'string' },
 };
 
-function operation(operationDefinition: (typeof apiOperations)[number]) {
-  interface ResponseDefinition {
-    readonly description: string;
-    readonly schemaName: 'ApiError' | 'LivenessResponse' | 'ReadinessResponse';
+/**
+ * Transport credentials the contract publishes. The cookie scheme names the
+ * Consumer Web cookie; the same opaque mechanism is issued under an
+ * audience-scoped name for every other browser surface so one browser cannot
+ * present a Creator Studio or Platform Admin session as a consumer one.
+ */
+const securitySchemes = {
+  bearerAccessToken: {
+    bearerFormat: 'JWT',
+    description:
+      'Short-lived, audience-bound signed access token issued to Consumer Mobile.',
+    scheme: 'bearer',
+    type: 'http',
+  },
+  cookieSession: {
+    description:
+      'Opaque browser session. The cookie name is audience-scoped; Consumer Web uses the name below.',
+    in: 'cookie',
+    name: browserSessionCookieNames.consumer_web,
+    type: 'apiKey',
+  },
+} as const;
+
+function securityFor(requirement: string) {
+  if (requirement === apiSecurityRequirements.public) return [];
+  if (requirement === apiSecurityRequirements.cookieOrBearer) {
+    return [{ cookieSession: [] }, { bearerAccessToken: [] }];
   }
+  return [{ [requirement]: [] }];
+}
+
+interface ResponseDefinition {
+  readonly description: string;
+  readonly schemaName: keyof typeof apiSchemas;
+}
+
+function operation(operationDefinition: (typeof apiOperations)[number]) {
   const responses = Object.fromEntries(
     (
       Object.entries(operationDefinition.responses) as [
@@ -49,23 +82,62 @@ function operation(operationDefinition: (typeof apiOperations)[number]) {
           },
         },
         description: responseDefinition.description,
-        headers: { 'x-correlation-id': correlationHeader },
+        headers: { [correlationResponseHeader]: correlationHeader },
       },
     ]),
   );
+
+  const declaredHeaders =
+    'requestHeaders' in operationDefinition
+      ? operationDefinition.requestHeaders
+      : [];
+  const parameters = [
+    {
+      description: 'Caller-provided correlation identifier',
+      in: 'header',
+      name: correlationResponseHeader,
+      required: false,
+      schema: { maxLength: 128, type: 'string' },
+    },
+    ...declaredHeaders.map((name) => ({
+      description: `Contract header ${name}`,
+      in: 'header',
+      name,
+      required: false,
+      schema: { maxLength: 200, type: 'string' },
+    })),
+  ];
+
+  const requestSchemaName =
+    'requestSchemaName' in operationDefinition
+      ? operationDefinition.requestSchemaName
+      : undefined;
+  const requestBody =
+    requestSchemaName === undefined
+      ? {}
+      : {
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: { $ref: `#/components/schemas/${requestSchemaName}` },
+              },
+            },
+            required: true,
+          },
+        };
+  const summary =
+    'summary' in operationDefinition
+      ? { summary: operationDefinition.summary }
+      : {};
+
   return {
     [operationDefinition.method]: {
       operationId: operationDefinition.operationId,
-      parameters: [
-        {
-          description: 'Caller-provided correlation identifier',
-          in: 'header',
-          name: 'x-correlation-id',
-          required: false,
-          schema: { maxLength: 128, type: 'string' },
-        },
-      ],
+      parameters,
+      ...requestBody,
       responses,
+      security: securityFor(operationDefinition.security),
+      ...summary,
     },
   };
 }
@@ -74,17 +146,16 @@ const document = {
   openapi: '3.1.0',
   info: {
     title: 'VELORA API',
-    version: '1.0.0-bootstrap',
+    version: '1.0.0-auth',
   },
   paths: Object.fromEntries(
     apiOperations.map((item) => [item.path, operation(item)]),
   ),
   components: {
-    schemas: {
-      ApiError: schema(apiErrorSchema),
-      LivenessResponse: schema(livenessResponseSchema),
-      ReadinessResponse: schema(readinessResponseSchema),
-    },
+    schemas: Object.fromEntries(
+      Object.entries(apiSchemas).map(([name, value]) => [name, schema(value)]),
+    ),
+    securitySchemes,
   },
 } as const;
 

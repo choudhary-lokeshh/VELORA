@@ -28,7 +28,6 @@ const requiredCspDirectives = [
   "frame-ancestors 'none'",
   "form-action 'self'",
   "connect-src 'self'",
-  'upgrade-insecure-requests',
 ];
 
 for (const surface of surfaces) {
@@ -47,6 +46,11 @@ for (const surface of surfaces) {
     // A nonce-based policy is deferred, but script execution must still be
     // origin-bound rather than open to arbitrary hosts.
     expect(csp).toContain("script-src 'self'");
+    // The harness runs local surfaces against a plain-HTTP loopback API, the one
+    // combination where `upgrade-insecure-requests` is omitted. Every deployed
+    // combination is asserted in the @velora/config unit tests, which is where
+    // the directive is decided.
+    expect(csp).not.toContain('upgrade-insecure-requests');
     expect(csp).not.toContain('*');
     expect(csp).not.toContain("'unsafe-eval'");
 

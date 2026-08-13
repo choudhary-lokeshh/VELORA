@@ -8,7 +8,7 @@ export default defineConfig({
     schema: 'drizzle',
   },
   out: './drizzle',
-  schema: [],
+  schema: ['./src/auth/schema.ts'],
   strict: true,
   verbose: true,
 });

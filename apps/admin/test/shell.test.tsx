@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import PlatformAdminShell from '../app/page.js';
+import PlatformAdminShell from '../app/page';
 
 describe('Platform Admin shell', () => {
   it('identifies its isolated privileged surface', () => {

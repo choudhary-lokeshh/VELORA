@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test';
-import type { ServerConfig } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
 import {
   apiErrorCodes,
@@ -15,16 +14,9 @@ import {
 import { createApplication } from '../../src/application.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
 import { DenyAllOutboundHttp } from '../../src/security/ports.js';
+import { testAuthRuntime, testServerConfig } from '../support/harness.js';
 
-const config: ServerConfig = {
-  APP_ENV: 'test',
-  DATABASE_URL: 'postgresql://local:local@127.0.0.1:1/velora',
-  EPHEMERAL_REDIS_URL: 'redis://127.0.0.1:1/0',
-  HOST: '127.0.0.1',
-  LOG_LEVEL: 'silent',
-  PORT: 4000,
-  QUEUE_REDIS_URL: 'redis://127.0.0.1:1/1',
-};
+const config = testServerConfig();
 
 function health(ready: boolean, error?: Error): HealthDependency {
   return {
@@ -60,6 +52,7 @@ function runtime(options?: {
   return createApplication({
     config,
     dependencies: {
+      auth: testAuthRuntime({ config }),
       database: options?.database ?? health(true),
       ephemeralRedis: options?.ephemeralRedis ?? health(true),
       logger: options?.logger ?? testLogger(),

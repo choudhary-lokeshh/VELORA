@@ -16,6 +16,7 @@ import {
   createWorkerRuntime,
   defaultOptionsForJob,
 } from '../../src/jobs/runtime.js';
+import { testServerConfig } from '../support/harness.js';
 
 const applicationRoot = resolve(
   fileURLToPath(new URL('../..', import.meta.url)),
@@ -34,15 +35,11 @@ function logger(): SafeLogger {
 }
 
 function testConfig(databaseUrl: string, redisUrl: string): ServerConfig {
-  return {
-    APP_ENV: 'test',
+  return testServerConfig({
     DATABASE_URL: databaseUrl,
     EPHEMERAL_REDIS_URL: `${redisUrl}/0`,
-    HOST: '127.0.0.1',
-    LOG_LEVEL: 'silent',
-    PORT: 4000,
     QUEUE_REDIS_URL: `${redisUrl}/1`,
-  };
+  });
 }
 
 async function runCommand(
@@ -139,7 +136,7 @@ const redisContainerId = requiredEnvironment('TEST_REDIS_CONTAINER_ID');
 const redisHost = requiredEnvironment('TEST_REDIS_HOST');
 
 describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
-  it('runs actual migration command twice and creates no product tables', async () => {
+  it('runs actual migration command twice and creates only the AUTH domain tables', async () => {
     const first = await runCommand(
       ['bun', 'run', 'scripts/migrate-database.ts'],
       {
@@ -161,8 +158,26 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         select table_name
         from information_schema.tables
         where table_schema = 'public'
+        order by table_name
       `;
-      expect(tables).toEqual([]);
+      // AUTH is the only implemented domain. Any other table here would mean a
+      // migration crossed a domain boundary or shipped an unrelated feature.
+      expect(tables.map((table) => table.table_name)).toEqual([
+        'auth_accounts',
+        'auth_admin_authenticators',
+        'auth_high_impact_authorizations',
+        'auth_identities',
+        'auth_known_devices',
+        'auth_privileged_recovery_approvals',
+        'auth_privileged_recovery_requests',
+        'auth_recovery_rate_events',
+        'auth_recovery_requests',
+        'auth_refresh_families',
+        'auth_refresh_tokens',
+        'auth_security_events',
+        'auth_security_owners',
+        'auth_sessions',
+      ]);
 
       await sql`create temporary table constraint_probe (id integer primary key)`;
       await sql`insert into constraint_probe (id) values (1)`;
