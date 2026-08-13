@@ -1,7 +1,9 @@
 # ADR-0008: Realtime gateway and RTC abstraction
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; backend integration/cache naming superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces NestJS integration and Valkey naming with Elysia composition and ephemeral Redis. Socket.IO/REST resync, non-authoritative realtime events, provider-neutral RTC, and recording-off decisions remain accepted. Historical implementation detail below is retained intentionally.
 
 ## Context
 

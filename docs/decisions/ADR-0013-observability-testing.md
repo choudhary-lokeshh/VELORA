@@ -1,7 +1,9 @@
 # ADR-0013: Observability, audit, testing, and release evidence
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; backend test/runtime detail superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces Fastify/Nest and Valkey/pg-boss testing with `bun:test`, Elysia, real Redis/BullMQ, and Node Testcontainers orchestration. OpenTelemetry API seams remain, but a concrete Bun SDK/exporter must pass compatibility and shutdown tests before enablement. Audit separation, Pino structured logs, client tests, and risk-based release evidence remain accepted. Replaced implementation references below are historical, not active stack authority.
 
 ## Context
 

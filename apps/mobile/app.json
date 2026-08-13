@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "VELORA",
+    "slug": "velora",
+    "scheme": "velora",
+    "version": "0.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true
+    }
+  }
+}

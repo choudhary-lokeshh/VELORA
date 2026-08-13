@@ -1,7 +1,9 @@
 # ADR-0007: Cache, durable jobs, workflows, and events
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; cache/queue implementation superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces Valkey/pg-boss and this ADR's BullMQ rejection with logically separated Redis responsibilities and BullMQ. PostgreSQL owner truth, outbox/inbox, idempotency, explicit durable workflow state, reconciliation, and no premature external broker remain accepted. Historical implementation analysis below is retained intentionally and is not active stack authority.
 
 ## Context
 
@@ -97,4 +99,3 @@ Valkey data is disposable and rebuildable. pg-boss jobs and outbox records are e
 | General workflow engine | DEFER UNTIL SCALE REQUIRES |
 | Valkey-only critical jobs or durable truth | REJECTED |
 | In-memory critical queues/timers | REJECTED |
-

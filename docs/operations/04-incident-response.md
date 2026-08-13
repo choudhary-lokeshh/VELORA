@@ -29,7 +29,7 @@ Detect and open durable incident record; classify severity/scope/data/countries;
 
 ## Emergency authority
 
-Break-glass access is time-bound, least-privilege, reasoned, separately logged, and reviewed. Use reversible scoped containment before broad destructive action where possible. Emergency feature disable must not erase business/audit evidence or silently bypass refunds, entitlements, safety, deletion, or user-rights obligations.
+Break-glass access is time-bound, least-privilege, reasoned, separately logged, and reviewed. Its required semantics — the number of prepared emergency accounts, their just-in-time or disabled resting state, hardware/passkey protection, absence of shared credentials, the maximum elevation window, mandatory incident reference, immediate alerting, immutable audit, the post-event review deadline, and credential/security-state rotation after use — are locked by [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md), which is the only place those values are stated. Implementation waits for production identity infrastructure; no simulated emergency path is treated as a control. Use reversible scoped containment before broad destructive action where possible. Emergency feature disable must not erase business/audit evidence or silently bypass refunds, entitlements, safety, deletion, or user-rights obligations.
 
 Secrets are rotated through controlled stores; sessions/tokens are revoked through owner contracts. Financial corrections follow BILLING/PAYOUTS workflows. Enforcement/content action follows safety owner. AI routes/tools/corpora/memory can be suspended, but AI cannot decide incident severity or approve remediation.
 
@@ -45,6 +45,6 @@ Before launch define severity matrix, paging, escalation, contact lists, provide
 
 ## Open decisions and cross-references
 
-`DECISION REQUIRED / LEGAL REVIEW REQUIRED`: severity levels, on-call/commander roles, response and notification timelines, evidence retention, break-glass, external forensics, status page/comms, regulator/provider contacts, tabletop cadence, and post-incident governance.
+`DECISION REQUIRED / LEGAL REVIEW REQUIRED`: severity levels, on-call/commander roles, response and notification timelines, evidence retention, break-glass implementation, external forensics, status page/comms, regulator/provider contacts, tabletop cadence, and post-incident governance.
 
 See [security baseline](../security/01-security-baseline.md), [platform health](05-platform-health.md), [observability](../engineering/04-observability.md), [AI safety](../ai/04-ai-safety-security.md), and [data residency](../compliance/05-data-residency-retention.md).

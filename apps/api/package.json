@@ -1,0 +1,37 @@
+{
+  "name": "@velora/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/clean-build-output.mjs dist && bun build src/main.ts src/worker.ts --target=bun --outdir=dist --sourcemap=external",
+    "db:migrate": "bun run scripts/migrate-database.ts",
+    "dev": "bun --watch run src/main.ts",
+    "lint": "eslint src scripts test drizzle.config.ts",
+    "start": "bun run dist/main.js",
+    "start:worker": "bun run dist/worker.js",
+    "test": "bun test --timeout 15000 test/unit",
+    "test:integration": "node scripts/run-integration-tests.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "catalog:",
+    "@velora/config": "workspace:*",
+    "@velora/domain": "workspace:*",
+    "@velora/observability": "workspace:*",
+    "@velora/validation": "workspace:*",
+    "bullmq": "catalog:",
+    "drizzle-orm": "catalog:",
+    "elysia": "catalog:",
+    "ioredis": "catalog:",
+    "pino": "catalog:"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "drizzle-kit": "catalog:",
+    "testcontainers": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,7 +1,9 @@
 # ADR-0012: AI platform runtime and portability
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; backend/queue implementation superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces NestJS, pg-boss, and Valkey implementation detail with Elysia, BullMQ, and logically separated Redis. AI isolation, explicit orchestration, PostgreSQL run/registry/budget truth, deterministic tools/approvals, evaluation gates, and provider/model neutrality remain accepted. AI remains outside V1. Historical implementation analysis below is retained intentionally.
 
 ## Context
 
@@ -102,4 +104,3 @@ Immutable manifests and provider-neutral run/tool contracts permit provider or m
 | RAG/vector/index/embedding implementation | DECISION REQUIRED BEFORE FEATURE |
 | Separate AI service extraction | DEFER UNTIL SCALE REQUIRES |
 | Direct provider use or generic autonomous agent framework | REJECTED |
-

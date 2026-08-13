@@ -38,4 +38,4 @@ Owner performs object authorization. Cross-domain cached projections are non-aut
 
 ## Open questions and cross-references
 
-Event transport uses the PostgreSQL transactional outbox/inbox and pg-boss baseline from [ADR-0007](../decisions/ADR-0007-cache-jobs-events.md); an external broker is deferred until measured scale requires it. See [contracts/events](04-contracts-events.md), [data ownership](05-data-ownership.md), [AI platform](../ai/01-ai-platform-architecture.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and each `docs/domains/` specification.
+Event transport uses PostgreSQL transactional outbox/inbox plus BullMQ execution under [ADR-0016](../decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md). Owner state and outbox facts remain PostgreSQL truth; Redis queue delivery cannot define business completion. An external broker is deferred until measured scale requires it. See [contracts/events](04-contracts-events.md), [data ownership](05-data-ownership.md), [AI platform](../ai/01-ai-platform-architecture.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and each `docs/domains/` specification.

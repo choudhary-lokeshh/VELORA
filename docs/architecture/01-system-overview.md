@@ -31,11 +31,11 @@ Surface navigation and UI responsibility are authoritative in `docs/surfaces/`. 
 
 ## Architectural direction
 
-Begin with a NestJS/Fastify modular monolith, separate durable worker role, PostgreSQL/Valkey foundations, and explicit domain contracts under [technical stack authority](09-technical-stack.md). Split services only when load, team boundaries, or isolation evidence demands it. Never make client-to-database or client-to-provider shortcuts.
+The repository begins with a Bun/Elysia modular-monolith composition root, separate BullMQ worker role, PostgreSQL plus logically separated ephemeral/queue Redis foundations, neutral client shells, and explicit domain-contract seams under [technical stack authority](09-technical-stack.md) and [ADR-0016](../decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md). Split services only when load, team boundaries, or isolation evidence demands it. Never make client-to-database or client-to-provider shortcuts.
 
 ## Non-goals
 
-No production vendor selection, global content policy approval, real payout connection, or UI design. Club content and mature/explicit capability are not V1 defaults.
+No production vendor selection, global content policy approval, real payout connection, product-feature implementation, or production screen set. The approved Master Visual Language is a visual foundation, not feature enablement. Club content and mature/explicit capability are not V1 defaults.
 
 ## Data and security
 

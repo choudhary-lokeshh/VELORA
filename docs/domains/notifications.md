@@ -6,7 +6,7 @@ NOTIFICATIONS owns consent-aware notification preferences, channel selection, te
 
 ## Flow and transitions
 
-Source domain emits minimized notification request/fact through the transactional outbox. NOTIFICATIONS evaluates recipient preference, consent, safety/quiet-hour/country rules and channel capability; then schedules durable pg-boss work and records `queued -> attempted -> delivered/failed/suppressed`. Provider receipt updates attempt idempotently. Critical security notices use defined policy and may bypass ordinary marketing preferences only where lawful.
+Source domain emits minimized notification request/fact through the transactional outbox. NOTIFICATIONS evaluates recipient preference, consent, safety/quiet-hour/country rules and channel capability; then schedules durable BullMQ work from authoritative PostgreSQL intent and records `queued -> attempted -> delivered/failed/suppressed`. Provider receipt updates attempt idempotently. Queue completion does not define notification truth. Critical security notices use defined policy and may bypass ordinary marketing preferences only where lawful.
 
 ## Failure/security/concurrency
 

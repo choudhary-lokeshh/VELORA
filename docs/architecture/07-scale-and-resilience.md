@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define system behavior under growth and partial failure. PostgreSQL, Valkey, pg-boss, OCI containers, and the managed-container topology are selected; cloud, managed-service, broker, and deployment vendors remain deferred.
+Define system behavior under growth and partial failure. PostgreSQL, logically separated Redis responsibilities, BullMQ, OCI containers, and the managed-container topology are selected; cloud, managed-service, external broker, and deployment vendors remain deferred. Queue Redis is persistent correctness-relevant infrastructure, while ephemeral Redis remains rebuildable; neither owns business truth.
 
 ## Baseline
 

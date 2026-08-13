@@ -1,7 +1,9 @@
 # ADR-0009: Authentication, sessions, authorization, and approvals
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted; policy values completed by ADR-0017
+
+> Amendment note (2026-08-13): [ADR-0017](ADR-0017-auth-session-recovery-security-policy.md) locks the exact risk-tier session durations, recovery rules, Admin assurance values, privileged recovery, and break-glass semantics this ADR left open. The architecture below is unchanged; ADR-0017 fills its values and cannot override it.
 
 ## Context
 
@@ -33,7 +35,7 @@ Consumer Web, Consumer Mobile, Creator Studio, and Platform Admin share one iden
 - Do not share one broad cookie across Consumer Web, Creator Studio, and Admin hosts. AUTH may issue audience-bound session families from the same identity after explicit authentication/step-up. Creator access remains a role/eligibility check, not a different account.
 - Mobile uses system secure storage for a rotating opaque refresh token and a short-lived audience-bound signed access token. Use authorization-code-with-PKCE style app handoff, exact redirect/app-link allowlists, refresh-token family reuse detection, per-device revocation, key/algorithm pinning, and no token in ordinary app logs or backups.
 - Admin always uses a dedicated privileged audience/session, short idle/absolute limits, re-authentication for sensitive actions, and phishing-resistant MFA such as WebAuthn/passkeys before production privileged access. Consumer session possession cannot be upgraded silently into Admin access.
-- Central session policy defines risk-tier durations, rotation, assurance age, device limits, and revocation. Exact consumer/creator duration values are decided before AUTH launch; exact Admin values and recovery/break-glass policy are decided before privileged production access.
+- Central session policy defines risk-tier durations, rotation, assurance age, device limits, and revocation. Exact consumer, creator, Mobile, recovery, Admin, privileged-recovery, and break-glass values are locked by [ADR-0017](ADR-0017-auth-session-recovery-security-policy.md); device limits remain deferred.
 - AUTH authenticates identity and assurance only. ADMIN owns role grants/approval records. Each domain authorizes every read/action using current actor identity, active role grant, action, object relationship/ownership, creator/tenant scope, country/channel gate, safety/enforcement, assurance, consent, and current state.
 - Implement authorization as deny-by-default TypeScript policy/application-service code in the owning domain with reusable actor/context types. Do not introduce a general policy engine initially. Central middleware may authenticate and enforce coarse route requirements but cannot replace owner authorization.
 - High-impact operations bind exact target, action, arguments, source/current-state version, requester, human approver(s), assurance, expiry, and correlation ID. Owning domain re-authorizes at execution. AI, Admin UI, role label, prior approval, or upstream service claim never authorizes by itself.
@@ -66,7 +68,7 @@ AUTH and PostgreSQL are on the protected request path. Web and Mobile have diffe
 
 ## Mitigations
 
-Use one session contract and test suite, short Mobile access TTL, sensitive-action online recheck, Valkey revocation acceleration backed by PostgreSQL, versioned permission catalogue, negative authorization tests, link/recovery step-up, reuse detection, security notifications, rate limits, and immutable audit.
+Use one session contract and test suite, short Mobile access TTL, sensitive-action online recheck, ephemeral Redis revocation acceleration backed by PostgreSQL, versioned permission catalogue, negative authorization tests, link/recovery step-up, reuse detection, security notifications, rate limits, and immutable audit. ADR-0016 supersedes the cache implementation name without changing PostgreSQL authority.
 
 ## Scaling path
 
@@ -94,7 +96,6 @@ Provider adapters and canonical internal subject IDs allow identity provider rep
 | Domain-owned RBAC/object authorization policies | LOCK NOW |
 | Privileged MFA and bound human approvals | LOCK NOW |
 | Production credential/social/OTP provider | DEFER UNTIL PROVIDER INTEGRATION |
-| Exact risk-tier session durations and recovery rules | DECISION REQUIRED BEFORE FEATURE |
+| Exact risk-tier session durations and recovery rules | LOCK NOW in [ADR-0017](ADR-0017-auth-session-recovery-security-policy.md) |
 | External policy engine | DEFER UNTIL SCALE REQUIRES |
 | Four independent auth systems and long-lived stateless sessions | REJECTED |
-

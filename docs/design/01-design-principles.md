@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-Define the product qualities and decision criteria that guide Figma design across Consumer Web, Consumer Mobile, Creator Studio, and Platform Admin. This document does not choose visual tokens, fonts, colors, imagery, logos, or final interaction patterns.
+Define product qualities and approved Master Visual Language foundations across Consumer Web, Consumer Mobile, Creator Studio, and Platform Admin. Exact unresolved tokens, components, imagery assets, screen layouts, and final interaction patterns remain owned by approved Figma work.
 
 ## Product character
 
@@ -29,9 +29,17 @@ Public creator pages can be expressive within approved creator/brand constraints
 
 Copy is direct, respectful, localized, and action-specific. Avoid dark patterns, artificial scarcity, guaranteed interpersonal outcomes, coercive upsell, or ambiguous destructive actions. AI assistance is labeled and keeps edit/reject/report control visible; model confidence is not styled as authority.
 
-## Design status
+## Approved Master Visual Language
 
-Visual identity, brand system, typography, palette, spacing scale, radius, elevation, iconography, imagery, illustration, grids, component aesthetics, and motion language are `DESIGN REQUIRED` in approved Figma work. Coding agents must not infer them from this prose.
+VELORA uses one shared visual foundation with controlled surface expression:
+
+- Consumer: tonal dark, media-first, intimate, and socially alive.
+- Creator Studio: warm editorial workspace.
+- Platform Admin: light, dense, predictable, and audit-focused.
+
+Approved shared DNA is a 4 px rhythm; restrained surfaces; IBM Plex Sans for interface text; Source Serif 4 only for Creator editorial moments; Noto global-script fallbacks; Living Ember `#B85645` with dark expression `#E17A66`; a coherent 1.75 px icon stroke; a 2 px focus treatment; and a semantic safety/status system.
+
+The approved checkpoint does not authorize invention of the remaining palette, full component system, product screens, responsive layouts, imagery assets, elevation details, or motion tokens. Those remain `DESIGN REQUIRED` until an approved Figma handoff specifies them.
 
 ## Cross-references
 

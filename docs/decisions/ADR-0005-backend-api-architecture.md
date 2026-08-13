@@ -1,7 +1,9 @@
 # ADR-0005: Backend modular monolith and API contracts
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; framework/runtime portion superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces NestJS/Fastify/Node with Elysia/Bun. The modular-monolith boundaries, REST `/v1`, Zod/OpenAPI/client generation, deterministic owner authorization, published ports, and extraction rules remain accepted. Historical framework analysis below is retained intentionally.
 
 ## Context
 

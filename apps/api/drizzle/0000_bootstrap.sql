@@ -1,0 +1,2 @@
+-- VELORA bootstrap deliberately defines no product or domain tables.
+-- Drizzle records this reviewed migration in its own metadata schema.

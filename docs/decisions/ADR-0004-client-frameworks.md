@@ -33,7 +33,7 @@ Current official sources were checked on the decision date. Next.js 16 is Active
 - Share only low-level packages named in repository architecture: types, runtime validation, generated API client, typed config, and telemetry primitives. Surface-owned components, navigation, permissions, and page state remain inside their application. Future shared visual primitives require approved Figma and an ADR/package-boundary update.
 - Use React Native 0.86 through Expo SDK 57 for Consumer Mobile. Use Expo Router, development builds, and Continuous Native Generation/prebuild. Expo Go is not a production or full integration environment.
 - Allow reviewed Swift/Kotlin native modules or config plugins for secure storage, push, camera/media, RTC, accessibility, and platform integrations. JavaScript over-the-air updates, if later enabled, may not bypass app-store policy, native compatibility, product phase, security review, or server feature gates.
-- Generate or publish TypeScript API contracts for all clients. Mobile imports only client-safe generated packages; it never imports NestJS, Drizzle, or server domain code.
+- Generate or publish TypeScript API contracts for all clients. Mobile imports only client-safe generated packages; it never imports Elysia application internals, Drizzle, or server domain code. ADR-0016 supersedes the backend framework name without changing this client boundary.
 - Pin exact framework and native toolchain versions at bootstrap. Upgrade Expo SDK and React Native together according to Expo's compatibility matrix.
 
 ## Why
@@ -92,4 +92,3 @@ Separate apps and language-neutral HTTP contracts keep framework replacement pos
 | Web visual/component sharing beyond current low-level packages | DECISION REQUIRED BEFORE FEATURE |
 | Flutter Mobile | REJECTED |
 | Combined Consumer/Creator/Admin Web application | REJECTED |
-

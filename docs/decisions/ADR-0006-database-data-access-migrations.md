@@ -1,7 +1,9 @@
 # ADR-0006: PostgreSQL, data access, and migrations
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; driver/runtime portion superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces the `node-postgres` runtime path with Drizzle's Bun SQL driver. PostgreSQL, Drizzle, committed reviewed SQL, explicit migration execution, constraints, ownership, compatibility, and rollback discipline remain accepted. Historical driver analysis below is retained intentionally.
 
 ## Context
 
@@ -97,4 +99,3 @@ PostgreSQL is a durable strategic choice. Drizzle can be replaced incrementally 
 | Specialized search/vector/warehouse stores | DECISION REQUIRED BEFORE FEATURE |
 | Database-per-domain initial topology | REJECTED |
 | Production schema push and startup auto-migration | REJECTED |
-

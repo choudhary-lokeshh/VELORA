@@ -1,0 +1,52 @@
+{
+  "name": "velora",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "bun": "1.3.14",
+    "node": "24.19.0",
+    "pnpm": "11.21.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "build:uncached": "turbo run build --force",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint && eslint e2e playwright.config.ts",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "playwright test",
+    "format:check": "prettier --check apps e2e packages scripts .github compose.yaml eslint.config.mjs package.json playwright.config.ts pnpm-workspace.yaml prettier.config.mjs tsconfig.base.json tsconfig.json turbo.json",
+    "format:write": "prettier --write apps e2e packages scripts .github compose.yaml eslint.config.mjs package.json playwright.config.ts pnpm-workspace.yaml prettier.config.mjs tsconfig.base.json tsconfig.json turbo.json",
+    "boundaries": "node scripts/check-boundaries.mjs",
+    "secrets:check": "node scripts/check-secrets.mjs",
+    "toolchain:check": "node scripts/check-toolchain.mjs",
+    "install:check": "node scripts/check-frozen-install.mjs",
+    "workspace:check": "node scripts/check-workspace-policy.mjs",
+    "hygiene:check": "node scripts/check-hygiene.mjs",
+    "whitespace:check": "git diff --check && pnpm hygiene:check",
+    "contracts:generate": "pnpm --filter @velora/validation generate && pnpm --filter @velora/api-client generate",
+    "contracts:check": "pnpm --filter @velora/validation generate:check && pnpm --filter @velora/api-client generate:check",
+    "mobile:doctor": "pnpm --filter @velora/mobile run doctor",
+    "infra:config": "docker compose config --quiet",
+    "infra:up": "docker compose up --detach --wait",
+    "infra:down": "docker compose down",
+    "db:migrate": "pnpm --filter @velora/api db:migrate",
+    "audit:dependencies": "node scripts/check-dependency-security.mjs",
+    "auth:policy": "node scripts/check-auth-policy.mjs",
+    "ci:verify": "pnpm toolchain:check && pnpm install:check && pnpm workspace:check && pnpm format:check && pnpm lint && pnpm boundaries && pnpm typecheck && pnpm contracts:check && pnpm auth:policy && pnpm test && pnpm test:integration && pnpm build:uncached && pnpm test:e2e && pnpm mobile:doctor && pnpm infra:config && pnpm secrets:check && pnpm whitespace:check && pnpm audit:dependencies"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "globals": "catalog:",
+    "prettier": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:"
+  }
+}

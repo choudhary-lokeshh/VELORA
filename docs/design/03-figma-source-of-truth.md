@@ -18,6 +18,17 @@ Each approved handoff records:
 - assets and rights/source status;
 - implementation notes and superseded design links.
 
+## Current approved checkpoint
+
+- File: [VELORA — Master Visual Language](https://www.figma.com/design/e1aFf8THDJUZshsAqOU8b7/VELORA-%E2%80%94-Master-Visual-Language?node-id=1-2)
+- Page: `00 — Master Visual Language`
+- Review-board frame: `1:2`
+- Status: Master Visual Language approved as current visual authority.
+- Scope: shared visual DNA and controlled Consumer, Creator Studio, and Platform Admin expression. It is not a full production component library or product-screen handoff.
+- Historical source: `VELORA — Visual Direction Exploration` remains unchanged and non-authoritative.
+
+Figma Starter limits each local variable collection to one mode and therefore prevents production multi-mode token implementation. This limitation does not block repository or product architecture. Coding agents may implement semantic code-level theme maps matching the approved Master through `packages/design-tokens`; they must not create fake Figma modes, redesign the direction, or invent unapproved colors/components/screens.
+
 ## Source-of-truth precedence
 
 If Figma conflicts with product phase, authorization, domain ownership, payment/entitlement, privacy, or compliance documents, those authoritative documents prevail and design must be corrected before implementation. Figma cannot enable a future or gated capability.
@@ -40,7 +51,7 @@ Use synthetic/redacted sample data. Do not place real passwords, tokens, payment
 
 ## Open design decisions
 
-`DESIGN REQUIRED`: Figma project/file structure, naming convention, component ownership, approval roles, branching/version process, developer handoff method, design QA workflow, prototype testing process, and archival policy.
+`DESIGN REQUIRED`: full component/system pages, production screen set, remaining exact tokens, component ownership, approval roles beyond the current checkpoint, branching/version process, developer handoff method, design QA workflow, prototype testing process, and archival policy.
 
 ## Cross-references
 

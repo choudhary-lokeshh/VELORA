@@ -1,6 +1,6 @@
 # ADR-0001: Documentation-first domain specification
 
-- Status: Accepted for current pre-code phase
+- Status: Accepted; ongoing repository rule
 - Date: 2026-08-12
 
 ## Context
@@ -9,7 +9,7 @@ Velora has multiple future clients, high-risk safety/financial paths, creator co
 
 ## Decision
 
-Before application code, maintain Markdown specifications as implementation authority: system/product phase, domain ownership, core flows, security, engineering discipline, accepted technical ADRs, and explicit open decisions. Future code changes must follow `AGENTS.md`, read `DOCS_INDEX.md`, and update relevant authority when behavior changes. Domains interact through documented contracts/services/events. Runtime topology is now selected by ADR-0003 through ADR-0014 without changing this documentation-first rule.
+Before and throughout application implementation, maintain Markdown specifications as authority for system/product phase, domain ownership, core flows, security, engineering discipline, accepted technical ADRs, and explicit open decisions. Code changes must follow `AGENTS.md`, read `DOCS_INDEX.md`, update relevant authority when durable behavior changes, and complete a documentation-impact audit. Domains interact through documented contracts/services/events. Runtime topology and shared design-token boundary are selected by ADR-0003 through ADR-0016, including ADR-0016's backend supersession, without changing this documentation-first rule.
 
 ## Consequences
 

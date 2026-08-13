@@ -1,7 +1,9 @@
 # ADR-0014: Deployment, environments, configuration, outbound networking, and CI/CD
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; backend runtime/Redis topology detail superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces the Node-only backend and Valkey topology with Bun/Elysia and logically separated ephemeral/durable-queue Redis responsibilities. Environment isolation, OCI/OpenTofu direction, typed configuration, controlled egress, provider-neutral CI/CD, immutable promotion, and rollback rules remain accepted. Replaced runtime/topology references below are historical, not active stack authority.
 
 ## Context
 

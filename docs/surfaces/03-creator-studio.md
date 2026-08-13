@@ -22,7 +22,7 @@ CREATORS owns creator business identity and eligibility. PRIVATE CLUBS owns club
 
 ## Authentication and permissions
 
-Studio requires valid Velora identity plus active, scope-limited creator access. Creator role, verification, club eligibility, payout readiness, and content-category eligibility are separate predicates. Every mutation authorizes creator entity/object and checks current phase/country/channel/provider/safety state. Sensitive payout/account changes require step-up as policy defines.
+Studio requires valid Velora identity plus active, scope-limited creator access. Creator role, verification, club eligibility, payout readiness, and content-category eligibility are separate predicates. Every mutation authorizes creator entity/object and checks current phase/country/channel/provider/safety state. Sensitive payout/account changes require step-up as policy defines. Studio session lifetimes are shorter than consumer sessions and are locked in [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md).
 
 Team/delegated creator roles are not assumed; they are `DECISION REQUIRED`. Until approved, only explicitly authorized creator identity acts on its own entity. Consumer sessions cannot infer Studio permission from route visibility.
 

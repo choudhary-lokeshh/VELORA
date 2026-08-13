@@ -1,0 +1,31 @@
+{
+  "name": "@velora/creator-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build && node ../../scripts/prepare-next-standalone.mjs creator-studio",
+    "dev": "next dev --port 3001",
+    "lint": "eslint app src test next.config.ts vitest.config.ts",
+    "start": "PORT=3001 HOSTNAME=${VELORA_BIND_HOST:-0.0.0.0} node .next/standalone/apps/creator-studio/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@velora/api-client": "workspace:*",
+    "@velora/config": "workspace:*",
+    "@velora/design-tokens": "workspace:*",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "jsdom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

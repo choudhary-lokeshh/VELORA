@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-Define how approved Figma design becomes an implementation contract without choosing technology or visual values. Figma owns approved visual and interaction specification; product/domain documents own behavior, phase, authorization, and data semantics.
+Define how approved Figma design becomes an implementation contract. Figma owns approved visual and interaction specification; product/domain documents own behavior, phase, authorization, and data semantics.
 
 ## Token contract
 
@@ -14,7 +14,9 @@ Figma defines named, semantic tokens for:
 - radius, elevation, stroke, opacity, and layering;
 - iconography, illustration/image treatment, and motion timing/easing.
 
-Actual values remain `DESIGN REQUIRED`. Token names should express purpose rather than a raw value or one screen. Responsive and theme modes use documented aliases, not copied one-off values.
+Approved Master values are recorded in [design principles](01-design-principles.md). Unapproved values remain `DESIGN REQUIRED`. Token names express purpose rather than a raw value or one screen. Responsive and theme modes use documented aliases, not copied one-off values.
+
+Figma Starter currently prevents production multi-mode token implementation. This is not a product or repository blocker. No fake collection-per-mode workaround is authorized. Until Figma capability changes, `packages/design-tokens` holds the narrow code-level semantic contract for Consumer dark, Consumer light where needed, Creator, and Admin. It may expose approved primitives, semantic role names, and theme shapes, but it must not invent missing values or contain UI/components/business behavior.
 
 ## Component contract
 
@@ -44,7 +46,7 @@ If implementation exposes a missing state or accessibility need, update Figma an
 
 Handoff requires component inventory, state coverage, responsive examples, content extremes, keyboard/touch behavior, accessibility annotation, asset rights/source, and platform differences. Visual regression and accessibility testing are future implementation requirements.
 
-`DESIGN REQUIRED`: token taxonomy/names, themes, component inventory, chart/data-visualization system, icon/asset library, content templates, versioning process, and ownership.
+`DESIGN REQUIRED`: complete theme values, component inventory, chart/data-visualization system, icon/asset library, content templates, full responsive system, versioning process, and ownership beyond the approved Master checkpoint.
 
 ## Cross-references
 

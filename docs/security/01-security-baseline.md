@@ -8,6 +8,7 @@ Cross-cutting minimum security invariants for every future Velora component. Dom
 
 - Authenticate every protected request; authorize every object/action in owner domain. Client assertions, hidden UI, and role labels alone are never authorization.
 - Use TLS, secure transport headers, input validation, output encoding, CSRF defense where cookie sessions apply, safe redirects, secure session handling, and dependency/security regression testing.
+- Web surfaces send `Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy`. No deployment edge owns them yet, so each Next.js application sets them and end-to-end tests assert them on every surface; Platform Admin is never weaker than Consumer Web. The current policy allows inline scripts because Next.js hydration requires it; a nonce-based policy needs request-time middleware and is deferred with the edge-provider decision in [ADR-0014](../decisions/ADR-0014-deployment-environments-cicd.md). The API sets its own stricter policy.
 - Treat all user content, provider payloads, webhooks, URLs, filenames, and uploaded metadata as untrusted.
 - Treat AI model output, prompts, memory, RAG/retrieved content, generated tool arguments, and provider metadata as untrusted. AI does not authorize or approve actions.
 - Enforce per-action rate limits, abuse monitoring, bot resistance appropriate to risk, and bounded resource use.
@@ -20,4 +21,4 @@ Fail closed for authentication, authorization, entitlement, signature verificati
 
 ## Ownership and phase
 
-Each domain owns security of its data/actions; platform composition owns shared controls. V1 mandatory. See [RBAC](02-access-control-rbac.md), [privacy](03-privacy-retention.md), [media](04-media-upload-delivery.md), [payments](05-payments-webhooks.md), [abuse/SSRF](06-abuse-outbound-networking.md), [AI safety/security](../ai/04-ai-safety-security.md), [compliance gates](../DOCS_INDEX.md#compliance-authority).
+Each domain owns security of its data/actions; platform composition owns shared controls. V1 mandatory. See [RBAC](02-access-control-rbac.md), [privacy](03-privacy-retention.md), [media](04-media-upload-delivery.md), [payments](05-payments-webhooks.md), [abuse/SSRF](06-abuse-outbound-networking.md), [AI safety/security](../ai/04-ai-safety-security.md), [dependency risk acceptance](08-dependency-risk-acceptance.md), [session and privileged policy](../decisions/ADR-0017-auth-session-recovery-security-policy.md), [compliance gates](../DOCS_INDEX.md#compliance-authority).

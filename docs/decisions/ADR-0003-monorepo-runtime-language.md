@@ -1,7 +1,9 @@
 # ADR-0003: Monorepo, runtime, language, and dependency strategy
 
 - Decision date: 2026-08-12
-- ADR status: Accepted
+- ADR status: Accepted in part; backend-runtime portion superseded by ADR-0016
+
+> Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces Node.js as the API/worker/migration runtime and reverses this ADR's Bun rejection. pnpm/Turborepo remain workspace/task authorities, TypeScript 5.9.3 remains locked, and Node.js 24.19.0 remains the client/repository tooling runtime. Historical analysis below is retained intentionally.
 
 ## Context
 
@@ -74,6 +76,8 @@ Use a frozen lockfile in CI, approved registries, install-script allowlists, pro
 ## Testing implications
 
 CI verifies lockfile immutability, workspace graph rules, duplicate/version policy, strict TypeScript builds, affected tests, clean full builds, and cache-disabled equivalence for release tasks.
+
+Expo SDK 57's dependency-version heuristic currently advertises TypeScript `~6.0.3`, which conflicts with this ADR's locked 5.9.3 baseline. The Mobile manifest excludes only TypeScript from that heuristic. Expo configuration/schema checks, peer-dependency checks, strict Mobile typecheck, `jest-expo`, and both iOS/Android exports remain mandatory; the exclusion is removed when an approved TypeScript upgrade passes the full compatibility review.
 
 ## Migration/reversibility
 

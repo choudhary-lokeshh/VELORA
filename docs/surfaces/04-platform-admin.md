@@ -22,7 +22,7 @@ ADMIN owns role grants, privileged operation requests, approvals, and audit view
 
 ## Authentication, permissions, and approvals
 
-Require dedicated privileged access policy, strong assurance, short sessions, re-authentication/step-up, least privilege, object/region/queue/monetary scope, revocable roles, and regular access review. High-risk operations use explicit reason/evidence, exact target/effect, idempotency, current-state check, and required single/dual approval or separation of duties.
+Require dedicated privileged access policy, strong assurance, short sessions, re-authentication/step-up, least privilege, object/region/queue/monetary scope, revocable roles, and regular access review. Exact privileged MFA method, session limits, step-up assurance age, and approval-binding fields are locked in [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md). High-risk operations use explicit reason/evidence, exact target/effect, idempotency, current-state check, and required single/dual approval or separation of duties.
 
 Payment/refund/payout, enforcement/ban, account/security, entitlement, role/configuration, deletion, sensitive export, and emergency operations must follow deterministic owner authorization and documented approval. No UI bulk action may weaken individual authorization or audit.
 

@@ -1,8 +1,8 @@
-# Intended repository shape
+# Repository shape
 
 ## Purpose
 
-Define future code placement and allowed dependency direction. This is conceptual; do not create application folders in documentation phase.
+Define current code placement and allowed dependency direction. The repository bootstrap establishes these boundaries without implementing product domains.
 
 ```text
 apps/
@@ -18,6 +18,7 @@ packages/
   domain/          bounded domain modules and published contracts
   config/          typed non-secret configuration interfaces
   observability/   structured telemetry primitives
+  design-tokens/   approved client-safe primitive/semantic design contracts
 docs/
   product/ architecture/ domains/ flows/ security/ engineering/
   ai/ surfaces/ design/ compliance/ operations/ decisions/
@@ -25,9 +26,10 @@ docs/
 
 ## Rules
 
-- Client apps consume `types`, `validation`, and `api-client` published contracts; they do not import another app, `packages/domain`, backend modules, repositories, ORM schemas, workers, or provider SDKs.
+- Client apps consume `types`, `validation`, `api-client`, approved client-safe configuration/observability entrypoints, and `design-tokens`; they do not import another app, `packages/domain`, backend modules, repositories, ORM schemas, workers, or provider SDKs.
 - `packages/domain` contains separate modules matching [domain boundaries](03-domain-boundaries.md), not one shared utility pile.
 - `types`, `validation`, and `api-client` stay dependency-light and cannot contain authorization, persistence, or provider calls.
+- `design-tokens` contains approved primitive values, semantic role names, and surface-theme contracts only. It contains no components, navigation, content, permissions, or business behavior.
 - `api` composes modules, authenticates requests, and maps transport errors; domain rules remain in owning modules.
 - One domain may import another only through its published application contract; it may not import another domain's repository, persistence model, entity, or provider implementation.
 - Provider adapters are injected behind ports owned by affected domain/platform capability, never called directly from UI.
@@ -40,7 +42,7 @@ Configuration references secret identifiers only; secret values belong in contro
 
 ## Technical implementation
 
-[Technical stack](09-technical-stack.md) and ADR-0003 through ADR-0014 lock pnpm/Turborepo, Node.js/TypeScript, client/backend frameworks, REST/OpenAPI, PostgreSQL/Drizzle, Valkey/pg-boss, realtime, sessions, storage, AI, observability/testing, and initial deployment. Provider and product/design/legal decisions remain in [open decisions](../decisions/DECISIONS_REQUIRED.md). No technical choice alters ownership or client separation.
+[Technical stack](09-technical-stack.md) and ADR-0003 through ADR-0016 lock pnpm/Turborepo, Bun backend plus Node client/tooling runtimes, TypeScript, client/backend frameworks, REST/OpenAPI, PostgreSQL/Drizzle, logically separated Redis responsibilities, BullMQ, realtime, sessions, storage, AI, observability/testing, initial deployment, and the narrow shared design-token boundary. ADR-0016 is the active backend supersession authority. Provider and product/design/legal decisions remain in [open decisions](../decisions/DECISIONS_REQUIRED.md). No technical choice alters ownership or client separation.
 
 ## Cross-references
 

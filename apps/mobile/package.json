@@ -1,0 +1,52 @@
+{
+  "name": "@velora/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "expo-router/entry",
+  "expo": {
+    "install": {
+      "exclude": [
+        "typescript"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "expo export --platform ios --platform android --output-dir dist",
+    "dev": "expo start --dev-client",
+    "doctor": "expo-doctor",
+    "lint": "eslint app src test",
+    "start": "expo start --dev-client",
+    "test": "jest --runInBand",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "catalog:",
+    "@velora/api-client": "workspace:*",
+    "@velora/config": "workspace:*",
+    "@velora/design-tokens": "workspace:*",
+    "expo": "catalog:",
+    "expo-constants": "catalog:",
+    "expo-linking": "catalog:",
+    "expo-router": "catalog:",
+    "expo-status-bar": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-native": "catalog:",
+    "react-native-worklets": "catalog:",
+    "react-native-safe-area-context": "catalog:",
+    "react-native-screens": "catalog:"
+  },
+  "devDependencies": {
+    "@react-native/metro-config": "catalog:",
+    "@testing-library/react-native": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-test-renderer": "catalog:",
+    "expo-doctor": "catalog:",
+    "jest": "catalog:",
+    "jest-expo": "catalog:",
+    "react-test-renderer": "catalog:",
+    "typescript": "catalog:"
+  }
+}

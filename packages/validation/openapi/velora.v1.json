@@ -1,0 +1,307 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "VELORA API",
+    "version": "1.0.0-bootstrap"
+  },
+  "paths": {
+    "/v1/health/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessResponse"
+                }
+              }
+            },
+            "description": "Process is alive",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method. The body is an ApiError with code HTTP_404.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/health/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Dependencies are ready",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method. The body is an ApiError with code HTTP_404.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "A required dependency is unavailable",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "correlationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "code",
+          "correlationId",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "LivenessResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "properties": {
+          "dependencies": {
+            "type": "object",
+            "properties": {
+              "ephemeralRedis": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "postgres": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "queueRedis": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              }
+            },
+            "required": [
+              "ephemeralRedis",
+              "postgres",
+              "queueRedis"
+            ],
+            "additionalProperties": false
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "dependencies",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}
