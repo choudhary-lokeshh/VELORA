@@ -25,6 +25,7 @@ import {
   testSafetyRuntime,
   testServerConfig,
   testUsersRuntime,
+  testCreatorsRuntime,
 } from '../support/harness.js';
 
 const config = testServerConfig();
@@ -71,23 +72,25 @@ function runtime(options?: {
       ephemeralRedis: options?.ephemeralRedis ?? health(true),
       logger: options?.logger ?? testLogger(),
       queueRedis: options?.queueRedis ?? health(true),
-      ...consumerDomains(auth, config),
+      ...productDomains(auth, config),
     },
   });
 }
 
 /**
- * The consumer domains are built together because each consumes what the one
+ * The product domains are built together because each consumes what the one
  * before it publishes: TRUST & SAFETY takes USERS' enforcement contract,
- * DISCOVERY takes USERS' directory and SAFETY's eligibility answer, and
- * MESSAGING takes DISCOVERY's connection contract and the same safety answer.
- * Wiring them separately would give one test several views of the same data.
+ * DISCOVERY takes USERS' directory and SAFETY's eligibility answer, MESSAGING
+ * takes DISCOVERY's connection contract and the same safety answer, and
+ * CREATORS takes USERS' adult standing. Wiring them separately would give one
+ * test several views of the same data.
  */
-function consumerDomains(auth: AuthRuntime, config: ServerConfig) {
+function productDomains(auth: AuthRuntime, config: ServerConfig) {
   const users = testUsersRuntime({ auth, config });
   const safety = testSafetyRuntime({ users });
   const discovery = testDiscoveryRuntime({ safety, users });
   return {
+    creators: testCreatorsRuntime({ caller: auth.caller, users }),
     discovery,
     messaging: testMessagingRuntime({
       config,

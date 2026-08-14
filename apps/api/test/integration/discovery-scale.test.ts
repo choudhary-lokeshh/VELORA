@@ -30,6 +30,7 @@ import {
   testDatabaseAdmission,
   testNotificationsApiRuntime,
   testServerConfig,
+  testCreatorsRuntime,
 } from '../support/harness.js';
 
 /**
@@ -112,6 +113,12 @@ const application = createApplication({
   config,
   dependencies: {
     auth,
+    creators: testCreatorsRuntime({
+      caller: auth.caller,
+      database: database.drizzle,
+      now,
+      users,
+    }),
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),
     discovery,

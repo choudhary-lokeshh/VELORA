@@ -20,6 +20,8 @@ export const productErrorCodes = {
   dependencyUnavailable: 'DEPENDENCY_UNAVAILABLE',
   /** The operation requires a Consumer Web or Consumer Mobile audience. */
   consumerSurfaceRequired: 'CONSUMER_SURFACE_REQUIRED',
+  /** The operation requires a Creator Studio audience. */
+  creatorSurfaceRequired: 'CREATOR_SURFACE_REQUIRED',
   /** The same idempotency key was reused with different input. */
   idempotencyMismatch: 'IDEMPOTENCY_KEY_MISMATCH',
   /** A bounded per-account collection is already full. */

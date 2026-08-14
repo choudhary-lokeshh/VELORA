@@ -6,6 +6,11 @@ import {
   createAuthRuntime,
   type AuthRuntime,
 } from '../../src/auth/composition.js';
+import type { CallerResolver } from '../../src/auth/caller.js';
+import {
+  createCreatorsRuntime,
+  type CreatorsRuntime,
+} from '../../src/creators/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { DatabaseAdmission } from '../../src/database/admission.js';
 import type { AuthDatabase } from '../../src/auth/repository.js';
@@ -224,16 +229,42 @@ export function testNotificationsApiRuntime(input: {
 }
 
 /**
- * The consumer product domains built together over one database and one USERS
- * runtime, for suites that only need the domains present rather than exercised.
+ * CREATORS wired to the same database, taking USERS' real published adult
+ * standing contract. A suite that wants an ineligible principal makes them
+ * ineligible in USERS rather than substituting the port, so no test can prove a
+ * gate that production would decide differently.
  */
-export function testConsumerRuntimes(input: {
+export function testCreatorsRuntime(input: {
+  readonly caller: CallerResolver;
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+  readonly users: UsersRuntime;
+}): CreatorsRuntime {
+  return createCreatorsRuntime({
+    caller: input.caller,
+    database: input.database ?? drizzle.mock(),
+    eligibility: input.users.adultStanding,
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
+/**
+ * Every product domain built together over one database and one USERS runtime,
+ * for suites that only need the domains present rather than exercised.
+ *
+ * An injected database requires every product runtime, because the application
+ * refuses to wire domains to a database it was not given — so this returns the
+ * whole set rather than only the consumer half.
+ */
+export function testProductRuntimes(input: {
+  readonly caller: CallerResolver;
   readonly config: ServerConfig;
   readonly database?: UsersDatabase;
   readonly logger?: SafeLogger;
   readonly now?: () => Date;
   readonly users: UsersRuntime;
 }): {
+  readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
@@ -242,6 +273,7 @@ export function testConsumerRuntimes(input: {
   const safety = testSafetyRuntime(input);
   const discovery = testDiscoveryRuntime({ ...input, safety });
   return {
+    creators: testCreatorsRuntime(input),
     discovery,
     messaging: testMessagingRuntime({
       ...input,

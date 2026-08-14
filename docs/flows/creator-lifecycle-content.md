@@ -9,17 +9,21 @@ Define creator application through activation, club/content operation, suspensio
 ```mermaid
 stateDiagram-v2
   [*] --> Applicant
-  Applicant --> UnderReview
-  UnderReview --> Verified
-  UnderReview --> Declined
-  Verified --> Active: all creator gates pass
-  Active --> Suspended: safety/compliance action
+  Applicant --> Active: all currently required gates pass
+  Active --> Applicant: adult standing lapses or a new policy version is required
+  Active --> Suspended: safety/compliance/platform action
+  Applicant --> Suspended: safety/compliance/platform action
   Suspended --> Active: approved appeal/restoration
-  Suspended --> Revoked
-  Declined --> Applicant: permitted reapplication
+  Suspended --> Closed
+  Active --> Closed
+  Applicant --> Closed
 ```
 
-User requests creator capability; CREATORS records idempotent application, collects minimum business/verification references, and applies current country/channel/creator policy. Verification result is one predicate. Activation additionally requires product phase, age/identity, country, content category, safety, provider, and operations gates.
+[ADR-0020](../decisions/ADR-0020-creator-capability-activation.md) locks this ladder and records why it is shorter than a review-and-verify workflow: `under_review`, `verified`, and `declined` are states of the creator identity-verification predicate, which has no approved provider and whose criteria are `DECISION REQUIRED`. Modelling them as lifecycle states would put values in the schema that no code could move a row out of.
+
+User explicitly requests creator capability; CREATORS records an idempotent application and applies current country/channel/creator policy. Activation requires a consumer account in good standing, adult assurance at least `self_declared` from the standing contract USERS publishes, and acknowledgement of every currently required creator policy document at its current version. Admission is derived from stored evidence on every read and reconciled in both directions, so a creator never stays active on evidence they no longer hold. Suspension and closure are set by decisions that reconciliation does not own and are never lifted by it.
+
+Verification result is one predicate, separate from the lifecycle. It gates mature/explicit content and payout readiness — both deferred — and never the ability to hold the capability. Full activation of those gated capabilities additionally requires product phase, age/identity, country, content category, safety, provider, and operations approval.
 
 Creator profile changes are versioned and publish only approved public fields. Creator role never grants Admin or ordinary consumer-discovery advantage.
 

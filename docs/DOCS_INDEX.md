@@ -170,6 +170,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0017](decisions/ADR-0017-auth-session-recovery-security-policy.md) | Exact session, recovery, privileged-access, and break-glass policy values inside ADR-0009 architecture |
 | [ADR-0018](decisions/ADR-0018-toolchain-provisioning-verification-ci.md) | mise toolchain provisioning, four-source pin agreement, and the GitHub Actions verification pipeline |
 | [ADR-0019](decisions/ADR-0019-database-connection-admission.md) | Bounded database admission, pool warm-up, and the capacity refusal contract; resolves the pair-lock contention decision |
+| [ADR-0020](decisions/ADR-0020-creator-capability-activation.md) | Creator capability lifecycle, its activation gates, and identity verification as a separate predicate |
 
 ## Technical implementation reading paths
 
@@ -178,7 +179,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Backend foundation: repository shape, domain boundaries, contracts/events, data ownership, ADR-0016, then unaffected portions of ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0013, and ADR-0014.
 - Consumer Web bootstrap: Consumer Web surface, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Consumer Mobile bootstrap: Consumer Mobile surface, notification/deep-link authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
-- Creator Studio bootstrap: Creator Studio surface, creator/club domains and flows, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0010, ADR-0013, ADR-0014, ADR-0015.
+- Creator Studio bootstrap: Creator Studio surface, creator/club domains and flows, Design/Figma authority, ADR-0016, ADR-0020, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0010, ADR-0013, ADR-0014, ADR-0015.
 - Platform Admin bootstrap: Platform Admin surface/domain/flow, RBAC, operations authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Database and migrations: data ownership, data/migrations, jobs/concurrency, ADR-0016, ADR-0019, unaffected portions of ADR-0006 and ADR-0007, affected domain/flow.
 - Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0016, ADR-0019, unaffected portions of ADR-0007, observability/testing, affected domain/flow.
@@ -193,7 +194,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 
 - Consumer Web: phases, consumer product, Consumer Web surface, relevant domain/flow, Design/Figma set, security baseline, RBAC, privacy, API contracts, testing/release.
 - Consumer Mobile: phases, consumer product, Consumer Mobile surface, notification flow, relevant domain/flow, Design/Figma set, security baseline/RBAC/privacy, API contracts, testing/release.
-- Creator Studio/Private Clubs: phases, creator product, Creator Studio surface, CREATORS, PRIVATE CLUBS, creator lifecycle/entitlement, media, billing/payout as applicable, creator compliance, Design/Figma.
+- Creator Studio/Private Clubs: phases, creator product, Creator Studio surface, CREATORS, PRIVATE CLUBS, creator lifecycle/entitlement, ADR-0020, media, billing/payout as applicable, creator compliance, Design/Figma.
 - Platform Admin: phases, Admin product/surface/domain, RBAC, Admin flow, relevant operations document, target domain, audit/observability, Design/Figma.
 - Discovery: phases, consumer product/surface, DISCOVERY, discovery flow, TRUST & SAFETY, privacy, API/testing.
 - Messaging: phases, consumer surface, MESSAGING, messaging/blocks, TRUST & SAFETY, NOTIFICATIONS/notification flow, media/privacy.

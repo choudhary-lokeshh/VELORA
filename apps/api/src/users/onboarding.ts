@@ -348,6 +348,21 @@ export class OnboardingService {
   }
 }
 
+/**
+ * The one definition of what a stored assurance row currently amounts to.
+ *
+ * Exported because the standing contract USERS publishes to CREATORS must
+ * answer with the same rule the admission ladder uses. A second copy of "is
+ * this assurance still a pass" is a security defect waiting to diverge from
+ * this one.
+ */
+export function adultAssuranceLevelOf(
+  latest: UserAdultAssuranceRow | undefined,
+  now: Date,
+): AdultAssuranceLevel {
+  return assuranceLevelOf(latest, now);
+}
+
 function assuranceLevelOf(
   latest: UserAdultAssuranceRow | undefined,
   now: Date,

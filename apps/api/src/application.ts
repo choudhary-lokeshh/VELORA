@@ -20,6 +20,10 @@ import {
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
 import {
+  createCreatorsRuntime,
+  type CreatorsRuntime,
+} from './creators/composition.js';
+import {
   createDiscoveryRuntime,
   type DiscoveryRuntime,
 } from './discovery/composition.js';
@@ -66,6 +70,7 @@ export interface ApplicationDependencies {
    * two replicas hold two independent bounds.
    */
   readonly databaseAdmission: DatabaseAdmission;
+  readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
   readonly ephemeralRedis: HealthDependency;
   readonly logger: SafeLogger;
@@ -125,6 +130,7 @@ export function createApplication(
   const ownsAuth = injectedAuth === undefined;
 
   const injectedUsers = options.dependencies?.users;
+  const injectedCreators = options.dependencies?.creators;
   const injectedDiscovery = options.dependencies?.discovery;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedNotifications = options.dependencies?.notifications;
@@ -134,6 +140,7 @@ export function createApplication(
   let ownedDatabaseService: DatabaseService | undefined;
   let auth: AuthRuntime;
   let users: UsersRuntime;
+  let creators: CreatorsRuntime;
   let discovery: DiscoveryRuntime;
   let messaging: MessagingRuntime;
   let notifications: NotificationsApiRuntime;
@@ -171,6 +178,18 @@ export function createApplication(
         conversations: new ConversationEnforcement(ownedDatabase.database),
         database: ownedDatabase.database,
         users: users.service,
+      });
+    // CREATORS depends on USERS' published adult standing and on AUTH's caller
+    // resolver, and on nothing else. It is composed before the consumer product
+    // domains because none of them depend on it: a creator capability changes
+    // nothing about consumer discovery, messaging, or notifications, which is
+    // the separation `AGENTS.md` requires.
+    creators =
+      injectedCreators ??
+      createCreatorsRuntime({
+        caller: auth.caller,
+        database: ownedDatabase.database,
+        eligibility: users.adultStanding,
       });
     discovery =
       injectedDiscovery ??
@@ -212,6 +231,7 @@ export function createApplication(
     if (
       injectedAuth === undefined ||
       injectedUsers === undefined ||
+      injectedCreators === undefined ||
       injectedDiscovery === undefined ||
       injectedMessaging === undefined ||
       injectedNotifications === undefined ||
@@ -219,12 +239,13 @@ export function createApplication(
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
     auth = injectedAuth;
     users = injectedUsers;
+    creators = injectedCreators;
     discovery = injectedDiscovery;
     messaging = injectedMessaging;
     notifications = injectedNotifications;
@@ -253,6 +274,7 @@ export function createApplication(
 
   const dependencies: ApplicationDependencies = {
     auth,
+    creators,
     database,
     databaseAdmission,
     discovery,
@@ -546,6 +568,22 @@ export function createApplication(
       admitted(async (input) =>
         users.availabilityRoutes.saveAvailability(input),
       ),
+    )
+    .post(
+      apiRoutePaths.creatorAccount,
+      admitted(async (input) => creators.routes.createAccount(input)),
+    )
+    .get(
+      apiRoutePaths.creatorAccountSelf,
+      admitted(async (input) => creators.routes.getAccount(input)),
+    )
+    .get(
+      apiRoutePaths.creatorOnboarding,
+      admitted(async (input) => creators.routes.getOnboarding(input)),
+    )
+    .post(
+      apiRoutePaths.creatorPolicyAcknowledgements,
+      admitted(async (input) => creators.routes.acknowledgePolicies(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

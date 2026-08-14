@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
 import {
+  createCreatorAccountRequestSchema,
+  creatorAccountResponseSchema,
+  creatorOnboardingStateResponseSchema,
+  creatorPolicyAcknowledgementRequestSchema,
+} from './creator.js';
+import {
   createIntroductionRequestSchema,
   discoveryFeedResponseSchema,
   discoveryPassRequestSchema,
@@ -68,6 +74,7 @@ import {
 } from './auth.js';
 
 export * from './auth.js';
+export * from './creator.js';
 export * from './discovery.js';
 export * from './messaging.js';
 export * from './notifications.js';
@@ -116,6 +123,10 @@ export const apiRoutePaths = {
   consumerOnboarding: '/v1/users/me/onboarding',
   consumerPolicyAcknowledgements: '/v1/users/me/onboarding/acknowledgements',
   consumerAvailability: '/v1/users/me/availability',
+  creatorAccount: '/v1/creator',
+  creatorAccountSelf: '/v1/creator/me',
+  creatorOnboarding: '/v1/creator/onboarding',
+  creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
   discoveryCandidates: '/v1/discovery/candidates',
   discoveryIntroductionDecline: '/v1/discovery/introductions/decline',
   discoveryIntroductionWithdrawal: '/v1/discovery/introductions/withdrawal',
@@ -193,6 +204,11 @@ export const apiSchemas = {
   ApiError: apiErrorSchema,
   ConsumerAccountResponse: consumerAccountResponseSchema,
   CreateConsumerAccountRequest: createConsumerAccountRequestSchema,
+  CreateCreatorAccountRequest: createCreatorAccountRequestSchema,
+  CreatorAccountResponse: creatorAccountResponseSchema,
+  CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
+  CreatorPolicyAcknowledgementRequest:
+    creatorPolicyAcknowledgementRequestSchema,
   OnboardingStateResponse: onboardingStateResponseSchema,
   PolicyAcknowledgementRequest: policyAcknowledgementRequestSchema,
   AvailabilityResponse: availabilityResponseSchema,
@@ -328,6 +344,30 @@ const consumerAuthenticationResponses = {
     description: `The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code ${productErrorCodes.consumerSurfaceRequired} in the audience case.`,
     schemaName: 'ApiError',
   },
+} as const;
+
+/**
+ * Rejections every authenticated creator operation can produce. Creator Studio
+ * is the only audience that carries creator authority: `AGENTS.md` forbids
+ * consumer functionality leaking into that surface, and the reverse holds just
+ * as strictly — a consumer session must never become a creator actor by calling
+ * a creator endpoint.
+ */
+const creatorAuthenticationResponses = {
+  '401': {
+    description:
+      'No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.',
+    schemaName: 'ApiError',
+  },
+  '403': {
+    description: `The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code ${productErrorCodes.creatorSurfaceRequired} in the audience case.`,
+    schemaName: 'ApiError',
+  },
+} as const;
+
+const creatorNotEligibleResponse = {
+  description: `Creator capability may not be established or advanced: the principal has no consumer account, has not declared adult status, or is not in good standing. The body is an ApiError with code ${productErrorCodes.accountNotEligible}. It never says which condition failed — the onboarding state does, and only to the person it describes.`,
+  schemaName: 'ApiError',
 } as const;
 
 const invalidProductInputResponse = {
@@ -803,6 +843,85 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'A bounded, user-managed preference. It is not presence, not consent to be contacted, not a guarantee of appearing in discovery, and never an override of a block or an enforcement decision. Being available always carries an end.',
+  },
+  {
+    method: 'post',
+    operationId: 'createCreatorAccount',
+    path: apiRoutePaths.creatorAccount,
+    requestSchemaName: 'CreateCreatorAccountRequest',
+    responses: {
+      '200': {
+        description:
+          'Creator capability already existed for the caller and was returned unchanged.',
+        schemaName: 'CreatorAccountResponse',
+      },
+      '201': {
+        description:
+          'Creator capability was established for the caller, as an applicant.',
+        schemaName: 'CreatorAccountResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorNotEligibleResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Idempotent, and explicit: nobody becomes a creator by being a consumer. The principal is derived from the presented credential, so the body can never name another account, and exactly one creator account exists per principal however many concurrent calls arrive. No legal name, business registration, tax identifier, payout credential, or identity document is collected — those belong to a later verification and payout architecture that does not exist yet.',
+  },
+  {
+    method: 'get',
+    operationId: 'getCreatorAccount',
+    path: apiRoutePaths.creatorAccountSelf,
+    responses: {
+      '200': {
+        description: "The caller's own creator capability.",
+        schemaName: 'CreatorAccountResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A caller with no creator capability receives the same answer as a caller addressing a route that does not exist, so probing this endpoint reveals nothing.',
+  },
+  {
+    method: 'get',
+    operationId: 'getCreatorOnboarding',
+    path: apiRoutePaths.creatorOnboarding,
+    responses: {
+      '200': {
+        description:
+          'What creator activation still requires, derived from stored evidence.',
+        schemaName: 'CreatorOnboardingStateResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'acknowledgeCreatorPolicies',
+    path: apiRoutePaths.creatorPolicyAcknowledgements,
+    requestSchemaName: 'CreatorPolicyAcknowledgementRequest',
+    responses: {
+      '200': {
+        description:
+          'Acknowledgement evidence was recorded and the resulting activation state is returned. Re-acknowledging a version already held changes nothing.',
+        schemaName: 'CreatorOnboardingStateResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': {
+        description: `The adult gate is unmet, the capability is not in a state that accepts acknowledgement, or a version was submitted that is not the one currently required. The body is an ApiError with code ${productErrorCodes.accountNotEligible}.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Acknowledgement evidence is append-only and versioned. When approved creator legal copy replaces the unpublished version, the version string changes, every creator is asked again, and the evidence that they accepted the earlier version is preserved rather than rewritten.',
   },
   {
     method: 'get',

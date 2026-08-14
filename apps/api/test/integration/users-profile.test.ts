@@ -18,7 +18,7 @@ import {
 import {
   silentLogger,
   testConsumerOrigin,
-  testConsumerRuntimes,
+  testProductRuntimes,
   testCreatorOrigin,
   testDatabaseAdmission,
   testServerConfig,
@@ -75,7 +75,8 @@ function buildHarness(config: typeof mediaConfig) {
       auth,
       database: healthy,
       databaseAdmission: testDatabaseAdmission(),
-      ...testConsumerRuntimes({
+      ...testProductRuntimes({
+        caller: auth.caller,
         config,
         database: database.drizzle,
         logger,

@@ -29,7 +29,7 @@ import {
 import {
   silentLogger,
   testConsumerOrigin,
-  testConsumerRuntimes,
+  testProductRuntimes,
   testDatabaseAdmission,
   testServerConfig,
 } from '../support/harness.js';
@@ -82,7 +82,8 @@ function harness() {
     config,
     dependencies: {
       auth,
-      ...testConsumerRuntimes({
+      ...testProductRuntimes({
+        caller: auth.caller,
         config,
         database: database.drizzle,
         logger,

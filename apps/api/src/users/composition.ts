@@ -34,10 +34,15 @@ import { ProfileService } from './profile-service.js';
 import { UsersRepository, type UsersDatabase } from './repository.js';
 import { UsersRoutes } from './routes.js';
 import { UsersService } from './service.js';
-import { ConsumerStanding } from './standing.js';
+import {
+  ConsumerAdultStandingDirectory,
+  ConsumerStanding,
+} from './standing.js';
 
 export interface UsersRuntime {
   readonly adultAssuranceVerifier: AdultAssuranceVerifier;
+  /** The adult standing this domain publishes for CREATORS. */
+  readonly adultStanding: ConsumerAdultStandingDirectory;
   readonly availability: AvailabilityService;
   readonly availabilityRoutes: AvailabilityRoutes;
   readonly consumerContext: ConsumerContextResolver;
@@ -144,6 +149,7 @@ export function createUsersRuntime(input: {
   });
   return {
     adultAssuranceVerifier,
+    adultStanding: new ConsumerAdultStandingDirectory(repository),
     availability,
     availabilityRoutes: new AvailabilityRoutes({
       availability,

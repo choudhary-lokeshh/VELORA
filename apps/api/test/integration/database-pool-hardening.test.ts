@@ -26,6 +26,7 @@ import {
   silentLogger,
   testConsumerOrigin,
   testServerConfig,
+  testCreatorsRuntime,
 } from '../support/harness.js';
 
 /**
@@ -135,6 +136,11 @@ function createInstance(name: string): Instance {
     config,
     dependencies: {
       auth,
+      creators: testCreatorsRuntime({
+        caller: auth.caller,
+        database: service.database,
+        users,
+      }),
       database: service,
       databaseAdmission: service.admission,
       discovery,

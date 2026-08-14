@@ -1,4 +1,6 @@
 import type { Executor } from '../database/executor.js';
+import { adultAssuranceLevelOf } from './onboarding.js';
+import type { AdultAssuranceLevel } from './onboarding-policy.js';
 import type { UsersRepository } from './repository.js';
 
 /**
@@ -38,5 +40,81 @@ export class ConsumerStanding implements ConsumerStandingPort {
     // non-active state is not contacted. Fail closed: an unknown identifier is
     // not a reason to send somebody a push.
     return account?.status === 'active';
+  }
+}
+
+/**
+ * The adult standing USERS holds for an AUTH principal.
+ *
+ * Facts only. Whether they are enough is the asking domain's policy, because
+ * different capabilities require different assurance:
+ * `docs/compliance/03-creator-content-gates.md` is explicit that passing one
+ * predicate never implies another, and USERS deciding "may operate as a
+ * creator" would be USERS owning a rule CREATORS owns.
+ */
+export interface ConsumerAdultStanding {
+  /** What the account currently holds. Never what it once held. */
+  readonly adultAssurance: AdultAssuranceLevel;
+  /**
+   * False when the account is restricted, deleting, deactivated, or erased.
+   * Deliberately coarse: which of those, and why, stays with USERS and TRUST &
+   * SAFETY. `pending_profile` is good standing — a person who has not finished
+   * a discoverable consumer profile has done nothing wrong.
+   */
+  readonly inGoodStanding: boolean;
+  /** The consumer account identifier, for a caller that needs to reference it. */
+  readonly userId: string;
+}
+
+/**
+ * The adult-eligibility answer USERS publishes to CREATORS.
+ *
+ * `docs/domains/creators.md` requires creator activation to consult the
+ * platform's adult authority rather than deciding age itself, and
+ * `docs/architecture/03-domain-boundaries.md` forbids CREATORS from reading
+ * `users_` tables to do it. This is the whole of what crosses that boundary.
+ */
+export interface ConsumerAdultStandingPort {
+  /**
+   * Standing for an AUTH principal, or nothing when that principal has no
+   * consumer account at all. The key is the AUTH account identifier because a
+   * caller establishing creator capability holds a credential, not a consumer
+   * account identifier it could have obtained some other way.
+   */
+  standingForAuthAccount(input: {
+    readonly authAccountId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<ConsumerAdultStanding | undefined>;
+}
+
+/** Account states in which a person may still operate a capability. */
+const operableStatuses = new Set(['pending_profile', 'active']);
+
+export class ConsumerAdultStandingDirectory implements ConsumerAdultStandingPort {
+  constructor(private readonly repository: UsersRepository) {}
+
+  async standingForAuthAccount(input: {
+    readonly authAccountId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<ConsumerAdultStanding | undefined> {
+    const account = await this.repository.findByAuthAccountId(
+      input.executor,
+      input.authAccountId,
+    );
+    if (account === undefined) return undefined;
+    // Read from the assurance evidence rather than inferred from account
+    // status, which can be stale relative to an assurance that expired without
+    // any write happening.
+    const latest = await this.repository.findLatestAdultAssurance(
+      input.executor,
+      account.id,
+    );
+    return {
+      adultAssurance: adultAssuranceLevelOf(latest, input.now),
+      inGoodStanding: operableStatuses.has(account.status),
+      userId: account.id,
+    };
   }
 }

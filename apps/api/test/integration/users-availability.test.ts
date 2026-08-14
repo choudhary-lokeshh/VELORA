@@ -18,7 +18,7 @@ import {
 import {
   silentLogger,
   testConsumerOrigin,
-  testConsumerRuntimes,
+  testProductRuntimes,
   testDatabaseAdmission,
   testServerConfig,
 } from '../support/harness.js';
@@ -61,7 +61,8 @@ const application = createApplication({
     auth,
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),
-    ...testConsumerRuntimes({
+    ...testProductRuntimes({
+      caller: auth.caller,
       config,
       database: database.drizzle,
       logger,
