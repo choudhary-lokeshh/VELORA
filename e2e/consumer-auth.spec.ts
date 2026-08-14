@@ -114,8 +114,16 @@ test.describe('Consumer Web session lifecycle', () => {
       for (const context of [first, second]) {
         const page = await context.newPage();
         await page.goto(consumerWebOrigin);
+        // Submitted from the field rather than by clicking the button. These
+        // two pages are driven within a few hundred milliseconds of being
+        // created, and Firefox drops a synthesised mouse click aimed at a
+        // control the page has only just painted: the event reaches no
+        // listener at all, so nothing submits and the surface honestly stays
+        // signed out. Enter goes to the focused field instead of to a
+        // coordinate, and submits the same form through the same handler. The
+        // pointer path is covered by the sign-in assertions above and below.
         await page.getByLabel('Development identity').fill(subject);
-        await page.getByTestId('auth-sign-in').click();
+        await page.getByLabel('Development identity').press('Enter');
         await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
       }
 

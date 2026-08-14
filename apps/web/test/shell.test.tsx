@@ -245,9 +245,12 @@ describe('discovery', () => {
     const duplicated = state.candidates[0];
     if (duplicated === undefined) throw new Error('fixture needs a candidate');
     await signedIn({ ...state, candidates: [duplicated, { ...duplicated }] });
-    await waitFor(() => {
-      expect(screen.getByTestId('discovery-candidates')).toBeTruthy();
-    });
+    // The list element is in the markup before the feed has answered, so
+    // waiting for it says nothing about what came back. A row for the
+    // duplicated candidate is the authoritative signal: rows exist only once a
+    // page has been applied, and a dedupe that failed would put both copies in
+    // that same commit rather than one after the other.
+    await screen.findAllByTestId(`discovery-pass-${duplicated.id}`);
     expect(
       within(screen.getByTestId('discovery-candidates')).getAllByRole(
         'heading',
@@ -411,8 +414,11 @@ describe('notifications', () => {
   it('publishes nothing about external delivery', async () => {
     await signedIn(withNotification());
     await click('nav-notifications');
+    // The same rule as the discovery list: the element is there while the page
+    // is still loading, so what is waited for is the notice itself. Scanning
+    // the markup before anything arrived would be scanning a loading screen.
     await waitFor(() => {
-      expect(screen.getByTestId('notification-list')).toBeTruthy();
+      expect(textOf('notifications-unread')).toBe('1 unread');
     });
     const rendered = document.body.textContent;
     for (const forbidden of [
