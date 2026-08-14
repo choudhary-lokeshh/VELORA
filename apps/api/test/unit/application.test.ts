@@ -26,6 +26,7 @@ import {
   testServerConfig,
   testUsersRuntime,
   testCreatorsRuntime,
+  testClubsRuntime,
 } from '../support/harness.js';
 
 const config = testServerConfig();
@@ -89,8 +90,10 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   const users = testUsersRuntime({ auth, config });
   const safety = testSafetyRuntime({ users });
   const discovery = testDiscoveryRuntime({ safety, users });
+  const creators = testCreatorsRuntime({ caller: auth.caller, users });
   return {
-    creators: testCreatorsRuntime({ caller: auth.caller, users }),
+    clubs: testClubsRuntime({ creators }),
+    creators,
     discovery,
     messaging: testMessagingRuntime({
       config,

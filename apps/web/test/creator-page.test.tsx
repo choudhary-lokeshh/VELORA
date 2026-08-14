@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { CreatorPublicPage } from '../src/product/creator-page';
@@ -30,6 +36,7 @@ function doubleFor(
     | { readonly kind: 'ok'; readonly body: PublicCreatorBody }
     | { readonly kind: 'missing' }
     | { readonly kind: 'offline' },
+  catalog: { id: string; summary?: string; title: string }[] = [],
 ): { readonly calls: string[]; readonly fetch: typeof globalThis.fetch } {
   const calls: string[] = [];
   return {
@@ -40,6 +47,23 @@ function doubleFor(
           ? input
           : new Request(input instanceof URL ? input.href : input, init);
       calls.push(request.url);
+      if (
+        answer.kind === 'ok' &&
+        new URL(request.url).pathname === '/v1/creators/catalog'
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              content: catalog.map((entry) => ({
+                ...entry,
+                publishedAt: '2026-08-15T12:00:00.000Z',
+              })),
+              handle: answer.body.handle,
+            }),
+            { headers: { 'content-type': 'application/json' }, status: 200 },
+          ),
+        );
+      }
       if (answer.kind === 'offline') throw new TypeError('network error');
       if (answer.kind === 'missing') {
         return Promise.resolve(
@@ -176,5 +200,30 @@ describe('the public creator page', () => {
         name: 'Links this creator chose to show',
       }),
     ).toBeDefined();
+  });
+});
+
+describe('the public creator catalog', () => {
+  it('lists what the creator published, with no lifecycle or price anywhere', async () => {
+    renderPage(
+      doubleFor({ body: published, kind: 'ok' }, [
+        { id: 'one', summary: 'A summary.', title: 'First post' },
+        { id: 'two', title: 'Second post' },
+      ]),
+    );
+
+    const list = await screen.findByTestId('creator-catalog');
+    expect(within(list).getAllByRole('heading', { level: 3 })).toHaveLength(2);
+    const markup = document.body.textContent;
+    for (const forbidden of ['Draft', 'draft', 'Archived', 'Price', 'Buy']) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('says an empty catalog is empty rather than showing a failure', async () => {
+    renderPage(doubleFor({ body: published, kind: 'ok' }, []));
+
+    const empty = await screen.findByTestId('creator-catalog-empty');
+    expect(empty.textContent).toBe('Nothing published yet.');
   });
 });

@@ -8,6 +8,10 @@ import {
 } from '../../src/auth/composition.js';
 import type { CallerResolver } from '../../src/auth/caller.js';
 import {
+  createClubsRuntime,
+  type ClubsRuntime,
+} from '../../src/clubs/composition.js';
+import {
   createCreatorsRuntime,
   type CreatorsRuntime,
 } from '../../src/creators/composition.js';
@@ -249,6 +253,25 @@ export function testCreatorsRuntime(input: {
 }
 
 /**
+ * PRIVATE CLUBS wired to the same database, taking CREATORS' real published
+ * directory. A suite that wants a suspended creator suspends them in CREATORS
+ * rather than substituting the port, so no test can prove a gate that
+ * production would decide differently.
+ */
+export function testClubsRuntime(input: {
+  readonly creators: CreatorsRuntime;
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+}): ClubsRuntime {
+  return createClubsRuntime({
+    creatorContext: input.creators.creatorContext,
+    creators: input.creators.directory,
+    database: input.database ?? drizzle.mock(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
+/**
  * Every product domain built together over one database and one USERS runtime,
  * for suites that only need the domains present rather than exercised.
  *
@@ -264,6 +287,7 @@ export function testProductRuntimes(input: {
   readonly now?: () => Date;
   readonly users: UsersRuntime;
 }): {
+  readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
   readonly messaging: MessagingRuntime;
@@ -272,8 +296,10 @@ export function testProductRuntimes(input: {
 } {
   const safety = testSafetyRuntime(input);
   const discovery = testDiscoveryRuntime({ ...input, safety });
+  const creators = testCreatorsRuntime(input);
   return {
-    creators: testCreatorsRuntime(input),
+    clubs: testClubsRuntime({ ...input, creators }),
+    creators,
     discovery,
     messaging: testMessagingRuntime({
       ...input,

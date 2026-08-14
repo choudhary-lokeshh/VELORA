@@ -341,3 +341,138 @@ describe('Creator Studio session lifecycle', () => {
     expect(window.sessionStorage.length).toBe(0);
   });
 });
+
+describe('Creator Studio catalog', () => {
+  it('adds a draft that is private until published, and says so', async () => {
+    const double = doubleWith(activeCreatorState());
+    renderStudio(double);
+    await signIn();
+    await waitFor(() => {
+      expect(screen.getByTestId('creator-content-empty')).toBeDefined();
+    });
+
+    await type('content-title', 'A first post');
+    await press('content-create');
+
+    const item = await screen.findByTestId('content-lifecycle-content-1');
+    expect(item.textContent).toBe('Draft. Only you can see this.');
+    expect(double.state.content[0]?.lifecycle).toBe('draft');
+    // Creating never publishes.
+    expect(
+      double.calls.filter(
+        (call) => call.path === '/v1/creator/content/lifecycle',
+      ),
+    ).toHaveLength(0);
+
+    await press('content-publish-content-1');
+    await waitFor(() => {
+      expect(textOf('content-lifecycle-content-1')).toBe(
+        'Published. Anyone with your link can see this.',
+      );
+    });
+  });
+
+  it('says plainly that a members-only item is reachable by nobody yet', async () => {
+    renderStudio(doubleWith(activeCreatorState()));
+    await signIn();
+    await waitFor(() => {
+      expect(screen.getByTestId('content-visibility')).toBeDefined();
+    });
+
+    fireEvent.change(screen.getByTestId('content-visibility'), {
+      target: { value: 'members_only' },
+    });
+
+    const note = await screen.findByTestId('content-members-note');
+    expect(note.textContent).toContain('do not exist yet');
+  });
+
+  it('shows a suspended creator their catalog and no way to change it', async () => {
+    const double = doubleWith({
+      ...activeCreatorState(),
+      account: {
+        createdAt: '2026-08-15T12:00:00.000Z',
+        id: 'x',
+        status: 'suspended',
+        statusReason: 'safety_enforcement',
+      },
+      content: [
+        {
+          id: 'content-1',
+          lifecycle: 'published',
+          title: 'Already out there',
+          version: 2,
+          visibility: 'public',
+        },
+      ],
+    });
+    renderStudio(double);
+    await signIn();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('content-item-content-1')).toBeDefined();
+    });
+    // The catalog is theirs to see. The controls the server would refuse are
+    // simply not offered.
+    expect(screen.queryByTestId('content-create')).toBeNull();
+    expect(screen.queryByTestId('content-unpublish-content-1')).toBeNull();
+    expect(screen.queryByTestId('content-archive-content-1')).toBeNull();
+  });
+
+  it('shows no price, purchase, or fabricated number anywhere in the catalog', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        content: [
+          {
+            id: 'content-1',
+            lifecycle: 'published',
+            summary: 'A summary.',
+            title: 'An item',
+            version: 1,
+            visibility: 'public',
+          },
+        ],
+      }),
+    );
+    await signIn();
+    await screen.findByTestId('content-item-content-1');
+
+    const markup = document.body.textContent;
+    for (const forbidden of ['Price', 'Buy', 'Earnings', 'Views', 'Sales']) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('sends exactly one publish when the control is pressed twice in a frame', async () => {
+    const double = doubleWith({
+      ...activeCreatorState(),
+      content: [
+        {
+          id: 'content-1',
+          lifecycle: 'draft',
+          title: 'Draft',
+          version: 1,
+          visibility: 'public',
+        },
+      ],
+    });
+    renderStudio(double);
+    await signIn();
+    const control = await screen.findByTestId('content-publish-content-1');
+
+    fireEvent.click(control);
+    fireEvent.click(control);
+    await waitFor(() => {
+      expect(textOf('content-lifecycle-content-1')).toBe(
+        'Published. Anyone with your link can see this.',
+      );
+    });
+
+    expect(
+      double.calls.filter(
+        (call) => call.path === '/v1/creator/content/lifecycle',
+      ),
+    ).toHaveLength(1);
+  });
+});

@@ -461,6 +461,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/creator/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCreatorContent"];
+        put?: never;
+        /** Everything starts as a draft and nothing a creator writes becomes visible by being written. An edit carries the version it was read at, so a second tab cannot overwrite work it never saw, and an item identifier that belongs to another creator is answered exactly as one that does not exist. */
+        post: operations["saveCreatorContent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creator/content/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publishing is a decision about who may see something, so it is never a side effect of saving. Only an active creator may publish; archiving withdraws an item without destroying the record, and a concurrent transition is refused rather than applied twice. */
+        post: operations["setCreatorContentLifecycle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creators/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The catalog half of the public creator page, and the same rule: a handle nobody holds, a profile that is a draft, a creator who is not active, and a creator with nothing published are one indistinguishable 404. Drafts, archived items, and members-only items never appear, and paging is bounded and keyed on the publication instant so a page boundary cannot move. */
+        get: operations["getPublicCreatorCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/discovery/candidates": {
         parameters: {
             query?: never;
@@ -749,10 +800,63 @@ export interface components {
                 version: string;
             }[];
         };
+        CreatorContentLifecycleRequest: {
+            /** Format: uuid */
+            contentId: string;
+            /** @enum {string} */
+            lifecycle: "draft" | "published" | "archived";
+            version: number;
+        };
+        CreatorContentListResponse: {
+            content: {
+                /** Format: date-time */
+                archivedAt?: string;
+                body?: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                lifecycle: "draft" | "published" | "archived";
+                /** Format: date-time */
+                publishedAt?: string;
+                summary?: string;
+                title: string;
+                /** Format: date-time */
+                updatedAt: string;
+                version: number;
+                /** @enum {string} */
+                visibility: "public" | "members_only";
+            }[];
+            nextCursor?: string;
+        };
         CreatorProfilePublicationRequest: {
             /** @enum {string} */
             publication: "draft" | "published";
             version: number;
+        };
+        PublicCreatorCatalogResponse: {
+            content: {
+                body?: string;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                publishedAt: string;
+                summary?: string;
+                title: string;
+            }[];
+            handle: string;
+            nextCursor?: string;
+        };
+        SaveCreatorContentRequest: {
+            body?: string;
+            /** Format: uuid */
+            contentId?: string;
+            summary?: string;
+            title: string;
+            version?: number;
+            /** @enum {string} */
+            visibility: "public" | "members_only";
         };
         CreatorProfileResponse: {
             bio?: string;
@@ -4435,6 +4539,442 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicCreatorResponse"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listCreatorContent: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this list */
+                cursor?: string;
+                /** @description Maximum items to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The creator's own catalog, newest first, including drafts and archived items nobody else can see. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorContentListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    saveCreatorContent: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveCreatorContentRequest"];
+            };
+        };
+        responses: {
+            /** @description The item was updated and is returned with a new version. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorContentListResponse"];
+                };
+            };
+            /** @description The item was created as a draft. */
+            201: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorContentListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    setCreatorContentLifecycle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatorContentLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description The lifecycle transition was applied and the item is returned with a new version. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorContentListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getPublicCreatorCatalog: {
+        parameters: {
+            query?: {
+                /** @description Canonical creator handle */
+                handle?: string;
+                /** @description Opaque forward-only position in this catalog */
+                cursor?: string;
+                /** @description Maximum items to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published public items for an active creator whose profile is published, newest first. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicCreatorCatalogResponse"];
                 };
             };
             /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */

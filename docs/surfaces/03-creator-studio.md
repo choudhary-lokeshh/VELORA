@@ -42,7 +42,9 @@ Screens define loading/skeleton, empty/new creator, processing, scheduled/pendin
 
 Studio implements the Creator Studio session, creator onboarding through activation, and the public creator profile: claiming the canonical handle, editing display name and bio, managing the small set of public links, and publishing or withdrawing the page. Every one of those reads and writes real CREATORS truth through the published contract; none is stored in the browser, and Studio never declares somebody an adult — that is a USERS decision, so the surface says where to complete it rather than offering a control that would fail.
 
-Handles are claimed once and are not renameable in this milestone, so no rename control is offered. Publishing is a separate decision from saving: nothing a creator writes becomes public as a side effect of writing it. Clubs, content, offers, subscribers, analytics, earnings, and payouts remain absent, and no control implies a purchase, because no payment path exists.
+Studio also implements the content catalog: adding a draft, setting who it is for, publishing, returning something to draft, and archiving. A creator whose capability may not operate still sees their catalog — it is theirs — and is offered none of the controls the server would refuse.
+
+Handles are claimed once and are not renameable in this milestone, so no rename control is offered. Publishing is a separate decision from saving: nothing a creator writes becomes public as a side effect of writing it. A members-only item is labelled honestly as reachable by nobody until private clubs exist. Clubs, offers, subscribers, analytics, earnings, and payouts remain absent, and no control implies a purchase, because no payment path exists.
 
 ## Security, phase, and authority
 

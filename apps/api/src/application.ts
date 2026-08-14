@@ -19,6 +19,7 @@ import {
 } from '@velora/observability/server';
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
+import { createClubsRuntime, type ClubsRuntime } from './clubs/composition.js';
 import {
   createCreatorsRuntime,
   type CreatorsRuntime,
@@ -63,6 +64,7 @@ export { maximumRequestBodyBytes } from '@velora/validation';
 
 export interface ApplicationDependencies {
   readonly auth: AuthRuntime;
+  readonly clubs: ClubsRuntime;
   readonly database: HealthDependency;
   /**
    * The process-local bound on work touching the connection pool. It is
@@ -131,6 +133,7 @@ export function createApplication(
 
   const injectedUsers = options.dependencies?.users;
   const injectedCreators = options.dependencies?.creators;
+  const injectedClubs = options.dependencies?.clubs;
   const injectedDiscovery = options.dependencies?.discovery;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedNotifications = options.dependencies?.notifications;
@@ -141,6 +144,7 @@ export function createApplication(
   let auth: AuthRuntime;
   let users: UsersRuntime;
   let creators: CreatorsRuntime;
+  let clubs: ClubsRuntime;
   let discovery: DiscoveryRuntime;
   let messaging: MessagingRuntime;
   let notifications: NotificationsApiRuntime;
@@ -191,6 +195,15 @@ export function createApplication(
         database: ownedDatabase.database,
         eligibility: users.adultStanding,
       });
+    // PRIVATE CLUBS depends on CREATORS' published directory and on nothing
+    // else, so it is composed immediately after it.
+    clubs =
+      injectedClubs ??
+      createClubsRuntime({
+        creatorContext: creators.creatorContext,
+        creators: creators.directory,
+        database: ownedDatabase.database,
+      });
     discovery =
       injectedDiscovery ??
       createDiscoveryRuntime({
@@ -232,6 +245,7 @@ export function createApplication(
       injectedAuth === undefined ||
       injectedUsers === undefined ||
       injectedCreators === undefined ||
+      injectedClubs === undefined ||
       injectedDiscovery === undefined ||
       injectedMessaging === undefined ||
       injectedNotifications === undefined ||
@@ -239,13 +253,14 @@ export function createApplication(
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, CREATORS, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
     auth = injectedAuth;
     users = injectedUsers;
     creators = injectedCreators;
+    clubs = injectedClubs;
     discovery = injectedDiscovery;
     messaging = injectedMessaging;
     notifications = injectedNotifications;
@@ -274,6 +289,7 @@ export function createApplication(
 
   const dependencies: ApplicationDependencies = {
     auth,
+    clubs,
     creators,
     database,
     databaseAdmission,
@@ -600,6 +616,22 @@ export function createApplication(
     .get(
       apiRoutePaths.publicCreator,
       admitted(async (input) => creators.profileRoutes.getPublicCreator(input)),
+    )
+    .get(
+      apiRoutePaths.creatorContent,
+      admitted(async (input) => clubs.routes.listContent(input)),
+    )
+    .post(
+      apiRoutePaths.creatorContent,
+      admitted(async (input) => clubs.routes.saveContent(input)),
+    )
+    .post(
+      apiRoutePaths.creatorContentLifecycle,
+      admitted(async (input) => clubs.routes.setContentLifecycle(input)),
+    )
+    .get(
+      apiRoutePaths.publicCreatorCatalog,
+      admitted(async (input) => clubs.routes.getPublicCatalog(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

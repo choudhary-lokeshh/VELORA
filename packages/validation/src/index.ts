@@ -12,6 +12,12 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  creatorContentLifecycleRequestSchema,
+  creatorContentListResponseSchema,
+  publicCreatorCatalogResponseSchema,
+  saveCreatorContentRequestSchema,
+} from './clubs.js';
+import {
   createIntroductionRequestSchema,
   discoveryFeedResponseSchema,
   discoveryPassRequestSchema,
@@ -79,6 +85,7 @@ import {
 } from './auth.js';
 
 export * from './auth.js';
+export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
 export * from './messaging.js';
@@ -132,9 +139,12 @@ export const apiRoutePaths = {
   creatorAccountSelf: '/v1/creator/me',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  creatorContent: '/v1/creator/content',
+  creatorContentLifecycle: '/v1/creator/content/lifecycle',
   creatorProfile: '/v1/creator/profile',
   creatorProfilePublication: '/v1/creator/profile/publication',
   publicCreator: '/v1/creators',
+  publicCreatorCatalog: '/v1/creators/catalog',
   discoveryCandidates: '/v1/discovery/candidates',
   discoveryIntroductionDecline: '/v1/discovery/introductions/decline',
   discoveryIntroductionWithdrawal: '/v1/discovery/introductions/withdrawal',
@@ -217,7 +227,11 @@ export const apiSchemas = {
   CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
+  CreatorContentLifecycleRequest: creatorContentLifecycleRequestSchema,
+  CreatorContentListResponse: creatorContentListResponseSchema,
   CreatorProfilePublicationRequest: creatorProfilePublicationRequestSchema,
+  PublicCreatorCatalogResponse: publicCreatorCatalogResponseSchema,
+  SaveCreatorContentRequest: saveCreatorContentRequestSchema,
   CreatorProfileResponse: creatorProfileResponseSchema,
   PublicCreatorResponse: publicCreatorResponseSchema,
   SaveCreatorProfileRequest: saveCreatorProfileRequestSchema,
@@ -1017,6 +1031,96 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'The only creator route a visitor with no session may call, and it answers with an allow-listed projection rather than a filtered record: no creator identifier, no AUTH subject, no consumer identifier, no lifecycle or moderation state, no counts, and nothing purchasable. An unknown handle, a draft profile, and a creator who is not active are all the same 404, so the endpoint cannot be used to discover that somebody exists.',
+  },
+  {
+    method: 'get',
+    operationId: 'listCreatorContent',
+    path: apiRoutePaths.creatorContent,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum items to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "The creator's own catalog, newest first, including drafts and archived items nobody else can see.",
+        schemaName: 'CreatorContentListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'saveCreatorContent',
+    path: apiRoutePaths.creatorContent,
+    requestSchemaName: 'SaveCreatorContentRequest',
+    responses: {
+      '200': {
+        description: 'The item was updated and is returned with a new version.',
+        schemaName: 'CreatorContentListResponse',
+      },
+      '201': {
+        description: 'The item was created as a draft.',
+        schemaName: 'CreatorContentListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Everything starts as a draft and nothing a creator writes becomes visible by being written. An edit carries the version it was read at, so a second tab cannot overwrite work it never saw, and an item identifier that belongs to another creator is answered exactly as one that does not exist.',
+  },
+  {
+    method: 'post',
+    operationId: 'setCreatorContentLifecycle',
+    path: apiRoutePaths.creatorContentLifecycle,
+    requestSchemaName: 'CreatorContentLifecycleRequest',
+    responses: {
+      '200': {
+        description:
+          'The lifecycle transition was applied and the item is returned with a new version.',
+        schemaName: 'CreatorContentListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Publishing is a decision about who may see something, so it is never a side effect of saving. Only an active creator may publish; archiving withdraws an item without destroying the record, and a concurrent transition is refused rather than applied twice.',
+  },
+  {
+    method: 'get',
+    operationId: 'getPublicCreatorCatalog',
+    path: apiRoutePaths.publicCreatorCatalog,
+    requestQuery: [
+      { description: 'Canonical creator handle', name: 'handle' },
+      {
+        description: 'Opaque forward-only position in this catalog',
+        name: 'cursor',
+      },
+      { description: 'Maximum items to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Published public items for an active creator whose profile is published, newest first.',
+        schemaName: 'PublicCreatorCatalogResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The catalog half of the public creator page, and the same rule: a handle nobody holds, a profile that is a draft, a creator who is not active, and a creator with nothing published are one indistinguishable 404. Drafts, archived items, and members-only items never appear, and paging is bounded and keyed on the publication instant so a page boundary cannot move.',
   },
   {
     method: 'get',

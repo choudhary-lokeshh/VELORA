@@ -120,6 +120,13 @@
       "when": 1786740838074,
       "tag": "0016_creator_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786744466334,
+      "tag": "0017_creator_catalog",
+      "breakpoints": true
     }
   ]
 }

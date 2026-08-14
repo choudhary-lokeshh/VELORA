@@ -32,6 +32,14 @@ export interface CreatorApiDoubleState {
     publishedAt?: string;
     version: number;
   } | null;
+  content: {
+    id: string;
+    lifecycle: 'draft' | 'published' | 'archived';
+    summary?: string;
+    title: string;
+    version: number;
+    visibility: 'public' | 'members_only';
+  }[];
   session: {
     absoluteExpiresAt: string;
     accountId: string;
@@ -80,6 +88,7 @@ export function emptyCreatorState(): CreatorApiDoubleState {
   return {
     account: null,
     adultGateReason: undefined,
+    content: [],
     adultGateSatisfied: true,
     outstandingPolicies: [],
     profile: null,
@@ -153,6 +162,19 @@ export function createCreatorApiDouble(
           updatedAt: iso(),
           version: state.profile.version,
         };
+
+  const entryBody = (entry: CreatorApiDoubleState['content'][number]) => ({
+    createdAt: iso(),
+    id: entry.id,
+    lifecycle: entry.lifecycle,
+    ...(entry.lifecycle === 'published' ? { publishedAt: iso() } : {}),
+    ...(entry.summary === undefined ? {} : { summary: entry.summary }),
+    title: entry.title,
+    updatedAt: iso(),
+    version: entry.version,
+    visibility: entry.visibility,
+  });
+  const contentBody = () => state.content.map((entry) => entryBody(entry));
 
   const handler: typeof globalThis.fetch = async (input, init) => {
     // The generated client hands `fetch` a fully built `Request` and no init,
@@ -246,6 +268,54 @@ export function createCreatorApiDouble(
       return json(200, onboardingBody());
     }
 
+    if (path === '/v1/creator/content' && method === 'GET') {
+      return json(200, { content: contentBody() });
+    }
+    if (path === '/v1/creator/content' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as {
+        summary?: string;
+        title: string;
+        visibility: 'public' | 'members_only';
+      };
+      const created = {
+        id: `content-${String(state.content.length + 1)}`,
+        lifecycle: 'draft' as const,
+        ...(requested.summary === undefined
+          ? {}
+          : { summary: requested.summary }),
+        title: requested.title,
+        version: 1,
+        visibility: requested.visibility,
+      };
+      state.content = [created, ...state.content];
+      return json(201, { content: [entryBody(created)] });
+    }
+    if (path === '/v1/creator/content/lifecycle' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as {
+        contentId: string;
+        lifecycle: 'draft' | 'published' | 'archived';
+        version: number;
+      };
+      const current = state.content.find(
+        (entry) => entry.id === requested.contentId,
+      );
+      if (current?.version !== requested.version) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const moved = {
+        ...current,
+        lifecycle: requested.lifecycle,
+        version: current.version + 1,
+      };
+      state.content = state.content.map((entry) =>
+        entry.id === moved.id ? moved : entry,
+      );
+      return json(200, { content: [entryBody(moved)] });
+    }
     if (path === '/v1/creator/profile' && method === 'GET') {
       const current = profileBody();
       return current === undefined

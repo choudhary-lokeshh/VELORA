@@ -6,11 +6,15 @@ import {
 
 import type {
   CreatorAccount,
+  CreatorContentLifecycleBody,
+  CreatorContentList,
   CreatorOnboardingState,
   CreatorPolicyDocument,
   CreatorProfile,
   CreatorPublicationBody,
   PublicCreator,
+  PublicCreatorCatalog,
+  SaveCreatorContentBody,
   SaveCreatorProfileBody,
 } from './contract.js';
 
@@ -49,7 +53,17 @@ export interface CreatorApi {
   ): Promise<ApiResult<CreatorOnboardingState>>;
   account(): Promise<ApiResult<CreatorAccount>>;
   createAccount(): Promise<ApiResult<CreatorAccount>>;
+  content(query?: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<CreatorContentList>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
+  /** The catalog half of a creator's public page. Carries no credential. */
+  publicCatalog(query: {
+    readonly cursor?: string | undefined;
+    readonly handle: string;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<PublicCreatorCatalog>>;
   profile(): Promise<ApiResult<CreatorProfile>>;
   /**
    * The public projection for a handle. Deliberately on the same client and
@@ -58,10 +72,27 @@ export interface CreatorApi {
    * identity to a request that has no use for one.
    */
   publicCreator(handle: string): Promise<ApiResult<PublicCreator>>;
+  saveContent(
+    body: SaveCreatorContentBody,
+  ): Promise<ApiResult<CreatorContentList>>;
   saveProfile(body: SaveCreatorProfileBody): Promise<ApiResult<CreatorProfile>>;
+  setContentLifecycle(
+    body: CreatorContentLifecycleBody,
+  ): Promise<ApiResult<CreatorContentList>>;
   setPublication(
     body: CreatorPublicationBody,
   ): Promise<ApiResult<CreatorProfile>>;
+}
+
+/** Only the paging values a caller actually supplied travel on the wire. */
+function pageQuery(query?: {
+  readonly cursor?: string | undefined;
+  readonly pageSize?: number | undefined;
+}): { cursor?: string; pageSize?: number } {
+  return {
+    ...(query?.cursor === undefined ? {} : { cursor: query.cursor }),
+    ...(query?.pageSize === undefined ? {} : { pageSize: query.pageSize }),
+  };
 }
 
 export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
@@ -99,6 +130,15 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
       );
     },
 
+    async content(query) {
+      return attempt(async () =>
+        api.GET('/v1/creator/content', {
+          ...(await read()),
+          params: { query: pageQuery(query) },
+        }),
+      );
+    },
+
     async onboarding() {
       return attempt(async () =>
         api.GET('/v1/creator/onboarding', await read()),
@@ -115,9 +155,34 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
       );
     },
 
+    async publicCatalog(query) {
+      return attempt(async () =>
+        api.GET('/v1/creators/catalog', {
+          params: {
+            query: { handle: query.handle, ...pageQuery(query) },
+          },
+        }),
+      );
+    },
+
+    async saveContent(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/content', { ...(await write()), body }),
+      );
+    },
+
     async saveProfile(body) {
       return attempt(async () =>
         api.POST('/v1/creator/profile', { ...(await write()), body }),
+      );
+    },
+
+    async setContentLifecycle(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/content/lifecycle', {
+          ...(await write()),
+          body,
+        }),
       );
     },
 

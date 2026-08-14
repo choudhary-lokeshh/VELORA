@@ -31,6 +31,7 @@ import {
   testNotificationsApiRuntime,
   testServerConfig,
   testCreatorsRuntime,
+  testClubsRuntime,
 } from '../support/harness.js';
 
 /**
@@ -109,16 +110,18 @@ const messaging = createMessagingRuntime({
   now,
   onboarding: users.onboarding,
 });
+const creators = testCreatorsRuntime({
+  caller: auth.caller,
+  database: database.drizzle,
+  now,
+  users,
+});
 const application = createApplication({
   config,
   dependencies: {
     auth,
-    creators: testCreatorsRuntime({
-      caller: auth.caller,
-      database: database.drizzle,
-      now,
-      users,
-    }),
+    clubs: testClubsRuntime({ creators, database: database.drizzle, now }),
+    creators,
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),
     discovery,

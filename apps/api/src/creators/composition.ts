@@ -1,5 +1,6 @@
 import type { CallerResolver } from '../auth/caller.js';
 import { CreatorContextResolver } from './context.js';
+import { CreatorDirectory } from './directory.js';
 import type { CreatorAdultEligibilityPort } from './eligibility.js';
 import { CreatorProfileRoutes } from './profile-routes.js';
 import { CreatorProfileService } from './profile-service.js';
@@ -13,6 +14,8 @@ import { CreatorsService } from './service.js';
 
 export interface CreatorsRuntime {
   readonly creatorContext: CreatorContextResolver;
+  /** The creator identity answers this domain publishes to PRIVATE CLUBS. */
+  readonly directory: CreatorDirectory;
   readonly profileRepository: CreatorProfileRepository;
   readonly profileRoutes: CreatorProfileRoutes;
   readonly profiles: CreatorProfileService;
@@ -54,6 +57,7 @@ export function createCreatorsRuntime(input: {
   });
   return {
     creatorContext,
+    directory: new CreatorDirectory(),
     profileRepository,
     profileRoutes: new CreatorProfileRoutes({ creatorContext, profiles }),
     profiles,

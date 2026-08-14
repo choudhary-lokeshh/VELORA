@@ -27,6 +27,7 @@ import {
   testConsumerOrigin,
   testServerConfig,
   testCreatorsRuntime,
+  testClubsRuntime,
 } from '../support/harness.js';
 
 /**
@@ -153,15 +154,17 @@ function createInstance(name: string): Instance {
     onboarding: users.onboarding,
     safety: safety.directory,
   });
+  const creators = testCreatorsRuntime({
+    caller: auth.caller,
+    database: service.database,
+    users,
+  });
   const application = createApplication({
     config,
     dependencies: {
       auth,
-      creators: testCreatorsRuntime({
-        caller: auth.caller,
-        database: service.database,
-        users,
-      }),
+      clubs: testClubsRuntime({ creators, database: service.database }),
+      creators,
       database: service,
       databaseAdmission: service.admission,
       discovery,

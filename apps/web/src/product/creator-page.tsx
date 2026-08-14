@@ -2,7 +2,12 @@
 
 import { useCallback, useMemo } from 'react';
 
-import { createCreatorApi, type PublicCreator } from '@velora/creator-client';
+import {
+  createCreatorApi,
+  type CreatorApi,
+  type PublicCreator,
+  type PublicCreatorCatalog,
+} from '@velora/creator-client';
 
 import { useResource } from './resource';
 import { ErrorMessage, StatusMessage } from './ui';
@@ -82,10 +87,55 @@ export function CreatorPublicPage({
         ) : null}
 
         {creator.value === undefined ? null : (
-          <CreatorProfileView creator={creator.value} />
+          <>
+            <CreatorProfileView creator={creator.value} />
+            <CreatorCatalogView api={api} handle={handle} />
+          </>
         )}
       </main>
     </div>
+  );
+}
+
+/**
+ * What this creator has published.
+ *
+ * A separate read from the profile, because the two answer different questions
+ * and one being unavailable should not blank the other. An empty catalog is a
+ * real and ordinary state — somebody published a page before they published
+ * anything on it — and it is said plainly rather than shown as a failure.
+ */
+function CreatorCatalogView({
+  api,
+  handle,
+}: {
+  readonly api: CreatorApi;
+  readonly handle: string;
+}) {
+  const load = useCallback(
+    async () => api.publicCatalog({ handle }),
+    [api, handle],
+  );
+  const catalog = useResource<PublicCreatorCatalog>(load);
+
+  if (catalog.value === undefined) return null;
+  return (
+    <section aria-labelledby="creator-catalog-heading">
+      <h2 id="creator-catalog-heading">Published</h2>
+      {catalog.value.content.length === 0 ? (
+        <p data-testid="creator-catalog-empty">Nothing published yet.</p>
+      ) : (
+        <ul data-testid="creator-catalog">
+          {catalog.value.content.map((item) => (
+            <li key={item.id}>
+              <h3>{item.title}</h3>
+              {item.summary === undefined ? null : <p>{item.summary}</p>}
+              {item.body === undefined ? null : <p>{item.body}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

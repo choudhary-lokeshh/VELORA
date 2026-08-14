@@ -28,6 +28,7 @@ import {
   testNotificationsApiRuntime,
   testServerConfig,
   testCreatorsRuntime,
+  testClubsRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_safety');
@@ -96,16 +97,18 @@ const messaging = createMessagingRuntime({
   onboarding: users.onboarding,
   safety: safety.directory,
 });
+const creators = testCreatorsRuntime({
+  caller: auth.caller,
+  database: database.drizzle,
+  now,
+  users,
+});
 const application = createApplication({
   config,
   dependencies: {
     auth,
-    creators: testCreatorsRuntime({
-      caller: auth.caller,
-      database: database.drizzle,
-      now,
-      users,
-    }),
+    clubs: testClubsRuntime({ creators, database: database.drizzle, now }),
+    creators,
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),
     discovery,
