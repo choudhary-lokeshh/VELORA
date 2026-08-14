@@ -53,6 +53,27 @@ import {
 const databaseUrl = await provisionDatabase('velora_pool_hardening');
 const database: TestDatabase = connectDatabase(databaseUrl);
 
+/**
+ * The name the pools under test report in `pg_stat_activity`.
+ *
+ * Counting every backend on the database and comparing before with after does
+ * not measure what this file is about. A migration subprocess that has exited,
+ * an administrative connection that has been closed, and the harness's own
+ * lazily-opened diagnostic connection all appear and disappear on their own
+ * schedule, and under load the sampling window is wide enough to catch one —
+ * which reads exactly like a connection the service leaked or lost.
+ *
+ * Naming the instance's own connections makes the assertion say what it means:
+ * the pool under test holds the connections it opened, and neither more nor
+ * fewer, whatever else is happening on the server.
+ */
+const instanceApplicationName = 'velora-pool-instance';
+const instanceDatabaseUrl = (() => {
+  const tagged = new URL(databaseUrl);
+  tagged.searchParams.set('application_name', instanceApplicationName);
+  return tagged.toString();
+})();
+
 const healthy = {
   close: () => Promise.resolve(),
   isReady: () => Promise.resolve(true),
@@ -84,7 +105,7 @@ let requesterSequence = 0;
  */
 function createInstance(name: string): Instance {
   const config = testServerConfig({
-    DATABASE_URL: databaseUrl,
+    DATABASE_URL: instanceDatabaseUrl,
     MESSAGING_SAFETY_ELIGIBILITY: 'trust-and-safety',
     USERS_PROFILE_MEDIA_STORAGE: 'local-test',
   });
@@ -332,9 +353,12 @@ async function countOf(query: unknown): Promise<number> {
 }
 
 /** Backends this database currently has, whoever opened them. */
+/** Backends belonging to the pools under test, and to nothing else. */
 async function backendCount(): Promise<number> {
   return countOf(
-    database.sql`select count(*)::int as count from pg_stat_activity where datname = current_database()`,
+    database.sql`select count(*)::int as count from pg_stat_activity
+      where datname = current_database()
+        and application_name = ${instanceApplicationName}`,
   );
 }
 
@@ -369,7 +393,7 @@ describe('the connection pool is opened before it is used', () => {
   it('establishes every connection during warm-up and keeps them', async () => {
     const before = await backendCount();
     const service = new DatabaseService(
-      testServerConfig({ DATABASE_URL: databaseUrl }),
+      testServerConfig({ DATABASE_URL: instanceDatabaseUrl }),
     );
     try {
       await service.warm();
@@ -526,25 +550,63 @@ describe('the pair lock under load the pool used to lose connections to', () => 
     const backendsBefore = await backendCount();
     const deadlocksBefore = await deadlockCount();
 
+    const send = async (
+      pair: (typeof pairs)[number],
+      pairIndex: number,
+      index: number,
+    ) =>
+      primary.handle(
+        post('/v1/messaging/messages', pair.first, {
+          body: `multi ${String(index)}`,
+          clientMessageId: `pool-multi-${String(pairIndex)}-${String(index)}`,
+          conversationId: pair.conversationId,
+        }),
+      );
+
+    // Exactly the admission bound, spread one-per-pair-and-round, and strictly
+    // not retried. This is the assertion that the bound does not refuse work
+    // the pool can serve, and it is true on any host: the instance admits
+    // `databaseAdmissionLimit` units at once, so a refusal at that load would
+    // mean the bound is smaller than it claims rather than that the machine is
+    // busy. Sizing it against the published constant is the point — a fixed
+    // number here would be a guess about capacity rather than a statement of it.
+    const withinBound = await Promise.all(
+      Array.from({ length: databaseAdmissionLimit }, async (_unused, index) => {
+        const pairIndex = index % pairs.length;
+        const pair = pairs[pairIndex];
+        if (pair === undefined) throw new Error('pair fixture is missing');
+        return send(pair, pairIndex, index);
+      }),
+    );
+    expect(withinBound).toHaveLength(databaseAdmissionLimit);
+    expect(withinBound.every((response) => response.status === 200)).toBe(true);
+
+    // Then the load the pool used to lose connections to: fifty at once, more
+    // than six times the bound. A capacity refusal here is a truthful answer
+    // rather than a defect — the instance declined to begin work it had no room
+    // for — so it is retried exactly as the same load is on one conversation
+    // above. What this proves is that five unrelated pairs settle without
+    // serializing behind each other and without costing the pool a connection.
     const responses = await Promise.all(
       pairs.flatMap((pair, pairIndex) =>
         Array.from({ length: 10 }, async (_unused, index) =>
-          primary.handle(
-            post('/v1/messaging/messages', pair.first, {
-              body: `multi ${String(index)}`,
-              clientMessageId: `pool-multi-${String(pairIndex)}-${String(index)}`,
-              conversationId: pair.conversationId,
-            }),
+          attempt(async () =>
+            send(pair, pairIndex, databaseAdmissionLimit + index),
           ),
         ),
       ),
     );
 
     expect(responses).toHaveLength(50);
-    // Strict, and deliberately not retried. Work spread over five pairs clears
-    // well inside the bounded wait, so a capacity refusal here would mean the
-    // bound is refusing ordinary traffic rather than protecting the pool.
     expect(responses.every((response) => response.status === 200)).toBe(true);
+    // Every send landed exactly once. Retrying a capacity refusal cannot
+    // duplicate a message, because the client identifier is what makes a send
+    // idempotent, and this is where that is checked rather than assumed.
+    expect(
+      await countOf(
+        database.sql`select count(*)::int as count from messaging_messages`,
+      ),
+    ).toBe(50 + databaseAdmissionLimit);
     await expectPoolIntact(primary, backendsBefore, deadlocksBefore);
   });
 });

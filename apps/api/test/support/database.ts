@@ -88,6 +88,17 @@ const truncationRoots = [
   'users_accounts',
 ];
 
+/**
+ * The name a harness connection reports in `pg_stat_activity`.
+ *
+ * A suite that counts backends to prove the instance under test did not leak
+ * one has to be able to tell the instance's connections from the observer's.
+ * The harness pool opens connections lazily, so without this an extra
+ * diagnostic query taken while the pool was busy would look exactly like a
+ * connection the service failed to give back.
+ */
+export const testHarnessApplicationName = 'velora-test-harness';
+
 export function connectDatabase(url: string): TestDatabase {
   // Sized above the peak concurrency these suites exercise, deliberately.
   //
@@ -103,7 +114,9 @@ export function connectDatabase(url: string): TestDatabase {
   // connections need three hundred; `scripts/run-integration-tests.mjs` starts
   // PostgreSQL with headroom above that rather than leaving the ceiling to the
   // default hundred, where the same exhaustion appeared as an intermittent hang.
-  const sql = new Bun.SQL(url, { max: 20 });
+  const tagged = new URL(url);
+  tagged.searchParams.set('application_name', testHarnessApplicationName);
+  const sql = new Bun.SQL(tagged.toString(), { max: 20 });
   return {
     async close() {
       await sql.close();
