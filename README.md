@@ -1,6 +1,6 @@
 # VELORA
 
-Documentation-driven foundation for a globally scalable, adult social platform. The repository contains the production workspace bootstrap, shared contract/configuration/observability foundations, local PostgreSQL/Redis development infrastructure, and the first vertical slice: AUTH. It intentionally contains no other V1 product feature and no live provider integration.
+Documentation-driven foundation for a globally scalable, adult social platform. The repository contains the production workspace bootstrap, shared contract/configuration/observability foundations, local PostgreSQL/Redis development infrastructure, the AUTH vertical slice, and the USERS consumer account it admits people into. It intentionally contains no further V1 product feature and no live provider integration.
 
 Velora is one ecosystem with four separate product surfaces sharing backend/domain contracts:
 

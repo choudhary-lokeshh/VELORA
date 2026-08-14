@@ -7,12 +7,51 @@ import {
   type AuthRuntime,
 } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
+import { DatabaseAdmission } from '../../src/database/admission.js';
 import type { AuthDatabase } from '../../src/auth/repository.js';
+import {
+  createUsersRuntime,
+  type UsersRuntime,
+} from '../../src/users/composition.js';
+import {
+  createDiscoveryRuntime,
+  type DiscoveryRuntime,
+} from '../../src/discovery/composition.js';
+import {
+  createMessagingRuntime,
+  type MessagingRuntime,
+} from '../../src/messaging/composition.js';
+import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
+import {
+  createNotificationsApiRuntime,
+  type NotificationsApiRuntime,
+} from '../../src/notifications/composition.js';
+import {
+  createSafetyRuntime,
+  type SafetyRuntime,
+} from '../../src/safety/composition.js';
+import type { SafetyEligibilityPort } from '../../src/messaging/safety.js';
+import type { UsersDatabase } from '../../src/users/repository.js';
 
 export const testConsumerOrigin = 'http://127.0.0.1:3000';
 export const testCreatorOrigin = 'http://127.0.0.1:3001';
 export const testAdminOrigin = 'http://127.0.0.1:3002';
 export const testForeignOrigin = 'https://evil.test';
+
+/**
+ * The admission bound a suite's own pool wants.
+ *
+ * Production admits eight against a pool of ten; `connectDatabase` opens twenty
+ * for a suite, so the same ratio is sixteen. The wait is long because these
+ * suites fire far more simultaneous requests at one pair than a person could,
+ * and what they are testing is idempotency and serialization rather than what
+ * an instance says when it runs out of room. The production values — eight, and
+ * a 250 ms wait ending in a 503 — are exercised against the real
+ * `DatabaseService` in `test/integration/database-pool-hardening.test.ts`.
+ */
+export function testDatabaseAdmission(): DatabaseAdmission {
+  return new DatabaseAdmission({ limit: 16, waitMilliseconds: 15_000 });
+}
 
 export function silentLogger(records: unknown[] = []): SafeLogger {
   const record = (
@@ -73,4 +112,143 @@ export function testAuthRuntime(input: {
         request.headers.get('x-velora-device') ?? 'test-requester',
     },
   });
+}
+
+export function testUsersRuntime(input: {
+  readonly auth: AuthRuntime;
+  readonly config: ServerConfig;
+  readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
+  readonly now?: () => Date;
+}): UsersRuntime {
+  return createUsersRuntime({
+    caller: input.auth.caller,
+    config: input.config,
+    // As above: a mock database throws on any query, so only tests that stop
+    // before storage use the default.
+    database: input.database ?? drizzle.mock(),
+    logger: input.logger ?? silentLogger(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
+/**
+ * DISCOVERY wired to the same database and USERS runtime the caller is using,
+ * so a test never ends up with two views of the same data.
+ */
+export function testDiscoveryRuntime(input: {
+  readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
+  readonly now?: () => Date;
+  readonly safety: SafetyRuntime;
+  readonly users: UsersRuntime;
+}): DiscoveryRuntime {
+  return createDiscoveryRuntime({
+    consumerContext: input.users.consumerContext,
+    database: input.database ?? drizzle.mock(),
+    directory: input.users.directory,
+    logger: input.logger ?? silentLogger(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+    onboarding: input.users.onboarding,
+    safety: input.safety.directory,
+  });
+}
+
+/**
+ * TRUST & SAFETY wired to the same database and USERS runtime. Its two
+ * enforcement contracts are the real ones; nothing here reaches past a
+ * published contract into another domain's tables.
+ */
+export function testSafetyRuntime(input: {
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+  readonly users: UsersRuntime;
+}): SafetyRuntime {
+  const database = input.database ?? drizzle.mock();
+  return createSafetyRuntime({
+    accounts: input.users.enforcement,
+    consumerContext: input.users.consumerContext,
+    conversations: new ConversationEnforcement(database),
+    database,
+    ...(input.now === undefined ? {} : { now: input.now }),
+    users: input.users.service,
+  });
+}
+
+/**
+ * MESSAGING wired to the same database, USERS runtime, and DISCOVERY connection
+ * contract the caller is using.
+ *
+ * The safety adapter comes from configuration, exactly as it does in
+ * production. A test that wants a blocked pair supplies its own port rather
+ * than reaching past the registry, so no test can accidentally exercise a
+ * combination configuration would refuse.
+ */
+export function testMessagingRuntime(input: {
+  readonly config: ServerConfig;
+  readonly database?: UsersDatabase;
+  readonly discovery: DiscoveryRuntime;
+  readonly now?: () => Date;
+  readonly safety?: SafetyEligibilityPort;
+  readonly users: UsersRuntime;
+}): MessagingRuntime {
+  return createMessagingRuntime({
+    config: input.config,
+    connections: input.discovery.connections,
+    consumerContext: input.users.consumerContext,
+    database: input.database ?? drizzle.mock(),
+    directory: input.users.directory,
+    ...(input.now === undefined ? {} : { now: input.now }),
+    onboarding: input.users.onboarding,
+    ...(input.safety === undefined ? {} : { safety: input.safety }),
+  });
+}
+
+/**
+ * NOTIFICATIONS' in-app read surface, wired to the same database and the real
+ * TRUST & SAFETY eligibility contract. Delivery is not composed here: it lives
+ * in the worker, and a suite that wants it builds the worker runtime instead.
+ */
+export function testNotificationsApiRuntime(input: {
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+  readonly safety: SafetyRuntime;
+  readonly users: UsersRuntime;
+}): NotificationsApiRuntime {
+  return createNotificationsApiRuntime({
+    consumerContext: input.users.consumerContext,
+    database: input.database ?? drizzle.mock(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+    safety: input.safety.directory,
+  });
+}
+
+/**
+ * The consumer product domains built together over one database and one USERS
+ * runtime, for suites that only need the domains present rather than exercised.
+ */
+export function testConsumerRuntimes(input: {
+  readonly config: ServerConfig;
+  readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
+  readonly now?: () => Date;
+  readonly users: UsersRuntime;
+}): {
+  readonly discovery: DiscoveryRuntime;
+  readonly messaging: MessagingRuntime;
+  readonly notifications: NotificationsApiRuntime;
+  readonly safety: SafetyRuntime;
+} {
+  const safety = testSafetyRuntime(input);
+  const discovery = testDiscoveryRuntime({ ...input, safety });
+  return {
+    discovery,
+    messaging: testMessagingRuntime({
+      ...input,
+      discovery,
+      safety: safety.directory,
+    }),
+    notifications: testNotificationsApiRuntime({ ...input, safety }),
+    safety,
+  };
 }

@@ -33,3 +33,29 @@ It reports `PASS`, `PASS WITH EXPLICIT TEMPORARY ACCEPTED RISK`, or `FAIL`, neve
 ## Non-goals and open questions
 
 Deployment CI vendor, device farm, load/security service vendors, exact SLOs, and public-launch approval roles remain unresolved; the verification CI platform is locked by [ADR-0018](../decisions/ADR-0018-toolchain-provisioning-verification-ci.md). CI gates, environments, OpenFeature boundary, and release flow are locked. V1 engineering standard. See [AGENTS](../../AGENTS.md), [API contracts](01-api-contracts.md), [jobs](03-jobs-idempotency-concurrency.md), [Figma authority](../design/03-figma-source-of-truth.md), [platform health](../operations/05-platform-health.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).
+
+## Implemented consumer test layers
+
+| Layer | Where | What it proves |
+| --- | --- | --- |
+| Pure rules | `packages/consumer-client/test` | The readings of server state both surfaces render — admission stage, media state, availability view, account standing — and how an answer becomes a product result. No browser, no network. |
+| Contract | `packages/validation/test` | The published document matches the registry the runtime enforces, and no operation names a schema the document does not define. |
+| Surface | `apps/web/test`, `apps/mobile/test` | The whole consumer journey against a stand-in API that answers the real contract paths with real contract shapes, installed as a `fetch` implementation so the surface goes through the generated client exactly as it would in production. |
+| Domain integration | `apps/api/test/integration` | Every server guarantee against real PostgreSQL: authorization, safety, concurrency, durability, and crash recovery. |
+| Browser | `e2e` | What only a real browser can settle — the cookie a browser accepts, credentialed cross-origin requests, tab order, focus, and landmarks — across Chromium, Firefox, and WebKit. |
+
+### A stand-in API, not a mocked component
+
+Nothing under `src/` knows the test doubles exist. They are `fetch` implementations, so a surface test exercises the generated client, the real request bodies, and the real status codes. A component that only worked against a hand-written stub would prove nothing about the product.
+
+The two doubles are deliberately not shared between Web and Mobile: the surfaces have different transports — a cookie plus a CSRF echo on one, a bearer token from platform-keystore-backed storage on the other — and one fixture would quietly stop proving that.
+
+### Bounded connections, and why
+
+Bun runs every integration file in one process, so each suite's pool coexists with all the others. At twenty connections a suite, fifteen suites can ask for three hundred from a server that allows a hundred — and what that produces is not an error but a hang: the client waits for a connection that will never be granted, and the next suite's `TRUNCATE` queues behind a transaction nobody will finish. It was found by running the suite twenty times in a row, where it appeared once.
+
+Two changes remove the class. Each suite's pool is bounded at five, which is enough for the genuine concurrency these tests exercise — a handful of racing writers, not a load generator. And the integration container starts with `max_connections=300`, so the ceiling the harness needs is stated rather than accidental.
+
+### Device attribution in browser tests
+
+AUTH counts authentication attempts per requester, and a caller that sends no `x-velora-device` header falls into one shared bucket. Three browser projects running in parallel would share one ceiling between them and the suite would start failing on the limiter rather than on the product. `e2e/fixtures.ts` gives each test its own device on both the browser context and the API request context. The limit itself is untouched, and `consumer-auth.spec.ts` still asserts that it exists and is enforced.

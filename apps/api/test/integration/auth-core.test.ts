@@ -11,15 +11,15 @@ import { AuthRepository } from '../../src/auth/repository.js';
 import { AuthService } from '../../src/auth/service.js';
 import { digestToken } from '../../src/auth/tokens.js';
 import {
-  connectAuthDatabase,
+  connectDatabase,
   execute,
-  provisionAuthDatabase,
+  provisionDatabase,
   rowsOf,
-  type AuthTestDatabase,
+  type TestDatabase,
 } from '../support/database.js';
 
-const databaseUrl = await provisionAuthDatabase('velora_auth_core');
-const database: AuthTestDatabase = connectAuthDatabase(databaseUrl);
+const databaseUrl = await provisionDatabase('velora_auth_core');
+const database: TestDatabase = connectDatabase(databaseUrl);
 const repository = new AuthRepository(database.drizzle);
 const issuer = 'https://auth.velora.invalid';
 
@@ -74,15 +74,20 @@ afterAll(async () => {
 });
 
 describe('AUTH persistence and invariants', () => {
-  it('creates exactly the AUTH tables and no other product table', async () => {
+  it('owns exactly the auth-prefixed tables and no other domain table', async () => {
     const rows = await rowsOf<{ table_name: string }>(database.sql`
       select table_name
       from information_schema.tables
       where table_schema = 'public'
       order by table_name
     `);
+    const names = rows.map((row) => row.table_name);
 
-    expect(rows.map((row) => row.table_name)).toEqual([
+    // Every table AUTH owns carries the prefix `docs/architecture/05-data-ownership.md`
+    // assigns it, and AUTH owns nothing outside that prefix. Other domains
+    // appear here because they share one database, never because AUTH created
+    // them.
+    expect(names.filter((name) => name.startsWith('auth_'))).toEqual([
       'auth_accounts',
       'auth_admin_authenticators',
       'auth_high_impact_authorizations',
@@ -97,6 +102,30 @@ describe('AUTH persistence and invariants', () => {
       'auth_security_events',
       'auth_security_owners',
       'auth_sessions',
+    ]);
+    expect(names.filter((name) => !name.startsWith('auth_'))).toEqual([
+      'discovery_introductions',
+      'discovery_outbox',
+      'discovery_passes',
+      'discovery_presentations',
+      'messaging_conversations',
+      'messaging_messages',
+      'messaging_outbox',
+      'messaging_participants',
+      'notifications_attempts',
+      'notifications_feed',
+      'notifications_intents',
+      'safety_blocks',
+      'safety_enforcements',
+      'safety_reports',
+      'users_accounts',
+      'users_adult_assurances',
+      'users_availability',
+      'users_policy_acknowledgements',
+      'users_preferences',
+      'users_profile_languages',
+      'users_profile_media',
+      'users_profiles',
     ]);
   });
 

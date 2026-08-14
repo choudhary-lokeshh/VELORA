@@ -24,6 +24,7 @@
     "@expo/metro-runtime": "catalog:",
     "@velora/api-client": "workspace:*",
     "@velora/config": "workspace:*",
+    "@velora/consumer-client": "workspace:*",
     "@velora/design-tokens": "workspace:*",
     "expo": "catalog:",
     "expo-constants": "catalog:",
@@ -34,9 +35,9 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-native": "catalog:",
-    "react-native-worklets": "catalog:",
     "react-native-safe-area-context": "catalog:",
-    "react-native-screens": "catalog:"
+    "react-native-screens": "catalog:",
+    "react-native-worklets": "catalog:"
   },
   "devDependencies": {
     "@react-native/metro-config": "catalog:",

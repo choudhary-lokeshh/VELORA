@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 // The application layer owns these headers until a deployment edge exists.
 // ADR-0014 leaves the CDN/DNS vendor deferred, so nothing in front of Next.js

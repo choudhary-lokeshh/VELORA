@@ -5,8 +5,6 @@ import {
   authAcknowledgementSchema,
   authErrorCodes,
   authSessionResponseSchema,
-  browserSessionCookieNames,
-  csrfHeader,
   deviceHeader,
   localMobileSessionRequestSchema,
   localWebSessionRequestSchema,
@@ -20,20 +18,16 @@ import {
 } from '@velora/validation';
 
 import {
-  evaluateBrowserRequest,
-  readBrowserRequestFacts,
-} from './browser-request.js';
+  csrfCookie,
+  expiredCookiesFor,
+  type CallerResolver,
+  type ResolvedCaller,
+} from './caller.js';
 import type { AuthContext } from './context.js';
-import {
-  clearedSessionCookie,
-  issuedSessionCookie,
-  presentedSessionCookie,
-  readCookie,
-} from './cookies.js';
+import { issuedSessionCookie, presentedSessionCookie } from './cookies.js';
 import { authAttemptLimits, type RateLimiter } from './rate-limit.js';
 import type { RecoveryService } from './recovery.js';
 import type { AuthService } from './service.js';
-import { digestToken, digestsEqual } from './tokens.js';
 
 export interface AuthRouteRequest {
   readonly body: string;
@@ -53,43 +47,13 @@ export interface AuthRoutesDependencies {
   >;
   readonly appEnvironment: AppEnvironment;
   readonly authService: AuthService;
+  readonly caller: CallerResolver;
   readonly localIdentityEnabled: boolean;
   readonly logger: SafeLogger;
   readonly now: () => Date;
   readonly rateLimiter: RateLimiter;
   readonly recoveryService: RecoveryService;
   readonly requesterReference: (request: Request) => string;
-}
-
-/** CSRF companion cookie: readable by the surface's own script, never HttpOnly. */
-const csrfCookieNames = {
-  consumer_web: '__Host-velora_consumer_web_csrf',
-  creator_studio: '__Host-velora_creator_studio_csrf',
-  platform_admin: '__Host-velora_platform_admin_csrf',
-} as const satisfies Record<BrowserAuthAudience, string>;
-
-function csrfCookie(
-  audience: BrowserAuthAudience,
-  value: string,
-  maxAgeSeconds: number,
-): string {
-  return [
-    `${csrfCookieNames[audience]}=${value}`,
-    'Path=/',
-    'Secure',
-    'SameSite=Lax',
-    `Max-Age=${String(maxAgeSeconds)}`,
-  ].join('; ');
-}
-
-function clearedCsrfCookie(audience: BrowserAuthAudience): string {
-  return [
-    `${csrfCookieNames[audience]}=`,
-    'Path=/',
-    'Secure',
-    'SameSite=Lax',
-    'Max-Age=0',
-  ].join('; ');
 }
 
 function failure(
@@ -166,6 +130,10 @@ function optionalHeader(request: Request, name: string): string | undefined {
 export class AuthRoutes {
   constructor(private readonly dependencies: AuthRoutesDependencies) {}
 
+  private get caller(): CallerResolver {
+    return this.dependencies.caller;
+  }
+
   private get localIdentityUsable(): boolean {
     const { appEnvironment, localIdentityEnabled } = this.dependencies;
     // Two independent gates. Configuration already refuses the local adapter in
@@ -203,11 +171,7 @@ export class AuthRoutes {
     audience: BrowserAuthAudience,
     cookiePresent: boolean,
   ): AuthErrorCode | undefined {
-    const verdict = evaluateBrowserRequest(
-      readBrowserRequestFacts(request, { cookiePresent }),
-      this.dependencies.allowedOrigins[audience],
-    );
-    return verdict.allowed ? undefined : verdict.code;
+    return this.caller.browserVerdict(request, audience, cookiePresent);
   }
 
   async createLocalWebSession(
@@ -514,86 +478,8 @@ export class AuthRoutes {
     };
   }
 
-  /**
-   * Derives the caller from the credential presented. A cookie session must
-   * additionally satisfy origin and CSRF checks on state-changing requests; a
-   * bearer access token carries no ambient authority and needs neither.
-   */
-  private async resolveCaller(
-    request: Request,
-  ): Promise<
-    | { readonly kind: 'anonymous' }
-    | { readonly kind: 'stale-cookie'; readonly cookies: readonly string[] }
-    | { readonly kind: 'authenticated'; readonly context: AuthContext }
-    | { readonly kind: 'csrf-rejected'; readonly code: AuthErrorCode }
-    | { readonly kind: 'origin-rejected'; readonly code: AuthErrorCode }
-  > {
-    const cookieHeader = request.headers.get('cookie');
-    const presented = presentedSessionCookie(cookieHeader);
-
-    if (presented !== undefined) {
-      const rejection = this.browserVerdict(request, presented.audience, true);
-      if (rejection !== undefined) {
-        return { code: rejection, kind: 'origin-rejected' };
-      }
-      const resolution =
-        await this.dependencies.authService.resolveBrowserSession(
-          presented.token,
-        );
-      // Anything other than an active session means the cookie this browser is
-      // carrying is no longer usable, so it is cleared rather than ignored.
-      if (resolution.kind !== 'active') {
-        return {
-          cookies: [
-            clearedSessionCookie(presented.audience),
-            clearedCsrfCookie(presented.audience),
-          ],
-          kind: 'stale-cookie',
-        };
-      }
-      {
-        const method = request.method.toUpperCase();
-        if (method !== 'GET' && method !== 'HEAD') {
-          const supplied = request.headers.get(csrfHeader);
-          if (
-            supplied === null ||
-            !digestsEqual(digestToken(supplied), resolution.csrfDigest)
-          ) {
-            return {
-              code: authErrorCodes.csrfRequired,
-              kind: 'csrf-rejected',
-            };
-          }
-        }
-        return { context: resolution.context, kind: 'authenticated' };
-      }
-    }
-
-    const authorization = request.headers.get('authorization');
-    if (authorization !== null) {
-      const [scheme, value] = authorization.split(' ');
-      if (scheme?.toLowerCase() === 'bearer' && value !== undefined) {
-        const context =
-          await this.dependencies.authService.resolveAccessToken(value);
-        if (context !== undefined) return { context, kind: 'authenticated' };
-      }
-      return { kind: 'anonymous' };
-    }
-    return { kind: 'anonymous' };
+  /** Delegates to the shared resolver so AUTH has one credential path. */
+  private async resolveCaller(request: Request): Promise<ResolvedCaller> {
+    return this.caller.resolve(request);
   }
-}
-
-/** Expires whichever audience cookies the caller actually presented. */
-function expiredCookiesFor(request: Request): readonly string[] {
-  const header = request.headers.get('cookie');
-  const cookies: string[] = [];
-  for (const [audience, name] of Object.entries(browserSessionCookieNames)) {
-    if (readCookie(header, name) !== undefined) {
-      cookies.push(
-        clearedSessionCookie(audience as BrowserAuthAudience),
-        clearedCsrfCookie(audience as BrowserAuthAudience),
-      );
-    }
-  }
-  return cookies;
 }

@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import {
   apiOperations,
+  apiQueryParameters,
   apiSchemas,
   apiSecurityRequirements,
   browserSessionCookieNames,
@@ -59,8 +60,16 @@ function securityFor(requirement: string) {
   return [{ [requirement]: [] }];
 }
 
+interface ResponseHeaderDefinition {
+  readonly description: string;
+  readonly required: boolean;
+  readonly schema: { readonly type: string };
+}
+
 interface ResponseDefinition {
   readonly description: string;
+  /** Response headers beyond correlation, declared by the response itself. */
+  readonly headers?: Readonly<Record<string, ResponseHeaderDefinition>>;
   readonly schemaName: keyof typeof apiSchemas;
 }
 
@@ -82,7 +91,10 @@ function operation(operationDefinition: (typeof apiOperations)[number]) {
           },
         },
         description: responseDefinition.description,
-        headers: { [correlationResponseHeader]: correlationHeader },
+        headers: {
+          [correlationResponseHeader]: correlationHeader,
+          ...responseDefinition.headers,
+        },
       },
     ]),
   );
@@ -90,6 +102,13 @@ function operation(operationDefinition: (typeof apiOperations)[number]) {
   const declaredHeaders =
     'requestHeaders' in operationDefinition
       ? operationDefinition.requestHeaders
+      : [];
+  // Query parameters carry paging position and bounded filters only. The
+  // contract test asserts that none of them is credential-shaped: a credential
+  // in a URL ends up in logs, proxies, and browser history.
+  const declaredQuery =
+    'requestQuery' in operationDefinition
+      ? operationDefinition.requestQuery
       : [];
   const parameters = [
     {
@@ -105,6 +124,13 @@ function operation(operationDefinition: (typeof apiOperations)[number]) {
       name,
       required: false,
       schema: { maxLength: 200, type: 'string' },
+    })),
+    ...declaredQuery.map((parameter) => ({
+      description: parameter.description,
+      in: 'query',
+      name: parameter.name,
+      required: false,
+      schema: schema(apiQueryParameters[parameter.name]),
     })),
   ];
 
@@ -148,8 +174,14 @@ const document = {
     title: 'VELORA API',
     version: '1.0.0-auth',
   },
-  paths: Object.fromEntries(
-    apiOperations.map((item) => [item.path, operation(item)]),
+  // Methods are merged per path: one path may carry several operations, and an
+  // entry-per-operation map would silently keep only the last of them.
+  paths: apiOperations.reduce<Record<string, Record<string, unknown>>>(
+    (paths, item) => ({
+      ...paths,
+      [item.path]: { ...paths[item.path], ...operation(item) },
+    }),
+    {},
   ),
   components: {
     schemas: Object.fromEntries(

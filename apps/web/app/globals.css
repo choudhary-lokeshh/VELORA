@@ -1,6 +1,30 @@
+/*
+ * Consumer Web layout.
+ *
+ * Deliberately small. `packages/design-tokens` publishes the approved
+ * foundation — the signal colour, the focus width, the 4px rhythm, and the
+ * interface typeface — and marks the exact theme values `DESIGN REQUIRED`.
+ * Nothing here invents one. Colour comes from the browser's own system palette,
+ * which is contrast-correct in both schemes by construction and honest about
+ * the fact that the palette has not been approved yet.
+ *
+ * What this file does provide is structure: readable measure, consistent
+ * spacing on the approved rhythm, visible focus, and touch targets large enough
+ * to hit. Those are accessibility requirements rather than visual decisions.
+ */
+
 :root {
-  color-scheme: dark;
+  --velora-rhythm: 4px;
+  --velora-signal: #b85645;
+  color-scheme: dark light;
   font-family: 'IBM Plex Sans', 'Noto Sans', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* The dark-scheme signal value published by the approved foundation. */
+    --velora-signal: #e17a66;
+  }
 }
 
 * {
@@ -16,4 +40,134 @@ body {
 :focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
+}
+
+.shell {
+  margin: 0 auto;
+  max-width: 68ch;
+  padding: calc(var(--velora-rhythm) * 4);
+}
+
+.wordmark {
+  color: var(--velora-signal);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  margin: 0;
+}
+
+.panel {
+  border: 1px solid GrayText;
+  border-radius: calc(var(--velora-rhythm) * 2);
+  margin-block: calc(var(--velora-rhythm) * 4);
+  padding: calc(var(--velora-rhythm) * 4);
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--velora-rhythm) * 2);
+}
+
+/* Every interactive control clears the minimum comfortable target size. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  min-height: calc(var(--velora-rhythm) * 11);
+  padding: calc(var(--velora-rhythm) * 2);
+}
+
+button {
+  cursor: pointer;
+  min-width: calc(var(--velora-rhythm) * 11);
+}
+
+button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+label {
+  display: block;
+  margin-block: calc(var(--velora-rhythm) * 2) var(--velora-rhythm);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  min-height: calc(var(--velora-rhythm) * 5);
+  min-width: calc(var(--velora-rhythm) * 5);
+}
+
+input[type='checkbox'] + label,
+input[type='radio'] + label,
+.row label {
+  display: inline-block;
+  margin: 0;
+}
+
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  max-width: 100%;
+  width: 100%;
+}
+
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--velora-rhythm) * 2);
+}
+
+.tabs button[aria-current='page'] {
+  border-bottom: 2px solid var(--velora-signal);
+}
+
+.candidates > li,
+.panel li {
+  border-top: 1px solid GrayText;
+  padding-block: calc(var(--velora-rhythm) * 3);
+}
+
+.hint {
+  color: GrayText;
+  margin-block: var(--velora-rhythm);
+}
+
+.error {
+  color: var(--velora-signal);
+  font-weight: 600;
+}
+
+.empty,
+.status {
+  margin-block: calc(var(--velora-rhythm) * 2);
+}
+
+/*
+ * No animation is introduced anywhere on this surface, so there is nothing for
+ * a reduced-motion preference to switch off. This rule exists so that any
+ * transition added later is opted out of by default rather than by memory.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

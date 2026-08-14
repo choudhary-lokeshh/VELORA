@@ -160,8 +160,8 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         where table_schema = 'public'
         order by table_name
       `;
-      // AUTH is the only implemented domain. Any other table here would mean a
-      // migration crossed a domain boundary or shipped an unrelated feature.
+      // The exact set every migration creates. Any other table here would mean
+      // a migration crossed a domain boundary or shipped an unrelated feature.
       expect(tables.map((table) => table.table_name)).toEqual([
         'auth_accounts',
         'auth_admin_authenticators',
@@ -177,6 +177,28 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'auth_security_events',
         'auth_security_owners',
         'auth_sessions',
+        'discovery_introductions',
+        'discovery_outbox',
+        'discovery_passes',
+        'discovery_presentations',
+        'messaging_conversations',
+        'messaging_messages',
+        'messaging_outbox',
+        'messaging_participants',
+        'notifications_attempts',
+        'notifications_feed',
+        'notifications_intents',
+        'safety_blocks',
+        'safety_enforcements',
+        'safety_reports',
+        'users_accounts',
+        'users_adult_assurances',
+        'users_availability',
+        'users_policy_acknowledgements',
+        'users_preferences',
+        'users_profile_languages',
+        'users_profile_media',
+        'users_profiles',
       ]);
 
       await sql`create temporary table constraint_probe (id integer primary key)`;

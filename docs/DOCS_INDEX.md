@@ -105,6 +105,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | [Abuse and outbound networking](security/06-abuse-outbound-networking.md) | Abuse limits and SSRF-safe network boundary |
 | [AI security integration](security/07-ai-safety-privacy.md) | Integration pointer binding dedicated AI controls to security baseline |
 | [Dependency risk acceptance](security/08-dependency-risk-acceptance.md) | Temporarily accepted supply-chain advisories, their bounds, and the CI gate contract |
+| [Dependency age blockers](security/09-dependency-age-blockers.md) | Upgrades a gate requires that the minimum release age forbids, when each becomes installable, and any owner-authorized exact-version override that cleared one early |
 
 ## Design and Figma authority
 
@@ -168,6 +169,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0016](decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md) | Active Bun/Elysia/PostgreSQL/Drizzle/Redis/BullMQ backend foundation and prior-decision supersession |
 | [ADR-0017](decisions/ADR-0017-auth-session-recovery-security-policy.md) | Exact session, recovery, privileged-access, and break-glass policy values inside ADR-0009 architecture |
 | [ADR-0018](decisions/ADR-0018-toolchain-provisioning-verification-ci.md) | mise toolchain provisioning, four-source pin agreement, and the GitHub Actions verification pipeline |
+| [ADR-0019](decisions/ADR-0019-database-connection-admission.md) | Bounded database admission, pool warm-up, and the capacity refusal contract; resolves the pair-lock contention decision |
 
 ## Technical implementation reading paths
 
@@ -178,13 +180,13 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Consumer Mobile bootstrap: Consumer Mobile surface, notification/deep-link authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Creator Studio bootstrap: Creator Studio surface, creator/club domains and flows, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0010, ADR-0013, ADR-0014, ADR-0015.
 - Platform Admin bootstrap: Platform Admin surface/domain/flow, RBAC, operations authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
-- Database and migrations: data ownership, data/migrations, jobs/concurrency, ADR-0016, unaffected portions of ADR-0006 and ADR-0007, affected domain/flow.
-- Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0016, unaffected portions of ADR-0007, observability/testing, affected domain/flow.
+- Database and migrations: data ownership, data/migrations, jobs/concurrency, ADR-0016, ADR-0019, unaffected portions of ADR-0006 and ADR-0007, affected domain/flow.
+- Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0016, ADR-0019, unaffected portions of ADR-0007, observability/testing, affected domain/flow.
 - Realtime and RTC: REALTIME, RTC flow, provider adapters, Trust & Safety, ADR-0007, ADR-0008, ADR-0009, ADR-0013, ADR-0014.
 - Media/storage: media security, content owner/flow, outbound networking, ADR-0007, ADR-0010, ADR-0014.
 - Billing and payouts: monetisation, BILLING/PAYOUTS, payment flow/security/compliance/operations, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013.
 - AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
-- Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, dependency risk acceptance, ADR-0016, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
+- Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, dependency risk acceptance, ADR-0016, ADR-0019, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
 - AUTH and privileged access: AUTH domain, onboarding, RBAC, security baseline, admin operations, incident response, ADR-0009, ADR-0017, then the affected surface and owning domain.
 
 ## Implementer reading paths

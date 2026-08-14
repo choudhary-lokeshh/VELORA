@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { ServerConfig } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
 import {
   apiErrorCodes,
@@ -12,9 +13,19 @@ import {
 } from '@velora/validation';
 
 import { createApplication } from '../../src/application.js';
+import type { AuthRuntime } from '../../src/auth/composition.js';
+import { DatabaseAdmission } from '../../src/database/admission.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
 import { DenyAllOutboundHttp } from '../../src/security/ports.js';
-import { testAuthRuntime, testServerConfig } from '../support/harness.js';
+import {
+  testAuthRuntime,
+  testDiscoveryRuntime,
+  testMessagingRuntime,
+  testNotificationsApiRuntime,
+  testSafetyRuntime,
+  testServerConfig,
+  testUsersRuntime,
+} from '../support/harness.js';
 
 const config = testServerConfig();
 
@@ -45,20 +56,49 @@ function testLogger(records: unknown[] = []): SafeLogger {
 
 function runtime(options?: {
   readonly database?: HealthDependency;
+  readonly databaseAdmission?: DatabaseAdmission;
   readonly ephemeralRedis?: HealthDependency;
   readonly logger?: SafeLogger;
   readonly queueRedis?: HealthDependency;
 }) {
+  const auth = testAuthRuntime({ config });
   return createApplication({
     config,
     dependencies: {
-      auth: testAuthRuntime({ config }),
+      auth,
       database: options?.database ?? health(true),
+      databaseAdmission: options?.databaseAdmission ?? new DatabaseAdmission(),
       ephemeralRedis: options?.ephemeralRedis ?? health(true),
       logger: options?.logger ?? testLogger(),
       queueRedis: options?.queueRedis ?? health(true),
+      ...consumerDomains(auth, config),
     },
   });
+}
+
+/**
+ * The consumer domains are built together because each consumes what the one
+ * before it publishes: TRUST & SAFETY takes USERS' enforcement contract,
+ * DISCOVERY takes USERS' directory and SAFETY's eligibility answer, and
+ * MESSAGING takes DISCOVERY's connection contract and the same safety answer.
+ * Wiring them separately would give one test several views of the same data.
+ */
+function consumerDomains(auth: AuthRuntime, config: ServerConfig) {
+  const users = testUsersRuntime({ auth, config });
+  const safety = testSafetyRuntime({ users });
+  const discovery = testDiscoveryRuntime({ safety, users });
+  return {
+    discovery,
+    messaging: testMessagingRuntime({
+      config,
+      discovery,
+      safety: safety.directory,
+      users,
+    }),
+    notifications: testNotificationsApiRuntime({ safety, users }),
+    safety,
+    users,
+  };
 }
 
 describe('Elysia API foundation', () => {
@@ -130,6 +170,48 @@ describe('Elysia API foundation', () => {
       code: 'PAYLOAD_TOO_LARGE',
       message: 'Request failed',
     });
+  });
+
+  it('refuses a product request when the instance has no database capacity', async () => {
+    const logs: unknown[] = [];
+    // A bound of one, already taken, with no wait left to give: the state a
+    // saturated instance is in, without needing a database to reach it.
+    const databaseAdmission = new DatabaseAdmission({
+      limit: 1,
+      waitMilliseconds: 0,
+    });
+    const application = runtime({
+      databaseAdmission,
+      logger: testLogger(logs),
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = databaseAdmission.run(() => held);
+
+    const response = await application.app.handle(
+      new Request(`http://api.test${apiRoutePaths.consumerAccountSelf}`, {
+        headers: { origin: 'http://127.0.0.1:3000' },
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    // The client is told when to come back, and nothing else.
+    expect(response.headers.get('retry-after')).toBe('1');
+    const body: unknown = await response.json();
+    expect(body).toMatchObject({
+      code: apiErrorCodes.serviceUnavailable,
+      message: 'Request failed',
+    });
+    expect(JSON.stringify(body)).not.toContain('pool');
+    expect(JSON.stringify(body)).not.toContain('admission');
+    // The saturation is logged as an operational fact, with counters and a
+    // correlation identifier rather than anything about who was refused.
+    expect(JSON.stringify(logs)).toContain('database admission saturated');
+
+    release();
+    await holder;
   });
 
   it('registers only OpenAPI-declared HTTP routes', () => {

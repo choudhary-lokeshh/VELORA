@@ -3,6 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { browserSecurityHeaders, loadClientConfig } from '../src/client.js';
 import { loadServerConfig, redactServerConfig } from '../src/server.js';
 
+/** Returns the failure message so a test can assert which gate refused. */
+function loadServerConfigResult(
+  environment: Readonly<Record<string, string | undefined>>,
+): string {
+  try {
+    loadServerConfig(environment);
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 const validEnvironment = {
   APP_ENV: 'test',
   DATABASE_URL: 'postgresql://local:local@127.0.0.1:5432/velora',
@@ -29,6 +41,97 @@ describe('server configuration', () => {
         DATABASE_URL: 'https://example.com/database',
       }),
     ).toThrow();
+  });
+
+  it('refuses every unapproved provider adapter in deployed environments', () => {
+    for (const appEnvironment of ['staging', 'production']) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+      });
+      // Every AUTH adapter currently available is a development or test one,
+      // so a deployed environment refuses to start rather than running on one.
+      expect(failure).toContain('AUTH_IDENTITY_PROVIDER');
+      expect(failure).toContain('AUTH_ACCESS_TOKEN_SIGNER');
+      expect(failure).toContain('AUTH_RECOVERY_DELIVERY');
+      expect(failure).toContain('AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER');
+    }
+  });
+
+  it('defaults adult assurance to the verifier that refuses everything', () => {
+    const config = loadServerConfig(validEnvironment);
+    expect(config.USERS_ADULT_ASSURANCE_VERIFIER).toBe('unavailable');
+  });
+
+  it('permits the local-test assurance adapter only outside deployed environments', () => {
+    expect(
+      loadServerConfig({
+        ...validEnvironment,
+        USERS_ADULT_ASSURANCE_VERIFIER: 'local-test',
+      }).USERS_ADULT_ASSURANCE_VERIFIER,
+    ).toBe('local-test');
+    expect(
+      loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: 'production',
+        USERS_ADULT_ASSURANCE_VERIFIER: 'local-test',
+      }),
+    ).toContain('USERS_ADULT_ASSURANCE_VERIFIER');
+  });
+
+  it('defaults safety eligibility to the source that denies everything', () => {
+    // Message retention duration and post-block history visibility are both
+    // undecided, so messaging in a deployed environment refuses to carry a
+    // message rather than carrying one under a policy nobody has approved.
+    const config = loadServerConfig(validEnvironment);
+    expect(config.MESSAGING_SAFETY_ELIGIBILITY).toBe('unavailable');
+  });
+
+  it('permits the real safety source only outside deployed environments', () => {
+    expect(
+      loadServerConfig({
+        ...validEnvironment,
+        MESSAGING_SAFETY_ELIGIBILITY: 'trust-and-safety',
+      }).MESSAGING_SAFETY_ELIGIBILITY,
+    ).toBe('trust-and-safety');
+    // The block store existing does not by itself unblock production: the
+    // blocker is the open legal decision, and naming it in the message keeps
+    // that visible to whoever hits it.
+    for (const appEnvironment of ['staging', 'production']) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        MESSAGING_SAFETY_ELIGIBILITY: 'trust-and-safety',
+      });
+      expect(failure).toContain('MESSAGING_SAFETY_ELIGIBILITY');
+      expect(failure).toContain('retention');
+    }
+  });
+
+  it('defaults notification delivery to the channel that sends nothing', () => {
+    // No email, push, or SMS provider is approved. `unavailable` does not
+    // discard a notice: it reports that no attempt was made, so the notice
+    // stays owed in PostgreSQL and is deliverable once a provider exists.
+    const config = loadServerConfig(validEnvironment);
+    expect(config.NOTIFICATIONS_DELIVERY_CHANNEL).toBe('unavailable');
+  });
+
+  it('permits the development notification channel only outside deployed environments', () => {
+    expect(
+      loadServerConfig({
+        ...validEnvironment,
+        NOTIFICATIONS_DELIVERY_CHANNEL: 'local-test',
+      }).NOTIFICATIONS_DELIVERY_CHANNEL,
+    ).toBe('local-test');
+    for (const appEnvironment of ['staging', 'production']) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        NOTIFICATIONS_DELIVERY_CHANNEL: 'local-test',
+      });
+      expect(failure).toContain('NOTIFICATIONS_DELIVERY_CHANNEL');
+      expect(failure).toContain('DECISIONS_REQUIRED');
+    }
   });
 
   it('redacts every connection string', () => {

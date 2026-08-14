@@ -50,8 +50,12 @@ export interface ConsumerWebAuthClient {
 export function createConsumerWebAuthClient(options: {
   readonly apiBaseUrl: string;
   readonly cookieSource?: () => string;
+  /** Injectable so the session lifecycle is testable without a browser. */
+  readonly fetch?: typeof globalThis.fetch;
 }): ConsumerWebAuthClient {
-  const api = createVeloraApiClient(options.apiBaseUrl);
+  const api = createVeloraApiClient(options.apiBaseUrl, {
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+  });
   const cookies =
     options.cookieSource ??
     (() => (typeof document === 'undefined' ? '' : document.cookie));

@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import {
   bigserial,
   check,
@@ -6,12 +6,18 @@ import {
   integer,
   pgTable,
   text,
-  timestamp,
   uniqueIndex,
   uuid,
   type AnyPgColumn,
-  type PgColumn,
 } from 'drizzle-orm/pg-core';
+
+import {
+  digestColumn,
+  inList,
+  isHexDigest,
+  nullablePairing,
+  timestamptz,
+} from '../database/columns.js';
 
 /**
  * AUTH-owned persistence. AUTH owns authentication identity, sessions, refresh
@@ -24,18 +30,6 @@ import {
  * Every lifetime written by the services on top of these tables comes from
  * ADR-0017 through `./policy.js`; no duration is chosen here.
  */
-
-const timestamptz = (name: string) =>
-  timestamp(name, { mode: 'date', withTimezone: true });
-
-/** A lowercase SHA-256 hex digest. No plaintext token is ever stored. */
-const digestColumn = (name: string) => text(name);
-
-const isHexDigest = (column: PgColumn): SQL =>
-  sql`${column} ~ '^[0-9a-f]{64}$'`;
-
-const nullablePairing = (first: PgColumn, second: PgColumn): SQL =>
-  sql`(${first} is null) = (${second} is null)`;
 
 export const authAudienceValues = [
   'consumer_web',
@@ -82,20 +76,6 @@ export const authSecurityEventTypes = [
   'privileged_recovery_approved',
   'privileged_recovery_completed',
 ] as const;
-
-// Values are compile-time constants, and a CHECK constraint is DDL where a bound
-// parameter is not usable, so the allowed set is inlined as SQL literals.
-function inList(column: PgColumn, values: readonly string[]): SQL {
-  const literals = values
-    .map((value) => {
-      if (!/^[a-z_]+$/u.test(value)) {
-        throw new Error(`Unsafe enumerated constraint value: ${value}`);
-      }
-      return `'${value}'`;
-    })
-    .join(', ');
-  return sql`${column} in (${sql.raw(literals)})`;
-}
 
 export const authAccounts = pgTable(
   'auth_accounts',

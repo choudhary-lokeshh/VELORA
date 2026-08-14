@@ -33,6 +33,14 @@ Provide accessible explanation, retry/alternate/manual review where policy permi
 
 Creator identity, creator age, consumer adult access, payout KYC, and content-performer/participant verification are separate predicates. Conditional mature/explicit content may require stricter, repeated, or participant-specific evidence and consent/ownership records. Nothing in this document enables that content.
 
+## Implemented assurance seam
+
+Adult assurance is recorded as append-only assessments carrying the assurance class, the normalized outcome, the method, the eligibility policy version the outcome was judged against, the declared region, and an optional expiry. The current assurance is the most recent assessment, so an expired or revoked outcome is a visible event rather than the absence of an earlier pass, and an expired pass is not treated as a pass.
+
+The classes are separate values that no code widens into each other, and a database constraint refuses a self-declaration that carries provider evidence. No raw document, image, or birth date has a column. The only provider-linked field is an opaque digest.
+
+The provider is an adapter selected by configuration, and the default refuses every request. Staging and production reject any other selection, so no deployed environment can grant verified adult status while the decisions below are open. A development and test adapter exists so the path is exercisable and is named so that no test using it reads as evidence about a real provider.
+
 ## Open decisions and cross-references
 
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: age per country, assurance tiers, accepted methods, provider/manual route, biometric use, evidence retention, parental/minor handling, retry/appeal, re-verification, false-match response, and accessibility fallback.

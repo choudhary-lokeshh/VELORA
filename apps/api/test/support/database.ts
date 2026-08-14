@@ -18,12 +18,10 @@ export function requiredEnvironment(name: string): string {
 }
 
 /**
- * AUTH integration tests run against their own database so the bootstrap
+ * Domain integration tests run against their own database so the bootstrap
  * migration suite keeps its guarantee of starting from a genuinely empty one.
  */
-export async function provisionAuthDatabase(
-  databaseName: string,
-): Promise<string> {
+export async function provisionDatabase(databaseName: string): Promise<string> {
   const administrative = requiredEnvironment('TEST_DATABASE_URL');
   const target = new URL(administrative);
   target.pathname = `/${databaseName}`;
@@ -47,12 +45,12 @@ export async function provisionAuthDatabase(
     new Response(migration.stderr).text(),
   ]);
   if (exitCode !== 0) {
-    throw new Error(`AUTH migration failed: ${stderr}`);
+    throw new Error(`Migration failed: ${stderr}`);
   }
   return target.toString();
 }
 
-export interface AuthTestDatabase {
+export interface TestDatabase {
   close(): Promise<void>;
   readonly drizzle: AuthDatabase;
   readonly sql: Bun.SQL;
@@ -60,7 +58,48 @@ export interface AuthTestDatabase {
   readonly url: string;
 }
 
-export function connectAuthDatabase(url: string): AuthTestDatabase {
+/**
+ * Roots of every ownership tree the migrations create. `cascade` removes the
+ * rows that reference them, so this list only ever needs a new entry when a
+ * domain adds a table nothing else points at.
+ */
+/**
+ * Roots a truncation starts from. Tables inside a domain follow by cascade;
+ * DISCOVERY is listed explicitly because cross-domain references deliberately
+ * carry no foreign key, so nothing cascades into it.
+ */
+const truncationRoots = [
+  'auth_accounts',
+  'auth_recovery_rate_events',
+  'discovery_introductions',
+  'discovery_outbox',
+  'discovery_passes',
+  'discovery_presentations',
+  'messaging_conversations',
+  'messaging_outbox',
+  'notifications_feed',
+  'notifications_intents',
+  'safety_blocks',
+  'safety_enforcements',
+  'safety_reports',
+  'users_accounts',
+];
+
+export function connectDatabase(url: string): TestDatabase {
+  // Sized above the peak concurrency these suites exercise, deliberately.
+  //
+  // A Bun.SQL pool that has to queue a caller for a connection while it is also
+  // serving transactions and autocommit queries can lose one permanently to
+  // `idle in transaction`, which stalls rather than fails. The race suites fire
+  // sixteen simultaneous requests at a single pair, so a pool at or below that
+  // has to queue and hangs — measured. Production solves this by bounding
+  // in-flight work below the pool instead; see ADR-0019. A test harness has no
+  // request admission to bound, so it buys the same guarantee with headroom.
+  //
+  // Bun runs every integration file in one process, so fifteen suites at twenty
+  // connections need three hundred; `scripts/run-integration-tests.mjs` starts
+  // PostgreSQL with headroom above that rather than leaving the ceiling to the
+  // default hundred, where the same exhaustion appeared as an intermittent hang.
   const sql = new Bun.SQL(url, { max: 20 });
   return {
     async close() {
@@ -70,7 +109,7 @@ export function connectAuthDatabase(url: string): AuthTestDatabase {
     sql,
     async truncate() {
       await sql.unsafe(
-        'truncate table auth_accounts, auth_recovery_rate_events restart identity cascade',
+        `truncate table ${truncationRoots.join(', ')} restart identity cascade`,
       );
     },
     url,
@@ -87,4 +126,42 @@ export async function rowsOf<Row>(result: unknown): Promise<Row[]> {
 
 export async function execute(result: unknown): Promise<void> {
   await (result as Promise<unknown>);
+}
+
+/**
+ * Inserts many plain rows in one statement.
+ *
+ * Bun's SQL tag renders a JS array as a comma-joined scalar rather than a
+ * PostgreSQL array, so the obvious `unnest` form silently produces a malformed
+ * array literal. Its own helper builds a multi-row `VALUES` list correctly;
+ * this wraps it once so seeding a realistic volume is a typed call rather than
+ * a cast repeated at every site. Object keys are the column names.
+ */
+export async function insertRows(
+  database: TestDatabase,
+  table: string,
+  rows: readonly Readonly<Record<string, unknown>>[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const tag = database.sql as unknown as {
+    (value: unknown): unknown;
+    (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+  };
+  await tag`insert into ${tag(table)} ${tag(rows)}`;
+}
+
+/**
+ * True when the database refused the statement.
+ *
+ * Constraint tests assert that an invariant is enforced by PostgreSQL rather
+ * than by application code, so what matters is that the write did not happen;
+ * the driver's error shape is not part of the invariant.
+ */
+export async function refused(run: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await run();
+    return false;
+  } catch {
+    return true;
+  }
 }

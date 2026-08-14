@@ -25,6 +25,53 @@ export const localAccessTokenSigner = 'local-development-ed25519';
 export const localRecoveryDelivery = 'local-test';
 export const unavailablePrivilegedVerifier = 'unavailable';
 
+/**
+ * Adult-assurance adapters. `unavailable` refuses every request, which is the
+ * only behaviour a deployed environment may have while age verification is
+ * `DECISION REQUIRED / LEGAL REVIEW REQUIRED`. `local-test` exists so the
+ * verified path is exercisable during development and is refused everywhere
+ * else by the environment guard below.
+ */
+export const unavailableAdultAssuranceVerifier = 'unavailable';
+export const localTestAdultAssuranceVerifier = 'local-test';
+
+/**
+ * Profile media storage adapters. No storage vendor is approved, so
+ * `unavailable` refuses every upload and every inspection, which is the only
+ * behaviour a deployed environment may have. `local-test` keeps objects in
+ * process memory for development and tests and is refused everywhere else by
+ * the environment guard below.
+ */
+export const unavailableProfileMediaStorage = 'unavailable';
+export const localTestProfileMediaStorage = 'local-test';
+
+/**
+ * Where messaging takes its "may these two people still interact" answer from.
+ *
+ * `trust-and-safety` is the real block store TRUST & SAFETY owns. It is refused
+ * in deployed environments anyway, because messaging is blocked on two open
+ * legal decisions rather than on a missing capability: message retention
+ * duration and post-block history visibility. `unavailable` denies every pair,
+ * so staging and production carry no message at all rather than carrying one
+ * under a retention policy nobody has approved.
+ */
+export const unavailableSafetyEligibility = 'unavailable';
+export const trustAndSafetyEligibility = 'trust-and-safety';
+
+/**
+ * Notification delivery channels. No email, push, or SMS provider is approved —
+ * country coverage, consent, deliverability, and privacy review are all pending
+ * in `docs/decisions/DECISIONS_REQUIRED.md` — so `unavailable` is the only
+ * behaviour a deployed environment may have.
+ *
+ * `unavailable` does not discard a notice. It reports that no attempt was made,
+ * which leaves the notice owed in PostgreSQL and deliverable on the day a
+ * provider is approved. `local-test` records deliveries in process memory for
+ * development and is refused everywhere else by the environment guard below.
+ */
+export const unavailableNotificationChannel = 'unavailable';
+export const localTestNotificationChannel = 'local-test';
+
 // A browser only ever sends a concrete host, so anything that is not a real
 // hostname or IP literal is refused. That keeps a wildcard-looking entry such
 // as `https://*.velora.test` out of the allowlist, where it would read as a
@@ -144,8 +191,23 @@ export const serverConfigSchema = z
     EPHEMERAL_REDIS_URL: redisUrlSchema,
     HOST: z.string().min(1).optional(),
     LOG_LEVEL: logLevelSchema.default('info'),
+    MESSAGING_SAFETY_ELIGIBILITY: z
+      .enum([unavailableSafetyEligibility, trustAndSafetyEligibility])
+      .default(unavailableSafetyEligibility),
+    NOTIFICATIONS_DELIVERY_CHANNEL: z
+      .enum([unavailableNotificationChannel, localTestNotificationChannel])
+      .default(unavailableNotificationChannel),
     PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
     QUEUE_REDIS_URL: redisUrlSchema,
+    USERS_ADULT_ASSURANCE_VERIFIER: z
+      .enum([
+        unavailableAdultAssuranceVerifier,
+        localTestAdultAssuranceVerifier,
+      ])
+      .default(unavailableAdultAssuranceVerifier),
+    USERS_PROFILE_MEDIA_STORAGE: z
+      .enum([unavailableProfileMediaStorage, localTestProfileMediaStorage])
+      .default(unavailableProfileMediaStorage),
   })
   .superRefine((config, context) => {
     if (config.APP_ENV !== 'staging' && config.APP_ENV !== 'production') return;
@@ -153,6 +215,39 @@ export const serverConfigSchema = z
     // a test recovery sink, or an absent privileged authenticator verifier must
     // never carry real authentication authority, and no replacement provider is
     // approved yet, so these environments refuse to start at all.
+    if (
+      config.USERS_ADULT_ASSURANCE_VERIFIER !==
+      unavailableAdultAssuranceVerifier
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `USERS_ADULT_ASSURANCE_VERIFIER is not usable in ${config.APP_ENV}: no age or identity verification provider is approved; see DECISIONS_REQUIRED`,
+        path: ['USERS_ADULT_ASSURANCE_VERIFIER'],
+      });
+    }
+    if (config.MESSAGING_SAFETY_ELIGIBILITY !== unavailableSafetyEligibility) {
+      context.addIssue({
+        code: 'custom',
+        message: `MESSAGING_SAFETY_ELIGIBILITY is not usable in ${config.APP_ENV}: message retention duration and post-block history visibility are undecided; see DECISIONS_REQUIRED`,
+        path: ['MESSAGING_SAFETY_ELIGIBILITY'],
+      });
+    }
+    if (
+      config.NOTIFICATIONS_DELIVERY_CHANNEL !== unavailableNotificationChannel
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `NOTIFICATIONS_DELIVERY_CHANNEL is not usable in ${config.APP_ENV}: no email, push, or SMS provider is approved; see DECISIONS_REQUIRED`,
+        path: ['NOTIFICATIONS_DELIVERY_CHANNEL'],
+      });
+    }
+    if (config.USERS_PROFILE_MEDIA_STORAGE !== unavailableProfileMediaStorage) {
+      context.addIssue({
+        code: 'custom',
+        message: `USERS_PROFILE_MEDIA_STORAGE is not usable in ${config.APP_ENV}: no media storage provider is approved; see DECISIONS_REQUIRED`,
+        path: ['USERS_PROFILE_MEDIA_STORAGE'],
+      });
+    }
     for (const [path, message] of [
       [
         'AUTH_IDENTITY_PROVIDER',
@@ -213,6 +308,8 @@ export function loadMigrationConfig(
 export function redactServerConfig(config: ServerConfig) {
   return {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
+    adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
+    profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
     accessTokenSigningKeyConfigured:
       config.AUTH_ACCESS_TOKEN_SIGNING_KEY !== undefined,
     accessTokenVerificationKeyCount:
@@ -227,7 +324,9 @@ export function redactServerConfig(config: ServerConfig) {
     host: config.HOST,
     identityProvider: config.AUTH_IDENTITY_PROVIDER,
     logLevel: config.LOG_LEVEL,
+    notificationDeliveryChannel: config.NOTIFICATIONS_DELIVERY_CHANNEL,
     port: config.PORT,
+    safetyEligibility: config.MESSAGING_SAFETY_ELIGIBILITY,
     privilegedAuthenticatorVerifier:
       config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,
     queueRedisConfigured: config.QUEUE_REDIS_URL.length > 0,

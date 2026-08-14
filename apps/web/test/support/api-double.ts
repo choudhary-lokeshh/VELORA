@@ -1,0 +1,556 @@
+/**
+ * A stand-in for the VELORA API.
+ *
+ * It answers the real contract paths with real contract shapes, and it holds
+ * state, so a test can drive the whole consumer journey — sign in, admission,
+ * discovery, a message, a block — and watch the surface react to answers a
+ * server would actually give.
+ *
+ * It is deliberately not a mock inside a component. Nothing in `src/` knows
+ * this file exists; it is installed as a `fetch` implementation, so the surface
+ * under test goes through the generated client, the same request bodies, and
+ * the same status codes it would in production. A component that only worked
+ * against a hand-written stub would prove nothing.
+ */
+
+export interface ApiDoubleState {
+  account: {
+    createdAt: string;
+    id: string;
+    status: string;
+  } | null;
+  availability: {
+    availableUntil?: string;
+    effectiveState: 'available' | 'unavailable';
+    state: 'available' | 'unavailable';
+    updatedAt: string;
+  };
+  blocks: { blockedId: string; createdAt: string }[];
+  candidates: {
+    bio?: string;
+    displayName: string;
+    id: string;
+    media: { id: string; position: number }[];
+    region?: string;
+    sharedLanguages: string[];
+  }[];
+  conversations: {
+    counterpart: {
+      displayName: string;
+      id: string;
+      media: { id: string; position: number }[];
+    };
+    createdAt: string;
+    id: string;
+    lastActivityAt: string;
+    lastMessageSequence: number;
+    lastReadSequence: number;
+    state: 'active' | 'closed';
+  }[];
+  introductions: {
+    counterpart: {
+      displayName: string;
+      id: string;
+      media: { id: string; position: number }[];
+      sharedLanguages: string[];
+    };
+    createdAt: string;
+    id: string;
+    mutualAt?: string;
+    role: 'initiator' | 'recipient';
+    state: 'pending' | 'mutual' | 'closed';
+  }[];
+  messages: {
+    body: string;
+    clientMessageId: string;
+    conversationId: string;
+    createdAt: string;
+    id: string;
+    senderId: string;
+    sequence: number;
+  }[];
+  notifications: {
+    conversationId?: string;
+    createdAt: string;
+    id: string;
+    introductionId?: string;
+    kind: string;
+    readAt?: string;
+    subjectId: string;
+  }[];
+  onboarding: {
+    adultAssurance: string;
+    adultAssuranceRefused: boolean;
+    outstandingPolicies: { key: string; version: string }[];
+    outstandingProfile: string[];
+    step: string;
+  } | null;
+  profile: {
+    complete: boolean;
+    discoverable: boolean;
+    displayName?: string;
+    languages: string[];
+    media: {
+      id: string;
+      position: number;
+      state: string;
+      uploadExpiresAt: string;
+    }[];
+    outstandingRequirements: string[];
+    preferencesVersion?: number;
+    version?: number;
+  } | null;
+  reports: {
+    createdAt: string;
+    id: string;
+    reasonCode: string;
+    state: string;
+    subjectId: string;
+  }[];
+  session: {
+    absoluteExpiresAt: string;
+    accountId: string;
+    assurance: string;
+    assuranceEstablishedAt: string;
+    audience: string;
+    authenticatedAt: string;
+    idleExpiresAt: string;
+  } | null;
+}
+
+export interface ApiDouble {
+  /** Every request the surface made, so a test can assert what it did not do. */
+  readonly calls: { body: unknown; method: string; path: string }[];
+  /** Forces the next matching request to fail as if the network were gone. */
+  failNext(path: string): void;
+  readonly fetch: typeof globalThis.fetch;
+  /** Forces the next matching request to be refused with this product code. */
+  refuseNext(path: string, status: number, code: string): void;
+  readonly state: ApiDoubleState;
+}
+
+const iso = (offsetMilliseconds = 0) =>
+  new Date(Date.UTC(2026, 7, 14, 12, 0, 0) + offsetMilliseconds).toISOString();
+
+export const otherPersonId = '22222222-2222-4222-8222-222222222222';
+export const ownAccountId = '11111111-1111-4111-8111-111111111111';
+
+export function emptyState(): ApiDoubleState {
+  return {
+    account: null,
+    availability: {
+      effectiveState: 'unavailable',
+      state: 'unavailable',
+      updatedAt: iso(),
+    },
+    blocks: [],
+    candidates: [],
+    conversations: [],
+    introductions: [],
+    messages: [],
+    notifications: [],
+    onboarding: null,
+    profile: null,
+    reports: [],
+    session: null,
+  };
+}
+
+/** A signed-in, fully admitted account with one candidate to look at. */
+export function admittedState(): ApiDoubleState {
+  return {
+    ...emptyState(),
+    account: { createdAt: iso(), id: ownAccountId, status: 'active' },
+    candidates: [
+      {
+        bio: 'Likes long walks and short queues.',
+        displayName: 'Robin',
+        id: otherPersonId,
+        media: [{ id: '33333333-3333-4333-8333-333333333333', position: 0 }],
+        region: 'ES',
+        sharedLanguages: ['es'],
+      },
+    ],
+    onboarding: {
+      adultAssurance: 'self_declared',
+      adultAssuranceRefused: false,
+      outstandingPolicies: [],
+      outstandingProfile: [],
+      step: 'completed',
+    },
+    profile: {
+      complete: true,
+      discoverable: true,
+      displayName: 'Alex',
+      languages: ['es'],
+      media: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          position: 0,
+          state: 'ready',
+          uploadExpiresAt: iso(3_600_000),
+        },
+      ],
+      outstandingRequirements: [],
+      preferencesVersion: 1,
+      version: 1,
+    },
+    reports: [],
+    session: {
+      absoluteExpiresAt: iso(86_400_000),
+      accountId: ownAccountId,
+      assurance: 'single_factor',
+      assuranceEstablishedAt: iso(),
+      audience: 'consumer_web',
+      authenticatedAt: iso(),
+      idleExpiresAt: iso(3_600_000),
+    },
+  };
+}
+
+export function createApiDouble(
+  initial: ApiDoubleState = emptyState(),
+): ApiDouble {
+  const state: ApiDoubleState = { ...initial };
+  const calls: { body: unknown; method: string; path: string }[] = [];
+  const failures = new Map<string, number>();
+  const refusals = new Map<string, { code: string; status: number }>();
+  let sequence = state.messages.length;
+
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      headers: { 'content-type': 'application/json' },
+      status,
+    });
+  const error = (status: number, code: string) =>
+    json(status, { code, correlationId: 'test', message: 'Request failed' });
+
+  const handler: typeof globalThis.fetch = async (input, init) => {
+    // The generated client hands `fetch` a fully built `Request` and no init,
+    // so the method and body have to be read from the request itself. Reading
+    // `init` instead would silently see every write as a GET with no body.
+    const request =
+      input instanceof Request
+        ? input
+        : new Request(input instanceof URL ? input.href : input, init);
+    const url = new URL(request.url);
+    const method = request.method.toUpperCase();
+    const path = url.pathname;
+    const raw = await request.clone().text();
+    const body = raw.length > 0 ? (JSON.parse(raw) as unknown) : undefined;
+    calls.push({ body, method, path });
+
+    if ((failures.get(path) ?? 0) > 0) {
+      failures.set(path, (failures.get(path) ?? 0) - 1);
+      throw new TypeError('network error');
+    }
+    const refusal = refusals.get(path);
+    if (refusal !== undefined) {
+      refusals.delete(path);
+      return error(refusal.status, refusal.code);
+    }
+    if (request.signal.aborted) throw new DOMException('aborted');
+
+    // AUTH.
+    if (path === '/v1/auth/local/web-sessions' && method === 'POST') {
+      state.session = admittedState().session;
+      return json(201, { ...state.session, csrfToken: 'csrf-token' });
+    }
+    if (path === '/v1/auth/session') {
+      return state.session === null
+        ? error(401, 'AUTH_REQUIRED')
+        : json(200, state.session);
+    }
+    if (path === '/v1/auth/logout' || path === '/v1/auth/logout-all') {
+      state.session = null;
+      return json(200, { acknowledged: true });
+    }
+
+    if (state.session === null) return error(401, 'AUTH_REQUIRED');
+
+    // USERS.
+    if (path === '/v1/users' && method === 'POST') {
+      state.account = {
+        createdAt: iso(),
+        id: ownAccountId,
+        status: 'pending_profile',
+      };
+      state.onboarding = {
+        adultAssurance: 'none',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: [],
+        step: 'adult_declaration',
+      };
+      return json(201, state.account);
+    }
+    if (state.account === null) return error(404, 'RESOURCE_NOT_FOUND');
+    if (path === '/v1/users/me') return json(200, state.account);
+    if (path === '/v1/users/me/onboarding' && method === 'GET') {
+      return json(200, { account: state.account, ...state.onboarding });
+    }
+    if (path === '/v1/users/me/onboarding/adult-declaration') {
+      state.onboarding = {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [
+          { key: 'terms_of_service', version: '2026-01-01' },
+        ],
+        outstandingProfile: [],
+        step: 'policy_acknowledgement',
+      };
+      return json(200, { account: state.account, ...state.onboarding });
+    }
+    if (path === '/v1/users/me/onboarding/acknowledgements') {
+      state.onboarding = {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: ['display_name', 'ready_media'],
+        step: 'profile',
+      };
+      return json(200, { account: state.account, ...state.onboarding });
+    }
+    if (path === '/v1/users/me/profile' && method === 'GET') {
+      return state.profile === null
+        ? json(200, {
+            complete: false,
+            discoverable: false,
+            languages: [],
+            media: [],
+            outstandingRequirements: ['display_name', 'ready_media'],
+          })
+        : json(200, state.profile);
+    }
+    if (path === '/v1/users/me/profile' && method === 'POST') {
+      const input = body as { displayName: string; languages: string[] };
+      state.profile = {
+        complete: true,
+        discoverable: state.profile?.discoverable ?? false,
+        displayName: input.displayName,
+        languages: input.languages,
+        media: state.profile?.media ?? [],
+        outstandingRequirements: [],
+        preferencesVersion: state.profile?.preferencesVersion ?? 1,
+        version: (state.profile?.version ?? 0) + 1,
+      };
+      state.account = { ...state.account, status: 'active' };
+      state.onboarding = {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: [],
+        step: 'completed',
+      };
+      return json(200, state.profile);
+    }
+    if (path === '/v1/users/me/preferences' && state.profile !== null) {
+      const input = body as { discoverable: boolean };
+      state.profile = {
+        ...state.profile,
+        discoverable: input.discoverable,
+        preferencesVersion: (state.profile.preferencesVersion ?? 0) + 1,
+      };
+      return json(200, state.profile);
+    }
+    if (path === '/v1/users/me/profile/media' && method === 'POST') {
+      // Every deployed environment refuses: no media provider is approved.
+      return error(503, 'DEPENDENCY_UNAVAILABLE');
+    }
+    if (path === '/v1/users/me/availability' && method === 'GET') {
+      return json(200, state.availability);
+    }
+    if (path === '/v1/users/me/availability' && method === 'POST') {
+      const input = body as {
+        availableUntil?: string;
+        state: 'available' | 'unavailable';
+      };
+      state.availability = {
+        ...(input.availableUntil === undefined
+          ? {}
+          : { availableUntil: input.availableUntil }),
+        effectiveState: input.state,
+        state: input.state,
+        updatedAt: iso(),
+      };
+      return json(200, state.availability);
+    }
+
+    // DISCOVERY.
+    if (path === '/v1/discovery/candidates') {
+      return json(200, {
+        candidates: state.candidates,
+        rankingVersion: 'test',
+      });
+    }
+    if (path === '/v1/discovery/passes') {
+      const input = body as { candidateId: string };
+      state.candidates = state.candidates.filter(
+        (candidate) => candidate.id !== input.candidateId,
+      );
+      return json(200, { suppressedUntil: iso(86_400_000) });
+    }
+    if (path === '/v1/discovery/introductions' && method === 'GET') {
+      return json(200, { introductions: state.introductions });
+    }
+    if (path === '/v1/discovery/introductions' && method === 'POST') {
+      const input = body as { candidateId: string };
+      const candidate = state.candidates.find(
+        (entry) => entry.id === input.candidateId,
+      );
+      if (candidate === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      const introduction = {
+        counterpart: {
+          ...candidate,
+          sharedLanguages: candidate.sharedLanguages,
+        },
+        createdAt: iso(),
+        id: '55555555-5555-4555-8555-555555555555',
+        role: 'initiator' as const,
+        state: 'pending' as const,
+      };
+      state.introductions = [introduction];
+      state.candidates = state.candidates.filter(
+        (entry) => entry.id !== input.candidateId,
+      );
+      return json(200, introduction);
+    }
+
+    // MESSAGING.
+    if (path === '/v1/messaging/conversations' && method === 'GET') {
+      return json(200, { conversations: state.conversations });
+    }
+    if (path === '/v1/messaging/conversations' && method === 'POST') {
+      const conversation = state.conversations[0];
+      return conversation === undefined
+        ? error(404, 'RESOURCE_NOT_FOUND')
+        : json(200, conversation);
+    }
+    if (path === '/v1/messaging/conversations/read') {
+      const input = body as { conversationId: string; sequence: number };
+      state.conversations = state.conversations.map((conversation) =>
+        conversation.id === input.conversationId
+          ? {
+              ...conversation,
+              lastReadSequence: Math.max(
+                conversation.lastReadSequence,
+                input.sequence,
+              ),
+            }
+          : conversation,
+      );
+      return json(200, {
+        conversationId: input.conversationId,
+        lastReadSequence: input.sequence,
+      });
+    }
+    if (path === '/v1/messaging/messages' && method === 'GET') {
+      const conversationId = url.searchParams.get('conversationId');
+      return json(200, {
+        conversationId,
+        messages: state.messages
+          .filter((message) => message.conversationId === conversationId)
+          .toReversed(),
+      });
+    }
+    if (path === '/v1/messaging/messages' && method === 'POST') {
+      const input = body as {
+        body: string;
+        clientMessageId: string;
+        conversationId: string;
+      };
+      // Idempotent by client message identifier, exactly as the server is: a
+      // retry after a lost response produces the message that already exists.
+      const existing = state.messages.find(
+        (message) => message.clientMessageId === input.clientMessageId,
+      );
+      if (existing !== undefined) return json(200, existing);
+      sequence += 1;
+      const message = {
+        ...input,
+        createdAt: iso(sequence * 1_000),
+        id: `66666666-6666-4666-8666-${String(sequence).padStart(12, '0')}`,
+        senderId: ownAccountId,
+        sequence,
+      };
+      state.messages = [...state.messages, message];
+      return json(200, message);
+    }
+
+    // NOTIFICATIONS.
+    if (path === '/v1/notifications' && method === 'GET') {
+      return json(200, { notifications: state.notifications });
+    }
+    if (path === '/v1/notifications/read') {
+      const input = body as { notificationIds: string[] };
+      const readIds: string[] = [];
+      state.notifications = state.notifications.map((entry) => {
+        if (!input.notificationIds.includes(entry.id)) return entry;
+        if (entry.readAt !== undefined) return entry;
+        readIds.push(entry.id);
+        return { ...entry, readAt: iso() };
+      });
+      return json(200, { readIds });
+    }
+
+    // SAFETY.
+    if (path === '/v1/safety/blocks' && method === 'GET') {
+      return json(200, { blocks: state.blocks });
+    }
+    if (path === '/v1/safety/blocks' && method === 'POST') {
+      const input = body as { targetId: string };
+      state.blocks = [
+        ...state.blocks,
+        { blockedId: input.targetId, createdAt: iso() },
+      ];
+      state.candidates = state.candidates.filter(
+        (candidate) => candidate.id !== input.targetId,
+      );
+      state.conversations = state.conversations.map((conversation) =>
+        conversation.counterpart.id === input.targetId
+          ? { ...conversation, state: 'closed' as const }
+          : conversation,
+      );
+      state.notifications = state.notifications.filter(
+        (entry) => entry.subjectId !== input.targetId,
+      );
+      return json(200, { blockedId: input.targetId, createdAt: iso() });
+    }
+    if (path === '/v1/safety/blocks/removal') {
+      const input = body as { targetId: string };
+      state.blocks = state.blocks.filter(
+        (block) => block.blockedId !== input.targetId,
+      );
+      return json(200, { blockedId: input.targetId, createdAt: iso() });
+    }
+    if (path === '/v1/safety/reports' && method === 'GET') {
+      return json(200, { reports: state.reports });
+    }
+    if (path === '/v1/safety/reports' && method === 'POST') {
+      const input = body as { reasonCode: string; subjectId: string };
+      const report = {
+        createdAt: iso(),
+        id: '77777777-7777-4777-8777-777777777777',
+        reasonCode: input.reasonCode,
+        state: 'received',
+        subjectId: input.subjectId,
+      };
+      state.reports = [...state.reports, report];
+      return json(200, report);
+    }
+
+    return error(404, 'HTTP_404');
+  };
+
+  return {
+    calls,
+    failNext(path) {
+      failures.set(path, (failures.get(path) ?? 0) + 1);
+    },
+    fetch: handler,
+    refuseNext(path, status, code) {
+      refusals.set(path, { code, status });
+    },
+    state,
+  };
+}

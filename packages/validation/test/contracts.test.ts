@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   apiErrorSchema,
   apiOperations,
+  apiQueryParameters,
   apiSchemas,
   authErrorCodes,
   browserSessionCookieNames,
@@ -226,8 +227,30 @@ describe('AUTH contract publication', () => {
       expect(operation.path).not.toMatch(/token|secret|password/iu);
       const published = document.paths[operation.path]?.[operation.method];
       for (const parameter of published?.parameters ?? []) {
-        expect(parameter.in).toBe('header');
+        // Headers and bounded query parameters are the only published inputs.
+        // A credential in a URL reaches logs, proxies, and browser history, so
+        // the query surface is restricted to the declared paging registry.
+        expect(['header', 'query'], parameter.name).toContain(parameter.in);
+        if (parameter.in === 'query') {
+          expect(Object.keys(apiQueryParameters)).toContain(parameter.name);
+        }
       }
+    }
+  });
+
+  it('publishes every query parameter the registry declares and no other', () => {
+    for (const operation of apiOperations) {
+      const published = document.paths[operation.path]?.[operation.method];
+      const declared =
+        'requestQuery' in operation
+          ? operation.requestQuery.map((parameter) => parameter.name)
+          : [];
+      expect(
+        published?.parameters
+          .filter((parameter) => parameter.in === 'query')
+          .map((parameter) => parameter.name),
+        operation.operationId,
+      ).toEqual(declared);
     }
   });
 

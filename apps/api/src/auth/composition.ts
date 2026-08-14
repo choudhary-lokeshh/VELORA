@@ -14,6 +14,7 @@ import {
   Ed25519AccessTokenAuthority,
   type AccessTokenSigner,
 } from './access-token.js';
+import { CallerResolver } from './caller.js';
 import {
   LocalIdentityProvider,
   UnavailablePrivilegedAuthenticatorVerifier,
@@ -37,6 +38,11 @@ export interface AuthRuntime {
   >;
   /** Every origin any audience may use, for the CORS reply. */
   readonly allowedOriginUnion: readonly string[];
+  /**
+   * The one credential resolver. Product domains authorize with it rather than
+   * re-deriving a caller from cookies and headers themselves.
+   */
+  readonly caller: CallerResolver;
   close(): Promise<void>;
   readonly privilegedAccess: PrivilegedAccessService;
   readonly recovery: RecoveryService;
@@ -221,10 +227,12 @@ export function createAuthRuntime(input: {
     creator_studio: input.config.AUTH_BROWSER_ORIGINS_CREATOR_STUDIO,
     platform_admin: input.config.AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN,
   };
+  const caller = new CallerResolver({ allowedOrigins, authService: service });
 
   return {
     allowedOrigins,
     allowedOriginUnion: [...new Set(Object.values(allowedOrigins).flat())],
+    caller,
     async close() {
       if (input.options?.rateLimiter === undefined) {
         await ownedRateLimiter.close();
@@ -238,6 +246,7 @@ export function createAuthRuntime(input: {
       allowedOrigins,
       appEnvironment: input.config.APP_ENV,
       authService: service,
+      caller,
       localIdentityEnabled,
       logger: input.logger,
       now,

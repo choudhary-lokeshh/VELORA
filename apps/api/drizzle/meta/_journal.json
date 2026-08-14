@@ -15,6 +15,97 @@
       "when": 1786649650456,
       "tag": "0001_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786652049452,
+      "tag": "0002_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786652714586,
+      "tag": "0003_users_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786655027961,
+      "tag": "0004_users_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786656053947,
+      "tag": "0005_users_availability",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786656756302,
+      "tag": "0006_discovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786657585181,
+      "tag": "0007_discovery_introductions",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786678481775,
+      "tag": "0008_discovery_scale_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786682369732,
+      "tag": "0009_messaging",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786682964215,
+      "tag": "0010_introduction_closure_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786684569431,
+      "tag": "0011_safety",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786687905480,
+      "tag": "0012_notifications_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786706600931,
+      "tag": "0013_notifications_feed_discovery_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786717245377,
+      "tag": "0014_outbox_claim_index",
+      "breakpoints": true
     }
   ]
 }

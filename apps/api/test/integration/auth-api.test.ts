@@ -3,26 +3,29 @@ import type { ServerConfig } from '@velora/config/server';
 import { apiRoutePaths, csrfHeader } from '@velora/validation';
 
 import { createApplication } from '../../src/application.js';
+import { createUsersRuntime } from '../../src/users/composition.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { LocalTestRecoveryDelivery } from '../../src/auth/recovery.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
 import {
-  connectAuthDatabase,
-  provisionAuthDatabase,
+  connectDatabase,
+  provisionDatabase,
   rowsOf,
-  type AuthTestDatabase,
+  type TestDatabase,
 } from '../support/database.js';
 import {
   silentLogger,
   testConsumerOrigin,
+  testConsumerRuntimes,
   testCreatorOrigin,
+  testDatabaseAdmission,
   testForeignOrigin,
   testServerConfig,
 } from '../support/harness.js';
 
-const databaseUrl = await provisionAuthDatabase('velora_auth_api');
-const database: AuthTestDatabase = connectAuthDatabase(databaseUrl);
+const databaseUrl = await provisionDatabase('velora_auth_api');
+const database: TestDatabase = connectDatabase(databaseUrl);
 
 const healthy: HealthDependency = {
   close: () => Promise.resolve(),
@@ -54,14 +57,28 @@ function harness(options?: {
         request.headers.get('x-velora-device') ?? 'api-test',
     },
   });
+  const users = createUsersRuntime({
+    caller: auth.caller,
+    config,
+    database: database.drizzle,
+    logger,
+  });
   const application = createApplication({
     config,
     dependencies: {
       auth,
+      ...testConsumerRuntimes({
+        config,
+        database: database.drizzle,
+        logger,
+        users,
+      }),
       database: healthy,
+      databaseAdmission: testDatabaseAdmission(),
       ephemeralRedis: healthy,
       logger,
       queueRedis: healthy,
+      users,
     },
   });
   if (!(auth.recoveryDelivery instanceof LocalTestRecoveryDelivery)) {

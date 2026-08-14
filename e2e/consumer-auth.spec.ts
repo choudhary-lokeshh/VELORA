@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
-
 import { authApiBaseUrl, consumerWebOrigin } from './auth-environment.js';
+import { expect, test } from './fixtures.js';
 
 /**
  * Consumer Web AUTH in a real browser. This is the only place that proves the
@@ -103,8 +102,14 @@ test.describe('Consumer Web session lifecycle', () => {
     browser,
   }) => {
     const subject = uniqueSubject('global');
-    const first = await browser.newContext();
-    const second = await browser.newContext();
+    // Two devices, named as such: AUTH counts attempts per requester, and two
+    // browser profiles sharing one bucket would be measuring the limiter.
+    const first = await browser.newContext({
+      extraHTTPHeaders: { 'x-velora-device': `${subject}-first` },
+    });
+    const second = await browser.newContext({
+      extraHTTPHeaders: { 'x-velora-device': `${subject}-second` },
+    });
     try {
       for (const context of [first, second]) {
         const page = await context.newPage();

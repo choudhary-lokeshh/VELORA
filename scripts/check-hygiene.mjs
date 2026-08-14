@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 
 const files = execFileSync(
   'git',
@@ -11,7 +11,13 @@ const files = execFileSync(
 const failures = [];
 const ignoredTextChecks = new Set(['pnpm-lock.yaml']);
 
+let checked = 0;
 for (const file of files) {
+  // A path in the index that is not on disk is a deletion the working tree has
+  // made and nobody has staged yet. It has no contents to have hygiene, and
+  // reading it would abort the whole check over a file that is on its way out.
+  if (!existsSync(file)) continue;
+  checked += 1;
   const stat = statSync(file);
   if (stat.size > 5_000_000) {
     failures.push(`${file}: file exceeds 5 MB repository hygiene limit`);
@@ -34,6 +40,6 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Repository hygiene passed for ${files.length} tracked/untracked files.`,
+    `Repository hygiene passed for ${checked} tracked/untracked files.`,
   );
 }

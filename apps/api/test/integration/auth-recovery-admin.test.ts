@@ -25,15 +25,15 @@ import { AuthRepository } from '../../src/auth/repository.js';
 import { AuthService } from '../../src/auth/service.js';
 import { ScriptedAuthenticatorVerifier } from '../support/authenticator.js';
 import {
-  connectAuthDatabase,
+  connectDatabase,
   execute,
-  provisionAuthDatabase,
+  provisionDatabase,
   rowsOf,
-  type AuthTestDatabase,
+  type TestDatabase,
 } from '../support/database.js';
 
-const databaseUrl = await provisionAuthDatabase('velora_auth_privileged');
-const database: AuthTestDatabase = connectAuthDatabase(databaseUrl);
+const databaseUrl = await provisionDatabase('velora_auth_privileged');
+const database: TestDatabase = connectDatabase(databaseUrl);
 const repository = new AuthRepository(database.drizzle);
 const clock = { current: new Date('2026-08-14T10:00:00.000Z') };
 const now = () => clock.current;

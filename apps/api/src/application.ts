@@ -7,6 +7,8 @@ import {
   livenessResponseSchema,
   maximumRequestBodyBytes,
   readinessResponseSchema,
+  retryAfterResponseHeader,
+  retryAfterSeconds,
 } from '@velora/validation';
 import {
   correlationHeader,
@@ -17,13 +19,35 @@ import {
 } from '@velora/observability/server';
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
-import type { AuthRouteResult } from './auth/routes.js';
+import {
+  createDiscoveryRuntime,
+  type DiscoveryRuntime,
+} from './discovery/composition.js';
+import {
+  createMessagingRuntime,
+  type MessagingRuntime,
+} from './messaging/composition.js';
+import { ConversationEnforcement } from './messaging/enforcement.js';
+import {
+  createNotificationsApiRuntime,
+  type NotificationsApiRuntime,
+} from './notifications/composition.js';
+import {
+  createSafetyRuntime,
+  type SafetyRuntime,
+} from './safety/composition.js';
+import { createUsersRuntime, type UsersRuntime } from './users/composition.js';
 import { RedisHealthService } from './cache/redis.service.js';
+import {
+  DatabaseAdmission,
+  DatabaseSaturatedError,
+} from './database/admission.js';
 import {
   DatabaseService,
   type HealthDependency,
 } from './database/database.service.js';
 import { normalizeCorrelationId } from './http/correlation.js';
+import type { RouteRequest, RouteResult } from './http/route-kit.js';
 import { corsHeadersFor, isPreflight, preflightResponse } from './http/cors.js';
 import { apiSecurityHeaders } from './http/security-headers.js';
 import {
@@ -36,10 +60,21 @@ export { maximumRequestBodyBytes } from '@velora/validation';
 export interface ApplicationDependencies {
   readonly auth: AuthRuntime;
   readonly database: HealthDependency;
+  /**
+   * The process-local bound on work touching the connection pool. It is
+   * resource protection only: PostgreSQL stays the correctness authority, and
+   * two replicas hold two independent bounds.
+   */
+  readonly databaseAdmission: DatabaseAdmission;
+  readonly discovery: DiscoveryRuntime;
   readonly ephemeralRedis: HealthDependency;
   readonly logger: SafeLogger;
+  readonly messaging: MessagingRuntime;
+  readonly notifications: NotificationsApiRuntime;
   readonly outboundHttp: OutboundHttpPort;
   readonly queueRedis: HealthDependency;
+  readonly safety: SafetyRuntime;
+  readonly users: UsersRuntime;
 }
 
 export interface ApplicationOptions {
@@ -63,6 +98,11 @@ export interface ApplicationRuntime {
   close(): Promise<void>;
   readonly config: ServerConfig;
   readonly dependencies: ApplicationDependencies;
+  /**
+   * Opens the connection pool before the process accepts traffic. A caller that
+   * injected its own database owns its own warm-up, so this is a no-op there.
+   */
+  warm(): Promise<void>;
 }
 
 function statusForElysiaError(code: string | number | symbol): number {
@@ -84,11 +124,24 @@ export function createApplication(
   const injectedAuth = options.dependencies?.auth;
   const ownsAuth = injectedAuth === undefined;
 
+  const injectedUsers = options.dependencies?.users;
+  const injectedDiscovery = options.dependencies?.discovery;
+  const injectedMessaging = options.dependencies?.messaging;
+  const injectedNotifications = options.dependencies?.notifications;
+  const injectedSafety = options.dependencies?.safety;
+
   let database: HealthDependency;
+  let ownedDatabaseService: DatabaseService | undefined;
   let auth: AuthRuntime;
+  let users: UsersRuntime;
+  let discovery: DiscoveryRuntime;
+  let messaging: MessagingRuntime;
+  let notifications: NotificationsApiRuntime;
+  let safety: SafetyRuntime;
   if (injectedDatabase === undefined) {
     const ownedDatabase = new DatabaseService(config);
     ownedDependencies.push(ownedDatabase);
+    ownedDatabaseService = ownedDatabase;
     database = ownedDatabase;
     auth =
       injectedAuth ??
@@ -97,18 +150,85 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
+    users =
+      injectedUsers ??
+      createUsersRuntime({
+        caller: auth.caller,
+        config,
+        database: ownedDatabase.database,
+        logger,
+      });
+    // Composition order follows the contracts, not the domain list. TRUST &
+    // SAFETY publishes the eligibility answer DISCOVERY and MESSAGING both
+    // consume, and consumes only the two narrow enforcement contracts USERS and
+    // MESSAGING publish — neither of which needs a full runtime — so there is no
+    // cycle to break with a late setter.
+    safety =
+      injectedSafety ??
+      createSafetyRuntime({
+        accounts: users.enforcement,
+        consumerContext: users.consumerContext,
+        conversations: new ConversationEnforcement(ownedDatabase.database),
+        database: ownedDatabase.database,
+        users: users.service,
+      });
+    discovery =
+      injectedDiscovery ??
+      createDiscoveryRuntime({
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        directory: users.directory,
+        logger,
+        onboarding: users.onboarding,
+        safety: safety.directory,
+      });
+    messaging =
+      injectedMessaging ??
+      createMessagingRuntime({
+        config,
+        connections: discovery.connections,
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        directory: users.directory,
+        onboarding: users.onboarding,
+        safety: safety.directory,
+      });
+    // The in-app read surface only. Delivery lives in the worker, so this
+    // process composes no channel and holds no delivery claim.
+    notifications =
+      injectedNotifications ??
+      createNotificationsApiRuntime({
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        safety: safety.directory,
+      });
   } else {
-    // AUTH needs typed data access, not a health probe. A caller that
-    // substitutes the database dependency must therefore supply the AUTH
-    // runtime too, rather than silently getting one wired to a database it did
-    // not provide.
-    if (injectedAuth === undefined) {
+    // Domains need typed data access, not a health probe. A caller that
+    // substitutes the database dependency must therefore supply the domain
+    // runtimes too, rather than silently getting ones wired to a database it
+    // did not provide — and the admission bound with them, because a bound is
+    // sized against the pool it protects and this composition no longer knows
+    // which pool that is.
+    if (
+      injectedAuth === undefined ||
+      injectedUsers === undefined ||
+      injectedDiscovery === undefined ||
+      injectedMessaging === undefined ||
+      injectedNotifications === undefined ||
+      injectedSafety === undefined ||
+      options.dependencies?.databaseAdmission === undefined
+    ) {
       throw new Error(
-        'An injected database dependency requires an injected AUTH runtime',
+        'An injected database dependency requires injected AUTH, USERS, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
     auth = injectedAuth;
+    users = injectedUsers;
+    discovery = injectedDiscovery;
+    messaging = injectedMessaging;
+    notifications = injectedNotifications;
+    safety = injectedSafety;
   }
 
   const ephemeralRedis =
@@ -124,14 +244,27 @@ export function createApplication(
     ownedDependencies.push(queueRedis);
   }
 
+  // The pool this process opened brings its own bound. An injected database
+  // brought one too, checked above.
+  const databaseAdmission =
+    options.dependencies?.databaseAdmission ??
+    ownedDatabaseService?.admission ??
+    new DatabaseAdmission();
+
   const dependencies: ApplicationDependencies = {
     auth,
     database,
+    databaseAdmission,
+    discovery,
     ephemeralRedis,
     logger,
+    messaging,
+    notifications,
     outboundHttp:
       options.dependencies?.outboundHttp ?? new DenyAllOutboundHttp(),
     queueRedis,
+    safety,
+    users,
   };
   const correlationIds = new WeakMap<Request, string>();
   const correlationIdFor = (request: Request) =>
@@ -142,15 +275,66 @@ export function createApplication(
 
   // Elysia emits one `Set-Cookie` header per array entry, which is what the
   // audience-scoped session and CSRF cookies require.
-  function applyAuthResult(
+  function applyRouteResult(
     set: { headers: Record<string, unknown>; status?: unknown },
-    result: AuthRouteResult,
+    result: RouteResult,
   ): unknown {
     set.status = result.status;
     if (result.cookies !== undefined && result.cookies.length > 0) {
       set.headers['set-cookie'] = [...result.cookies];
     }
     return result.body;
+  }
+
+  /**
+   * One request, one database admission permit.
+   *
+   * Taken here rather than inside a service because this is the only place that
+   * knows a request is one unit of work: everything a handler reaches through
+   * the executor it was given belongs to the same unit, and taking a second
+   * permit further down would let a unit wait on itself.
+   *
+   * A request that waits out the bound has not begun its business action — no
+   * transaction was opened and no external call was made — so the refusal is a
+   * capacity answer rather than a decision about the caller, and the client may
+   * retry wherever the operation itself is retryable.
+   */
+  function admitted(
+    route: (input: RouteRequest) => Promise<RouteResult>,
+  ): (context: {
+    request: Request;
+    set: { headers: Record<string, unknown>; status?: unknown };
+  }) => Promise<unknown> {
+    return async ({ request, set }) => {
+      const correlationId = correlationIdFor(request);
+      try {
+        const result = await dependencies.databaseAdmission.run(async () =>
+          route({ body: bodyFor(request), correlationId, request }),
+        );
+        return applyRouteResult(set, result);
+      } catch (error) {
+        if (!(error instanceof DatabaseSaturatedError)) throw error;
+        // Operational fields only. What is saturated is a property of this
+        // instance, never of the caller, so nothing identifying is recorded and
+        // nothing about the pool reaches the response.
+        logger.warn(
+          {
+            correlationId,
+            method: request.method,
+            url: sanitizeUrlForLogging(request.url),
+            ...dependencies.databaseAdmission.snapshot(),
+          },
+          'database admission saturated',
+        );
+        set.status = 503;
+        set.headers[retryAfterResponseHeader] = String(retryAfterSeconds);
+        return apiErrorSchema.parse({
+          code: apiErrorCodes.serviceUnavailable,
+          correlationId,
+          message: 'Request failed',
+        });
+      }
+    };
   }
 
   const app = new Elysia({
@@ -275,84 +459,166 @@ export function createApplication(
         },
       ),
     )
-    .post(apiRoutePaths.localWebSession, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.createLocalWebSession({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
+    .post(
+      apiRoutePaths.localWebSession,
+      admitted(async (input) => auth.routes.createLocalWebSession(input)),
+    )
+    .post(
+      apiRoutePaths.localMobileSession,
+      admitted(async (input) => auth.routes.createLocalMobileSession(input)),
+    )
+    .get(
+      apiRoutePaths.session,
+      admitted(async (input) => auth.routes.getSession(input)),
+    )
+    .post(
+      apiRoutePaths.mobileRefresh,
+      admitted(async (input) => auth.routes.refreshMobileSession(input)),
+    )
+    .post(
+      apiRoutePaths.logout,
+      admitted(async (input) => auth.routes.logout(input)),
+    )
+    .post(
+      apiRoutePaths.logoutAll,
+      admitted(async (input) => auth.routes.logoutAll(input)),
+    )
+    .post(
+      apiRoutePaths.recoveryStart,
+      admitted(async (input) => auth.routes.startAccountRecovery(input)),
+    )
+    .post(
+      apiRoutePaths.recoveryCompletion,
+      admitted(async (input) => auth.routes.completeAccountRecovery(input)),
+    )
+    .post(
+      apiRoutePaths.consumerAccount,
+      admitted(async (input) => users.routes.createAccount(input)),
+    )
+    .get(
+      apiRoutePaths.consumerAccountSelf,
+      admitted(async (input) => users.routes.getAccount(input)),
+    )
+    .get(
+      apiRoutePaths.consumerOnboarding,
+      admitted(async (input) => users.routes.getOnboarding(input)),
+    )
+    .post(
+      apiRoutePaths.consumerAdultDeclaration,
+      admitted(async (input) => users.routes.declareAdult(input)),
+    )
+    .post(
+      apiRoutePaths.consumerPolicyAcknowledgements,
+      admitted(async (input) => users.routes.acknowledgePolicies(input)),
+    )
+    .post(
+      apiRoutePaths.consumerProfile,
+      admitted(async (input) => users.profileRoutes.saveProfile(input)),
+    )
+    .get(
+      apiRoutePaths.consumerProfile,
+      admitted(async (input) => users.profileRoutes.getProfile(input)),
+    )
+    .post(
+      apiRoutePaths.consumerPreferences,
+      admitted(async (input) => users.profileRoutes.savePreferences(input)),
+    )
+    .post(
+      apiRoutePaths.consumerProfileMedia,
+      admitted(async (input) => users.profileRoutes.createMediaUpload(input)),
+    )
+    .post(
+      apiRoutePaths.consumerProfileMediaCompletion,
+      admitted(async (input) => users.profileRoutes.completeMediaUpload(input)),
+    )
+    .post(
+      apiRoutePaths.consumerProfileMediaRemoval,
+      admitted(async (input) => users.profileRoutes.removeMedia(input)),
+    )
+    .get(
+      apiRoutePaths.consumerAvailability,
+      admitted(async (input) =>
+        users.availabilityRoutes.getAvailability(input),
       ),
     )
-    .post(apiRoutePaths.localMobileSession, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.createLocalMobileSession({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
+    .post(
+      apiRoutePaths.consumerAvailability,
+      admitted(async (input) =>
+        users.availabilityRoutes.saveAvailability(input),
       ),
     )
-    .get(apiRoutePaths.session, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.getSession({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
-      ),
+    .get(
+      apiRoutePaths.discoveryCandidates,
+      admitted(async (input) => discovery.routes.getCandidates(input)),
     )
-    .post(apiRoutePaths.mobileRefresh, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.refreshMobileSession({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
-      ),
+    .post(
+      apiRoutePaths.discoveryPasses,
+      admitted(async (input) => discovery.routes.passCandidate(input)),
     )
-    .post(apiRoutePaths.logout, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.logout({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
-      ),
+    .get(
+      apiRoutePaths.discoveryIntroductions,
+      admitted(async (input) => discovery.routes.listIntroductions(input)),
     )
-    .post(apiRoutePaths.logoutAll, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.logoutAll({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
-      ),
+    .post(
+      apiRoutePaths.discoveryIntroductions,
+      admitted(async (input) => discovery.routes.createIntroduction(input)),
     )
-    .post(apiRoutePaths.recoveryStart, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.startAccountRecovery({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
-      ),
+    .post(
+      apiRoutePaths.discoveryIntroductionDecline,
+      admitted(async (input) => discovery.routes.declineIntroduction(input)),
     )
-    .post(apiRoutePaths.recoveryCompletion, async ({ request, set }) =>
-      applyAuthResult(
-        set,
-        await auth.routes.completeAccountRecovery({
-          body: bodyFor(request),
-          correlationId: correlationIdFor(request),
-          request,
-        }),
+    .post(
+      apiRoutePaths.discoveryIntroductionWithdrawal,
+      admitted(async (input) => discovery.routes.withdrawIntroduction(input)),
+    )
+    .post(
+      apiRoutePaths.messagingConversations,
+      admitted(async (input) => messaging.routes.createConversation(input)),
+    )
+    .get(
+      apiRoutePaths.messagingConversations,
+      admitted(async (input) => messaging.routes.listConversations(input)),
+    )
+    .post(
+      apiRoutePaths.messagingConversationRead,
+      admitted(async (input) => messaging.routes.markConversationRead(input)),
+    )
+    .get(
+      apiRoutePaths.messagingMessages,
+      admitted(async (input) => messaging.routes.listMessages(input)),
+    )
+    .post(
+      apiRoutePaths.messagingMessages,
+      admitted(async (input) => messaging.routes.sendMessage(input)),
+    )
+    .post(
+      apiRoutePaths.safetyBlocks,
+      admitted(async (input) => safety.routes.createBlock(input)),
+    )
+    .get(
+      apiRoutePaths.safetyBlocks,
+      admitted(async (input) => safety.routes.listBlocks(input)),
+    )
+    .post(
+      apiRoutePaths.safetyBlockRemoval,
+      admitted(async (input) => safety.routes.removeBlock(input)),
+    )
+    .post(
+      apiRoutePaths.safetyReports,
+      admitted(async (input) => safety.routes.createReport(input)),
+    )
+    .get(
+      apiRoutePaths.safetyReports,
+      admitted(async (input) => safety.routes.listReports(input)),
+    )
+    .get(
+      apiRoutePaths.notifications,
+      admitted(async (input) => notifications.routes.listNotifications(input)),
+    )
+    .post(
+      apiRoutePaths.notificationsRead,
+      admitted(async (input) =>
+        notifications.routes.markNotificationsRead(input),
       ),
     );
 
@@ -366,5 +632,8 @@ export function createApplication(
     },
     config,
     dependencies,
+    async warm() {
+      await ownedDatabaseService?.warm();
+    },
   };
 }

@@ -1,0 +1,121 @@
+import type { NotificationChannel } from './policy.js';
+
+/**
+ * The external delivery seam.
+ *
+ * Everything on the other side of this interface is somebody else's network.
+ * That is why it is the last thing that happens in a delivery and why no
+ * database transaction is ever open across it: a call that hangs must not hold
+ * a row lock, and a call whose outcome is unknown must be resolvable from
+ * durable state afterwards.
+ *
+ * The request carries an idempotency key that is stable for the life of the
+ * intent rather than unique per attempt. A provider that honours it turns this
+ * side's at-least-once retries into at-most-one send, which is the only place
+ * duplicate suppression can actually be enforced.
+ */
+export interface NotificationDeliveryRequest {
+  readonly channel: NotificationChannel;
+  /** Stable across every attempt for this notice. The intent's identifier. */
+  readonly idempotencyKey: string;
+  /** Minimized template fields. Never a message body or a display name. */
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly recipientId: string;
+  readonly templateKey: string;
+}
+
+/**
+ * `unavailable` is not a failure. It says no attempt was made, so it consumes
+ * no attempt budget and produces no attempt record: the notice stays owed and
+ * becomes deliverable the day a provider is approved. A failure means the
+ * provider was asked and said no.
+ */
+export type NotificationReceipt =
+  | { readonly kind: 'delivered'; readonly providerReference: string }
+  | {
+      readonly kind: 'failed';
+      /** A redacted code. Never a provider message or an address. */
+      readonly reason: string;
+    }
+  | { readonly kind: 'unavailable' };
+
+export interface NotificationChannelPort {
+  deliver(request: NotificationDeliveryRequest): Promise<NotificationReceipt>;
+}
+
+/**
+ * Sends nothing, and says so.
+ *
+ * The behaviour every deployed environment has. No email, push, or SMS provider
+ * is approved — `docs/decisions/DECISIONS_REQUIRED.md` lists all three as
+ * pending country, consent, deliverability, and privacy review — so there is
+ * nothing to send through and no default worth guessing.
+ *
+ * It reports `unavailable` rather than failing, which is the difference between
+ * a queue that quietly bleeds notices and one that holds them. Intents
+ * accumulate in `queued`, keep their safety recheck, and are delivered or
+ * suppressed once a provider exists.
+ */
+export class UnavailableNotificationChannel implements NotificationChannelPort {
+  deliver(): Promise<NotificationReceipt> {
+    return Promise.resolve({ kind: 'unavailable' });
+  }
+}
+
+export interface RecordedNotification extends NotificationDeliveryRequest {
+  readonly providerReference: string;
+}
+
+/**
+ * Keeps deliveries in process memory.
+ *
+ * For development and tests only; configuration refuses it outside local and
+ * test environments. It exists so the delivered path — including everything
+ * that must happen before it — is exercisable, and so a test can assert the
+ * thing that matters most here: that a suppressed notice never reached this
+ * class at all.
+ */
+export class LocalTestNotificationChannel implements NotificationChannelPort {
+  private readonly sent: RecordedNotification[] = [];
+  private failure: string | undefined;
+
+  /** Makes the next deliveries fail, so retry and retirement are testable. */
+  failWith(reason: string | undefined): void {
+    this.failure = reason;
+  }
+
+  deliver(request: NotificationDeliveryRequest): Promise<NotificationReceipt> {
+    if (this.failure !== undefined) {
+      return Promise.resolve({ kind: 'failed', reason: this.failure });
+    }
+    // The key is stable per intent, so a repeated attempt is answered with the
+    // receipt the first one produced rather than sending twice. That is what a
+    // provider honouring an idempotency key does, and modelling it here keeps
+    // the recovery path honest.
+    const existing = this.sent.find(
+      (item) => item.idempotencyKey === request.idempotencyKey,
+    );
+    if (existing !== undefined) {
+      return Promise.resolve({
+        kind: 'delivered',
+        providerReference: existing.providerReference,
+      });
+    }
+    const providerReference = `local-test-${request.idempotencyKey}`;
+    this.sent.push({ ...request, providerReference });
+    return Promise.resolve({ kind: 'delivered', providerReference });
+  }
+
+  get delivered(): readonly RecordedNotification[] {
+    return this.sent;
+  }
+
+  deliveredTo(recipientId: string): readonly RecordedNotification[] {
+    return this.sent.filter((item) => item.recipientId === recipientId);
+  }
+
+  reset(): void {
+    this.sent.length = 0;
+    this.failure = undefined;
+  }
+}

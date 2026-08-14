@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { apiOperations, apiRoutePaths, csrfHeader } from '@velora/validation';
 
 import { createApplication } from '../../src/application.js';
+import { createUsersRuntime } from '../../src/users/composition.js';
 import { Ed25519AccessTokenAuthority } from '../../src/auth/access-token.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { LocalIdentityProvider } from '../../src/auth/identity-provider.js';
@@ -19,16 +20,18 @@ import { AuthService } from '../../src/auth/service.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
 import { ScriptedAuthenticatorVerifier } from '../support/authenticator.js';
 import {
-  connectAuthDatabase,
+  connectDatabase,
   execute,
-  provisionAuthDatabase,
+  provisionDatabase,
   rowsOf,
-  type AuthTestDatabase,
+  type TestDatabase,
 } from '../support/database.js';
 import {
   silentLogger,
   testConsumerOrigin,
+  testConsumerRuntimes,
   testCreatorOrigin,
+  testDatabaseAdmission,
   testServerConfig,
 } from '../support/harness.js';
 
@@ -38,8 +41,8 @@ import {
  * does not work.
  */
 
-const databaseUrl = await provisionAuthDatabase('velora_auth_red_team');
-const database: AuthTestDatabase = connectAuthDatabase(databaseUrl);
+const databaseUrl = await provisionDatabase('velora_auth_red_team');
+const database: TestDatabase = connectDatabase(databaseUrl);
 const repository = new AuthRepository(database.drizzle);
 const clock = { current: new Date('2026-08-14T10:00:00.000Z') };
 const now = () => clock.current;
@@ -73,14 +76,28 @@ function harness() {
         request.headers.get('x-velora-device') ?? 'red-team',
     },
   });
+  const users = createUsersRuntime({
+    caller: auth.caller,
+    config,
+    database: database.drizzle,
+    logger,
+  });
   const application = createApplication({
     config,
     dependencies: {
       auth,
+      ...testConsumerRuntimes({
+        config,
+        database: database.drizzle,
+        logger,
+        users,
+      }),
       database: healthy,
+      databaseAdmission: testDatabaseAdmission(),
       ephemeralRedis: healthy,
       logger,
       queueRedis: healthy,
+      users,
     },
   });
   return {

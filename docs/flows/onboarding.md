@@ -33,6 +33,12 @@ Duplicate submission returns prior result. Expired/invalid token, rate limit, de
 
 Anonymous can start only own flow; authenticated subject edits only own draft. Passwords/tokens never appear in logs. Restrict enumeration, abuse, redirects, sessions, verification evidence and document access. Record consent/policy version and security audit where required. Lifecycle events are minimized and dedupable.
 
+## Implemented progression
+
+The step is derived from stored evidence on every read rather than recorded, so no account can hold a step that contradicts its own acknowledgement and assurance rows. The order is adult declaration, then the currently required policy acknowledgements, then the minimum profile; an unmet earlier step makes a later one unreachable regardless of the order a client calls endpoints in.
+
+Adult status is self-declared with the region whose rules apply, and no birth date is collected while the minimum age per country is unresolved. A declaration that the person is not an adult is recorded as a refusal and restricts the account rather than being discarded; declaring again returns the account to the pending path and leaves the refusal on the record. Stronger assurance sits behind a provider-neutral adapter that refuses in every deployed environment, so verified adult status is unreachable until a provider is approved. See [USERS](../domains/users.md) for the tables, classes, and adapter selection.
+
 ## Concurrency and phase
 
 Identity unique key plus command idempotency avoids duplicate accounts; profile activation uses authoritative eligibility recheck. V1. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: exact adult proof, minimum profile, countries, re-verification triggers. See [AUTH](../domains/auth.md), [USERS](../domains/users.md), [consumer account/profile](consumer-account-profile.md), [adult verification](../compliance/02-adult-age-verification.md), [privacy](../security/03-privacy-retention.md).

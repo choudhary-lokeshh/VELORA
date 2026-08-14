@@ -69,10 +69,17 @@ export function reduceConsumerAuth(
     }
     case 'session-result': {
       // A session check that fails after the client had one means the session
-      // ended; before that it simply means nobody has signed in here.
+      // ended; before that it simply means nobody has signed in here. Once that
+      // has been said, a second failing check must not downgrade it back to "no
+      // active session": several parts of the surface notice the same expiry,
+      // and the person should be told the same thing by all of them.
       return fromOutcome(
         event.outcome,
-        state.status === 'authenticated' ? 'session_ended' : 'initial',
+        state.status === 'authenticated'
+          ? 'session_ended'
+          : state.status === 'unauthenticated'
+            ? state.cause
+            : 'initial',
       );
     }
     case 'sign-in-result': {

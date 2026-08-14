@@ -24,6 +24,16 @@ Urgent risk may apply temporary restriction under documented emergency policy be
 
 Reporter sees own submission status where safe. Moderator sees assigned minimum evidence. Admin/Super Admin access is scoped/audited, no unrestricted exports. Maintain chain-of-custody, retention, policy references, and access logs. Do not place raw evidence in generic event/analytics pipeline.
 
+## Implemented V1 behaviour
+
+A report is recorded with its reporter, its subject, the reporting policy version in force, and a client identifier that makes submission retry-safe. The reporter, their narrative, and every internal rationale are absent from the published contract entirely, so no response the API can produce carries one; the person reported is told nothing and their state is unchanged, because a report is an allegation and not an action.
+
+MODERATION does not exist as a surface. What exists is the seam it will call: a service with no HTTP route, wired to real enforcement. Platform Admin sign-in has no approved implementation — the local identity contract refuses the Platform Admin audience and the privileged authenticator verifier refuses every assertion — so a published moderation endpoint would be one that either nobody can reach or that a consumer credential eventually does. Regressions assert no admin, moderation, or enforcement route is published and that no consumer action produces an enforcement record.
+
+Enforcement decides and the owning domain applies: USERS restricts or restores an account, MESSAGING closes a conversation, and SAFETY writes to neither schema. The report transition and the enforcement commit together, so a report marked actioned with no enforcement behind it is not reachable, and an enforcement that cannot take effect rolls the decision back. Enforcement records are append-only; a reversal is a second record rather than an edit.
+
+Blocks resolve every race with a send or an introduction through a transaction-scoped advisory lock on the ordered pair, taken before any row lock. See [TRUST & SAFETY](../domains/trust-safety.md) for why an absent row cannot be serialized any other way.
+
 ## Phase/open questions
 
 V1 manual reports, blocks, basic action. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: risk taxonomy, emergency action policy, appeals/SLA, reporter updates, legal retention. See [TRUST & SAFETY](../domains/trust-safety.md), [MODERATION](../domains/moderation.md), [moderation operations](../operations/02-moderation-operations.md), [Platform Admin](../product/04-platform-admin.md).

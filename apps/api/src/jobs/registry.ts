@@ -78,5 +78,10 @@ export class JobRegistry {
   }
 }
 
-// Product/domain jobs are added only with owner contracts and durable truth.
-export const bootstrapJobRegistry = new JobRegistry();
+/**
+ * Product and domain jobs are registered by the composition root that owns the
+ * contract behind them; `src/worker.ts` is the one that does it today. There is
+ * deliberately no shared module-level registry: a singleton would let any
+ * import decide what a worker runs, and this list is meant to be bounded and
+ * reviewed.
+ */

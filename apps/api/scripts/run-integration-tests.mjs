@@ -140,7 +140,14 @@ function failedTestsFromReport() {
 }
 
 const [postgres, redis] = await Promise.all([
-  new PostgreSqlContainer('postgres:18.4-alpine3.24').start(),
+  // Headroom, stated rather than assumed. Every integration file runs in one
+  // Bun process and each keeps its own bounded pool, so the ceiling the suite
+  // needs is a property of the harness and not of any one test. The default
+  // hundred is close enough to that total that exhausting it is a hang rather
+  // than an error, which is the worst way for a limit to be reached.
+  new PostgreSqlContainer('postgres:18.4-alpine3.24')
+    .withCommand(['postgres', '-c', 'max_connections=400'])
+    .start(),
   new GenericContainer('redis:8.10.0-alpine3.23')
     .withCommand([
       'redis-server',

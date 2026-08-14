@@ -34,3 +34,19 @@ User controls own permitted preferences across Web/Mobile. Admin template/config
 V1 transactional notices. Phase 2 push expansion. Phase 3 consented growth campaigns. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: providers, channel defaults, transactional/marketing classification, quiet hours, frequency limits, template governance, deep-link/token strategy, retry/expiry, receipts, and country communication rules.
 
 See [NOTIFICATIONS](../domains/notifications.md), [Consumer Mobile](../surfaces/02-consumer-mobile.md), [provider adapters](../architecture/06-provider-adapters.md), [privacy](../security/03-privacy-retention.md), and [outbound networking](../security/06-abuse-outbound-networking.md).
+
+## Implemented delivery path
+
+The V1 path is `source transaction -> outbox row -> relay -> notification intent -> claim with safety recheck -> provider -> attempt record`. Stored states are `queued`, `attempted`, `delivered`, `suppressed`, and `dead_letter`; `requested` and `evaluated` are not stored because evaluation happens in the transaction that records the intent, and a failed attempt is recorded on its own attempt row rather than overwriting intent state.
+
+Every transition is a compare-and-set under a lease, so two workers holding the same notice in mind — one whose lease expired mid-flight and one that has since claimed it — produce exactly one writer. The provider idempotency key is the intent identifier and is stable across every attempt, so a provider that honours it collapses this side's at-least-once retries into one send.
+
+Suppression is decided inside the claiming transaction, before any external call, and is asserted by integration tests against real PostgreSQL: a blocked pair, a restricted recipient, and an expired notice each reach the channel adapter zero times. See [NOTIFICATIONS](../domains/notifications.md) for the durability and recheck guarantees in full, including the one window that cannot be closed.
+
+## Implemented in-app delivery
+
+The in-app list is the only place a V1 notice is actually seen, because no external provider is approved. It is served from `notifications_feed`, written in the same transaction as the delivery intent, and read through `GET /v1/notifications`.
+
+Eligibility is asked on every read rather than frozen into the row, so a block takes effect on the next page load and a withdrawn one restores what it hid. That is possible here and impossible for external delivery, and the difference is the reason the two are stored separately: a read has no side effect to recall.
+
+Nothing about external delivery reaches this surface. `docs/domains/notifications.md` lists what is excluded and why.
