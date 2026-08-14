@@ -18,6 +18,7 @@ export function createVeloraApiClient(
 }
 
 export type { paths } from './generated/schema.js';
+export * from './result.js';
 
 type JsonResponse<
   TPath extends keyof paths,

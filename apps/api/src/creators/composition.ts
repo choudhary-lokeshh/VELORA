@@ -1,12 +1,21 @@
 import type { CallerResolver } from '../auth/caller.js';
 import { CreatorContextResolver } from './context.js';
 import type { CreatorAdultEligibilityPort } from './eligibility.js';
-import { CreatorsRepository, type CreatorsDatabase } from './repository.js';
+import { CreatorProfileRoutes } from './profile-routes.js';
+import { CreatorProfileService } from './profile-service.js';
+import {
+  CreatorProfileRepository,
+  CreatorsRepository,
+  type CreatorsDatabase,
+} from './repository.js';
 import { CreatorRoutes } from './routes.js';
 import { CreatorsService } from './service.js';
 
 export interface CreatorsRuntime {
   readonly creatorContext: CreatorContextResolver;
+  readonly profileRepository: CreatorProfileRepository;
+  readonly profileRoutes: CreatorProfileRoutes;
+  readonly profiles: CreatorProfileService;
   readonly repository: CreatorsRepository;
   readonly routes: CreatorRoutes;
   readonly service: CreatorsService;
@@ -27,11 +36,17 @@ export function createCreatorsRuntime(input: {
   readonly eligibility: CreatorAdultEligibilityPort;
   readonly now?: () => Date;
 }): CreatorsRuntime {
+  const now = input.now ?? (() => new Date());
   const repository = new CreatorsRepository(input.database);
+  const profileRepository = new CreatorProfileRepository(input.database);
   const service = new CreatorsService({
     eligibility: input.eligibility,
-    now: input.now ?? (() => new Date()),
+    now,
     repository,
+  });
+  const profiles = new CreatorProfileService({
+    now,
+    profiles: profileRepository,
   });
   const creatorContext = new CreatorContextResolver({
     caller: input.caller,
@@ -39,6 +54,9 @@ export function createCreatorsRuntime(input: {
   });
   return {
     creatorContext,
+    profileRepository,
+    profileRoutes: new CreatorProfileRoutes({ creatorContext, profiles }),
+    profiles,
     repository,
     routes: new CreatorRoutes({ creatorContext, service }),
     service,

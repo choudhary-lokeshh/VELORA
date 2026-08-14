@@ -19,7 +19,7 @@ Expected navigation groups are:
 - Core: discovery, introduction status, conversations, notifications, own profile/availability.
 - Safety and account: block/report entry points, safety center, privacy, sessions, subscription/receipts, export/deletion.
 
-Exact information architecture, labels, routes, layout, and visual design are `DESIGN REQUIRED` in Figma. Public creator pages remain part of creator/club commerce architecture; they must not alter consumer discovery.
+Exact information architecture, labels, routes, layout, and visual design are `DESIGN REQUIRED` in Figma. Public creator pages remain part of creator/club commerce architecture; they must not alter consumer discovery. The canonical public creator address is `/c/{handle}`, resolved against the explicitly public projection CREATORS publishes; it carries no consumer product, no session requirement, and no purchase control, and an unknown handle, an unpublished profile, and a creator who is not active are one indistinguishable answer.
 
 ## Domains and dependencies
 

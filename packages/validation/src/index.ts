@@ -3,8 +3,13 @@ import { z } from 'zod';
 import {
   createCreatorAccountRequestSchema,
   creatorAccountResponseSchema,
+  creatorHandleSchema,
   creatorOnboardingStateResponseSchema,
   creatorPolicyAcknowledgementRequestSchema,
+  creatorProfilePublicationRequestSchema,
+  creatorProfileResponseSchema,
+  publicCreatorResponseSchema,
+  saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
   createIntroductionRequestSchema,
@@ -127,6 +132,9 @@ export const apiRoutePaths = {
   creatorAccountSelf: '/v1/creator/me',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  creatorProfile: '/v1/creator/profile',
+  creatorProfilePublication: '/v1/creator/profile/publication',
+  publicCreator: '/v1/creators',
   discoveryCandidates: '/v1/discovery/candidates',
   discoveryIntroductionDecline: '/v1/discovery/introductions/decline',
   discoveryIntroductionWithdrawal: '/v1/discovery/introductions/withdrawal',
@@ -209,6 +217,10 @@ export const apiSchemas = {
   CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
+  CreatorProfilePublicationRequest: creatorProfilePublicationRequestSchema,
+  CreatorProfileResponse: creatorProfileResponseSchema,
+  PublicCreatorResponse: publicCreatorResponseSchema,
+  SaveCreatorProfileRequest: saveCreatorProfileRequestSchema,
   OnboardingStateResponse: onboardingStateResponseSchema,
   PolicyAcknowledgementRequest: policyAcknowledgementRequestSchema,
   AvailabilityResponse: availabilityResponseSchema,
@@ -262,6 +274,7 @@ export const apiSchemas = {
 export const apiQueryParameters = {
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
+  handle: creatorHandleSchema,
   pageSize: pageSizeSchema,
 } as const;
 export type ApiQueryParameterName = keyof typeof apiQueryParameters;
@@ -363,6 +376,11 @@ const creatorAuthenticationResponses = {
     description: `The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code ${productErrorCodes.creatorSurfaceRequired} in the audience case.`,
     schemaName: 'ApiError',
   },
+} as const;
+
+const creatorProfileConflictResponse = {
+  description: `A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code ${productErrorCodes.conflict}. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.`,
+  schemaName: 'ApiError',
 } as const;
 
 const creatorNotEligibleResponse = {
@@ -922,6 +940,83 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Acknowledgement evidence is append-only and versioned. When approved creator legal copy replaces the unpublished version, the version string changes, every creator is asked again, and the evidence that they accepted the earlier version is preserved rather than rewritten.',
+  },
+  {
+    method: 'get',
+    operationId: 'getCreatorProfile',
+    path: apiRoutePaths.creatorProfile,
+    responses: {
+      '200': {
+        description:
+          "The creator's own profile, including a draft nobody else can see.",
+        schemaName: 'CreatorProfileResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'saveCreatorProfile',
+    path: apiRoutePaths.creatorProfile,
+    requestSchemaName: 'SaveCreatorProfileRequest',
+    responses: {
+      '200': {
+        description:
+          'The profile was updated and is returned with a new version.',
+        schemaName: 'CreatorProfileResponse',
+      },
+      '201': {
+        description:
+          'The profile was created as a draft and the handle was claimed.',
+        schemaName: 'CreatorProfileResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The handle is canonicalized server-side and claimed on the first save; database uniqueness decides who gets it, so fifty simultaneous claims of the same name settle on exactly one owner. It is immutable afterwards — this milestone has no self-service rename, and a save naming a different handle is refused rather than quietly ignored. A profile is created as a draft: publishing is a separate, explicit decision.',
+  },
+  {
+    method: 'post',
+    operationId: 'setCreatorProfilePublication',
+    path: apiRoutePaths.creatorProfilePublication,
+    requestSchemaName: 'CreatorProfilePublicationRequest',
+    responses: {
+      '200': {
+        description:
+          'The publication state was set and the profile is returned with a new version.',
+        schemaName: 'CreatorProfileResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Publishing is what makes a creator page reachable without a session, so it is never a side effect of saving. Only an active creator may publish; unpublishing takes the page down immediately for every later read.',
+  },
+  {
+    method: 'get',
+    operationId: 'getPublicCreator',
+    path: apiRoutePaths.publicCreator,
+    requestQuery: [{ description: 'Canonical creator handle', name: 'handle' }],
+    responses: {
+      '200': {
+        description:
+          'The explicitly public projection of a published creator profile.',
+        schemaName: 'PublicCreatorResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The only creator route a visitor with no session may call, and it answers with an allow-listed projection rather than a filtered record: no creator identifier, no AUTH subject, no consumer identifier, no lifecycle or moderation state, no counts, and nothing purchasable. An unknown handle, a draft profile, and a creator who is not active are all the same 404, so the endpoint cannot be used to discover that somebody exists.',
   },
   {
     method: 'get',

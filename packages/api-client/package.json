@@ -13,8 +13,9 @@
     "build": "node ../../scripts/clean-build-output.mjs dist && pnpm generate:check && tsc -p tsconfig.build.json",
     "generate": "tsx scripts/generate-client.ts",
     "generate:check": "tsx scripts/generate-client.ts --check",
-    "lint": "eslint src scripts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "lint": "eslint src scripts test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "openapi-fetch": "catalog:"
@@ -23,6 +24,7 @@
     "@velora/validation": "workspace:*",
     "openapi-typescript": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

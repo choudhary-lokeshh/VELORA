@@ -8,5 +8,6 @@
     "rootDir": "src",
     "sourceMap": true
   },
-  "exclude": ["scripts"]
+  "exclude": ["scripts", "test"],
+  "include": ["src/**/*.ts"]
 }

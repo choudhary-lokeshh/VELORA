@@ -106,6 +106,8 @@ describe('AUTH persistence and invariants', () => {
     expect(names.filter((name) => !name.startsWith('auth_'))).toEqual([
       'creators_accounts',
       'creators_policy_acknowledgements',
+      'creators_profile_links',
+      'creators_profiles',
       'discovery_introductions',
       'discovery_outbox',
       'discovery_passes',

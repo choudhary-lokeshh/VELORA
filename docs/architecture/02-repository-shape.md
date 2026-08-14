@@ -15,6 +15,8 @@ packages/
   types/           stable shared value types, not domain behavior
   validation/      shared input/schema validation
   api-client/      generated/handwritten contract clients
+  consumer-client/ consumer product surface over the generated client
+  creator-client/  creator product surface over the generated client
   domain/          bounded domain modules and published contracts
   config/          typed non-secret configuration interfaces
   observability/   structured telemetry primitives
@@ -29,6 +31,7 @@ docs/
 - Client apps consume `types`, `validation`, `api-client`, approved client-safe configuration/observability entrypoints, and `design-tokens`; they do not import another app, `packages/domain`, backend modules, repositories, ORM schemas, workers, or provider SDKs.
 - `packages/domain` contains separate modules matching [domain boundaries](03-domain-boundaries.md), not one shared utility pile.
 - `types`, `validation`, and `api-client` stay dependency-light and cannot contain authorization, persistence, or provider calls.
+- A product client package — `consumer-client`, `creator-client` — moves requests and classifies answers for one product surface family. It holds no authorization decision, no cached permission, and no server rule, and it never imports another product client: a creator surface that reached for consumer shapes would be the leak `AGENTS.md` forbids.
 - `design-tokens` contains approved primitive values, semantic role names, and surface-theme contracts only. It contains no components, navigation, content, permissions, or business behavior.
 - `api` composes modules, authenticates requests, and maps transport errors; domain rules remain in owning modules.
 - One domain may import another only through its published application contract; it may not import another domain's repository, persistence model, entity, or provider implementation.

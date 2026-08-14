@@ -301,6 +301,9 @@ importers:
       '@velora/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@velora/creator-client':
+        specifier: workspace:*
+        version: link:../../packages/creator-client
       '@velora/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
@@ -432,6 +435,9 @@ importers:
       '@velora/consumer-client':
         specifier: workspace:*
         version: link:../../packages/consumer-client
+      '@velora/creator-client':
+        specifier: workspace:*
+        version: link:../../packages/creator-client
       '@velora/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
@@ -485,6 +491,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/config:
     dependencies:
@@ -500,6 +509,19 @@ importers:
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/consumer-client:
+    dependencies:
+      '@velora/api-client':
+        specifier: workspace:*
+        version: link:../api-client
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
+
+  packages/creator-client:
     dependencies:
       '@velora/api-client':
         specifier: workspace:*

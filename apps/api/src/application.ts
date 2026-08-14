@@ -586,6 +586,22 @@ export function createApplication(
       admitted(async (input) => creators.routes.acknowledgePolicies(input)),
     )
     .get(
+      apiRoutePaths.creatorProfile,
+      admitted(async (input) => creators.profileRoutes.getProfile(input)),
+    )
+    .post(
+      apiRoutePaths.creatorProfile,
+      admitted(async (input) => creators.profileRoutes.saveProfile(input)),
+    )
+    .post(
+      apiRoutePaths.creatorProfilePublication,
+      admitted(async (input) => creators.profileRoutes.setPublication(input)),
+    )
+    .get(
+      apiRoutePaths.publicCreator,
+      admitted(async (input) => creators.profileRoutes.getPublicCreator(input)),
+    )
+    .get(
       apiRoutePaths.discoveryCandidates,
       admitted(async (input) => discovery.routes.getCandidates(input)),
     )

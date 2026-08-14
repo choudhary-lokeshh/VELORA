@@ -30,6 +30,7 @@ const clientSafe = new Set([
   '@velora/api-client',
   '@velora/config',
   '@velora/consumer-client',
+  '@velora/creator-client',
   '@velora/design-tokens',
   '@velora/observability',
   '@velora/types',

@@ -179,6 +179,8 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'auth_sessions',
         'creators_accounts',
         'creators_policy_acknowledgements',
+        'creators_profile_links',
+        'creators_profiles',
         'discovery_introductions',
         'discovery_outbox',
         'discovery_passes',

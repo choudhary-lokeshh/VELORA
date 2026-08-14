@@ -1,0 +1,335 @@
+/**
+ * A stand-in for the VELORA API, from Creator Studio's side.
+ *
+ * It answers the real contract paths with real contract shapes and it holds
+ * state, so a test can drive the whole creator journey — sign in, become a
+ * creator, accept the policies, claim a handle, publish — and watch the surface
+ * react to answers a server would actually give.
+ *
+ * It is deliberately not a mock inside a component. Nothing in `src/` knows
+ * this file exists; it is installed as a `fetch` implementation, so the surface
+ * under test goes through the generated client, the same request bodies, and
+ * the same status codes it would in production.
+ */
+
+export interface CreatorApiDoubleState {
+  account: {
+    activatedAt?: string;
+    createdAt: string;
+    id: string;
+    status: 'applicant' | 'active' | 'suspended' | 'closed';
+    statusReason?: string;
+  } | null;
+  adultGateReason: string | undefined;
+  adultGateSatisfied: boolean;
+  outstandingPolicies: { key: string; version: string }[];
+  profile: {
+    bio?: string;
+    displayName: string;
+    handle: string;
+    links: { label?: string; url: string }[];
+    publication: 'draft' | 'published';
+    publishedAt?: string;
+    version: number;
+  } | null;
+  session: {
+    absoluteExpiresAt: string;
+    accountId: string;
+    assurance: string;
+    assuranceEstablishedAt: string;
+    audience: string;
+    authenticatedAt: string;
+    idleExpiresAt: string;
+  } | null;
+  /** Handles already held by somebody else, so a claim can be contested. */
+  takenHandles: string[];
+}
+
+export interface CreatorApiDouble {
+  /** Every request the surface made, so a test can assert what it did not do. */
+  readonly calls: { body: unknown; method: string; path: string }[];
+  failNext(path: string): void;
+  readonly fetch: typeof globalThis.fetch;
+  refuseNext(path: string, status: number, code: string): void;
+  readonly state: CreatorApiDoubleState;
+}
+
+const iso = (offsetMilliseconds = 0) =>
+  new Date(Date.UTC(2026, 7, 15, 12, 0, 0) + offsetMilliseconds).toISOString();
+
+export const creatorAccountId = '55555555-5555-4555-8555-555555555555';
+
+export const requiredCreatorPolicies = [
+  { key: 'creator_terms', version: '0-unpublished' },
+  { key: 'creator_content_policy', version: '0-unpublished' },
+];
+
+function signedInSession(): NonNullable<CreatorApiDoubleState['session']> {
+  return {
+    absoluteExpiresAt: iso(28_800_000),
+    accountId: creatorAccountId,
+    assurance: 'single_factor',
+    assuranceEstablishedAt: iso(),
+    audience: 'creator_studio',
+    authenticatedAt: iso(),
+    idleExpiresAt: iso(1_800_000),
+  };
+}
+
+export function emptyCreatorState(): CreatorApiDoubleState {
+  return {
+    account: null,
+    adultGateReason: undefined,
+    adultGateSatisfied: true,
+    outstandingPolicies: [],
+    profile: null,
+    session: null,
+    takenHandles: [],
+  };
+}
+
+/** Signed in, creator access active, no public profile yet. */
+export function activeCreatorState(): CreatorApiDoubleState {
+  return {
+    ...emptyCreatorState(),
+    account: {
+      activatedAt: iso(),
+      createdAt: iso(),
+      id: creatorAccountId,
+      status: 'active',
+    },
+    session: signedInSession(),
+  };
+}
+
+function stepFor(state: CreatorApiDoubleState): string {
+  if (!state.adultGateSatisfied) return 'adult_eligibility';
+  return state.outstandingPolicies.length > 0
+    ? 'policy_acknowledgement'
+    : 'completed';
+}
+
+export function createCreatorApiDouble(
+  initial: CreatorApiDoubleState = emptyCreatorState(),
+): CreatorApiDouble {
+  const state: CreatorApiDoubleState = { ...initial };
+  const calls: { body: unknown; method: string; path: string }[] = [];
+  const failures = new Map<string, number>();
+  const refusals = new Map<string, { code: string; status: number }>();
+
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      headers: { 'content-type': 'application/json' },
+      status,
+    });
+  const error = (status: number, code: string) =>
+    json(status, { code, correlationId: 'test', message: 'Request failed' });
+
+  const accountBody = () => state.account;
+  const onboardingBody = () => ({
+    account: state.account,
+    ...(state.adultGateReason === undefined
+      ? {}
+      : { adultGateReason: state.adultGateReason }),
+    adultGateSatisfied: state.adultGateSatisfied,
+    outstandingPolicies: state.outstandingPolicies,
+    step: stepFor(state),
+  });
+  const profileBody = () =>
+    state.profile === null
+      ? undefined
+      : {
+          ...(state.profile.bio === undefined
+            ? {}
+            : { bio: state.profile.bio }),
+          displayName: state.profile.displayName,
+          handle: state.profile.handle,
+          links: state.profile.links,
+          publicPath: `/c/${state.profile.handle}`,
+          publication: state.profile.publication,
+          ...(state.profile.publishedAt === undefined
+            ? {}
+            : { publishedAt: state.profile.publishedAt }),
+          updatedAt: iso(),
+          version: state.profile.version,
+        };
+
+  const handler: typeof globalThis.fetch = async (input, init) => {
+    // The generated client hands `fetch` a fully built `Request` and no init,
+    // so the method and body have to be read from the request itself.
+    const request =
+      input instanceof Request
+        ? input
+        : new Request(input instanceof URL ? input.href : input, init);
+    const url = new URL(request.url);
+    const method = request.method.toUpperCase();
+    const path = url.pathname;
+    const raw = await request.clone().text();
+    const body = raw.length > 0 ? (JSON.parse(raw) as unknown) : undefined;
+    calls.push({ body, method, path });
+
+    if ((failures.get(path) ?? 0) > 0) {
+      failures.set(path, (failures.get(path) ?? 0) - 1);
+      throw new TypeError('network error');
+    }
+    const refusal = refusals.get(path);
+    if (refusal !== undefined) {
+      refusals.delete(path);
+      return error(refusal.status, refusal.code);
+    }
+    if (request.signal.aborted) throw new DOMException('aborted');
+
+    // The public creator page needs no session at all, so it is answered
+    // before the credential check below.
+    if (path === '/v1/creators' && method === 'GET') {
+      const handle = url.searchParams.get('handle');
+      if (
+        state.profile?.publication !== 'published' ||
+        state.account?.status !== 'active' ||
+        handle !== state.profile.handle
+      ) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      return json(200, {
+        ...(state.profile.bio === undefined ? {} : { bio: state.profile.bio }),
+        displayName: state.profile.displayName,
+        handle: state.profile.handle,
+        links: state.profile.links,
+        publishedAt: state.profile.publishedAt ?? iso(),
+      });
+    }
+
+    if (path === '/v1/auth/local/web-sessions' && method === 'POST') {
+      state.session = signedInSession();
+      return json(201, { ...state.session, csrfToken: 'csrf-token' });
+    }
+    if (path === '/v1/auth/session') {
+      return state.session === null
+        ? error(401, 'AUTH_REQUIRED')
+        : json(200, state.session);
+    }
+    if (path === '/v1/auth/logout') {
+      state.session = null;
+      return json(200, { acknowledged: true });
+    }
+
+    if (state.session === null) return error(401, 'AUTH_REQUIRED');
+
+    if (path === '/v1/creator' && method === 'POST') {
+      if (!state.adultGateSatisfied) return error(409, 'ACCOUNT_NOT_ELIGIBLE');
+      if (state.account !== null) return json(200, accountBody());
+      state.account = {
+        createdAt: iso(),
+        id: creatorAccountId,
+        status: 'applicant',
+        statusReason: 'onboarding_incomplete',
+      };
+      state.outstandingPolicies = [...requiredCreatorPolicies];
+      return json(201, accountBody());
+    }
+
+    if (state.account === null) return error(404, 'RESOURCE_NOT_FOUND');
+    if (path === '/v1/creator/me') return json(200, accountBody());
+    if (path === '/v1/creator/onboarding' && method === 'GET') {
+      return json(200, onboardingBody());
+    }
+    if (path === '/v1/creator/onboarding/acknowledgements') {
+      if (!state.adultGateSatisfied) return error(409, 'ACCOUNT_NOT_ELIGIBLE');
+      state.outstandingPolicies = [];
+      const withoutReason = { ...state.account };
+      delete withoutReason.statusReason;
+      state.account = {
+        ...withoutReason,
+        activatedAt: iso(),
+        status: 'active',
+      };
+      return json(200, onboardingBody());
+    }
+
+    if (path === '/v1/creator/profile' && method === 'GET') {
+      const current = profileBody();
+      return current === undefined
+        ? error(404, 'RESOURCE_NOT_FOUND')
+        : json(200, current);
+    }
+    if (path === '/v1/creator/profile' && method === 'POST') {
+      const requested = body as {
+        bio?: string;
+        displayName: string;
+        handle: string;
+        links?: { label?: string; url: string }[];
+        version?: number;
+      };
+      const canonical = requested.handle.toLowerCase();
+      if (state.profile === null) {
+        if (state.takenHandles.includes(canonical)) {
+          return error(409, 'STATE_CONFLICT');
+        }
+        state.profile = {
+          ...(requested.bio === undefined ? {} : { bio: requested.bio }),
+          displayName: requested.displayName,
+          handle: canonical,
+          links: requested.links ?? [],
+          publication: 'draft',
+          version: 1,
+        };
+        return json(201, profileBody());
+      }
+      if (
+        requested.version !== state.profile.version ||
+        canonical !== state.profile.handle
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      state.profile = {
+        ...state.profile,
+        ...(requested.bio === undefined ? {} : { bio: requested.bio }),
+        displayName: requested.displayName,
+        links: requested.links ?? [],
+        version: state.profile.version + 1,
+      };
+      return json(200, profileBody());
+    }
+    if (path === '/v1/creator/profile/publication' && method === 'POST') {
+      const requested = body as {
+        publication: 'draft' | 'published';
+        version: number;
+      };
+      if (state.profile === null) return error(404, 'RESOURCE_NOT_FOUND');
+      if (requested.version !== state.profile.version) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      if (
+        requested.publication === 'published' &&
+        state.account.status !== 'active'
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const withoutInstant = { ...state.profile };
+      delete withoutInstant.publishedAt;
+      state.profile = {
+        ...withoutInstant,
+        publication: requested.publication,
+        ...(requested.publication === 'published'
+          ? { publishedAt: iso() }
+          : {}),
+        version: state.profile.version + 1,
+      };
+      return json(200, profileBody());
+    }
+
+    return error(404, 'HTTP_404');
+  };
+
+  return {
+    calls,
+    failNext(path) {
+      failures.set(path, (failures.get(path) ?? 0) + 1);
+    },
+    fetch: handler,
+    refuseNext(path, status, code) {
+      refusals.set(path, { code, status });
+    },
+    state,
+  };
+}

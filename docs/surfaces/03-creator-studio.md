@@ -38,6 +38,12 @@ Deep links may target creator application, verification, content draft/review, c
 
 Screens define loading/skeleton, empty/new creator, processing, scheduled/pending review, rejected with safe next step, partially failed upload, stale price/version conflict, payment/payout pending, held/reversed, suspended, permission lost, provider unavailable, retry, and confirmed success states. Bulk actions expose per-item outcome.
 
+## Implemented today
+
+Studio implements the Creator Studio session, creator onboarding through activation, and the public creator profile: claiming the canonical handle, editing display name and bio, managing the small set of public links, and publishing or withdrawing the page. Every one of those reads and writes real CREATORS truth through the published contract; none is stored in the browser, and Studio never declares somebody an adult — that is a USERS decision, so the surface says where to complete it rather than offering a control that would fail.
+
+Handles are claimed once and are not renameable in this milestone, so no rename control is offered. Publishing is a separate decision from saving: nothing a creator writes becomes public as a side effect of writing it. Clubs, content, offers, subscribers, analytics, earnings, and payouts remain absent, and no control implies a purchase, because no payment path exists.
+
 ## Security, phase, and authority
 
 Follow [Creator Private Clubs](../product/03-creator-private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [media security](../security/04-media-upload-delivery.md), and [creator compliance gates](../compliance/03-creator-content-gates.md). Phase 2 is web-first creator/club pilot; analytics, payouts, and creator AI are Phase 3. Mature/explicit content remains Conditional / Compliance-Gated.

@@ -616,7 +616,7 @@ describe('CREATORS activation ladder', () => {
 });
 
 describe('the database enforces the creator invariants', () => {
-  it('owns exactly the two creator tables and nothing else', async () => {
+  it('owns exactly the four creator tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
         where table_schema = 'public' and table_name like 'creators_%'
@@ -625,6 +625,8 @@ describe('the database enforces the creator invariants', () => {
     expect(rows.map((row) => row.table_name)).toEqual([
       'creators_accounts',
       'creators_policy_acknowledgements',
+      'creators_profile_links',
+      'creators_profiles',
     ]);
   });
 
