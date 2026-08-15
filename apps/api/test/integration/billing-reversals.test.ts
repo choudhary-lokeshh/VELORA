@@ -565,8 +565,11 @@ describe('a reversal and its accounting', () => {
     ]);
     expect(await journalImbalance()).toBe('0');
 
-    // The money moved out of the position the provider holds it in and into a
-    // contra-revenue position, so the sale and its reversal are both visible.
+    // Every claim the sale created is withdrawn in the proportion it was
+    // created in. A fifth of the charge was the platform's share under the test
+    // policy, so a third of that share comes back out with the third of the
+    // charge that was returned — and the creator's payable falls with it, which
+    // is the only reading under which a refunded sale leaves nobody owed for it.
     const balances = await rowsOf<{ balance: string; category: string }>(
       database.sql`select a.category,
           sum(case when e.direction = 'debit' then e.amount_minor else -e.amount_minor end)::text as balance
@@ -575,9 +578,9 @@ describe('a reversal and its accounting', () => {
         group by a.category order by a.category`,
     );
     expect(balances).toEqual([
-      { balance: '-1500', category: 'customer_settlement' },
+      { balance: '-800', category: 'creator_payable' },
+      { balance: '-200', category: 'platform_revenue' },
       { balance: '1000', category: 'provider_clearing' },
-      { balance: '500', category: 'refunds' },
     ]);
   });
 
@@ -1250,8 +1253,9 @@ describe('disputes', () => {
         group by a.category order by a.category`,
     );
     expect(balances).toEqual([
-      { balance: '0', category: 'customer_settlement' },
+      { balance: '0', category: 'creator_payable' },
       { balance: '0', category: 'disputes' },
+      { balance: '0', category: 'platform_revenue' },
       { balance: '0', category: 'provider_clearing' },
     ]);
     expect(await journalImbalance()).toBe('0');
@@ -1294,8 +1298,9 @@ describe('disputes', () => {
         group by a.category order by a.category`,
     );
     expect(balances).toEqual([
-      { balance: '-1500', category: 'customer_settlement' },
+      { balance: '-1200', category: 'creator_payable' },
       { balance: '0', category: 'disputes' },
+      { balance: '-300', category: 'platform_revenue' },
       { balance: '1500', category: 'provider_clearing' },
     ]);
     expect(

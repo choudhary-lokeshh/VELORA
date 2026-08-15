@@ -755,6 +755,16 @@ export function createApplication(
       ),
     )
     .get(
+      apiRoutePaths.creatorEarnings,
+      admitted(async (input) => billing.earningsRoutes.getEarnings(input)),
+    )
+    .get(
+      apiRoutePaths.creatorEarningsHistory,
+      admitted(async (input) =>
+        billing.earningsRoutes.getEarningsHistory(input),
+      ),
+    )
+    .get(
       apiRoutePaths.creatorOffers,
       admitted(async (input) => billing.offerRoutes.listOffers(input)),
     )

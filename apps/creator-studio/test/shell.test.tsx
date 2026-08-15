@@ -81,7 +81,9 @@ function doubleWith(state: CreatorApiDoubleState): CreatorApiDouble {
  * The areas are peers rather than a stack, so a test that wants the catalog
  * asks for the catalog instead of scrolling past everything else.
  */
-async function goTo(area: 'home' | 'profile' | 'catalog' | 'clubs') {
+async function goTo(
+  area: 'home' | 'profile' | 'catalog' | 'clubs' | 'earnings',
+) {
   await press(`nav-${area}`);
 }
 
@@ -459,10 +461,15 @@ describe('Creator Studio catalog', () => {
     await goTo('catalog');
     await screen.findByTestId('content-item-content-1');
 
-    const markup = document.body.textContent;
-    for (const forbidden of ['Price', 'Buy', 'Earnings', 'Views', 'Sales']) {
+    // Scoped to the panel rather than the document: `Earnings` is now the name
+    // of a real area in the navigation, backed by figures the server derives
+    // from its own ledger. What must not appear here is a number the catalog
+    // itself does not have — a price, a purchase control, or a view count.
+    const markup = screen.getByTestId('content-item-content-1').textContent;
+    for (const forbidden of ['Price', 'Buy', 'Views', 'Sales']) {
       expect(markup, forbidden).not.toContain(forbidden);
     }
+    expect(document.body.textContent, 'Revenue').not.toContain('Revenue');
   });
 
   it('sends exactly one publish when the control is pressed twice in a frame', async () => {
@@ -579,16 +586,14 @@ describe('Creator Studio private clubs', () => {
     await screen.findByTestId('club-item-club-1');
 
     expect(textOf('club-members-club-1')).toBe('1 member');
-    const markup = document.body.textContent;
-    for (const forbidden of [
-      'Price',
-      'Subscribe',
-      'Buy',
-      'Revenue',
-      'Earnings',
-      'per month',
-    ]) {
+    const markup = screen.getByTestId('club-item-club-1').textContent;
+    for (const forbidden of ['Price', 'Subscribe', 'Buy', 'per month']) {
       expect(markup, forbidden).not.toContain(forbidden);
+    }
+    // Nothing anywhere claims a club can be paid for: no payment provider is
+    // approved, so a purchase control would be a lie in a button.
+    for (const forbidden of ['Revenue', 'Subscribe']) {
+      expect(document.body.textContent, forbidden).not.toContain(forbidden);
     }
   });
 
@@ -690,9 +695,12 @@ describe('Creator Studio home', () => {
     await signIn();
     await screen.findByTestId('dashboard-members');
 
+    // `Earnings` is excluded from this list deliberately: it names an area the
+    // server backs with ledger-derived figures. Every word that remains names a
+    // metric Velora does not compute at all, and one of those appearing would
+    // mean a surface invented it.
     const markup = document.body.textContent;
     for (const forbidden of [
-      'Earnings',
       'Revenue',
       'Views',
       'Followers',
@@ -791,6 +799,116 @@ describe('Creator Studio club access', () => {
     await screen.findByTestId('club-member-source-membership-1');
     expect(screen.queryByTestId('club-revoke-membership-1')).toBeNull();
     expect(screen.queryByTestId('club-revoke-invite-invite-1')).toBeNull();
+  });
+});
+
+describe('Creator Studio earnings', () => {
+  /** A creator who has been paid in two currencies, per the server. */
+  function paidCreator() {
+    return {
+      ...activeCreatorState(),
+      earnings: [
+        {
+          currency: 'JPY',
+          disputed: '0',
+          gross: '5000',
+          payable: '4000',
+          platform: '1000',
+          reversed: '0',
+          tax: '0',
+        },
+        {
+          currency: 'USD',
+          disputed: '250',
+          gross: '1500',
+          payable: '800',
+          platform: '200',
+          reversed: '500',
+          tax: '0',
+        },
+      ],
+      earningsHistory: [
+        {
+          amount: { amountMinor: '500', currency: 'USD' },
+          id: 'refund-1',
+          kind: 'refund' as const,
+          occurredAt: '2026-08-15T12:30:00.000Z',
+          offerId: '11111111-1111-4111-8111-111111111111',
+          state: 'succeeded',
+        },
+        {
+          amount: { amountMinor: '1500', currency: 'USD' },
+          id: 'capture-1',
+          kind: 'capture' as const,
+          occurredAt: '2026-08-15T12:00:00.000Z',
+          offerId: '11111111-1111-4111-8111-111111111111',
+          state: 'succeeded',
+        },
+      ],
+      profile: {
+        displayName: 'Ember Vale',
+        handle: 'ember',
+        links: [],
+        publication: 'published' as const,
+        publishedAt: '2026-08-15T12:00:00.000Z',
+        version: 2,
+      },
+    };
+  }
+
+  it('shows each currency separately and never a total across them', async () => {
+    renderStudio(doubleWith(paidCreator()));
+    await signIn();
+    await goTo('earnings');
+    await screen.findByTestId('earnings-currency-USD');
+
+    // Two blocks, and every figure rendered against its own currency's
+    // published exponent: a yen divides into no minor units, so 5000 JPY is
+    // five thousand yen and not fifty.
+    expect(textOf('earnings-USD-payable')).toBe('8.00 USD');
+    expect(textOf('earnings-USD-gross')).toBe('15.00 USD');
+    expect(textOf('earnings-USD-reversed')).toBe('5.00 USD');
+    expect(textOf('earnings-USD-disputed')).toBe('2.50 USD');
+    expect(textOf('earnings-JPY-payable')).toBe('4000 JPY');
+    expect(textOf('earnings-JPY-gross')).toBe('5000 JPY');
+
+    // No total, because the sum of a dollar and a yen is not an amount.
+    const markup = document.body.textContent;
+    for (const forbidden of ['Total', 'Overall', 'Combined']) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('says plainly that selling is not enabled rather than showing nothing', async () => {
+    renderStudio(doubleWith({ ...activeCreatorState() }));
+    await signIn();
+    await goTo('earnings');
+
+    // The readiness statement is the honest alternative to an empty screen that
+    // looks like a failure of the creator's.
+    expect(await screen.findByTestId('earnings-readiness')).toBeDefined();
+    expect(textOf('earnings-readiness')).toContain('not enabled');
+    expect(textOf('earnings-empty')).toContain('Nothing has been paid to you');
+  });
+
+  it('shows one sequence of what happened, and no chart of any kind', async () => {
+    renderStudio(doubleWith(paidCreator()));
+    await signIn();
+    await goTo('earnings');
+    await press('earnings-history-select-USD');
+    await screen.findByTestId('earnings-entry-refund-1');
+
+    // Newest first, purchases and reversals in one list, and each described by
+    // what it is rather than by who was on the other side of it.
+    const history = screen.getByTestId('earnings-history').textContent;
+    expect(history).toContain('Refund');
+    expect(history).toContain('Purchase');
+    expect(history.indexOf('Refund')).toBeLessThan(history.indexOf('Purchase'));
+    for (const forbidden of ['Chart', 'Graph', 'Forecast', 'Projected']) {
+      expect(history, forbidden).not.toContain(forbidden);
+    }
+    // A creator learns what was bought, never who bought it.
+    expect(document.body.textContent, 'consumer').not.toContain('consumer');
   });
 });
 

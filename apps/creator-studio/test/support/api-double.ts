@@ -57,6 +57,30 @@ export interface CreatorApiDoubleState {
     source: 'creator_invite' | 'admin_grant' | 'billing';
     state: 'active' | 'revoked';
   }[];
+  /**
+   * Currency-separated earnings, exactly as the server would report them.
+   *
+   * Held as the wire shape rather than as inputs the double computes from, so
+   * a test asserting what a creator sees is asserting what the server said and
+   * not what the double decided.
+   */
+  earnings: {
+    currency: string;
+    disputed: string;
+    gross: string;
+    payable: string;
+    platform: string;
+    reversed: string;
+    tax: string;
+  }[];
+  earningsHistory: {
+    amount: { amountMinor: string; currency: string };
+    id: string;
+    kind: 'capture' | 'dispute' | 'refund';
+    occurredAt: string;
+    offerId: string;
+    state: string;
+  }[];
   content: {
     id: string;
     lifecycle: 'draft' | 'published' | 'archived';
@@ -115,6 +139,8 @@ export function emptyCreatorState(): CreatorApiDoubleState {
     adultGateReason: undefined,
     clubs: [],
     content: [],
+    earnings: [],
+    earningsHistory: [],
     invites: [],
     memberships: [],
     adultGateSatisfied: true,
@@ -309,6 +335,28 @@ export function createCreatorApiDouble(
         status: 'active',
       };
       return json(200, onboardingBody());
+    }
+
+    if (path === '/v1/creator/earnings' && method === 'GET') {
+      return json(200, {
+        currencies: state.earnings.map((row) => ({ ...row })),
+        readiness: {
+          currencies: [],
+          enabled: false,
+          intervals: [],
+          modes: [],
+          source: 'unpublished',
+        },
+      });
+    }
+    if (path === '/v1/creator/earnings/history' && method === 'GET') {
+      const currency = url.searchParams.get('currency') ?? '';
+      return json(200, {
+        currency,
+        entries: state.earningsHistory
+          .filter((entry) => entry.amount.currency === currency)
+          .map((entry) => ({ ...entry })),
+      });
     }
 
     if (path === '/v1/creator/clubs' && method === 'GET') {

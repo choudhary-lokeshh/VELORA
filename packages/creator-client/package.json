@@ -16,7 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@velora/api-client": "workspace:*"
+    "@velora/api-client": "workspace:*",
+    "@velora/validation": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:",

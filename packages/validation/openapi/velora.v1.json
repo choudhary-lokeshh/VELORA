@@ -9751,6 +9751,429 @@
         ]
       }
     },
+    "/v1/creator/earnings": {
+      "get": {
+        "operationId": "getCreatorEarnings",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorEarningsResponse"
+                }
+              }
+            },
+            "description": "Every currency this creator has been paid in, with what was grossed, what the platform kept, what has been returned, what is currently claimed back, and what the platform owes them. One set of figures per currency and never a total: a sum across currencies is a number with no meaning. `payable` is the only authoritative figure — it is a ledger balance derived on read — and the rest are projections over the commercial records that produced it.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "Nothing here is a forecast, a trend, or a projection of future income. Every figure describes money that has already moved, and `tax` is zero everywhere because no tax authority is configured — which is a statement about what Velora withheld rather than about what anybody owes."
+      }
+    },
+    "/v1/creator/earnings/history": {
+      "get": {
+        "operationId": "getCreatorEarningsHistory",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which currency",
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "AED",
+                "AUD",
+                "BHD",
+                "BRL",
+                "CAD",
+                "CHF",
+                "CLP",
+                "CNY",
+                "COP",
+                "CZK",
+                "DKK",
+                "EUR",
+                "GBP",
+                "HKD",
+                "IDR",
+                "ILS",
+                "INR",
+                "ISK",
+                "JOD",
+                "JPY",
+                "KRW",
+                "KWD",
+                "MXN",
+                "MYR",
+                "NOK",
+                "NZD",
+                "OMR",
+                "PHP",
+                "PLN",
+                "RON",
+                "SAR",
+                "SEK",
+                "SGD",
+                "THB",
+                "TND",
+                "TRY",
+                "TWD",
+                "USD",
+                "VND",
+                "ZAR"
+              ]
+            }
+          },
+          {
+            "description": "Opaque forward-only position in this list",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          },
+          {
+            "description": "Maximum entries to return",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorEarningsHistoryResponse"
+                }
+              }
+            },
+            "description": "One currency's commercial history, newest first: captures, reversals, and cardholder claims in one sequence, because reading them apart turns one story into three lists nobody can line up. It carries no consumer identifier, name, or contact detail — who bought something is not the seller's to know.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "The currency is required rather than defaulted, because defaulting would pick one of a creator’s currencies for them and show it as though it were all of their money. Paging is keyset rather than offset, so a settlement landing mid-read cannot shift a page boundary."
+      }
+    },
     "/v1/creator/offers": {
       "get": {
         "operationId": "listCommercialOffers",
@@ -16485,6 +16908,356 @@
         },
         "required": [
           "subscriptions"
+        ],
+        "additionalProperties": false
+      },
+      "CreatorEarningsHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "AED",
+              "AUD",
+              "BHD",
+              "BRL",
+              "CAD",
+              "CHF",
+              "CLP",
+              "CNY",
+              "COP",
+              "CZK",
+              "DKK",
+              "EUR",
+              "GBP",
+              "HKD",
+              "IDR",
+              "ILS",
+              "INR",
+              "ISK",
+              "JOD",
+              "JPY",
+              "KRW",
+              "KWD",
+              "MXN",
+              "MYR",
+              "NOK",
+              "NZD",
+              "OMR",
+              "PHP",
+              "PLN",
+              "RON",
+              "SAR",
+              "SEK",
+              "SGD",
+              "THB",
+              "TND",
+              "TRY",
+              "TWD",
+              "USD",
+              "VND",
+              "ZAR"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "object",
+                  "properties": {
+                    "amountMinor": {
+                      "type": "string",
+                      "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "AED",
+                        "AUD",
+                        "BHD",
+                        "BRL",
+                        "CAD",
+                        "CHF",
+                        "CLP",
+                        "CNY",
+                        "COP",
+                        "CZK",
+                        "DKK",
+                        "EUR",
+                        "GBP",
+                        "HKD",
+                        "IDR",
+                        "ILS",
+                        "INR",
+                        "ISK",
+                        "JOD",
+                        "JPY",
+                        "KRW",
+                        "KWD",
+                        "MXN",
+                        "MYR",
+                        "NOK",
+                        "NZD",
+                        "OMR",
+                        "PHP",
+                        "PLN",
+                        "RON",
+                        "SAR",
+                        "SEK",
+                        "SGD",
+                        "THB",
+                        "TND",
+                        "TRY",
+                        "TWD",
+                        "USD",
+                        "VND",
+                        "ZAR"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "amountMinor",
+                    "currency"
+                  ],
+                  "additionalProperties": false
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "capture",
+                    "dispute",
+                    "refund"
+                  ]
+                },
+                "occurredAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "offerId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "amount",
+                "id",
+                "kind",
+                "occurredAt",
+                "offerId",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "currency",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "CreatorEarningsResponse": {
+        "type": "object",
+        "properties": {
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "currency": {
+                  "type": "string",
+                  "enum": [
+                    "AED",
+                    "AUD",
+                    "BHD",
+                    "BRL",
+                    "CAD",
+                    "CHF",
+                    "CLP",
+                    "CNY",
+                    "COP",
+                    "CZK",
+                    "DKK",
+                    "EUR",
+                    "GBP",
+                    "HKD",
+                    "IDR",
+                    "ILS",
+                    "INR",
+                    "ISK",
+                    "JOD",
+                    "JPY",
+                    "KRW",
+                    "KWD",
+                    "MXN",
+                    "MYR",
+                    "NOK",
+                    "NZD",
+                    "OMR",
+                    "PHP",
+                    "PLN",
+                    "RON",
+                    "SAR",
+                    "SEK",
+                    "SGD",
+                    "THB",
+                    "TND",
+                    "TRY",
+                    "TWD",
+                    "USD",
+                    "VND",
+                    "ZAR"
+                  ]
+                },
+                "disputed": {
+                  "type": "string",
+                  "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                },
+                "gross": {
+                  "type": "string",
+                  "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                },
+                "payable": {
+                  "type": "string",
+                  "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                },
+                "platform": {
+                  "type": "string",
+                  "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                },
+                "reversed": {
+                  "type": "string",
+                  "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                },
+                "tax": {
+                  "type": "string",
+                  "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                }
+              },
+              "required": [
+                "currency",
+                "disputed",
+                "gross",
+                "payable",
+                "platform",
+                "reversed",
+                "tax"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "readiness": {
+            "type": "object",
+            "properties": {
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "AED",
+                    "AUD",
+                    "BHD",
+                    "BRL",
+                    "CAD",
+                    "CHF",
+                    "CLP",
+                    "CNY",
+                    "COP",
+                    "CZK",
+                    "DKK",
+                    "EUR",
+                    "GBP",
+                    "HKD",
+                    "IDR",
+                    "ILS",
+                    "INR",
+                    "ISK",
+                    "JOD",
+                    "JPY",
+                    "KRW",
+                    "KWD",
+                    "MXN",
+                    "MYR",
+                    "NOK",
+                    "NZD",
+                    "OMR",
+                    "PHP",
+                    "PLN",
+                    "RON",
+                    "SAR",
+                    "SEK",
+                    "SGD",
+                    "THB",
+                    "TND",
+                    "TRY",
+                    "TWD",
+                    "USD",
+                    "VND",
+                    "ZAR"
+                  ]
+                }
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervals": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "month",
+                    "year"
+                  ]
+                }
+              },
+              "modes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "subscription",
+                    "one_time"
+                  ]
+                }
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "currencies",
+              "enabled",
+              "intervals",
+              "modes",
+              "source"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "currencies",
+          "readiness"
         ],
         "additionalProperties": false
       },

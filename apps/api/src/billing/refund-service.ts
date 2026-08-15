@@ -11,6 +11,7 @@ import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { RefundRepository, RefundRow } from './refund-repository.js';
+import { clearingAccount, unwindEntries } from './revenue-entries.js';
 import type { RefundReasonCode } from './reversal-policy.js';
 
 /**
@@ -236,11 +237,35 @@ export class RefundService {
     // not post a second set of entries or revoke access a second time.
     if (settled === undefined) return undefined;
 
+    const offer = await offers.findOfferForPurchase(
+      executor,
+      input.payment.offerId,
+    );
+    if (offer === undefined) return settled;
+
     const amount = money(settled.amountMinor, settled.currency);
-    // The compensating posting. Money leaves the position the provider holds it
-    // in and lands in a contra-revenue position, so the original capture stays
-    // exactly as it was and the reversal is visible beside it rather than
-    // instead of it.
+    // The compensating posting. Every claim the sale created is withdrawn in
+    // the proportion it was created in, and the money leaves through the
+    // position the provider holds it in. The capture itself is untouched: what
+    // falls is the creator's payable and the platform's share, which is the
+    // only reading under which a fully refunded sale leaves nobody owed
+    // anything for it.
+    const unwound = unwindEntries({
+      alreadyReversed: await refunds.unwoundTotalExcluding(executor, {
+        currency: settled.currency,
+        exceptRefundId: settled.id,
+        paymentId: settled.paymentId,
+      }),
+      amount,
+      captured: money(input.payment.amountMinor, input.payment.currency),
+      creatorId: offer.creatorId,
+      policy: this.dependencies.policy,
+    });
+    if (unwound === undefined) {
+      throw new Error(
+        'A settled refund cannot be allocated: no approved commercial terms',
+      );
+    }
     await journal.post(executor, {
       businessReference: settled.id,
       businessType: billingBusinessTypes.refund,
@@ -248,7 +273,7 @@ export class RefundService {
         ? {}
         : { correlationId: settled.correlationId }),
       entries: [
-        { account: refundsAccount, amount, direction: 'debit' },
+        ...unwound.entries,
         { account: clearingAccount, amount, direction: 'credit' },
       ],
       occurredAt: input.occurredAt,
@@ -277,11 +302,6 @@ export class RefundService {
     ) {
       return settled;
     }
-    const offer = await offers.findOfferForPurchase(
-      executor,
-      input.payment.offerId,
-    );
-    if (offer === undefined) return settled;
     await outbox.append(executor as TransactionHandle, {
       ...(input.payment.correlationId === null
         ? {}
@@ -445,15 +465,3 @@ export class RefundService {
     return moved ?? input.claimed;
   }
 }
-
-/** The contra-revenue position a reversal lands in. */
-const refundsAccount = {
-  category: 'refunds',
-  subjectType: 'platform',
-} as const;
-
-/** The position a provider holds Velora's money in. */
-const clearingAccount = {
-  category: 'provider_clearing',
-  subjectType: 'platform',
-} as const;

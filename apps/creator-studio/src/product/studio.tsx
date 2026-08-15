@@ -29,6 +29,7 @@ import { createStudioCreatorApi } from './api';
 import { ClubsPanel } from './clubs';
 import { ContentPanel } from './content';
 import { Dashboard } from './dashboard';
+import { Earnings } from './earnings';
 import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
 import { ErrorMessage, ResourceState, Section, StatusMessage } from './ui';
 
@@ -179,6 +180,7 @@ const studioAreas = [
   { id: 'profile', label: 'Public profile' },
   { id: 'catalog', label: 'Catalog' },
   { id: 'clubs', label: 'Private clubs' },
+  { id: 'earnings', label: 'Earnings' },
 ] as const;
 
 type AreaId = (typeof studioAreas)[number]['id'];
@@ -312,6 +314,15 @@ function SignedIn({
               editable={onboarding.value.account.status === 'active'}
               onSessionEnded={onSessionEnded}
             />
+          ) : null}
+          {/*
+            Earnings is a read of what the platform holds, so it is offered
+            whatever the capability's current status is. A suspended creator is
+            still owed whatever they were owed, and hiding the figure would not
+            change the money.
+          */}
+          {area === 'earnings' ? (
+            <Earnings api={api} onSessionEnded={onSessionEnded} />
           ) : null}
         </>
       ) : null}

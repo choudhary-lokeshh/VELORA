@@ -13,6 +13,9 @@ import type {
   CreatorClubList,
   CreatorContentLifecycleBody,
   CreatorContentList,
+  CreatorCurrencyEarnings,
+  CreatorEarnings,
+  CreatorEarningsHistory,
   CreatorOnboardingState,
   CreatorPolicyDocument,
   CreatorProfile,
@@ -67,6 +70,14 @@ export interface CreatorApi {
   clubInvites(clubId: string): Promise<ApiResult<ClubInviteList>>;
   clubMembers(clubId: string): Promise<ApiResult<ClubMembershipList>>;
   clubs(): Promise<ApiResult<CreatorClubList>>;
+  /** Currency-separated earnings, every figure derived from server truth. */
+  earnings(): Promise<ApiResult<CreatorEarnings>>;
+  /** One currency's commercial history, keyset paged. */
+  earningsHistory(query: {
+    readonly currency: CreatorCurrencyEarnings['currency'];
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<CreatorEarningsHistory>>;
   issueClubInvite(clubId: string): Promise<ApiResult<ClubInviteIssued>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
   /** Published clubs on a creator's public page. Carries no credential. */
@@ -184,6 +195,21 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
 
     async clubs() {
       return attempt(async () => api.GET('/v1/creator/clubs', await read()));
+    },
+
+    async earnings() {
+      return attempt(async () => api.GET('/v1/creator/earnings', await read()));
+    },
+
+    async earningsHistory(query) {
+      return attempt(async () =>
+        api.GET('/v1/creator/earnings/history', {
+          ...(await read()),
+          params: {
+            query: { currency: query.currency, ...pageQuery(query) },
+          },
+        }),
+      );
     },
 
     async issueClubInvite(clubId) {

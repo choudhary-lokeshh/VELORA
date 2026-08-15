@@ -14,6 +14,7 @@ import type {
   ProviderEventRepository,
   ProviderEventRow,
 } from './event-repository.js';
+import type { CommercePolicy } from './commerce-policy.js';
 import type { DisputeRepository } from './dispute-repository.js';
 import type { DisputeEvidence, DisputeService } from './dispute-service.js';
 import type { OfferRepository } from './offer-repository.js';
@@ -21,6 +22,7 @@ import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { RefundRepository } from './refund-repository.js';
+import { captureEntries } from './revenue-entries.js';
 import type { RefundService } from './refund-service.js';
 import {
   disputeReasonCodes,
@@ -76,6 +78,8 @@ export interface WebhookServiceDependencies {
   readonly outbox: OutboxAppendPort;
   readonly owner: string;
   readonly payments: PaymentRepository;
+  /** Approved commercial terms. A capture cannot be split without them. */
+  readonly policy: CommercePolicy;
   readonly provider: PaymentProviderPort;
   readonly refundService: RefundService;
   readonly refunds: RefundRepository;
@@ -507,40 +511,40 @@ export class WebhookService {
       // one against a refunded payment must not walk it backwards.
       if (settled === undefined) return true;
 
+      const offer = await offers.findOfferForPurchase(
+        executor,
+        payment.offerId,
+      );
+      if (offer === undefined) return true;
+
+      // The split, taken from approved commercial terms and from nowhere else.
+      // A capture posted without one would be a sale divided by a percentage
+      // nobody published, so a settlement that reaches here with no approved
+      // policy is left for reconciliation rather than accounted for. It cannot
+      // happen through the ordinary path — nothing is purchasable without
+      // approved terms — but a policy withdrawn between purchase and settlement
+      // would produce exactly this.
       const gross = money(payment.amountMinor, payment.currency);
+      const allocation = this.dependencies.policy.allocate(gross);
+      if (allocation === undefined) {
+        throw new Error(
+          'A settled payment cannot be allocated: no approved commercial terms',
+        );
+      }
       await journal.post(executor, {
         businessReference: payment.id,
         businessType: billingBusinessTypes.payment,
         ...(payment.correlationId === null
           ? {}
           : { correlationId: payment.correlationId }),
-        entries: [
-          {
-            account: {
-              category: 'provider_clearing',
-              subjectType: 'platform',
-            },
-            amount: gross,
-            direction: 'debit',
-          },
-          {
-            account: {
-              category: 'customer_settlement',
-              subjectType: 'platform',
-            },
-            amount: gross,
-            direction: 'credit',
-          },
-        ],
+        entries: captureEntries({
+          allocation,
+          creatorId: offer.creatorId,
+          gross,
+        }),
         occurredAt: event.occurredAt,
         reason: 'payment_captured',
       });
-
-      const offer = await offers.findOfferForPurchase(
-        executor,
-        payment.offerId,
-      );
-      if (offer === undefined) return true;
 
       let commercialReference = payment.id;
       if (offer.commercialMode === 'subscription') {

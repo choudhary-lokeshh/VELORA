@@ -730,6 +730,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/creator/earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Nothing here is a forecast, a trend, or a projection of future income. Every figure describes money that has already moved, and `tax` is zero everywhere because no tax authority is configured — which is a statement about what Velora withheld rather than about what anybody owes. */
+        get: operations["getCreatorEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creator/earnings/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The currency is required rather than defaulted, because defaulting would pick one of a creator’s currencies for them and show it as though it were all of their money. Paging is keyset rather than offset, so a settlement landing mid-read cannot shift a page boundary. */
+        get: operations["getCreatorEarningsHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/creator/offers": {
         parameters: {
             query?: never;
@@ -1228,6 +1262,46 @@ export interface components {
                 /** @enum {string} */
                 state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
             }[];
+        };
+        CreatorEarningsHistoryResponse: {
+            /** @enum {string} */
+            currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            entries: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "capture" | "dispute" | "refund";
+                /** Format: date-time */
+                occurredAt: string;
+                /** Format: uuid */
+                offerId: string;
+                state: string;
+            }[];
+            nextCursor?: string;
+        };
+        CreatorEarningsResponse: {
+            currencies: {
+                /** @enum {string} */
+                currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                disputed: string;
+                gross: string;
+                payable: string;
+                platform: string;
+                reversed: string;
+                tax: string;
+            }[];
+            readiness: {
+                currencies: ("AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR")[];
+                enabled: boolean;
+                intervals: ("month" | "year")[];
+                modes: ("subscription" | "one_time")[];
+                source: string;
+            };
         };
         IssueRefundRequest: {
             amountMinor: string;
@@ -7513,6 +7587,210 @@ export interface operations {
                 };
             };
             /** @description No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCreatorEarnings: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every currency this creator has been paid in, with what was grossed, what the platform kept, what has been returned, what is currently claimed back, and what the platform owes them. One set of figures per currency and never a total: a sum across currencies is a number with no meaning. `payable` is the only authoritative figure — it is a ledger balance derived on read — and the rest are projections over the commercial records that produced it. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorEarningsResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCreatorEarningsHistory: {
+        parameters: {
+            query?: {
+                /** @description Which currency */
+                currency?: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                /** @description Opaque forward-only position in this list */
+                cursor?: string;
+                /** @description Maximum entries to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One currency's commercial history, newest first: captures, reversals, and cardholder claims in one sequence, because reading them apart turns one story into three lists nobody can line up. It carries no consumer identifier, name, or contact detail — who bought something is not the seller's to know. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorEarningsHistoryResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

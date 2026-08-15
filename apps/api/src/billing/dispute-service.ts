@@ -2,11 +2,14 @@ import type { Executor, TransactionHandle } from '../database/executor.js';
 import type { OutboxAppendPort } from '../events/outbox.js';
 import type { JournalStore } from '../money/journal.js';
 import { money, moneyEquals, type Money } from '../money/money.js';
+import type { CommercePolicy } from './commerce-policy.js';
 import type { DisputeRepository, DisputeRow } from './dispute-repository.js';
 import { entitlementRevokedEvent } from './entitlement-events.js';
 import type { OfferRepository } from './offer-repository.js';
 import type { PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
+import type { RefundRepository } from './refund-repository.js';
+import { unwindEntries } from './revenue-entries.js';
 import {
   openDisputeStates,
   type DisputeReasonCode,
@@ -66,6 +69,10 @@ export interface DisputeServiceDependencies {
   readonly now: () => Date;
   readonly offers: OfferRepository;
   readonly outbox: OutboxAppendPort;
+  /** Approved commercial terms. A lost claim cannot be unwound without them. */
+  readonly policy: CommercePolicy;
+  /** Reversals already posted against the capture, for exact allocation. */
+  readonly refunds: RefundRepository;
 }
 
 export class DisputeService {
@@ -186,10 +193,11 @@ export class DisputeService {
    * The money stopped moving, one way or the other.
    *
    * Won and withdrawn return it to the provider position and the sale stands.
-   * Lost sends it to the cardholder, which unwinds the customer settlement the
-   * capture created — so a fully lost dispute leaves the provider position, the
-   * settlement position, and the dispute position all back at zero, which is
-   * what a sale that did not survive should look like.
+   * Lost sends it to the cardholder, which withdraws every claim the capture
+   * created in the proportion it created them — so a fully lost dispute leaves
+   * the provider position, the creator's payable, the platform's share, and the
+   * dispute position all back at zero, which is what a sale that did not
+   * survive should look like.
    */
   private async postResolution(
     executor: Executor,
@@ -203,34 +211,37 @@ export class DisputeService {
   ): Promise<void> {
     const { journal, offers, outbox } = this.dependencies;
     const lost = input.state === 'lost';
+    const offer = await offers.findOfferForPurchase(
+      executor,
+      input.payment.offerId,
+    );
+    if (offer === undefined) return;
+
+    const entries = lost
+      ? await this.unwindFor({
+          dispute: input.dispute,
+          executor,
+          offer,
+          payment: input.payment,
+        })
+      : [
+          {
+            account: clearingAccount,
+            amount: input.withheld,
+            direction: 'debit' as const,
+          },
+        ];
     const posted = await journal.post(executor, {
       businessReference: input.dispute.id,
       businessType: billingBusinessTypes.disputeResolution,
-      entries: lost
-        ? [
-            {
-              account: settlementAccount,
-              amount: input.withheld,
-              direction: 'debit',
-            },
-            {
-              account: disputesAccount,
-              amount: input.withheld,
-              direction: 'credit',
-            },
-          ]
-        : [
-            {
-              account: clearingAccount,
-              amount: input.withheld,
-              direction: 'debit',
-            },
-            {
-              account: disputesAccount,
-              amount: input.withheld,
-              direction: 'credit',
-            },
-          ],
+      entries: [
+        ...entries,
+        {
+          account: disputesAccount,
+          amount: input.withheld,
+          direction: 'credit',
+        },
+      ],
       occurredAt: input.occurredAt,
       reason: 'dispute_resolved',
     });
@@ -249,11 +260,6 @@ export class DisputeService {
     ) {
       return;
     }
-    const offer = await offers.findOfferForPurchase(
-      executor,
-      input.payment.offerId,
-    );
-    if (offer === undefined) return;
     await outbox.append(executor as TransactionHandle, {
       ...(input.payment.correlationId === null
         ? {}
@@ -274,6 +280,45 @@ export class DisputeService {
       subjectType: 'billing.dispute',
     });
   }
+
+  /**
+   * The debit legs of a lost claim, withdrawing what the sale allocated.
+   *
+   * Anything the cardholder took beyond what the sale ever allocated — possible
+   * when a partial refund preceded a full chargeback — lands on the platform's
+   * own share rather than on the creator's payable, because charging it to the
+   * creator would take back money Velora already agreed it owed them on the
+   * strength of an event they had no part in.
+   */
+  private async unwindFor(input: {
+    readonly dispute: DisputeRow;
+    readonly executor: Executor;
+    readonly offer: { readonly creatorId: string };
+    readonly payment: PaymentRow;
+  }) {
+    const { policy, refunds } = this.dependencies;
+    const currency = input.dispute.currency;
+    const unwound = unwindEntries({
+      alreadyReversed: await refunds.unwoundTotalExcluding(input.executor, {
+        currency,
+        // This claim has already reached `lost` by the time the resolution is
+        // posted, so it has to exclude itself or it would look like the
+        // reversal that exhausted the capture.
+        exceptDisputeId: input.dispute.id,
+        paymentId: input.payment.id,
+      }),
+      amount: money(input.dispute.amountMinor, currency),
+      captured: money(input.payment.amountMinor, input.payment.currency),
+      creatorId: input.offer.creatorId,
+      policy,
+    });
+    if (unwound === undefined) {
+      throw new Error(
+        'A lost dispute cannot be allocated: no approved commercial terms',
+      );
+    }
+    return unwound.entries;
+  }
 }
 
 const clearingAccount = {
@@ -283,10 +328,5 @@ const clearingAccount = {
 
 const disputesAccount = {
   category: 'disputes',
-  subjectType: 'platform',
-} as const;
-
-const settlementAccount = {
-  category: 'customer_settlement',
   subjectType: 'platform',
 } as const;

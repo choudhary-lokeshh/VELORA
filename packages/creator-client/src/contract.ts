@@ -90,3 +90,12 @@ export type ClubMembershipList = JsonBody<
   200
 >;
 export type PublicClubList = JsonBody<'/v1/creators/clubs', 'get', 200>;
+
+export type CreatorEarnings = JsonBody<'/v1/creator/earnings', 'get', 200>;
+export type CreatorCurrencyEarnings = CreatorEarnings['currencies'][number];
+export type CreatorEarningsHistory = JsonBody<
+  '/v1/creator/earnings/history',
+  'get',
+  200
+>;
+export type CreatorEarningsEntry = CreatorEarningsHistory['entries'][number];

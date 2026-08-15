@@ -14,6 +14,8 @@ import {
 import {
   checkoutResponseSchema,
   consumerSubscriptionListResponseSchema,
+  creatorEarningsHistoryResponseSchema,
+  creatorEarningsResponseSchema,
   issueRefundRequestSchema,
   providerEventAcknowledgementSchema,
   paymentIdSchema,
@@ -79,6 +81,7 @@ import {
   notificationListResponseSchema,
   notificationReadResponseSchema,
 } from './notifications.js';
+import { currencyCodeSchema } from './money.js';
 import {
   conversationIdSchema,
   cursorSchema,
@@ -179,6 +182,8 @@ export const apiRoutePaths = {
   consumerAvailability: '/v1/users/me/availability',
   creatorAccount: '/v1/creator',
   creatorAccountSelf: '/v1/creator/me',
+  creatorEarnings: '/v1/creator/earnings',
+  creatorEarningsHistory: '/v1/creator/earnings/history',
   creatorOfferLifecycle: '/v1/creator/offers/lifecycle',
   creatorOfferPriceRetirement: '/v1/creator/offers/prices/retirement',
   creatorOfferPrices: '/v1/creator/offers/prices',
@@ -294,6 +299,8 @@ export const apiSchemas = {
     creatorPolicyAcknowledgementRequestSchema,
   CheckoutResponse: checkoutResponseSchema,
   ConsumerSubscriptionListResponse: consumerSubscriptionListResponseSchema,
+  CreatorEarningsHistoryResponse: creatorEarningsHistoryResponseSchema,
+  CreatorEarningsResponse: creatorEarningsResponseSchema,
   IssueRefundRequest: issueRefundRequestSchema,
   ProviderEventAcknowledgement: providerEventAcknowledgementSchema,
   RefundResponse: refundResponseSchema,
@@ -386,6 +393,7 @@ export const apiQueryParameters = {
   adminSearch: adminCreatorSearchSchema,
   clubId: clubIdSchema,
   contentId: contentIdSchema,
+  currency: currencyCodeSchema,
   handle: creatorHandleSchema,
   pageSize: pageSizeSchema,
   paymentId: paymentIdSchema,
@@ -1577,6 +1585,49 @@ export const apiOperations = [
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'get',
+    operationId: 'getCreatorEarnings',
+    path: apiRoutePaths.creatorEarnings,
+    responses: {
+      '200': {
+        description:
+          'Every currency this creator has been paid in, with what was grossed, what the platform kept, what has been returned, what is currently claimed back, and what the platform owes them. One set of figures per currency and never a total: a sum across currencies is a number with no meaning. `payable` is the only authoritative figure — it is a ledger balance derived on read — and the rest are projections over the commercial records that produced it.',
+        schemaName: 'CreatorEarningsResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Nothing here is a forecast, a trend, or a projection of future income. Every figure describes money that has already moved, and `tax` is zero everywhere because no tax authority is configured — which is a statement about what Velora withheld rather than about what anybody owes.',
+  },
+  {
+    method: 'get',
+    operationId: 'getCreatorEarningsHistory',
+    path: apiRoutePaths.creatorEarningsHistory,
+    requestQuery: [
+      { description: 'Which currency', name: 'currency' },
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum entries to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "One currency's commercial history, newest first: captures, reversals, and cardholder claims in one sequence, because reading them apart turns one story into three lists nobody can line up. It carries no consumer identifier, name, or contact detail — who bought something is not the seller's to know.",
+        schemaName: 'CreatorEarningsHistoryResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The currency is required rather than defaulted, because defaulting would pick one of a creator\u2019s currencies for them and show it as though it were all of their money. Paging is keyset rather than offset, so a settlement landing mid-read cannot shift a page boundary.',
   },
   {
     method: 'get',

@@ -21,6 +21,8 @@ import {
   type CommercePolicy,
 } from './commerce-policy.js';
 import { DisputeRepository } from './dispute-repository.js';
+import { EarningsRepository } from './earnings-repository.js';
+import { EarningsRoutes } from './earnings-routes.js';
 import { DisputeService } from './dispute-service.js';
 import { LocalTestPaymentProvider } from './local-test-provider.js';
 import { OfferRepository } from './offer-repository.js';
@@ -60,6 +62,9 @@ export interface BillingRuntime {
   readonly database: DatabaseHandle;
   readonly disputeRepository: DisputeRepository;
   readonly disputes: DisputeService;
+  /** Ledger-derived creator financial views. Authoritative payable, projections beside it. */
+  readonly earnings: EarningsRepository;
+  readonly earningsRoutes: EarningsRoutes;
   readonly eventRepository: ProviderEventRepository;
   readonly journal: JournalStore;
   /** BILLING's transactional outbox, drained by the shared relay. */
@@ -140,6 +145,7 @@ export function createBillingRuntime(input: {
     prefix: billingJournalPrefix,
     tables: billingJournalTables,
   });
+  const earnings = new EarningsRepository(input.database, journal);
   const logger: SafeLogger = input.logger ?? {
     debug: () => undefined,
     error: () => undefined,
@@ -164,6 +170,8 @@ export function createBillingRuntime(input: {
     now,
     offers: offerRepository,
     outbox,
+    policy,
+    refunds: refundRepository,
   });
   const webhooks = new WebhookService({
     disputeService: disputes,
@@ -176,6 +184,7 @@ export function createBillingRuntime(input: {
     outbox,
     owner: input.eventOwner ?? 'billing-api',
     payments: paymentRepository,
+    policy,
     provider,
     refundService: refunds,
     refunds: refundRepository,
@@ -212,6 +221,12 @@ export function createBillingRuntime(input: {
     database: input.database,
     disputeRepository,
     disputes,
+    earnings,
+    earningsRoutes: new EarningsRoutes({
+      creatorContext: input.creatorContext,
+      earnings,
+      policy,
+    }),
     eventRepository,
     journal,
     offerRepository,

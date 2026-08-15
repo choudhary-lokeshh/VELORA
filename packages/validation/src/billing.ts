@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   currencyCodeSchema,
+  minorUnitsSchema,
   moneySchema,
   positiveMinorUnitsSchema,
 } from './money.js';
@@ -454,6 +455,97 @@ export type DisputeReasonCodeValue = z.infer<typeof disputeReasonCodeSchema>;
  * never invents it: a deadline nobody published would be a date an operator
  * would plan around.
  */
+/**
+ * What one currency of a creator's earnings amounts to.
+ *
+ * Six figures, one currency, and no total. A creator who sold in euros and yen
+ * has two of these and never a third that adds them up: a sum across currencies
+ * is a number with no meaning that somebody would plan against.
+ *
+ * `payable` is the only authoritative figure — it is a balance derived from the
+ * ledger on every read. The rest are projections over the commercial records
+ * that produced those ledger entries, computed on read and therefore rebuildable
+ * by construction. Nothing here is a forecast, a trend, or a projection of
+ * future income; every number describes money that has already moved.
+ */
+export const creatorCurrencyEarningsSchema = z
+  .object({
+    currency: currencyCodeSchema,
+    /** Claimed back by a cardholder and not yet resolved either way. */
+    disputed: minorUnitsSchema,
+    /** What consumers paid, before anything was taken out of it. */
+    gross: minorUnitsSchema,
+    /** The authoritative balance: what the platform owes this creator. */
+    payable: minorUnitsSchema,
+    /** What the platform kept under approved terms. */
+    platform: minorUnitsSchema,
+    /** Returned to consumers, by refund or by a lost dispute. */
+    reversed: minorUnitsSchema,
+    /**
+     * Withheld against a tax authority.
+     *
+     * Zero everywhere, and that is a statement about what Velora withheld
+     * rather than about what any creator owes. No tax authority is configured
+     * and no policy in this repository computes one.
+     */
+    tax: minorUnitsSchema,
+  })
+  .strict();
+export type CreatorCurrencyEarnings = z.infer<
+  typeof creatorCurrencyEarningsSchema
+>;
+
+export const creatorEarningsResponseSchema = z
+  .object({
+    /** One entry per currency this creator has ever been paid in. */
+    currencies: z.array(creatorCurrencyEarningsSchema),
+    readiness: monetisationReadinessSchema,
+  })
+  .strict();
+export type CreatorEarningsResponse = z.infer<
+  typeof creatorEarningsResponseSchema
+>;
+
+export const creatorEarningsEntryKindValues = [
+  'capture',
+  'dispute',
+  'refund',
+] as const;
+export const creatorEarningsEntryKindSchema = z.enum(
+  creatorEarningsEntryKindValues,
+);
+
+/**
+ * One commercial event in a creator's history.
+ *
+ * Deliberately thin on the consumer side: a creator learns what was bought,
+ * when, for how much, and what happened to it. Who bought it is not theirs to
+ * know, so no consumer identifier, name, or contact detail appears here.
+ */
+export const creatorEarningsEntrySchema = z
+  .object({
+    amount: moneySchema,
+    id: z.uuid(),
+    kind: creatorEarningsEntryKindSchema,
+    occurredAt: z.iso.datetime(),
+    offerId: offerIdSchema,
+    /** The lifecycle of the payment, refund, or dispute this describes. */
+    state: z.string().min(1).max(32),
+  })
+  .strict();
+export type CreatorEarningsEntry = z.infer<typeof creatorEarningsEntrySchema>;
+
+export const creatorEarningsHistoryResponseSchema = z
+  .object({
+    currency: currencyCodeSchema,
+    entries: z.array(creatorEarningsEntrySchema),
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+export type CreatorEarningsHistoryResponse = z.infer<
+  typeof creatorEarningsHistoryResponseSchema
+>;
+
 export const disputeSchema = z
   .object({
     amount: moneySchema,

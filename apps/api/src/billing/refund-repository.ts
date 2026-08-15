@@ -10,7 +10,7 @@ import {
   type RefundReasonCode,
   type RefundState,
 } from './reversal-policy.js';
-import { billingPayments, billingRefunds } from './schema.js';
+import { billingDisputes, billingPayments, billingRefunds } from './schema.js';
 
 export type RefundRow = typeof billingRefunds.$inferSelect;
 
@@ -117,6 +117,56 @@ export class RefundRepository {
           eq(billingRefunds.state, 'succeeded'),
         ),
       );
+    return money(BigInt(rows[0]?.total ?? '0'), input.currency);
+  }
+
+  /**
+   * Everything already unwound against one capture, excluding one reversal.
+   *
+   * The input the allocation arithmetic needs, and the reason it is exact. A
+   * series of partial reversals is split by taking the allocation of the
+   * cumulative total and subtracting the allocation of what came before, so
+   * "what came before" has to count every reversal that has actually moved
+   * money — settled refunds and lost disputes alike, because both withdraw the
+   * same claims in the same proportions.
+   *
+   * The reversal being posted is excluded by identifier rather than by
+   * arithmetic, because by the time this is asked it has already reached its
+   * settled state and would otherwise count itself — which would make every
+   * reversal look like the one that exhausted the capture.
+   */
+  async unwoundTotalExcluding(
+    executor: Executor,
+    input: {
+      readonly currency: string;
+      /** The claim being posted, when this is a dispute. */
+      readonly exceptDisputeId?: string;
+      /** The reversal being posted, when this is a refund. */
+      readonly exceptRefundId?: string;
+      readonly paymentId: string;
+    },
+  ): Promise<Money> {
+    const exceptRefund = input.exceptRefundId ?? '';
+    const exceptDispute = input.exceptDisputeId ?? '';
+    const rows = await executor
+      .select({
+        total: sql<string>`(
+          coalesce((
+            select sum(${billingRefunds.amountMinor}) from ${billingRefunds}
+             where ${billingRefunds.paymentId} = ${input.paymentId}
+               and ${billingRefunds.state} = 'succeeded'
+               and ${billingRefunds.id}::text <> ${exceptRefund}
+          ), 0)
+          + coalesce((
+            select sum(${billingDisputes.amountMinor}) from ${billingDisputes}
+             where ${billingDisputes.paymentId} = ${input.paymentId}
+               and ${billingDisputes.state} = 'lost'
+               and ${billingDisputes.id}::text <> ${exceptDispute}
+          ), 0)
+        )::text`,
+      })
+      .from(billingPayments)
+      .where(eq(billingPayments.id, input.paymentId));
     return money(BigInt(rows[0]?.total ?? '0'), input.currency);
   }
 

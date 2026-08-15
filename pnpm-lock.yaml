@@ -526,6 +526,9 @@ importers:
       '@velora/api-client':
         specifier: workspace:*
         version: link:../api-client
+      '@velora/validation':
+        specifier: workspace:*
+        version: link:../validation
     devDependencies:
       typescript:
         specifier: 'catalog:'
