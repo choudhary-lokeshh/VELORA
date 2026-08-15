@@ -14,6 +14,18 @@
  */
 
 export interface ApiDoubleState {
+  /**
+   * What the server says this person is paying for, held as the wire shape so
+   * a test asserts what the server said rather than what the double decided.
+   */
+  subscriptions: {
+    amount: { amountMinor: string; currency: string };
+    createdAt: string;
+    currentPeriodEnd?: string;
+    id: string;
+    offerId: string;
+    state: string;
+  }[];
   account: {
     createdAt: string;
     id: string;
@@ -137,6 +149,7 @@ export const ownAccountId = '11111111-1111-4111-8111-111111111111';
 
 export function emptyState(): ApiDoubleState {
   return {
+    subscriptions: [],
     account: null,
     availability: {
       effectiveState: 'unavailable',
@@ -285,6 +298,11 @@ export function createApiDouble(
       return json(201, state.account);
     }
     if (state.account === null) return error(404, 'RESOURCE_NOT_FOUND');
+    if (path === '/v1/billing/subscriptions' && method === 'GET') {
+      return json(200, {
+        subscriptions: state.subscriptions.map((row) => ({ ...row })),
+      });
+    }
     if (path === '/v1/users/me') return json(200, state.account);
     if (path === '/v1/users/me/onboarding' && method === 'GET') {
       return json(200, { account: state.account, ...state.onboarding });

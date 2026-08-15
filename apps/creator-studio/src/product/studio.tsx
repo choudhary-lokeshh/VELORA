@@ -30,6 +30,7 @@ import { ClubsPanel } from './clubs';
 import { ContentPanel } from './content';
 import { Dashboard } from './dashboard';
 import { Earnings } from './earnings';
+import { Offers } from './offers';
 import { Payouts } from './payouts';
 import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
 import { ErrorMessage, ResourceState, Section, StatusMessage } from './ui';
@@ -181,6 +182,7 @@ const studioAreas = [
   { id: 'profile', label: 'Public profile' },
   { id: 'catalog', label: 'Catalog' },
   { id: 'clubs', label: 'Private clubs' },
+  { id: 'selling', label: 'Selling' },
   { id: 'earnings', label: 'Earnings' },
   { id: 'payouts', label: 'Payouts' },
 ] as const;
@@ -323,6 +325,9 @@ function SignedIn({
             still owed whatever they were owed, and hiding the figure would not
             change the money.
           */}
+          {area === 'selling' ? (
+            <Offers api={api} onSessionEnded={onSessionEnded} />
+          ) : null}
           {area === 'earnings' ? (
             <Earnings api={api} onSessionEnded={onSessionEnded} />
           ) : null}

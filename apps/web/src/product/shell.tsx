@@ -28,6 +28,7 @@ import { AvailabilityPanel } from './availability';
 import { ConversationsPanel } from './conversations';
 import { DiscoveryPanel } from './discovery';
 import { IntroductionsPanel } from './introductions';
+import { Memberships } from './memberships';
 import { NotificationsPanel } from './notifications';
 import { OnboardingPanel } from './onboarding';
 import { ProfilePanel } from './profile';
@@ -55,6 +56,7 @@ const productSections = [
   { id: 'introductions', label: 'Introductions' },
   { id: 'conversations', label: 'Conversations' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'memberships', label: 'Memberships' },
   { id: 'profile', label: 'Profile' },
   { id: 'safety', label: 'Safety' },
 ] as const;
@@ -247,7 +249,9 @@ export function ConsumerShell({
         ) : null}
       </Section>
 
-      {signedIn ? <SignedIn account={account} api={api} /> : null}
+      {signedIn ? (
+        <SignedIn account={account} api={api} onSessionEnded={checkSession} />
+      ) : null}
     </main>
   );
 }
@@ -263,9 +267,11 @@ export function ConsumerShell({
 function SignedIn({
   account,
   api,
+  onSessionEnded,
 }: {
   readonly account: AccountState;
   readonly api: ConsumerApi;
+  readonly onSessionEnded: () => void;
 }) {
   const [section, setSection] = useState<SectionId>('discovery');
   const stage: JourneyStage = journeyStage(account.onboarding.value);
@@ -355,7 +361,12 @@ function SignedIn({
               ))}
             </ul>
           </nav>
-          <ProductSection api={api} account={account} section={section} />
+          <ProductSection
+            account={account}
+            api={api}
+            onSessionEnded={onSessionEnded}
+            section={section}
+          />
         </>
       ) : null}
     </>
@@ -365,10 +376,12 @@ function SignedIn({
 function ProductSection({
   account,
   api,
+  onSessionEnded,
   section,
 }: {
   readonly account: AccountState;
   readonly api: ConsumerApi;
+  readonly onSessionEnded: () => void;
   readonly section: SectionId;
 }): ReactNode {
   switch (section) {
@@ -383,6 +396,9 @@ function ProductSection({
     }
     case 'notifications': {
       return <NotificationsPanel api={api} />;
+    }
+    case 'memberships': {
+      return <Memberships api={api} onSessionEnded={onSessionEnded} />;
     }
     case 'profile': {
       return (

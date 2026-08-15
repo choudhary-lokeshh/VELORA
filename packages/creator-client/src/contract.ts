@@ -114,3 +114,6 @@ export type PayoutOnboarding = JsonBody<
 export type CreatorPayoutHistory = JsonBody<'/v1/creator/payouts', 'get', 200>;
 export type CreatorPayout = CreatorPayoutHistory['payouts'][number];
 export type RequestPayoutBody = RequestBody<'/v1/creator/payouts', 'post'>;
+export type CommercialOfferList = JsonBody<'/v1/creator/offers', 'get', 200>;
+export type CommercialOffer = CommercialOfferList['offers'][number];
+export type MonetisationReadiness = CommercialOfferList['readiness'];

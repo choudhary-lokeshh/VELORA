@@ -1,4 +1,5 @@
 import {
+  adminFinancialStateResponseSchema,
   idempotencyHeader,
   idempotencyKeySchema,
   issueRefundRequestSchema,
@@ -20,6 +21,7 @@ import {
   type RouteResult,
 } from '../http/route-kit.js';
 import type { AdminContextResolver } from './context.js';
+import type { AdminFinancialDirectory } from './financial-directory.js';
 
 /**
  * The operator financial surface.
@@ -45,6 +47,16 @@ import type { AdminContextResolver } from './context.js';
 
 export interface AdminBillingRoutesDependencies {
   readonly adminContext: AdminContextResolver;
+  /** Which capability seams are configured, reported by adapter name. */
+  readonly capabilities: {
+    readonly commerceEligibility: string;
+    readonly commercePolicy: string;
+    readonly paymentProvider: string;
+    readonly payoutPolicy: string;
+    readonly payoutProvider: string;
+    readonly taxAuthority: string;
+  };
+  readonly financial: AdminFinancialDirectory;
   readonly refunds: RefundService;
 }
 
@@ -69,6 +81,35 @@ function refundBody(refund: RefundRow) {
 
 export class AdminBillingRoutes {
   constructor(private readonly dependencies: AdminBillingRoutesDependencies) {}
+
+  /**
+   * The platform's money in operational terms.
+   *
+   * A read and only a read. Every figure is a count or a per-currency total,
+   * and nothing on it identifies a person, a provider object, or a payout
+   * recipient — an operator needs to know what state the money is in, and a
+   * screen that also carried a bank detail would be a screen somebody
+   * eventually screenshots.
+   */
+  async getFinancialState(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.dependencies.adminContext.resolve(input);
+    if ('failure' in resolved) return resolved.failure;
+    const state = await this.dependencies.financial.operationalState();
+    return {
+      body: adminFinancialStateResponseSchema.parse({
+        capabilities: this.dependencies.capabilities,
+        disputes: state.disputes,
+        openDisputeTotals: state.openDisputeTotals,
+        payableTotals: state.payableTotals,
+        payments: state.payments,
+        payouts: state.payouts,
+        reconciliation: state.reconciliation,
+        refunds: state.refunds,
+        subscriptions: state.subscriptions,
+      }),
+      status: 200,
+    };
+  }
 
   async issueRefund(input: RouteRequest): Promise<RouteResult> {
     const resolved = await this.dependencies.adminContext.resolve(input);

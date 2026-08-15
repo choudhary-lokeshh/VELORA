@@ -7,6 +7,7 @@ import {
 import type {
   ClubInviteIssued,
   ClubInviteList,
+  CommercialOfferList,
   ClubLifecycleBody,
   ClubMembershipList,
   CreatorAccount,
@@ -83,6 +84,8 @@ export interface CreatorApi {
     readonly pageSize?: number | undefined;
   }): Promise<ApiResult<CreatorEarningsHistory>>;
   issueClubInvite(clubId: string): Promise<ApiResult<ClubInviteIssued>>;
+  /** This creator's commercial offers and what the platform may currently sell. */
+  offers(): Promise<ApiResult<CommercialOfferList>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
   /** This creator's own payout instructions, newest first. */
   payouts(): Promise<ApiResult<CreatorPayoutHistory>>;
@@ -277,6 +280,10 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
       return attempt(async () =>
         api.GET('/v1/creator/onboarding', await read()),
       );
+    },
+
+    async offers() {
+      return attempt(async () => api.GET('/v1/creator/offers', await read()));
     },
 
     async payouts() {

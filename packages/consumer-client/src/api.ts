@@ -6,6 +6,7 @@ import type {
   BlockList,
   ConsumerAccount,
   ConsumerProfile,
+  ConsumerSubscriptionList,
   Conversation,
   ConversationList,
   CreateReportBody,
@@ -92,6 +93,14 @@ function pageParameters(query: PageQuery): {
  */
 export interface ConsumerApi {
   account(signal?: AbortSignal): Promise<ApiResult<ConsumerAccount>>;
+  /**
+   * The commercial relationships this person is paying for.
+   *
+   * A read of server truth and nothing else. There is no purchase method on
+   * this client, because there is no approved payment provider and a control
+   * that could not succeed would be a promise in a button.
+   */
+  subscriptions(): Promise<ApiResult<ConsumerSubscriptionList>>;
   acknowledgePolicies(
     acknowledgements: readonly PolicyDocument[],
   ): Promise<ApiResult<OnboardingState>>;
@@ -177,6 +186,11 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
   return {
     account: async (signal) =>
       attempt(async () => api.GET('/v1/users/me', await reading(signal))),
+
+    subscriptions: async () =>
+      attempt(async () =>
+        api.GET('/v1/billing/subscriptions', await reading(undefined)),
+      ),
 
     acknowledgePolicies: async (acknowledgements) =>
       attempt(async () =>

@@ -136,6 +136,7 @@ const application = createApplication({
     admin: testAdminRuntime({
       billing: billingRuntime,
       caller: auth.caller,
+      config,
       clubs: clubsRuntime,
       creators,
       safety,

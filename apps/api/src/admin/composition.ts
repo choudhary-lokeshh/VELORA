@@ -10,6 +10,7 @@ import type {
 import { reportPolicyVersion } from '../safety/policy.js';
 import type { SafetyRepository } from '../safety/repository.js';
 import { AdminBillingRoutes } from './billing-routes.js';
+import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
 import { AdminRoutes } from './routes.js';
@@ -40,6 +41,15 @@ export function createAdminRuntime(input: {
   readonly database: CreatorsDatabase;
   readonly now?: () => Date;
   readonly profiles: CreatorProfileRepository;
+  /** Which capability seams are configured, for the operator's own screen. */
+  readonly capabilities: {
+    readonly commerceEligibility: string;
+    readonly commercePolicy: string;
+    readonly paymentProvider: string;
+    readonly payoutPolicy: string;
+    readonly payoutProvider: string;
+    readonly taxAuthority: string;
+  };
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
   readonly safety: SafetyRepository;
@@ -60,6 +70,8 @@ export function createAdminRuntime(input: {
     adminContext,
     billingRoutes: new AdminBillingRoutes({
       adminContext,
+      capabilities: input.capabilities,
+      financial: new AdminFinancialDirectory(input.database),
       refunds: input.refunds,
     }),
     directory,

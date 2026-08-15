@@ -82,7 +82,14 @@ function doubleWith(state: CreatorApiDoubleState): CreatorApiDouble {
  * asks for the catalog instead of scrolling past everything else.
  */
 async function goTo(
-  area: 'home' | 'profile' | 'catalog' | 'clubs' | 'earnings' | 'payouts',
+  area:
+    | 'home'
+    | 'profile'
+    | 'catalog'
+    | 'clubs'
+    | 'earnings'
+    | 'payouts'
+    | 'selling',
 ) {
   await press(`nav-${area}`);
 }
@@ -1022,6 +1029,63 @@ describe('Creator Studio payouts', () => {
     expect(textOf('payouts-withdraw-USD')).toContain('12.00 USD');
     expect(screen.queryByTestId('payouts-withdraw-EUR')).toBeNull();
     expect(textOf('payouts-EUR-held')).toBe('5.00 EUR');
+  });
+});
+
+describe('Creator Studio selling', () => {
+  it('says selling is not enabled rather than offering a price field', async () => {
+    renderStudio(doubleWith({ ...activeCreatorState() }));
+    await signIn();
+    await goTo('selling');
+    await screen.findByTestId('offers-readiness');
+
+    expect(textOf('offers-readiness')).toContain('not enabled');
+    expect(textOf('offers-empty')).toContain('no commercial offers');
+    // No form that always fails. Both operations exist in the API and both
+    // refuse in every deployed environment, so a control here would be one
+    // that cannot succeed.
+    expect(document.querySelectorAll('input')).toHaveLength(0);
+    const markup = document.body.textContent;
+    for (const forbidden of ['Set price', 'Publish price', 'Create offer']) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('shows the exact frozen price a purchase would reference', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        offers: [
+          {
+            createdAt: '2026-08-15T12:00:00.000Z',
+            id: 'offer-1',
+            mode: 'subscription' as const,
+            prices: [
+              {
+                amount: { amountMinor: '1500', currency: 'USD' },
+                createdAt: '2026-08-15T12:00:00.000Z',
+                effectiveFrom: '2026-08-15T12:00:00.000Z',
+                id: 'price-1',
+                interval: 'month' as const,
+                state: 'active' as const,
+              },
+            ],
+            resourceId: '11111111-1111-4111-8111-111111111111',
+            resourceType: 'club' as const,
+            state: 'draft' as const,
+            updatedAt: '2026-08-15T12:00:00.000Z',
+            version: 1,
+          },
+        ],
+      }),
+    );
+    await signIn();
+    await goTo('selling');
+    const price = await screen.findByTestId('price-price-1');
+
+    // The frozen row itself, not a suggestion or an estimate.
+    expect(price.textContent).toContain('15.00 USD');
+    expect(price.textContent).toContain('per month');
   });
 });
 

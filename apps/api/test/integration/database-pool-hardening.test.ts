@@ -192,6 +192,7 @@ function createInstance(name: string): Instance {
       admin: testAdminRuntime({
         billing: billingRuntime,
         caller: auth.caller,
+        config,
         clubs: clubsRuntime,
         creators,
         safety,

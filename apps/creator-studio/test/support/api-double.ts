@@ -87,6 +87,25 @@ export interface CreatorApiDoubleState {
     providerSource: string;
     recipientStatus: 'absent' | 'onboarding' | 'ready' | 'restricted';
   };
+  offers: {
+    activatedAt?: string;
+    createdAt: string;
+    id: string;
+    mode: 'subscription' | 'one_time';
+    prices: {
+      amount: { amountMinor: string; currency: string };
+      createdAt: string;
+      effectiveFrom: string;
+      id: string;
+      interval?: 'month' | 'year';
+      state: 'active' | 'retired';
+    }[];
+    resourceId: string;
+    resourceType: 'club';
+    state: 'draft' | 'active' | 'retired';
+    updatedAt: string;
+    version: number;
+  }[];
   payouts: {
     amount: { amountMinor: string; currency: string };
     createdAt: string;
@@ -163,6 +182,7 @@ export function emptyCreatorState(): CreatorApiDoubleState {
     content: [],
     earnings: [],
     earningsHistory: [],
+    offers: [],
     payoutReadiness: {
       balances: [],
       enabled: false,
@@ -389,6 +409,18 @@ export function createCreatorApiDouble(
       });
     }
 
+    if (path === '/v1/creator/offers' && method === 'GET') {
+      return json(200, {
+        offers: state.offers.map((offer) => ({ ...offer })),
+        readiness: {
+          currencies: [],
+          enabled: false,
+          intervals: [],
+          modes: [],
+          source: 'unpublished',
+        },
+      });
+    }
     if (path === '/v1/creator/payouts/readiness' && method === 'GET') {
       return json(200, {
         balances: state.payoutReadiness.balances.map((row) => ({ ...row })),

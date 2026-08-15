@@ -637,3 +637,50 @@ describe('stale state', () => {
     expect(identified).toHaveLength(0);
   });
 });
+
+describe('Consumer Web memberships', () => {
+  it('says paid memberships are unavailable and offers no way to buy', async () => {
+    await signedIn();
+    await click('nav-memberships');
+    await screen.findByTestId('memberships-commerce');
+
+    // Said once, plainly, instead of a control that refuses. No payment
+    // provider is approved and no commercial terms are published, so a
+    // Subscribe button would describe a product that does not exist.
+    expect(textOf('memberships-commerce')).toContain('not available');
+    expect(textOf('memberships-empty')).toContain('not paying for anything');
+    const markup = document.body.textContent;
+    for (const forbidden of [
+      'Subscribe',
+      'Buy',
+      'Upgrade',
+      'Checkout',
+      'Pay',
+    ]) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('shows what the server says is being paid for, and grants nothing for a lapse', async () => {
+    await signedIn({
+      ...admittedState(),
+      subscriptions: [
+        {
+          amount: { amountMinor: '1500', currency: 'USD' },
+          createdAt: '2026-08-15T12:00:00.000Z',
+          currentPeriodEnd: '2026-09-15T12:00:00.000Z',
+          id: 'sub-1',
+          offerId: '11111111-1111-4111-8111-111111111111',
+          state: 'past_due',
+        },
+      ],
+    });
+    await click('nav-memberships');
+    const row = await screen.findByTestId('membership-sub-1');
+
+    // `past_due` grants nothing, and the surface says so rather than implying a
+    // grace period nobody has approved.
+    expect(row.textContent).toContain('15.00 USD');
+    expect(row.textContent).toContain('access is not active');
+  });
+});

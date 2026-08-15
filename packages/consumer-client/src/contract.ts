@@ -73,3 +73,11 @@ export type SavePreferencesBody = RequestBody<
   '/v1/users/me/preferences',
   'post'
 >;
+
+export type ConsumerSubscriptionList = JsonBody<
+  '/v1/billing/subscriptions',
+  'get',
+  200
+>;
+export type ConsumerSubscription =
+  ConsumerSubscriptionList['subscriptions'][number];

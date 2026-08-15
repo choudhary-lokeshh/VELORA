@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { creatorAccountStatusSchema, creatorHandleSchema } from './creator.js';
+import { currencyCodeSchema, minorUnitsSchema } from './money.js';
 
 /**
  * ADMIN wire vocabulary for creator operations.
@@ -141,3 +142,61 @@ export const adminCreatorSearchSchema = z
   .min(1)
   .max(40)
   .regex(/^[A-Za-z0-9_-]+$/u);
+
+/**
+ * What an operator may see of the platform's money.
+ *
+ * Counts and per-currency totals, and nothing that identifies anybody. No
+ * provider reference, no provider idempotency key, no payout recipient
+ * reference, no bank detail, no identity document, and no consumer contact
+ * detail: an operator needs to know what state the platform's money is in and
+ * be able to act on it, and none of those help with that.
+ *
+ * There is no cross-currency total anywhere, because adding a euro to a yen
+ * produces a number with no meaning that somebody would act on.
+ */
+export const adminFinancialStateSchema = z
+  .object({ count: z.number().int().min(0), state: z.string().min(1).max(64) })
+  .strict();
+
+export const adminFinancialTotalSchema = z
+  .object({ amountMinor: minorUnitsSchema, currency: currencyCodeSchema })
+  .strict();
+
+/**
+ * Which capability seams are open, reported as the names of the configured
+ * adapters.
+ *
+ * An operator seeing `unavailable` across the row is seeing the truth: no
+ * payment provider, no payout provider, no published commercial terms, no
+ * approved launch country, and no tax authority. Reporting the adapter name
+ * rather than a boolean is what makes the difference between "off" and "off
+ * because nobody has approved one" visible without a second screen.
+ */
+export const adminCapabilityStateSchema = z
+  .object({
+    commerceEligibility: z.string().min(1).max(64),
+    commercePolicy: z.string().min(1).max(64),
+    paymentProvider: z.string().min(1).max(64),
+    payoutPolicy: z.string().min(1).max(64),
+    payoutProvider: z.string().min(1).max(64),
+    taxAuthority: z.string().min(1).max(64),
+  })
+  .strict();
+
+export const adminFinancialStateResponseSchema = z
+  .object({
+    capabilities: adminCapabilityStateSchema,
+    disputes: z.array(adminFinancialStateSchema),
+    openDisputeTotals: z.array(adminFinancialTotalSchema),
+    payableTotals: z.array(adminFinancialTotalSchema),
+    payments: z.array(adminFinancialStateSchema),
+    payouts: z.array(adminFinancialStateSchema),
+    reconciliation: z.array(adminFinancialStateSchema),
+    refunds: z.array(adminFinancialStateSchema),
+    subscriptions: z.array(adminFinancialStateSchema),
+  })
+  .strict();
+export type AdminFinancialStateResponse = z.infer<
+  typeof adminFinancialStateResponseSchema
+>;

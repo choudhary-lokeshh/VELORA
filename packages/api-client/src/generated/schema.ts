@@ -967,6 +967,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/billing/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A read and only a read. There is no operation anywhere in this API that edits a financial row; the one financial action an operator has is issuing a refund, and that goes through BILLING’s own service with an operator’s authority. Reporting the configured adapter name rather than a boolean is what makes "off" and "off because nobody has approved one" distinguishable. */
+        get: operations["getAdminFinancialState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/billing/refunds": {
         parameters: {
             query?: never;
@@ -1599,6 +1616,50 @@ export interface components {
                 suspendedAt?: string;
             }[];
             nextCursor?: string;
+        };
+        AdminFinancialStateResponse: {
+            capabilities: {
+                commerceEligibility: string;
+                commercePolicy: string;
+                paymentProvider: string;
+                payoutPolicy: string;
+                payoutProvider: string;
+                taxAuthority: string;
+            };
+            disputes: {
+                count: number;
+                state: string;
+            }[];
+            openDisputeTotals: {
+                amountMinor: string;
+                /** @enum {string} */
+                currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            }[];
+            payableTotals: {
+                amountMinor: string;
+                /** @enum {string} */
+                currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            }[];
+            payments: {
+                count: number;
+                state: string;
+            }[];
+            payouts: {
+                count: number;
+                state: string;
+            }[];
+            reconciliation: {
+                count: number;
+                state: string;
+            }[];
+            refunds: {
+                count: number;
+                state: string;
+            }[];
+            subscriptions: {
+                count: number;
+                state: string;
+            }[];
         };
         AdminOperationResponse: {
             creator: {
@@ -9457,6 +9518,99 @@ export interface operations {
             };
             /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
             422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminFinancialState: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The platform's money in operational terms: how many operations, reversals, claims, subscriptions, and payout instructions are in each state; what is currently being claimed back and what is still owed to creators, per currency; what needs a person to look at it; and which capability seams are open. Counts and per-currency totals only — no provider reference, no recipient reference, no bank detail, no identity document, and no consumer contact detail. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFinancialStateResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
                 headers: {
                     /** @description Request correlation identifier */
                     "x-correlation-id"?: string;

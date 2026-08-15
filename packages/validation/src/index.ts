@@ -35,6 +35,7 @@ import {
 } from './billing.js';
 import {
   adminCreatorListResponseSchema,
+  adminFinancialStateResponseSchema,
   adminCreatorSearchSchema,
   adminOperationResponseSchema,
   adminReinstateCreatorRequestSchema,
@@ -199,6 +200,7 @@ export const apiRoutePaths = {
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
   adminBillingRefunds: '/v1/admin/billing/refunds',
+  adminBillingState: '/v1/admin/billing/state',
   adminCreatorObjectRemoval: '/v1/admin/creators/object-removal',
   adminCreatorReinstatement: '/v1/admin/creators/reinstatement',
   adminCreatorSuspension: '/v1/admin/creators/suspension',
@@ -325,6 +327,7 @@ export const apiSchemas = {
   PublishCommercialPriceRequest: publishCommercialPriceRequestSchema,
   RetireCommercialPriceRequest: retireCommercialPriceRequestSchema,
   AdminCreatorListResponse: adminCreatorListResponseSchema,
+  AdminFinancialStateResponse: adminFinancialStateResponseSchema,
   AdminOperationResponse: adminOperationResponseSchema,
   AdminReinstateCreatorRequest: adminReinstateCreatorRequestSchema,
   AdminRemoveObjectRequest: adminRemoveObjectRequestSchema,
@@ -1929,6 +1932,23 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Withdraws one entitlement as a platform action. It takes effect on the next protected read, because every read asks whether the entitlement is live rather than trusting anything computed earlier.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminFinancialState',
+    path: apiRoutePaths.adminBillingState,
+    responses: {
+      '200': {
+        description:
+          "The platform's money in operational terms: how many operations, reversals, claims, subscriptions, and payout instructions are in each state; what is currently being claimed back and what is still owed to creators, per currency; what needs a person to look at it; and which capability seams are open. Counts and per-currency totals only — no provider reference, no recipient reference, no bank detail, no identity document, and no consumer contact detail.",
+        schemaName: 'AdminFinancialStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A read and only a read. There is no operation anywhere in this API that edits a financial row; the one financial action an operator has is issuing a refund, and that goes through BILLING\u2019s own service with an operator\u2019s authority. Reporting the configured adapter name rather than a boolean is what makes "off" and "off because nobody has approved one" distinguishable.',
   },
   {
     method: 'post',

@@ -39,3 +39,15 @@ Screens define initial/loading/skeleton, empty queue, stale data, permission den
 ## Security, phase, and authority
 
 Follow [Platform Admin product](../product/04-platform-admin.md), [Admin operations](../flows/admin-operations.md), [RBAC](../security/02-access-control-rbac.md), and [operations](../operations/01-support-operations.md). V1 includes minimum support/moderation/enforcement/country-flag/audit/health controls. Financial functions phase with BILLING/PAYOUTS; Admin AI is Phase 3.
+
+## Implemented: financial operations
+
+One screen, and it reads. Counts of payments, reversals, claims, subscriptions, and payout instructions per state; what is currently being claimed back and what is still owed to creators, per currency; what needs a person to look at it; and which capability seams are configured.
+
+Nothing on it identifies anybody. No consumer, no creator, no provider object, no payout recipient, no bank detail, no identity document, and no secret — an operator needs to know what state the platform's money is in and be able to act on it, and none of those help with that. There is no cross-currency total, because adding a euro to a yen produces a number with no meaning that somebody would act on.
+
+There is no control on the screen that changes a financial row, because there is no operation in the API that does. The one financial action an operator has is issuing a refund, and it goes through BILLING's own service with an operator's authority, a reason, and a record. A manual adjustment is an explicit ledger operation, never a field.
+
+The capability row reports adapter names rather than a boolean. An operator seeing `unavailable` and `unpublished` across it is seeing the truth — no payment provider, no payout provider, no published commercial terms, no approved launch country, and no tax authority — and "off" and "off because nobody has approved one" are different situations.
+
+In a deployed environment nobody reaches any of it. ADR-0017 requires a recent phishing-resistant assurance for privileged access and no verifier that can produce one is approved, so every request is refused before any lookup happens on its behalf. The surface says that in those terms rather than showing an empty screen.

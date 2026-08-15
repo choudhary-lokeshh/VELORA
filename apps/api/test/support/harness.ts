@@ -296,6 +296,7 @@ export function testClubsRuntime(input: {
 export function testAdminRuntime(input: {
   readonly billing: BillingRuntime;
   readonly caller: CallerResolver;
+  readonly config: ServerConfig;
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
@@ -305,6 +306,14 @@ export function testAdminRuntime(input: {
   const database = input.database ?? drizzle.mock();
   return createAdminRuntime({
     caller: input.caller,
+    capabilities: {
+      commerceEligibility: input.config.BILLING_COMMERCE_ELIGIBILITY,
+      commercePolicy: input.config.BILLING_COMMERCE_POLICY,
+      paymentProvider: input.config.BILLING_PAYMENT_PROVIDER,
+      payoutPolicy: input.config.PAYOUTS_POLICY,
+      payoutProvider: input.config.PAYOUTS_PROVIDER,
+      taxAuthority: input.config.BILLING_TAX_AUTHORITY,
+    },
     clubs: input.clubs.clubRepository,
     content: input.clubs.repository,
     creators: input.creators.repository,

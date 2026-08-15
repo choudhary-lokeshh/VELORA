@@ -258,6 +258,15 @@ export function createApplication(
       injectedAdmin ??
       createAdminRuntime({
         caller: auth.caller,
+        capabilities: {
+          commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
+          commercePolicy: config.BILLING_COMMERCE_POLICY,
+          paymentProvider: config.BILLING_PAYMENT_PROVIDER,
+          payoutPolicy: config.PAYOUTS_POLICY,
+          payoutProvider: config.PAYOUTS_PROVIDER,
+          taxAuthority: config.BILLING_TAX_AUTHORITY,
+        },
+
         clubs: clubs.clubRepository,
         content: clubs.repository,
         creators: creators.repository,
@@ -844,6 +853,10 @@ export function createApplication(
     .post(
       apiRoutePaths.adminBillingRefunds,
       admitted(async (input) => admin.billingRoutes.issueRefund(input)),
+    )
+    .get(
+      apiRoutePaths.adminBillingState,
+      admitted(async (input) => admin.billingRoutes.getFinancialState(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

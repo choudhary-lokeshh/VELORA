@@ -3,21 +3,31 @@ import { expect, test } from './fixtures.js';
 /**
  * Surface isolation.
  *
- * Consumer Web carries the consumer product and Creator Studio now carries the
- * creator one; Platform Admin is still a bootstrap shell. `AGENTS.md` forbids
- * consumer functionality appearing in Studio or Admin, and creator functionality
- * appearing in the consumer product. These assertions are about which surface is
- * which, not about what any of them can do.
+ * Consumer Web carries the consumer product, Creator Studio the creator one,
+ * and Platform Admin the operator one. `AGENTS.md` forbids consumer
+ * functionality appearing in Studio or Admin, and creator functionality
+ * appearing in the consumer product. These assertions are about which surface
+ * is which, not about what any of them can do.
  */
 
-test('Platform Admin remains an isolated neutral shell', async ({ page }) => {
+test('Platform Admin carries the operator product and nothing else', async ({
+  page,
+}) => {
   await page.goto('http://127.0.0.1:3002');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Platform Admin',
   );
-  await expect(page.getByText(/Foundation shell/)).toBeVisible();
-  // No consumer or creator product reaches this surface.
+  // The one operator surface: financial operations, and it reads. With no API
+  // reachable from the browser here the panel reports that rather than
+  // rendering an empty screen, which is itself the property under test.
+  await expect(
+    page.getByRole('heading', { name: 'Financial operations' }),
+  ).toBeVisible();
+  // No consumer or creator product reaches this surface, and nothing on it
+  // writes: an operator's one financial action goes through BILLING's service.
   await expect(page.getByRole('navigation')).toHaveCount(0);
+  await expect(page.locator('input')).toHaveCount(0);
+  await expect(page.locator('form')).toHaveCount(0);
   for (const forbidden of ['Discovery', 'Creator access', 'Public profile']) {
     await expect(page.getByText(forbidden)).toHaveCount(0);
   }

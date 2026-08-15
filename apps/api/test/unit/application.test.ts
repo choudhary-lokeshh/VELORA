@@ -103,6 +103,7 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
       billing,
       caller: auth.caller,
       clubs,
+      config,
       creators,
       safety,
     }),

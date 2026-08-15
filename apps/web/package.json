@@ -17,6 +17,7 @@
     "@velora/consumer-client": "workspace:*",
     "@velora/creator-client": "workspace:*",
     "@velora/design-tokens": "workspace:*",
+    "@velora/validation": "workspace:*",
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
