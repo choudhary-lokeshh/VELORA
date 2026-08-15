@@ -44,15 +44,32 @@ export const disputesAccount = {
   subjectType: 'platform',
 } as const;
 
-export const platformRevenueAccount = {
-  category: 'platform_revenue',
-  subjectType: 'platform',
-} as const;
+/**
+ * The platform's share of one creator's sales.
+ *
+ * Subject-scoped like the payable rather than pooled across the platform, for a
+ * reason that only shows up once payouts exist: a creator's earnings view has
+ * to say what the platform kept out of *their* sales, and deriving that by
+ * subtracting the payable from the gross stops being correct the moment a
+ * payout reduces the payable. A per-creator position is a balance rather than
+ * an inference, and it is immune to anything that happens afterwards.
+ */
+export function platformRevenueAccount(creatorId: string) {
+  return {
+    category: 'platform_revenue',
+    subjectId: creatorId,
+    subjectType: 'creator',
+  } as const;
+}
 
-export const taxPayableAccount = {
-  category: 'tax_payable',
-  subjectType: 'platform',
-} as const;
+/** Tax withheld out of one creator's sales. Nothing writes it today. */
+export function taxPayableAccount(creatorId: string) {
+  return {
+    category: 'tax_payable',
+    subjectId: creatorId,
+    subjectType: 'creator',
+  } as const;
+}
 
 export function creatorPayableAccount(creatorId: string) {
   return {
@@ -61,6 +78,12 @@ export function creatorPayableAccount(creatorId: string) {
     subjectType: 'creator',
   } as const;
 }
+
+/** The staging position a creator liability leaves BILLING's book through. */
+export const payoutClearingAccount = {
+  category: 'payout_clearing',
+  subjectType: 'platform',
+} as const;
 
 /**
  * A settled sale: the provider owes Velora the gross, and Velora owes it onward.
@@ -81,12 +104,12 @@ export function captureEntries(input: {
       direction: 'credit',
     },
     {
-      account: platformRevenueAccount,
+      account: platformRevenueAccount(input.creatorId),
       amount: input.allocation.platform,
       direction: 'credit',
     },
     {
-      account: taxPayableAccount,
+      account: taxPayableAccount(input.creatorId),
       amount: input.allocation.tax,
       direction: 'credit',
     },
@@ -152,12 +175,12 @@ export function unwindEntries(input: {
         direction: 'debit',
       },
       {
-        account: platformRevenueAccount,
+        account: platformRevenueAccount(input.creatorId),
         amount: allocation.platform,
         direction: 'debit',
       },
       {
-        account: taxPayableAccount,
+        account: taxPayableAccount(input.creatorId),
         amount: allocation.tax,
         direction: 'debit',
       },
@@ -165,7 +188,7 @@ export function unwindEntries(input: {
   }
   if (isPositiveMoney(excess)) {
     debits.push({
-      account: platformRevenueAccount,
+      account: platformRevenueAccount(input.creatorId),
       amount: excess,
       direction: 'debit',
     });

@@ -16,7 +16,12 @@ import {
   consumerSubscriptionListResponseSchema,
   creatorEarningsHistoryResponseSchema,
   creatorEarningsResponseSchema,
+  creatorPayoutHistoryResponseSchema,
+  creatorPayoutReadinessResponseSchema,
   issueRefundRequestSchema,
+  payoutOnboardingResponseSchema,
+  payoutResponseSchema,
+  requestPayoutRequestSchema,
   providerEventAcknowledgementSchema,
   paymentIdSchema,
   refundResponseSchema,
@@ -184,6 +189,9 @@ export const apiRoutePaths = {
   creatorAccountSelf: '/v1/creator/me',
   creatorEarnings: '/v1/creator/earnings',
   creatorEarningsHistory: '/v1/creator/earnings/history',
+  creatorPayoutOnboarding: '/v1/creator/payouts/onboarding',
+  creatorPayoutReadiness: '/v1/creator/payouts/readiness',
+  creatorPayouts: '/v1/creator/payouts',
   creatorOfferLifecycle: '/v1/creator/offers/lifecycle',
   creatorOfferPriceRetirement: '/v1/creator/offers/prices/retirement',
   creatorOfferPrices: '/v1/creator/offers/prices',
@@ -301,7 +309,12 @@ export const apiSchemas = {
   ConsumerSubscriptionListResponse: consumerSubscriptionListResponseSchema,
   CreatorEarningsHistoryResponse: creatorEarningsHistoryResponseSchema,
   CreatorEarningsResponse: creatorEarningsResponseSchema,
+  CreatorPayoutHistoryResponse: creatorPayoutHistoryResponseSchema,
+  CreatorPayoutReadinessResponse: creatorPayoutReadinessResponseSchema,
   IssueRefundRequest: issueRefundRequestSchema,
+  PayoutOnboardingResponse: payoutOnboardingResponseSchema,
+  PayoutResponse: payoutResponseSchema,
+  RequestPayoutRequest: requestPayoutRequestSchema,
   ProviderEventAcknowledgement: providerEventAcknowledgementSchema,
   RefundResponse: refundResponseSchema,
   StartCheckoutRequest: startCheckoutRequestSchema,
@@ -1628,6 +1641,80 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'The currency is required rather than defaulted, because defaulting would pick one of a creator\u2019s currencies for them and show it as though it were all of their money. Paging is keyset rather than offset, so a settlement landing mid-read cannot shift a page boundary.',
+  },
+  {
+    method: 'get',
+    operationId: 'getPayoutReadiness',
+    path: apiRoutePaths.creatorPayoutReadiness,
+    responses: {
+      '200': {
+        description:
+          'Whether this creator could be paid, and what they hold in each currency. The two refusal reasons are separate fields on purpose: a creator whose provider record is fine but whose platform has published no settlement terms is in a different position from one who has not finished onboarding. `releasable` is what approved terms would let go right now, and it is zero wherever no terms are published.',
+        schemaName: 'CreatorPayoutReadinessResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'In a deployed environment this always answers that payouts are unavailable, for two independent reasons: no assessed payout provider is eligible for Velora\u2019s business model, and no settlement window, reserve, or minimum payout is published. The balances are still shown, because the money is real whatever the platform can currently do with it.',
+  },
+  {
+    method: 'post',
+    operationId: 'startPayoutOnboarding',
+    path: apiRoutePaths.creatorPayoutOnboarding,
+    responses: {
+      '201': {
+        description:
+          "A link into the payout provider's own hosted onboarding, and what the provider currently says about the record it created.",
+        schemaName: 'PayoutOnboardingResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Velora collects nothing. There is no field in this API, and no column in this domain, for a bank account number, a routing number, a government identifier, or an identity document \u2014 not encrypted, not tokenized, not redacted: absent. The provider gathers, verifies, and retains all of it under its own compliance obligations, and Velora keeps a reference to the record plus a normalized capability answer.',
+  },
+  {
+    method: 'post',
+    operationId: 'requestPayout',
+    path: apiRoutePaths.creatorPayouts,
+    requestHeaders: [idempotencyHeader],
+    requestSchemaName: 'RequestPayoutRequest',
+    responses: {
+      '201': {
+        description:
+          'The instruction exists and its reservation is posted. The reservation is an accounting transaction rather than a lock, so it is visible to every replica that reads the book, and it is committed before any provider is contacted.',
+        schemaName: 'PayoutResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': {
+        description: `The payout could not be made: the provider does not say this recipient can be paid, the amount exceeds what approved terms currently release, or the same idempotency key was reused for a different amount. The body is an ApiError with code ${productErrorCodes.conflict} or ${productErrorCodes.idempotencyMismatch}.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'No payout exceeds the amount derived from journal entries, and the database refuses a posting that would overdraw a creator whatever the service believes. An ambiguous provider answer leaves the instruction submitted with its reservation intact rather than retried, because a payout whose answer was lost has either moved money or not.',
+  },
+  {
+    method: 'get',
+    operationId: 'listCreatorPayouts',
+    path: apiRoutePaths.creatorPayouts,
+    responses: {
+      '200': {
+        description: "This creator's own payout instructions, newest first.",
+        schemaName: 'CreatorPayoutHistoryResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
   },
   {
     method: 'get',

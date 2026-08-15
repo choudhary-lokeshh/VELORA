@@ -29,6 +29,7 @@ import {
   testCreatorsRuntime,
   testClubsRuntime,
   testAdminRuntime,
+  testPayoutsRuntime,
 } from '../support/harness.js';
 
 const config = testServerConfig();
@@ -116,6 +117,7 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
       users,
     }),
     notifications: testNotificationsApiRuntime({ safety, users }),
+    payouts: testPayoutsRuntime({ config, creators }),
     safety,
     users,
   };

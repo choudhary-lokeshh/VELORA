@@ -16,6 +16,7 @@ export default defineConfig({
     './src/discovery/schema.ts',
     './src/messaging/schema.ts',
     './src/notifications/schema.ts',
+    './src/payouts/schema.ts',
     './src/safety/schema.ts',
     './src/users/schema.ts',
   ],

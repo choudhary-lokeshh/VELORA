@@ -44,6 +44,10 @@ import {
   type NotificationsApiRuntime,
 } from '../../src/notifications/composition.js';
 import {
+  createPayoutsRuntime,
+  type PayoutsRuntime,
+} from '../../src/payouts/composition.js';
+import {
   createSafetyRuntime,
   type SafetyRuntime,
 } from '../../src/safety/composition.js';
@@ -347,6 +351,25 @@ export function testBillingRuntime(input: {
   });
 }
 
+/**
+ * PAYOUTS wired to the same database and CREATORS runtime. Both adapters come
+ * from configuration exactly as they do in production, so no test can exercise
+ * a combination configuration would refuse.
+ */
+export function testPayoutsRuntime(input: {
+  readonly config: ServerConfig;
+  readonly creators: CreatorsRuntime;
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+}): PayoutsRuntime {
+  return createPayoutsRuntime({
+    config: input.config,
+    creatorContext: input.creators.creatorContext,
+    database: input.database ?? drizzle.mock(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
 export function testProductRuntimes(input: {
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
@@ -362,6 +385,7 @@ export function testProductRuntimes(input: {
   readonly discovery: DiscoveryRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
+  readonly payouts: PayoutsRuntime;
   readonly safety: SafetyRuntime;
 } {
   const safety = testSafetyRuntime(input);
@@ -384,6 +408,7 @@ export function testProductRuntimes(input: {
       safety: safety.directory,
     }),
     notifications: testNotificationsApiRuntime({ ...input, safety }),
+    payouts: testPayoutsRuntime({ ...input, creators }),
     safety,
   };
 }

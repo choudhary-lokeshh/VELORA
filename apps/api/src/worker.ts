@@ -14,6 +14,11 @@ import {
   entitlementGrantedEvent,
   entitlementRevokedEvent,
 } from './billing/entitlement-events.js';
+import { PayoutDisbursementIntake } from './billing/disbursement-intake.js';
+import {
+  revenueReversedEvent,
+  revenueSettledEvent,
+} from './billing/revenue-events.js';
 import { billingOutbox } from './billing/schema.js';
 import { ClubRepository } from './clubs/club-repository.js';
 import { ClubCommercialDirectory } from './clubs/commercial.js';
@@ -37,6 +42,13 @@ import {
   registerNotificationJobs,
 } from './notifications/jobs.js';
 import { deliverySweepIntervalMilliseconds } from './notifications/policy.js';
+import {
+  createPayoutsRuntime,
+  type PayoutsRuntime,
+} from './payouts/composition.js';
+import { disbursementSettledEvent } from './payouts/disbursement-events.js';
+import { billingRevenueIntakes } from './payouts/revenue-intake.js';
+import { payoutsOutbox } from './payouts/schema.js';
 import { SafetyDirectory } from './safety/directory.js';
 import { SafetyRepository } from './safety/repository.js';
 import { UsersRepository } from './users/repository.js';
@@ -67,6 +79,8 @@ import {
 export interface WorkerComposition {
   /** BILLING, composed here because this process drains its inbox and outbox. */
   readonly billing: BillingRuntime;
+  /** PAYOUTS, composed here because this process applies both sides of the seam. */
+  readonly payouts: PayoutsRuntime;
   close(): Promise<void>;
   readonly deliverySweep: Poller;
   /** Applies verified provider events. Never runs on a request thread. */
@@ -133,6 +147,15 @@ export function createWorkerComposition(input: {
     resources: new ClubCommercialDirectory(),
   });
 
+  // PAYOUTS is composed here for the same reason BILLING is: this process
+  // drains both outboxes and applies both sides of the money seam.
+  const payouts = createPayoutsRuntime({
+    config: input.config,
+    creatorContext: undefined as never,
+    database: handle,
+    now,
+  });
+
   const relay = new OutboxRelay({
     consumers: [
       ...notifications.intakes,
@@ -146,6 +169,23 @@ export function createWorkerComposition(input: {
         logger: input.logger,
         now,
         revokedEvent: entitlementRevokedEvent,
+      }),
+      // The money seam, both directions. PAYOUTS learns what a creator is owed
+      // from BILLING's published fact, and BILLING learns that the obligation
+      // was discharged from PAYOUTS'. Neither reads the other's tables.
+      ...billingRevenueIntakes({
+        database: handle,
+        journal: payouts.journal,
+        logger: input.logger,
+        now,
+        reversedEvent: revenueReversedEvent,
+        settledEvent: revenueSettledEvent,
+      }),
+      new PayoutDisbursementIntake(disbursementSettledEvent, {
+        database: handle,
+        journal: billing.journal,
+        logger: input.logger,
+        now,
       }),
     ],
     logger: input.logger,
@@ -167,6 +207,10 @@ export function createWorkerComposition(input: {
       {
         producer: 'billing',
         repository: new OutboxRepository(handle, billingOutbox),
+      },
+      {
+        producer: 'payouts',
+        repository: new OutboxRepository(handle, payoutsOutbox),
       },
     ],
   });
@@ -198,6 +242,7 @@ export function createWorkerComposition(input: {
 
   return {
     billing,
+    payouts,
     async close() {
       await Promise.all([
         relayPoller.stop(),

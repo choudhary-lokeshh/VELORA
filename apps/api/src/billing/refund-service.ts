@@ -12,6 +12,7 @@ import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { RefundRepository, RefundRow } from './refund-repository.js';
 import { clearingAccount, unwindEntries } from './revenue-entries.js';
+import { revenueReversedEvent } from './revenue-events.js';
 import type { RefundReasonCode } from './reversal-policy.js';
 
 /**
@@ -279,6 +280,34 @@ export class RefundService {
       occurredAt: input.occurredAt,
       reason: 'refund_issued',
     });
+
+    // The creator's share of what went back, published so the payout book falls
+    // with it. Nothing is published when the creator's share of this reversal
+    // rounds to nothing, because a fact about zero money is not a fact.
+    const creatorShare = unwound.entries.find(
+      (entry) => entry.account.category === 'creator_payable',
+    );
+    if (creatorShare !== undefined) {
+      await outbox.append(executor as TransactionHandle, {
+        ...(settled.correlationId === null
+          ? {}
+          : { correlationId: settled.correlationId }),
+        eventName: revenueReversedEvent,
+        eventVersion: 1,
+        now: this.dependencies.now(),
+        occurredAt: input.occurredAt,
+        payload: {
+          creatorId: offer.creatorId,
+          creatorMinor: creatorShare.amount.amountMinor.toString(),
+          currency: creatorShare.amount.currency,
+          paymentId: input.payment.id,
+          reason: 'refund',
+          reversalId: settled.id,
+        },
+        subjectId: settled.id,
+        subjectType: 'billing.refund',
+      });
+    }
 
     // A reversal of everything that was taken is the purchase being undone, and
     // access follows the money out through the same door it came in. A partial

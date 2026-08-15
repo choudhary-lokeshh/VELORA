@@ -43,6 +43,10 @@ import {
   type NotificationsApiRuntime,
 } from './notifications/composition.js';
 import {
+  createPayoutsRuntime,
+  type PayoutsRuntime,
+} from './payouts/composition.js';
+import {
   createSafetyRuntime,
   type SafetyRuntime,
 } from './safety/composition.js';
@@ -86,6 +90,7 @@ export interface ApplicationDependencies {
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
   readonly outboundHttp: OutboundHttpPort;
+  readonly payouts: PayoutsRuntime;
   readonly queueRedis: HealthDependency;
   readonly safety: SafetyRuntime;
   readonly users: UsersRuntime;
@@ -146,6 +151,7 @@ export function createApplication(
   const injectedDiscovery = options.dependencies?.discovery;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedNotifications = options.dependencies?.notifications;
+  const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
 
   let database: HealthDependency;
@@ -159,6 +165,7 @@ export function createApplication(
   let discovery: DiscoveryRuntime;
   let messaging: MessagingRuntime;
   let notifications: NotificationsApiRuntime;
+  let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
   if (injectedDatabase === undefined) {
     const ownedDatabase = new DatabaseService(config);
@@ -234,6 +241,17 @@ export function createApplication(
         database: ownedDatabase.database,
         resources: clubs.commercialDirectory,
       });
+    // PAYOUTS depends on CREATORS' request resolver and on nothing else. It
+    // learns what a creator is owed from a fact BILLING publishes rather than
+    // by reading a `billing_` row, so there is no dependency between the two
+    // runtimes in either direction.
+    payouts =
+      injectedPayouts ??
+      createPayoutsRuntime({
+        config,
+        creatorContext: creators.creatorContext,
+        database: ownedDatabase.database,
+      });
     // ADMIN is composed last because it operates every other domain and owns
     // none of them: it takes their repositories and writes through them.
     admin =
@@ -298,11 +316,12 @@ export function createApplication(
       injectedDiscovery === undefined ||
       injectedMessaging === undefined ||
       injectedNotifications === undefined ||
+      injectedPayouts === undefined ||
       injectedSafety === undefined ||
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, ADMIN, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, ADMIN, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
@@ -315,6 +334,7 @@ export function createApplication(
     discovery = injectedDiscovery;
     messaging = injectedMessaging;
     notifications = injectedNotifications;
+    payouts = injectedPayouts;
     safety = injectedSafety;
   }
 
@@ -353,6 +373,7 @@ export function createApplication(
     notifications,
     outboundHttp:
       options.dependencies?.outboundHttp ?? new DenyAllOutboundHttp(),
+    payouts,
     queueRedis,
     safety,
     users,
@@ -763,6 +784,22 @@ export function createApplication(
       admitted(async (input) =>
         billing.earningsRoutes.getEarningsHistory(input),
       ),
+    )
+    .get(
+      apiRoutePaths.creatorPayoutReadiness,
+      admitted(async (input) => payouts.routes.getReadiness(input)),
+    )
+    .post(
+      apiRoutePaths.creatorPayoutOnboarding,
+      admitted(async (input) => payouts.routes.startOnboarding(input)),
+    )
+    .post(
+      apiRoutePaths.creatorPayouts,
+      admitted(async (input) => payouts.routes.requestPayout(input)),
+    )
+    .get(
+      apiRoutePaths.creatorPayouts,
+      admitted(async (input) => payouts.routes.listPayouts(input)),
     )
     .get(
       apiRoutePaths.creatorOffers,

@@ -183,6 +183,13 @@
       "when": 1786786222952,
       "tag": "0025_billing_reversals",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786791777914,
+      "tag": "0026_payouts_architecture",
+      "breakpoints": true
     }
   ]
 }

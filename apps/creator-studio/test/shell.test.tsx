@@ -82,7 +82,7 @@ function doubleWith(state: CreatorApiDoubleState): CreatorApiDouble {
  * asks for the catalog instead of scrolling past everything else.
  */
 async function goTo(
-  area: 'home' | 'profile' | 'catalog' | 'clubs' | 'earnings',
+  area: 'home' | 'profile' | 'catalog' | 'clubs' | 'earnings' | 'payouts',
 ) {
   await press(`nav-${area}`);
 }
@@ -909,6 +909,119 @@ describe('Creator Studio earnings', () => {
     }
     // A creator learns what was bought, never who bought it.
     expect(document.body.textContent, 'consumer').not.toContain('consumer');
+  });
+});
+
+describe('Creator Studio payouts', () => {
+  it('says which of the two things is stopping a payout, and shows the money anyway', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        payoutReadiness: {
+          balances: [
+            {
+              available: '1200',
+              currency: 'USD',
+              held: '0',
+              releasable: '0',
+              reserved: '0',
+            },
+          ],
+          enabled: false,
+          policySource: 'unpublished',
+          providerSource: 'unavailable',
+          recipientStatus: 'absent',
+        },
+      }),
+    );
+    await signIn();
+    await goTo('payouts');
+    await screen.findByTestId('payouts-balance-USD');
+
+    // The provider is the first thing in the way, so that is what it says —
+    // sending a creator to finish onboarding they cannot complete would be
+    // worse than telling them the platform is not ready.
+    expect(textOf('payouts-blocked')).toContain(
+      'no payout provider is approved',
+    );
+    // The money is real whatever the platform can do with it.
+    expect(textOf('payouts-USD-available')).toBe('12.00 USD');
+    // And no control that cannot succeed.
+    expect(screen.queryByTestId('payouts-withdraw-USD')).toBeNull();
+    expect(screen.queryByTestId('payouts-onboard')).toBeNull();
+  });
+
+  it('offers no bank field, no document upload, and no identity form', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        payoutReadiness: {
+          balances: [],
+          enabled: false,
+          policySource: 'unpublished',
+          providerSource: 'local-test',
+          recipientStatus: 'absent',
+        },
+      }),
+    );
+    await signIn();
+    await goTo('payouts');
+    await screen.findByTestId('payouts-onboard');
+
+    // Not disabled: absent. Onboarding is a link into the provider's own flow,
+    // and Velora has nowhere to put a bank detail even if somebody typed one.
+    const markup = document.body.textContent;
+    for (const forbidden of [
+      'Account number',
+      'Routing',
+      'IBAN',
+      'Sort code',
+      'Tax ID',
+      'Passport',
+      'Upload',
+    ]) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(0);
+  });
+
+  it('offers a withdrawal only for what the server says is releasable', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        payoutReadiness: {
+          balances: [
+            {
+              available: '1200',
+              currency: 'USD',
+              held: '0',
+              releasable: '1200',
+              reserved: '0',
+            },
+            {
+              available: '500',
+              currency: 'EUR',
+              held: '500',
+              releasable: '0',
+              reserved: '0',
+            },
+          ],
+          enabled: true,
+          policySource: 'local-test',
+          providerSource: 'local-test',
+          recipientStatus: 'ready',
+        },
+      }),
+    );
+    await signIn();
+    await goTo('payouts');
+    await screen.findByTestId('payouts-balance-USD');
+
+    // One currency has something releasable and one does not, and the control
+    // follows the server's answer rather than the surface's arithmetic.
+    expect(textOf('payouts-withdraw-USD')).toContain('12.00 USD');
+    expect(screen.queryByTestId('payouts-withdraw-EUR')).toBeNull();
+    expect(textOf('payouts-EUR-held')).toBe('5.00 EUR');
   });
 });
 

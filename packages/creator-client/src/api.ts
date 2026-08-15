@@ -17,6 +17,10 @@ import type {
   CreatorEarnings,
   CreatorEarningsHistory,
   CreatorOnboardingState,
+  CreatorPayoutHistory,
+  CreatorPayoutReadiness,
+  PayoutOnboarding,
+  RequestPayoutBody,
   CreatorPolicyDocument,
   CreatorProfile,
   CreatorPublicationBody,
@@ -80,6 +84,16 @@ export interface CreatorApi {
   }): Promise<ApiResult<CreatorEarningsHistory>>;
   issueClubInvite(clubId: string): Promise<ApiResult<ClubInviteIssued>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
+  /** This creator's own payout instructions, newest first. */
+  payouts(): Promise<ApiResult<CreatorPayoutHistory>>;
+  /** Whether this creator could be paid, and what they hold per currency. */
+  payoutReadiness(): Promise<ApiResult<CreatorPayoutReadiness>>;
+  /** Opens the payout provider's own hosted onboarding. Collects nothing here. */
+  startPayoutOnboarding(): Promise<ApiResult<PayoutOnboarding>>;
+  requestPayout(input: {
+    readonly body: RequestPayoutBody;
+    readonly idempotencyKey: string;
+  }): Promise<ApiResult<CreatorPayoutHistory['payouts'][number] | undefined>>;
   /** Published clubs on a creator's public page. Carries no credential. */
   publicClubs(handle: string): Promise<ApiResult<PublicClubList>>;
   revokeClubInvite(input: {
@@ -262,6 +276,38 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
     async onboarding() {
       return attempt(async () =>
         api.GET('/v1/creator/onboarding', await read()),
+      );
+    },
+
+    async payouts() {
+      return attempt(async () => api.GET('/v1/creator/payouts', await read()));
+    },
+
+    async payoutReadiness() {
+      return attempt(async () =>
+        api.GET('/v1/creator/payouts/readiness', await read()),
+      );
+    },
+
+    async requestPayout(input) {
+      const result = await attempt(async () =>
+        api.POST('/v1/creator/payouts', {
+          ...(await write()),
+          body: input.body,
+          headers: {
+            ...(await options.transport.headers('write')),
+            'x-velora-idempotency-key': input.idempotencyKey,
+          },
+        }),
+      );
+      return result.kind === 'ok'
+        ? { kind: 'ok' as const, value: result.value.payout }
+        : result;
+    },
+
+    async startPayoutOnboarding() {
+      return attempt(async () =>
+        api.POST('/v1/creator/payouts/onboarding', await write()),
       );
     },
 

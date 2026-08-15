@@ -73,6 +73,28 @@ export interface CreatorApiDoubleState {
     reversed: string;
     tax: string;
   }[];
+  /** What the server says about payout readiness, held as the wire shape. */
+  payoutReadiness: {
+    balances: {
+      available: string;
+      currency: string;
+      held: string;
+      releasable: string;
+      reserved: string;
+    }[];
+    enabled: boolean;
+    policySource: string;
+    providerSource: string;
+    recipientStatus: 'absent' | 'onboarding' | 'ready' | 'restricted';
+  };
+  payouts: {
+    amount: { amountMinor: string; currency: string };
+    createdAt: string;
+    failureReason?: string;
+    id: string;
+    state: string;
+    updatedAt: string;
+  }[];
   earningsHistory: {
     amount: { amountMinor: string; currency: string };
     id: string;
@@ -141,6 +163,14 @@ export function emptyCreatorState(): CreatorApiDoubleState {
     content: [],
     earnings: [],
     earningsHistory: [],
+    payoutReadiness: {
+      balances: [],
+      enabled: false,
+      policySource: 'unpublished',
+      providerSource: 'unavailable',
+      recipientStatus: 'absent',
+    },
+    payouts: [],
     invites: [],
     memberships: [],
     adultGateSatisfied: true,
@@ -356,6 +386,21 @@ export function createCreatorApiDouble(
         entries: state.earningsHistory
           .filter((entry) => entry.amount.currency === currency)
           .map((entry) => ({ ...entry })),
+      });
+    }
+
+    if (path === '/v1/creator/payouts/readiness' && method === 'GET') {
+      return json(200, {
+        balances: state.payoutReadiness.balances.map((row) => ({ ...row })),
+        enabled: state.payoutReadiness.enabled,
+        policySource: state.payoutReadiness.policySource,
+        providerSource: state.payoutReadiness.providerSource,
+        recipientStatus: state.payoutReadiness.recipientStatus,
+      });
+    }
+    if (path === '/v1/creator/payouts' && method === 'GET') {
+      return json(200, {
+        payouts: state.payouts.map((payout) => ({ ...payout })),
       });
     }
 

@@ -108,6 +108,8 @@ export const billingBusinessTypes = {
   disputeResolution: 'billing.dispute_resolution',
   /** A payment operation, referenced by its internal identifier. */
   payment: 'billing.payment',
+  /** A creator liability discharged by PAYOUTS, by its instruction identifier. */
+  payout: 'billing.payout',
   /** A refund, referenced by its internal refund identifier. */
   refund: 'billing.refund',
 } as const;

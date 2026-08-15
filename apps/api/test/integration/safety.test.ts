@@ -31,6 +31,7 @@ import {
   testClubsRuntime,
   testAdminRuntime,
   testBillingRuntime,
+  testPayoutsRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_safety');
@@ -127,6 +128,11 @@ const application = createApplication({
   dependencies: {
     auth,
     billing: billingRuntime,
+    payouts: testPayoutsRuntime({
+      config,
+      creators,
+      database: database.drizzle,
+    }),
     admin: testAdminRuntime({
       billing: billingRuntime,
       caller: auth.caller,

@@ -93,6 +93,15 @@ const truncationRoots = [
   // key, so nothing cascades into its catalog either.
   'clubs_clubs',
   'clubs_content',
+  // PAYOUTS' book and its records. Entries cascade from neither journal table
+  // — the composite currency keys carry `no action` — so all three are listed,
+  // entries first, and the domain's own records follow.
+  'payouts_journal_entries',
+  'payouts_journal_transactions',
+  'payouts_journal_accounts',
+  'payouts_instructions',
+  'payouts_outbox',
+  'payouts_recipients',
   // CREATORS holds no foreign key to AUTH or USERS by design, so nothing
   // cascades into it and it is listed as its own root.
   'creators_accounts',

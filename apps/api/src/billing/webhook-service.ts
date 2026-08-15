@@ -4,7 +4,7 @@ import type { SafeLogger } from '@velora/observability/server';
 
 import type { TransactionHandle } from '../database/executor.js';
 import type { OutboxAppendPort } from '../events/outbox.js';
-import { money } from '../money/money.js';
+import { isPositiveMoney, money } from '../money/money.js';
 import type { JournalStore } from '../money/journal.js';
 import {
   entitlementGrantedEvent,
@@ -23,6 +23,7 @@ import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { RefundRepository } from './refund-repository.js';
 import { captureEntries } from './revenue-entries.js';
+import { revenueSettledEvent } from './revenue-events.js';
 import type { RefundService } from './refund-service.js';
 import {
   disputeReasonCodes,
@@ -545,6 +546,30 @@ export class WebhookService {
         occurredAt: event.occurredAt,
         reason: 'payment_captured',
       });
+
+      // PAYOUTS learns what a creator is owed from this fact and never by
+      // reading a `billing_` row. It is appended in the same transaction that
+      // posts the money, so a settled sale that owes a creator something and a
+      // published fact saying so cannot exist without each other.
+      if (isPositiveMoney(allocation.creator)) {
+        await outbox.append(executor as TransactionHandle, {
+          ...(payment.correlationId === null
+            ? {}
+            : { correlationId: payment.correlationId }),
+          eventName: revenueSettledEvent,
+          eventVersion: 1,
+          now: this.dependencies.now(),
+          occurredAt: event.occurredAt,
+          payload: {
+            creatorId: offer.creatorId,
+            creatorMinor: allocation.creator.amountMinor.toString(),
+            currency: allocation.creator.currency,
+            paymentId: payment.id,
+          },
+          subjectId: payment.id,
+          subjectType: 'billing.payment',
+        });
+      }
 
       let commercialReference = payment.id;
       if (offer.commercialMode === 'subscription') {

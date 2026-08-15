@@ -560,3 +560,149 @@ export const disputeSchema = z
   })
   .strict();
 export type Dispute = z.infer<typeof disputeSchema>;
+
+/**
+ * How far a creator has got with a payout provider's own onboarding.
+ *
+ * Normalized from whatever a provider calls it, and deliberately coarse.
+ * Velora holds a reference to the provider's record and this answer; it does
+ * not hold, and has no field for, a bank account number, a routing number, a
+ * government identifier, or an identity document.
+ */
+export const payoutRecipientStatusValues = [
+  'absent',
+  'onboarding',
+  'ready',
+  'restricted',
+] as const;
+export const payoutRecipientStatusSchema = z.enum(payoutRecipientStatusValues);
+export type PayoutRecipientStatusValue = z.infer<
+  typeof payoutRecipientStatusSchema
+>;
+
+/**
+ * What one currency of a creator's payout balance looks like.
+ *
+ * Four figures and no total, for the same reason earnings carry none: the sum
+ * of two currencies is not an amount. `releasable` is what approved payout
+ * terms would let go right now and is zero wherever no terms are published,
+ * which is what makes a payout control refuse honestly instead of failing.
+ */
+export const creatorPayoutBalanceSchema = z
+  .object({
+    available: minorUnitsSchema,
+    currency: currencyCodeSchema,
+    held: minorUnitsSchema,
+    releasable: minorUnitsSchema,
+    reserved: minorUnitsSchema,
+  })
+  .strict();
+export type CreatorPayoutBalance = z.infer<typeof creatorPayoutBalanceSchema>;
+
+/**
+ * Whether this creator could be paid at all, and what they hold.
+ *
+ * The two refusal reasons are reported separately on purpose. A creator whose
+ * provider record is fine but whose platform has published no settlement terms
+ * is in a different position from one who has not finished onboarding, and
+ * collapsing the two would tell both of them to do the wrong thing.
+ */
+export const creatorPayoutReadinessResponseSchema = z
+  .object({
+    balances: z.array(creatorPayoutBalanceSchema),
+    enabled: z.boolean(),
+    /** Which payout terms are in force. `unpublished` in every deployed environment. */
+    policySource: z.string().min(1).max(64),
+    /** Which payout adapter is configured. `unavailable` in every deployed environment. */
+    providerSource: z.string().min(1).max(64),
+    recipientStatus: payoutRecipientStatusSchema,
+  })
+  .strict();
+export type CreatorPayoutReadinessResponse = z.infer<
+  typeof creatorPayoutReadinessResponseSchema
+>;
+
+/**
+ * A link into the provider's own hosted onboarding.
+ *
+ * A URL and a status. Velora collects nothing itself: the bank details and the
+ * identity documents are gathered, verified, and retained by the provider,
+ * under the provider's own compliance obligations, and Velora keeps a reference
+ * to the record they belong to.
+ */
+export const payoutOnboardingResponseSchema = z
+  .object({
+    onboardingUrl: z.url(),
+    recipientStatus: payoutRecipientStatusSchema,
+  })
+  .strict();
+export type PayoutOnboardingResponse = z.infer<
+  typeof payoutOnboardingResponseSchema
+>;
+
+/**
+ * The states one payout instruction can hold.
+ *
+ * `submitted` is where an ambiguous answer lands. A payout whose answer was
+ * lost has either moved money or not, and guessing either way is how a platform
+ * pays somebody twice.
+ */
+export const payoutStateValues = [
+  'requested',
+  'reserved',
+  'submitted',
+  'paid',
+  'failed',
+  'cancelled',
+  'reversed',
+] as const;
+export const payoutStateSchema = z.enum(payoutStateValues);
+export type PayoutStateValue = z.infer<typeof payoutStateSchema>;
+
+export const payoutFailureReasonValues = [
+  'recipient_not_ready',
+  'declined',
+  'provider_error',
+] as const;
+export const payoutFailureReasonSchema = z.enum(payoutFailureReasonValues);
+
+/** One payout instruction, as the creator it belongs to may see it. */
+export const creatorPayoutSchema = z
+  .object({
+    amount: moneySchema,
+    createdAt: z.iso.datetime(),
+    failureReason: payoutFailureReasonSchema.optional(),
+    id: z.uuid(),
+    state: payoutStateSchema,
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type CreatorPayout = z.infer<typeof creatorPayoutSchema>;
+
+export const payoutResponseSchema = z
+  .object({ payout: creatorPayoutSchema })
+  .strict();
+export type PayoutResponse = z.infer<typeof payoutResponseSchema>;
+
+export const creatorPayoutHistoryResponseSchema = z
+  .object({ payouts: z.array(creatorPayoutSchema) })
+  .strict();
+export type CreatorPayoutHistoryResponse = z.infer<
+  typeof creatorPayoutHistoryResponseSchema
+>;
+
+/**
+ * Asking to be paid.
+ *
+ * The amount and currency are both explicit and both re-checked against what
+ * the ledger says the creator may claim. There is no "pay me everything"
+ * request, because what "everything" means depends on when it is evaluated and
+ * a creator is entitled to know the figure they asked for.
+ */
+export const requestPayoutRequestSchema = z
+  .object({
+    amountMinor: positiveMinorUnitsSchema,
+    currency: currencyCodeSchema,
+  })
+  .strict();
+export type RequestPayoutRequest = z.infer<typeof requestPayoutRequestSchema>;

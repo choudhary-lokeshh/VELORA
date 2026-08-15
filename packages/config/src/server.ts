@@ -68,6 +68,23 @@ export const localTestCommercePolicy = 'local-test';
  */
 export const unavailablePaymentProvider = 'unavailable';
 export const localTestPaymentProvider = 'local-test';
+
+/**
+ * The payout adapter, and the terms a disbursement sits inside.
+ *
+ * Two values rather than one because they refuse for two independent reasons.
+ * No assessed payout provider is eligible for Velora's business model — Stripe
+ * Connect and PayPal Payouts inherit their platforms' prohibitions, Wise
+ * prohibits both the content category and third-party money transmission, and
+ * Airwallex lists adult content as unsupported — and separately, no settlement
+ * window, reserve, minimum payout, or negative-balance treatment is published.
+ * Either alone is enough to stop a payout, and a deployed environment holds
+ * both.
+ */
+export const unavailablePayoutProvider = 'unavailable';
+export const localTestPayoutProvider = 'local-test';
+export const unpublishedPayoutPolicy = 'unpublished';
+export const localTestPayoutPolicy = 'local-test';
 export const unavailableAdultAssuranceVerifier = 'unavailable';
 export const localTestAdultAssuranceVerifier = 'local-test';
 
@@ -242,6 +259,12 @@ export const serverConfigSchema = z
     NOTIFICATIONS_DELIVERY_CHANNEL: z
       .enum([unavailableNotificationChannel, localTestNotificationChannel])
       .default(unavailableNotificationChannel),
+    PAYOUTS_POLICY: z
+      .enum([unpublishedPayoutPolicy, localTestPayoutPolicy])
+      .default(unpublishedPayoutPolicy),
+    PAYOUTS_PROVIDER: z
+      .enum([unavailablePayoutProvider, localTestPayoutProvider])
+      .default(unavailablePayoutProvider),
     PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
     QUEUE_REDIS_URL: redisUrlSchema,
     USERS_ADULT_ASSURANCE_VERIFIER: z
@@ -289,6 +312,20 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `BILLING_PAYMENT_PROVIDER is not usable in ${config.APP_ENV}: no payment provider is eligible for Velora's business model without written approval nobody holds; see the provider eligibility record and DECISIONS_REQUIRED`,
         path: ['BILLING_PAYMENT_PROVIDER'],
+      });
+    }
+    if (config.PAYOUTS_PROVIDER !== unavailablePayoutProvider) {
+      context.addIssue({
+        code: 'custom',
+        message: `PAYOUTS_PROVIDER is not usable in ${config.APP_ENV}: no payout provider is eligible for Velora's business model, and creator payouts remain a later product phase; see the provider eligibility record and DECISIONS_REQUIRED`,
+        path: ['PAYOUTS_PROVIDER'],
+      });
+    }
+    if (config.PAYOUTS_POLICY !== unpublishedPayoutPolicy) {
+      context.addIssue({
+        code: 'custom',
+        message: `PAYOUTS_POLICY is not usable in ${config.APP_ENV}: settlement window, rolling reserve, minimum payout, negative-balance treatment, and payout countries are all undecided; see DECISIONS_REQUIRED`,
+        path: ['PAYOUTS_POLICY'],
       });
     }
     if (config.MESSAGING_SAFETY_ELIGIBILITY !== unavailableSafetyEligibility) {
@@ -378,6 +415,8 @@ export function redactServerConfig(config: ServerConfig) {
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
     paymentProvider: config.BILLING_PAYMENT_PROVIDER,
+    payoutPolicy: config.PAYOUTS_POLICY,
+    payoutProvider: config.PAYOUTS_PROVIDER,
     profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
     accessTokenSigningKeyConfigured:
       config.AUTH_ACCESS_TOKEN_SIGNING_KEY !== undefined,

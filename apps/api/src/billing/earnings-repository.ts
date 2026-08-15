@@ -2,9 +2,13 @@ import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 
 import type { DatabaseHandle, Executor } from '../database/executor.js';
 import type { JournalStore } from '../money/journal.js';
-import { money, zeroMoney, type Money } from '../money/money.js';
+import { money, type Money } from '../money/money.js';
 import type { OfferCursor } from './cursor.js';
-import { creatorPayableAccount } from './revenue-entries.js';
+import {
+  creatorPayableAccount,
+  platformRevenueAccount,
+  taxPayableAccount,
+} from './revenue-entries.js';
 import { openDisputeStates } from './reversal-policy.js';
 import {
   billingDisputes,
@@ -196,9 +200,9 @@ export class EarningsRepository {
         ),
       );
 
-    // The one authoritative figure. A payable account is credited when a sale
-    // settles and debited when one is reversed, so its balance is negative in
-    // the journal's debits-minus-credits convention; it is negated here because
+    // The three authoritative figures. Each position is credited when a sale
+    // settles and debited when one is reversed, so a balance is negative in the
+    // journal's debits-minus-credits convention; each is negated here because
     // "what we owe you" reads better as a positive number than as a liability
     // sign a creator has no reason to know about.
     const ledger = await this.journal.balanceOf(
@@ -206,29 +210,33 @@ export class EarningsRepository {
       input.currency,
       creatorPayableAccount(input.creatorId),
     );
+    const platformLedger = await this.journal.balanceOf(
+      executor,
+      input.currency,
+      platformRevenueAccount(input.creatorId),
+    );
+    const taxLedger = await this.journal.balanceOf(
+      executor,
+      input.currency,
+      taxPayableAccount(input.creatorId),
+    );
     const payable = money(-ledger.amountMinor, input.currency);
     const gross = money(BigInt(captured?.gross ?? '0'), input.currency);
     const reversedTotal = money(
       BigInt(refunded?.total ?? '0') + BigInt(chargedBack?.total ?? '0'),
       input.currency,
     );
-    const tax = zeroMoney(input.currency);
+    const tax = money(-taxLedger.amountMinor, input.currency);
 
     return {
       disputed: money(BigInt(disputed?.total ?? '0'), input.currency),
       gross,
       payable,
-      // What the platform kept is what is left of the sales after the money
-      // that went back and the money still owed onward. Derived rather than
-      // read from the platform's own account, because that account is one
-      // position for the whole platform and this question is about one creator.
-      platform: money(
-        gross.amountMinor -
-          reversedTotal.amountMinor -
-          payable.amountMinor -
-          tax.amountMinor,
-        input.currency,
-      ),
+      // Read from this creator's own platform position rather than inferred by
+      // subtracting the payable from the gross. The inference stops being
+      // correct the moment a payout reduces the payable, and a figure that is
+      // right only until money moves is worse than one nobody computed.
+      platform: money(-platformLedger.amountMinor, input.currency),
       reversed: reversedTotal,
       // Nothing writes a tax position, because no tax authority is configured
       // and no policy in this repository computes one. Reporting zero here is a

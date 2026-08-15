@@ -99,3 +99,18 @@ export type CreatorEarningsHistory = JsonBody<
   200
 >;
 export type CreatorEarningsEntry = CreatorEarningsHistory['entries'][number];
+
+export type CreatorPayoutReadiness = JsonBody<
+  '/v1/creator/payouts/readiness',
+  'get',
+  200
+>;
+export type CreatorPayoutBalance = CreatorPayoutReadiness['balances'][number];
+export type PayoutOnboarding = JsonBody<
+  '/v1/creator/payouts/onboarding',
+  'post',
+  201
+>;
+export type CreatorPayoutHistory = JsonBody<'/v1/creator/payouts', 'get', 200>;
+export type CreatorPayout = CreatorPayoutHistory['payouts'][number];
+export type RequestPayoutBody = RequestBody<'/v1/creator/payouts', 'post'>;

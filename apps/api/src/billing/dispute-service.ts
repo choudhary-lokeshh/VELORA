@@ -10,6 +10,7 @@ import type { PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { RefundRepository } from './refund-repository.js';
 import { unwindEntries } from './revenue-entries.js';
+import { revenueReversedEvent } from './revenue-events.js';
 import {
   openDisputeStates,
   type DisputeReasonCode,
@@ -246,6 +247,31 @@ export class DisputeService {
       reason: 'dispute_resolved',
     });
     if (posted.alreadyPosted || !lost) return;
+
+    // The creator's share of what the bank took, published so the payout book
+    // falls with it. Same seam a refund uses, because the two are the same
+    // financial consequence arriving through different doors.
+    const creatorShare = entries.find(
+      (entry) => entry.account.category === 'creator_payable',
+    );
+    if (creatorShare !== undefined) {
+      await outbox.append(executor as TransactionHandle, {
+        eventName: revenueReversedEvent,
+        eventVersion: 1,
+        now: this.dependencies.now(),
+        occurredAt: input.occurredAt,
+        payload: {
+          creatorId: offer.creatorId,
+          creatorMinor: creatorShare.amount.amountMinor.toString(),
+          currency: creatorShare.amount.currency,
+          paymentId: input.payment.id,
+          reason: 'dispute_lost',
+          reversalId: input.dispute.id,
+        },
+        subjectId: input.dispute.id,
+        subjectType: 'billing.dispute',
+      });
+    }
 
     // A dispute lost for the whole capture is that purchase reversed, and access
     // follows the money out through the same door it came in. A partial loss
