@@ -32,6 +32,15 @@ export interface CreatorApiDoubleState {
     publishedAt?: string;
     version: number;
   } | null;
+  clubs: {
+    description?: string;
+    id: string;
+    lifecycle: 'draft' | 'published' | 'closed';
+    memberCount: number;
+    name: string;
+    slug: string;
+    version: number;
+  }[];
   content: {
     id: string;
     lifecycle: 'draft' | 'published' | 'archived';
@@ -88,6 +97,7 @@ export function emptyCreatorState(): CreatorApiDoubleState {
   return {
     account: null,
     adultGateReason: undefined,
+    clubs: [],
     content: [],
     adultGateSatisfied: true,
     outstandingPolicies: [],
@@ -162,6 +172,21 @@ export function createCreatorApiDouble(
           updatedAt: iso(),
           version: state.profile.version,
         };
+
+  const clubBody = (club: CreatorApiDoubleState['clubs'][number]) => ({
+    createdAt: iso(),
+    ...(club.description === undefined
+      ? {}
+      : { description: club.description }),
+    id: club.id,
+    lifecycle: club.lifecycle,
+    memberCount: club.memberCount,
+    name: club.name,
+    ...(club.lifecycle === 'published' ? { publishedAt: iso() } : {}),
+    slug: club.slug,
+    updatedAt: iso(),
+    version: club.version,
+  });
 
   const entryBody = (entry: CreatorApiDoubleState['content'][number]) => ({
     createdAt: iso(),
@@ -268,6 +293,74 @@ export function createCreatorApiDouble(
       return json(200, onboardingBody());
     }
 
+    if (path === '/v1/creator/clubs' && method === 'GET') {
+      return json(200, { clubs: state.clubs.map((club) => clubBody(club)) });
+    }
+    if (path === '/v1/creator/clubs' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as {
+        description?: string;
+        name: string;
+        slug: string;
+      };
+      const slug = requested.slug.toLowerCase();
+      if (state.clubs.some((club) => club.slug === slug)) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const created = {
+        ...(requested.description === undefined
+          ? {}
+          : { description: requested.description }),
+        id: `club-${String(state.clubs.length + 1)}`,
+        lifecycle: 'draft' as const,
+        memberCount: 0,
+        name: requested.name,
+        slug,
+        version: 1,
+      };
+      state.clubs = [created, ...state.clubs];
+      return json(201, { clubs: [clubBody(created)] });
+    }
+    if (path === '/v1/creator/clubs/lifecycle' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as {
+        clubId: string;
+        lifecycle: 'draft' | 'published' | 'closed';
+        version: number;
+      };
+      const current = state.clubs.find((club) => club.id === requested.clubId);
+      if (current?.version !== requested.version) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      if (current.lifecycle === 'closed') return error(409, 'STATE_CONFLICT');
+      const moved = {
+        ...current,
+        lifecycle: requested.lifecycle,
+        version: current.version + 1,
+      };
+      state.clubs = state.clubs.map((club) =>
+        club.id === moved.id ? moved : club,
+      );
+      return json(200, { clubs: [clubBody(moved)] });
+    }
+    if (path === '/v1/creator/clubs/invites' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as { clubId: string };
+      const club = state.clubs.find((entry) => entry.id === requested.clubId);
+      if (club?.lifecycle !== 'published') return error(409, 'STATE_CONFLICT');
+      return json(201, {
+        invite: {
+          clubId: club.id,
+          createdAt: iso(),
+          expiresAt: iso(604_800_000),
+          id: `invite-${club.id}`,
+        },
+        secret: 'invitation-secret-value-shown-once-0001',
+      });
+    }
     if (path === '/v1/creator/content' && method === 'GET') {
       return json(200, { content: contentBody() });
     }

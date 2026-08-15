@@ -10,7 +10,11 @@ import {
   type CatalogCursor,
 } from './cursor.js';
 import { maximumCatalogPageSize } from './policy.js';
-import type { ClubsRepository, CreatorContentRow } from './repository.js';
+import type {
+  ClubsDatabase,
+  ClubsRepository,
+  CreatorContentRow,
+} from './repository.js';
 
 /**
  * The creator catalog.
@@ -41,7 +45,16 @@ export interface ContentPage {
   readonly rows: readonly CreatorContentRow[];
 }
 
+/** Club ownership, so an item cannot be attached to somebody else's room. */
+export interface ContentClubOwnershipPort {
+  findOwnClub(
+    executor: ClubsDatabase,
+    input: { readonly clubId: string; readonly creatorId: string },
+  ): Promise<unknown>;
+}
+
 export interface ClubsServiceDependencies {
+  readonly clubs: ContentClubOwnershipPort;
   readonly creators: ContentCreatorPort;
   readonly now: () => Date;
   readonly repository: ClubsRepository;
@@ -126,8 +139,17 @@ export class ClubsService {
     const { repository } = this.dependencies;
     if (!(await this.mayOperate(input.creatorId))) return { kind: 'conflict' };
 
+    // A club named on an item has to be one this creator owns. Accepting an
+    // identifier from elsewhere would let somebody attach their writing to
+    // another creator's room, which is the reverse of the isolation every other
+    // read here enforces.
+    const clubId = input.request.clubId ?? null;
+    if (clubId !== null && !(await this.ownsClub(input.creatorId, clubId))) {
+      return { kind: 'conflict' };
+    }
     const content = {
       body: input.request.body ?? null,
+      clubId,
       summary: input.request.summary ?? null,
       title: input.request.title,
       visibility: input.request.visibility,
@@ -201,6 +223,14 @@ export class ClubsService {
     return row === undefined
       ? { kind: 'conflict' }
       : { created: false, kind: 'saved', row };
+  }
+
+  private async ownsClub(creatorId: string, clubId: string): Promise<boolean> {
+    const club = await this.dependencies.clubs.findOwnClub(
+      this.dependencies.repository.transactionless,
+      { clubId, creatorId },
+    );
+    return club !== undefined;
   }
 
   private async mayOperate(creatorId: string): Promise<boolean> {

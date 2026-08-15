@@ -73,6 +73,7 @@ const truncationRoots = [
   'auth_recovery_rate_events',
   // PRIVATE CLUBS references a creator by opaque identifier with no foreign
   // key, so nothing cascades into its catalog either.
+  'clubs_clubs',
   'clubs_content',
   // CREATORS holds no foreign key to AUTH or USERS by design, so nothing
   // cascades into it and it is listed as its own root.

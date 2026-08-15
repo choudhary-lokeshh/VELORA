@@ -92,7 +92,7 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   const discovery = testDiscoveryRuntime({ safety, users });
   const creators = testCreatorsRuntime({ caller: auth.caller, users });
   return {
-    clubs: testClubsRuntime({ creators }),
+    clubs: testClubsRuntime({ config, creators, users }),
     creators,
     discovery,
     messaging: testMessagingRuntime({

@@ -163,7 +163,12 @@ function createInstance(name: string): Instance {
     config,
     dependencies: {
       auth,
-      clubs: testClubsRuntime({ creators, database: service.database }),
+      clubs: testClubsRuntime({
+        config,
+        creators,
+        database: service.database,
+        users,
+      }),
       creators,
       database: service,
       databaseAdmission: service.admission,

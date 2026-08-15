@@ -32,6 +32,8 @@ export const unavailablePrivilegedVerifier = 'unavailable';
  * verified path is exercisable during development and is refused everywhere
  * else by the environment guard below.
  */
+export const unavailableBillingEntitlement = 'unavailable';
+export const localTestBillingEntitlement = 'local-test';
 export const unavailableAdultAssuranceVerifier = 'unavailable';
 export const localTestAdultAssuranceVerifier = 'local-test';
 
@@ -194,6 +196,9 @@ export const serverConfigSchema = z
     MESSAGING_SAFETY_ELIGIBILITY: z
       .enum([unavailableSafetyEligibility, trustAndSafetyEligibility])
       .default(unavailableSafetyEligibility),
+    CLUBS_BILLING_ENTITLEMENT: z
+      .enum([unavailableBillingEntitlement, localTestBillingEntitlement])
+      .default(unavailableBillingEntitlement),
     NOTIFICATIONS_DELIVERY_CHANNEL: z
       .enum([unavailableNotificationChannel, localTestNotificationChannel])
       .default(unavailableNotificationChannel),
@@ -223,6 +228,13 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `USERS_ADULT_ASSURANCE_VERIFIER is not usable in ${config.APP_ENV}: no age or identity verification provider is approved; see DECISIONS_REQUIRED`,
         path: ['USERS_ADULT_ASSURANCE_VERIFIER'],
+      });
+    }
+    if (config.CLUBS_BILLING_ENTITLEMENT !== unavailableBillingEntitlement) {
+      context.addIssue({
+        code: 'custom',
+        message: `CLUBS_BILLING_ENTITLEMENT is not usable in ${config.APP_ENV}: no payment provider is approved and creator subscriptions are a later phase; see DECISIONS_REQUIRED`,
+        path: ['CLUBS_BILLING_ENTITLEMENT'],
       });
     }
     if (config.MESSAGING_SAFETY_ELIGIBILITY !== unavailableSafetyEligibility) {
@@ -309,6 +321,7 @@ export function redactServerConfig(config: ServerConfig) {
   return {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
     adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
+    billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
     accessTokenSigningKeyConfigured:
       config.AUTH_ACCESS_TOKEN_SIGNING_KEY !== undefined,

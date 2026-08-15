@@ -86,6 +86,19 @@ export interface ConsumerAdultStandingPort {
     readonly executor: Executor;
     readonly now: Date;
   }): Promise<ConsumerAdultStanding | undefined>;
+
+  /**
+   * The same standing, keyed by the consumer account identifier.
+   *
+   * A domain that already holds a consumer identifier — because that person
+   * acted on one of its surfaces — needs the same facts without being handed a
+   * way to look up an AUTH principal.
+   */
+  standingForUser(input: {
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly userId: string;
+  }): Promise<ConsumerAdultStanding | undefined>;
 }
 
 /** Account states in which a person may still operate a capability. */
@@ -94,25 +107,48 @@ const operableStatuses = new Set(['pending_profile', 'active']);
 export class ConsumerAdultStandingDirectory implements ConsumerAdultStandingPort {
   constructor(private readonly repository: UsersRepository) {}
 
+  async standingForUser(input: {
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly userId: string;
+  }): Promise<ConsumerAdultStanding | undefined> {
+    return this.standingOf(
+      await this.repository.findById(input.executor, input.userId),
+      input.executor,
+      input.now,
+    );
+  }
+
   async standingForAuthAccount(input: {
     readonly authAccountId: string;
     readonly executor: Executor;
     readonly now: Date;
   }): Promise<ConsumerAdultStanding | undefined> {
-    const account = await this.repository.findByAuthAccountId(
+    return this.standingOf(
+      await this.repository.findByAuthAccountId(
+        input.executor,
+        input.authAccountId,
+      ),
       input.executor,
-      input.authAccountId,
+      input.now,
     );
+  }
+
+  private async standingOf(
+    account: Awaited<ReturnType<UsersRepository['findById']>>,
+    executor: Executor,
+    now: Date,
+  ): Promise<ConsumerAdultStanding | undefined> {
     if (account === undefined) return undefined;
     // Read from the assurance evidence rather than inferred from account
     // status, which can be stale relative to an assurance that expired without
     // any write happening.
     const latest = await this.repository.findLatestAdultAssurance(
-      input.executor,
+      executor,
       account.id,
     );
     return {
-      adultAssurance: adultAssuranceLevelOf(latest, input.now),
+      adultAssurance: adultAssuranceLevelOf(latest, now),
       inGoodStanding: operableStatuses.has(account.status),
       userId: account.id,
     };

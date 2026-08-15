@@ -120,7 +120,13 @@ const application = createApplication({
   config,
   dependencies: {
     auth,
-    clubs: testClubsRuntime({ creators, database: database.drizzle, now }),
+    clubs: testClubsRuntime({
+      config,
+      creators,
+      database: database.drizzle,
+      now,
+      users,
+    }),
     creators,
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),

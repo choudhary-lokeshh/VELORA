@@ -70,3 +70,23 @@ export type CreatorContentLifecycleBody = RequestBody<
  */
 export type PublicCreatorCatalog = JsonBody<'/v1/creators/catalog', 'get', 200>;
 export type PublicCreatorContent = PublicCreatorCatalog['content'][number];
+
+export type CreatorClubList = JsonBody<'/v1/creator/clubs', 'get', 200>;
+export type CreatorClub = CreatorClubList['clubs'][number];
+export type SaveCreatorClubBody = RequestBody<'/v1/creator/clubs', 'post'>;
+export type ClubLifecycleBody = RequestBody<
+  '/v1/creator/clubs/lifecycle',
+  'post'
+>;
+export type ClubInviteList = JsonBody<'/v1/creator/clubs/invites', 'get', 200>;
+export type ClubInviteIssued = JsonBody<
+  '/v1/creator/clubs/invites',
+  'post',
+  201
+>;
+export type ClubMembershipList = JsonBody<
+  '/v1/creator/clubs/members',
+  'get',
+  200
+>;
+export type PublicClubList = JsonBody<'/v1/creators/clubs', 'get', 200>;

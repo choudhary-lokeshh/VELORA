@@ -200,9 +200,12 @@ export function createApplication(
     clubs =
       injectedClubs ??
       createClubsRuntime({
+        config,
+        consumerContext: users.consumerContext,
         creatorContext: creators.creatorContext,
         creators: creators.directory,
         database: ownedDatabase.database,
+        standing: users.adultStanding,
       });
     discovery =
       injectedDiscovery ??
@@ -632,6 +635,54 @@ export function createApplication(
     .get(
       apiRoutePaths.publicCreatorCatalog,
       admitted(async (input) => clubs.routes.getPublicCatalog(input)),
+    )
+    .get(
+      apiRoutePaths.creatorClubs,
+      admitted(async (input) => clubs.clubRoutes.listClubs(input)),
+    )
+    .post(
+      apiRoutePaths.creatorClubs,
+      admitted(async (input) => clubs.clubRoutes.saveClub(input)),
+    )
+    .post(
+      apiRoutePaths.creatorClubLifecycle,
+      admitted(async (input) => clubs.clubRoutes.setClubLifecycle(input)),
+    )
+    .get(
+      apiRoutePaths.creatorClubInvites,
+      admitted(async (input) => clubs.clubRoutes.listInvites(input)),
+    )
+    .post(
+      apiRoutePaths.creatorClubInvites,
+      admitted(async (input) => clubs.clubRoutes.issueInvite(input)),
+    )
+    .post(
+      apiRoutePaths.creatorClubInviteRevocation,
+      admitted(async (input) => clubs.clubRoutes.revokeInvite(input)),
+    )
+    .get(
+      apiRoutePaths.creatorClubMembers,
+      admitted(async (input) => clubs.clubRoutes.listMemberships(input)),
+    )
+    .post(
+      apiRoutePaths.creatorClubMemberRevocation,
+      admitted(async (input) => clubs.clubRoutes.revokeMembership(input)),
+    )
+    .post(
+      apiRoutePaths.clubRedemptions,
+      admitted(async (input) => clubs.clubRoutes.redeem(input)),
+    )
+    .get(
+      apiRoutePaths.clubAccess,
+      admitted(async (input) => clubs.clubRoutes.listAccess(input)),
+    )
+    .get(
+      apiRoutePaths.clubContent,
+      admitted(async (input) => clubs.clubRoutes.getClubContent(input)),
+    )
+    .get(
+      apiRoutePaths.publicCreatorClubs,
+      admitted(async (input) => clubs.clubRoutes.getPublicClubs(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

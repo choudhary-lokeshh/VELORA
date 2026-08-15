@@ -476,3 +476,124 @@ describe('Creator Studio catalog', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('Creator Studio private clubs', () => {
+  it('creates a club with nobody in it and publishes on a separate decision', async () => {
+    const double = doubleWith(activeCreatorState());
+    renderStudio(double);
+    await signIn();
+    await waitFor(() => {
+      expect(screen.getByTestId('creator-clubs-empty')).toBeDefined();
+    });
+
+    await type('club-name', 'Inner Circle');
+    await type('club-slug', 'Inner_Circle');
+    await press('club-create');
+
+    await waitFor(() => {
+      expect(textOf('club-lifecycle-club-1')).toBe(
+        'Draft. Nobody can see this or be admitted to it.',
+      );
+    });
+    expect(textOf('club-members-club-1')).toBe('0 members');
+    // A draft club cannot hand out a key to itself, so no invitation control
+    // is offered for one.
+    expect(screen.queryByTestId('club-invite-club-1')).toBeNull();
+
+    await press('club-publish-club-1');
+    await waitFor(() => {
+      expect(textOf('club-lifecycle-club-1')).toBe(
+        'Published. Visible on your public page.',
+      );
+    });
+    expect(await screen.findByTestId('club-invite-club-1')).toBeDefined();
+  });
+
+  it('shows an invitation once and says it will not be shown again', async () => {
+    const double = doubleWith({
+      ...activeCreatorState(),
+      clubs: [
+        {
+          id: 'club-1',
+          lifecycle: 'published',
+          memberCount: 2,
+          name: 'Inner Circle',
+          slug: 'inner',
+          version: 2,
+        },
+      ],
+    });
+    renderStudio(double);
+    await signIn();
+
+    await press('club-invite-club-1');
+
+    const shown = await screen.findByTestId('club-invite-secret');
+    expect(shown.textContent).toContain('shown once');
+    expect(shown.textContent).toContain('invitation-secret-value-shown-once');
+  });
+
+  it('shows a real member count and nothing purchasable', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        clubs: [
+          {
+            description: 'A quiet room.',
+            id: 'club-1',
+            lifecycle: 'published',
+            memberCount: 1,
+            name: 'Inner Circle',
+            slug: 'inner',
+            version: 2,
+          },
+        ],
+      }),
+    );
+    await signIn();
+    await screen.findByTestId('club-item-club-1');
+
+    expect(textOf('club-members-club-1')).toBe('1 member');
+    const markup = document.body.textContent;
+    for (const forbidden of [
+      'Price',
+      'Subscribe',
+      'Buy',
+      'Revenue',
+      'Earnings',
+      'per month',
+    ]) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('offers a suspended creator no way to change a club', async () => {
+    renderStudio(
+      doubleWith({
+        ...activeCreatorState(),
+        account: {
+          createdAt: '2026-08-15T12:00:00.000Z',
+          id: 'x',
+          status: 'suspended',
+          statusReason: 'safety_enforcement',
+        },
+        clubs: [
+          {
+            id: 'club-1',
+            lifecycle: 'published',
+            memberCount: 3,
+            name: 'Inner Circle',
+            slug: 'inner',
+            version: 2,
+          },
+        ],
+      }),
+    );
+    await signIn();
+    await screen.findByTestId('club-item-club-1');
+
+    expect(screen.queryByTestId('club-create')).toBeNull();
+    expect(screen.queryByTestId('club-invite-club-1')).toBeNull();
+    expect(screen.queryByTestId('club-unpublish-club-1')).toBeNull();
+  });
+});

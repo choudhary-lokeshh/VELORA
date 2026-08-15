@@ -5,6 +5,7 @@ import { useCallback, useMemo } from 'react';
 import {
   createCreatorApi,
   type CreatorApi,
+  type PublicClubList,
   type PublicCreator,
   type PublicCreatorCatalog,
 } from '@velora/creator-client';
@@ -90,6 +91,7 @@ export function CreatorPublicPage({
           <>
             <CreatorProfileView creator={creator.value} />
             <CreatorCatalogView api={api} handle={handle} />
+            <CreatorClubsView api={api} handle={handle} />
           </>
         )}
       </main>
@@ -135,6 +137,42 @@ function CreatorCatalogView({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/**
+ * Clubs this creator has published.
+ *
+ * Metadata only: a name and a description. No member count, no member list, no
+ * invitation, no content, and no control implying anybody can pay to join — no
+ * payment path exists, so a join button would be a lie regardless of what it
+ * did when pressed. Access to a club comes from an invitation the creator
+ * sends, which is not something a public page can offer.
+ */
+function CreatorClubsView({
+  api,
+  handle,
+}: {
+  readonly api: CreatorApi;
+  readonly handle: string;
+}) {
+  const load = useCallback(async () => api.publicClubs(handle), [api, handle]);
+  const clubs = useResource<PublicClubList>(load);
+
+  if (clubs.value === undefined || clubs.value.clubs.length === 0) return null;
+  return (
+    <section aria-labelledby="creator-clubs-heading">
+      <h2 id="creator-clubs-heading">Private clubs</h2>
+      <ul data-testid="creator-public-clubs">
+        {clubs.value.clubs.map((club) => (
+          <li key={club.slug}>
+            <h3>{club.name}</h3>
+            {club.description === undefined ? null : <p>{club.description}</p>}
+          </li>
+        ))}
+      </ul>
+      <p className="hint">Membership is by invitation from this creator.</p>
     </section>
   );
 }

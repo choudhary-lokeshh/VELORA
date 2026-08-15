@@ -18,6 +18,8 @@ export type CreatorContentRow = typeof creatorContent.$inferSelect;
 
 export interface CreatorContentInput {
   readonly body: string | null;
+  /** The club this item belongs to, if any. */
+  readonly clubId: string | null;
   readonly summary: string | null;
   readonly title: string;
   readonly visibility: CreatorContentVisibility;
@@ -129,6 +131,7 @@ export class ClubsRepository {
       .insert(creatorContent)
       .values({
         body: input.content.body,
+        clubId: input.content.clubId,
         createdAt: input.now,
         creatorId: input.creatorId,
         id: crypto.randomUUID(),
@@ -162,6 +165,7 @@ export class ClubsRepository {
       .update(creatorContent)
       .set({
         body: input.content.body,
+        clubId: input.content.clubId,
         summary: input.content.summary,
         title: input.content.title,
         updatedAt: input.now,

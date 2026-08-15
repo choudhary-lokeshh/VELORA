@@ -12,9 +12,23 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  clubAccessListResponseSchema,
+  clubIdSchema,
+  clubInviteIssuedResponseSchema,
+  clubInviteListResponseSchema,
+  clubLifecycleRequestSchema,
+  clubMembershipListResponseSchema,
+  contentIdSchema,
+  creatorClubListResponseSchema,
   creatorContentLifecycleRequestSchema,
   creatorContentListResponseSchema,
+  issueClubInviteRequestSchema,
+  publicClubListResponseSchema,
   publicCreatorCatalogResponseSchema,
+  redeemClubInviteRequestSchema,
+  revokeClubInviteRequestSchema,
+  revokeClubMembershipRequestSchema,
+  saveCreatorClubRequestSchema,
   saveCreatorContentRequestSchema,
 } from './clubs.js';
 import {
@@ -139,12 +153,22 @@ export const apiRoutePaths = {
   creatorAccountSelf: '/v1/creator/me',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  clubAccess: '/v1/clubs/access',
+  clubContent: '/v1/clubs/content',
+  clubRedemptions: '/v1/clubs/redemptions',
+  creatorClubInviteRevocation: '/v1/creator/clubs/invites/revocation',
+  creatorClubInvites: '/v1/creator/clubs/invites',
+  creatorClubLifecycle: '/v1/creator/clubs/lifecycle',
+  creatorClubMemberRevocation: '/v1/creator/clubs/members/revocation',
+  creatorClubMembers: '/v1/creator/clubs/members',
+  creatorClubs: '/v1/creator/clubs',
   creatorContent: '/v1/creator/content',
   creatorContentLifecycle: '/v1/creator/content/lifecycle',
   creatorProfile: '/v1/creator/profile',
   creatorProfilePublication: '/v1/creator/profile/publication',
   publicCreator: '/v1/creators',
   publicCreatorCatalog: '/v1/creators/catalog',
+  publicCreatorClubs: '/v1/creators/clubs',
   discoveryCandidates: '/v1/discovery/candidates',
   discoveryIntroductionDecline: '/v1/discovery/introductions/decline',
   discoveryIntroductionWithdrawal: '/v1/discovery/introductions/withdrawal',
@@ -227,7 +251,19 @@ export const apiSchemas = {
   CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
+  ClubAccessListResponse: clubAccessListResponseSchema,
+  ClubInviteIssuedResponse: clubInviteIssuedResponseSchema,
+  ClubInviteListResponse: clubInviteListResponseSchema,
+  ClubLifecycleRequest: clubLifecycleRequestSchema,
+  ClubMembershipListResponse: clubMembershipListResponseSchema,
+  CreatorClubListResponse: creatorClubListResponseSchema,
   CreatorContentLifecycleRequest: creatorContentLifecycleRequestSchema,
+  IssueClubInviteRequest: issueClubInviteRequestSchema,
+  PublicClubListResponse: publicClubListResponseSchema,
+  RedeemClubInviteRequest: redeemClubInviteRequestSchema,
+  RevokeClubInviteRequest: revokeClubInviteRequestSchema,
+  RevokeClubMembershipRequest: revokeClubMembershipRequestSchema,
+  SaveCreatorClubRequest: saveCreatorClubRequestSchema,
   CreatorContentListResponse: creatorContentListResponseSchema,
   CreatorProfilePublicationRequest: creatorProfilePublicationRequestSchema,
   PublicCreatorCatalogResponse: publicCreatorCatalogResponseSchema,
@@ -288,6 +324,8 @@ export const apiSchemas = {
 export const apiQueryParameters = {
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
+  clubId: clubIdSchema,
+  contentId: contentIdSchema,
   handle: creatorHandleSchema,
   pageSize: pageSizeSchema,
 } as const;
@@ -1121,6 +1159,243 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'The catalog half of the public creator page, and the same rule: a handle nobody holds, a profile that is a draft, a creator who is not active, and a creator with nothing published are one indistinguishable 404. Drafts, archived items, and members-only items never appear, and paging is bounded and keyed on the publication instant so a page boundary cannot move.',
+  },
+  {
+    method: 'get',
+    operationId: 'listCreatorClubs',
+    path: apiRoutePaths.creatorClubs,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum clubs to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "The creator's own clubs with a live member count computed from current entitlements.",
+        schemaName: 'CreatorClubListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'saveCreatorClub',
+    path: apiRoutePaths.creatorClubs,
+    requestSchemaName: 'SaveCreatorClubRequest',
+    responses: {
+      '200': {
+        description: 'The club was updated and is returned with a new version.',
+        schemaName: 'CreatorClubListResponse',
+      },
+      '201': {
+        description:
+          'The club was created as a draft, with no members and no public presence.',
+        schemaName: 'CreatorClubListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A club starts as a draft with nobody in it. The slug is unique within the creator rather than globally, is canonicalized server-side, and is not renameable in this milestone because it already appears in links people hold.',
+  },
+  {
+    method: 'post',
+    operationId: 'setCreatorClubLifecycle',
+    path: apiRoutePaths.creatorClubLifecycle,
+    requestSchemaName: 'ClubLifecycleRequest',
+    responses: {
+      '200': {
+        description: 'The club lifecycle transition was applied.',
+        schemaName: 'CreatorClubListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Only a published club appears publicly or admits anybody. Closing is final in this milestone: reopening would put people back inside a space they were removed from with nobody deciding it, and no approved policy says what that means.',
+  },
+  {
+    method: 'get',
+    operationId: 'listClubInvites',
+    path: apiRoutePaths.creatorClubInvites,
+    requestQuery: [{ description: 'Which club', name: 'clubId' }],
+    responses: {
+      '200': {
+        description:
+          'Invitations for one club, with no secret in any of them. A secret is returned once, when it is created.',
+        schemaName: 'ClubInviteListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'issueClubInvite',
+    path: apiRoutePaths.creatorClubInvites,
+    requestSchemaName: 'IssueClubInviteRequest',
+    responses: {
+      '201': {
+        description:
+          'A complimentary invitation was created. The secret is in this response and nowhere else.',
+        schemaName: 'ClubInviteIssuedResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A complimentary invitation and never a purchase: the membership it creates records that it came from a creator invite. The secret is 256 bits of server-generated randomness, stored only as a digest, bounded by an expiry, revocable, and usable once.',
+  },
+  {
+    method: 'post',
+    operationId: 'revokeClubInvite',
+    path: apiRoutePaths.creatorClubInviteRevocation,
+    requestQuery: [{ description: 'Which club', name: 'clubId' }],
+    requestSchemaName: 'RevokeClubInviteRequest',
+    responses: {
+      '200': {
+        description: 'The invitation is withdrawn and can no longer be used.',
+        schemaName: 'ClubInviteListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'get',
+    operationId: 'listClubMemberships',
+    path: apiRoutePaths.creatorClubMembers,
+    requestQuery: [
+      { description: 'Which club', name: 'clubId' },
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum memberships to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Entitlements to one club, with where each came from and whether it is live.',
+        schemaName: 'ClubMembershipListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A creator learns how many people hold access and can withdraw one, and nothing else: no name, no consumer identifier, no contact detail, and no behaviour. Subscriber private behaviour stays out of creator views entirely.',
+  },
+  {
+    method: 'post',
+    operationId: 'revokeClubMembership',
+    path: apiRoutePaths.creatorClubMemberRevocation,
+    requestQuery: [{ description: 'Which club', name: 'clubId' }],
+    requestSchemaName: 'RevokeClubMembershipRequest',
+    responses: {
+      '200': {
+        description: 'The entitlement is withdrawn.',
+        schemaName: 'ClubMembershipListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Withdrawal takes effect on the next protected read rather than on a schedule, because every read asks whether the entitlement is live rather than trusting something computed when it was granted.',
+  },
+  {
+    method: 'post',
+    operationId: 'redeemClubInvite',
+    path: apiRoutePaths.clubRedemptions,
+    requestSchemaName: 'RedeemClubInviteRequest',
+    responses: {
+      '200': {
+        description:
+          'The invitation admitted the caller, and the access they now hold is returned.',
+        schemaName: 'ClubAccessListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The invitation could not admit the caller. The body is an ApiError with code ${productErrorCodes.actionNotPermitted}. It never says which condition failed: an unknown secret, an expired one, one already used, one withdrawn, a club that is not published, a creator who is not active, and an account that may not be admitted are deliberately one answer, because anything finer is an oracle for guessing invitations.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Redemption is single-use and settled by the database rather than by a read, so a secret presented many times at once admits its holder exactly once. A claim that cannot be completed is released rather than spent.',
+  },
+  {
+    method: 'get',
+    operationId: 'listClubAccess',
+    path: apiRoutePaths.clubAccess,
+    responses: {
+      '200': {
+        description: 'Every live entitlement the caller holds.',
+        schemaName: 'ClubAccessListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'get',
+    operationId: 'getClubContent',
+    path: apiRoutePaths.clubContent,
+    requestQuery: [{ description: 'Which item', name: 'contentId' }],
+    responses: {
+      '200': {
+        description:
+          'The protected item, because every condition currently permits it.',
+        schemaName: 'CreatorContentListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Every condition is asked at the moment of the read: the item is published and club-scoped, the club is published, the creator is active, the account is in good standing, and the entitlement is live. Nothing consults a cached decision, because a cached decision is how a revoked member keeps reading. An item the caller may not read is the same 404 as one that does not exist.',
+  },
+  {
+    method: 'get',
+    operationId: 'getPublicCreatorClubs',
+    path: apiRoutePaths.publicCreatorClubs,
+    requestQuery: [{ description: 'Canonical creator handle', name: 'handle' }],
+    responses: {
+      '200': {
+        description: 'Published clubs on a published creator page.',
+        schemaName: 'PublicClubListResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button.',
   },
   {
     method: 'get',

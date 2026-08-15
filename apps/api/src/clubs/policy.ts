@@ -27,3 +27,36 @@ export type CreatorContentVisibility =
 /** Largest page the catalog will return, whatever a caller asks for. */
 export const maximumCatalogPageSize = 50;
 export const defaultCatalogPageSize = 20;
+
+export const minimumClubNameLength = 2;
+export const maximumClubNameLength = 80;
+export const maximumClubDescriptionLength = 600;
+export const minimumClubSlugLength = 3;
+export const maximumClubSlugLength = 40;
+export const clubSlugPattern = '^[a-z0-9][a-z0-9_-]{1,38}[a-z0-9]$';
+
+export const clubLifecycles = ['draft', 'published', 'closed'] as const;
+export type ClubLifecycle = (typeof clubLifecycles)[number];
+
+export const membershipSources = [
+  'creator_invite',
+  'admin_grant',
+  'billing',
+] as const;
+export type MembershipSource = (typeof membershipSources)[number];
+
+export const membershipStates = ['active', 'revoked'] as const;
+export type MembershipState = (typeof membershipStates)[number];
+
+/**
+ * How long an unredeemed invitation stays usable.
+ *
+ * Bounded because an invitation is a bearer credential: anybody holding the
+ * secret is the person it admits, so one that never expires is a permanent key
+ * left wherever it was last pasted. Seven days is long enough to send somebody
+ * a link and short enough that a leak has a horizon.
+ */
+export const clubInviteLifetimeMilliseconds = 7 * 24 * 60 * 60 * 1_000;
+
+/** Bytes of randomness behind an invitation. 256 bits, generated server-side. */
+export const clubInviteSecretBytes = 32;

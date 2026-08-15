@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import type { Executor } from '../database/executor.js';
 import { canonicalCreatorHandle } from '@velora/validation';
@@ -39,6 +39,20 @@ export interface CreatorDirectoryPort {
     readonly executor: Executor;
     readonly creatorId: string;
   }): Promise<boolean>;
+
+  /**
+   * Public handles for creators a caller already legitimately references.
+   *
+   * Bounded by the batch, and answered only for creators whose page is
+   * published: a member holding an entitlement needs somewhere to go, and a
+   * creator who has withdrawn their page has not offered one. A creator with no
+   * published handle is simply absent from the result rather than reported as
+   * hidden.
+   */
+  handlesFor(input: {
+    readonly creatorIds: readonly string[];
+    readonly executor: Executor;
+  }): Promise<ReadonlyMap<string, string>>;
 }
 
 export class CreatorDirectory implements CreatorDirectoryPort {
@@ -64,6 +78,33 @@ export class CreatorDirectory implements CreatorDirectoryPort {
       )
       .limit(1);
     return rows[0]?.creatorId;
+  }
+
+  async handlesFor(input: {
+    readonly creatorIds: readonly string[];
+    readonly executor: Executor;
+  }): Promise<ReadonlyMap<string, string>> {
+    if (input.creatorIds.length === 0) return new Map();
+    const rows = await input.executor
+      .select({
+        creatorId: creatorProfiles.creatorId,
+        handle: creatorProfiles.handle,
+      })
+      .from(creatorProfiles)
+      .innerJoin(
+        creatorAccounts,
+        and(
+          eq(creatorAccounts.id, creatorProfiles.creatorId),
+          eq(creatorAccounts.status, 'active'),
+        ),
+      )
+      .where(
+        and(
+          inArray(creatorProfiles.creatorId, [...input.creatorIds]),
+          eq(creatorProfiles.publication, 'published'),
+        ),
+      );
+    return new Map(rows.map((row) => [row.creatorId, row.handle]));
   }
 
   async mayOperate(input: {

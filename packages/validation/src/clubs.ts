@@ -70,6 +70,7 @@ export const creatorContentSchema = z
   .object({
     archivedAt: z.iso.datetime().optional(),
     body: z.string().max(maximumCreatorContentBodyLength).optional(),
+    clubId: z.uuid().optional(),
     createdAt: z.iso.datetime(),
     id: z.uuid(),
     lifecycle: creatorContentLifecycleSchema,
@@ -109,6 +110,12 @@ export type CreatorContentListResponse = z.infer<
 export const saveCreatorContentRequestSchema = z
   .object({
     body: z.string().max(maximumCreatorContentBodyLength).optional(),
+    /**
+     * The club this item belongs to, if any. Setting it is what makes
+     * `members_only` mean something: an item with no club has nobody to admit,
+     * so it stays unreachable however it is marked.
+     */
+    clubId: z.uuid().optional(),
     contentId: z.uuid().optional(),
     summary: z.string().max(maximumCreatorContentSummaryLength).optional(),
     title: z
@@ -172,3 +179,266 @@ export const publicCreatorCatalogResponseSchema = z
 export type PublicCreatorCatalogResponse = z.infer<
   typeof publicCreatorCatalogResponseSchema
 >;
+
+export const minimumClubNameLength = 2;
+export const maximumClubNameLength = 80;
+export const maximumClubDescriptionLength = 600;
+export const minimumClubSlugLength = 3;
+export const maximumClubSlugLength = 40;
+
+/**
+ * A club's address within one creator.
+ *
+ * The same repertoire as a creator handle and for the same reason — lower-case
+ * ASCII cannot carry a confusable — but scoped to its creator rather than
+ * globally unique: two creators may both have a `studio`, and forcing them to
+ * compete for the name would make the first club anybody opened valuable for
+ * no product reason.
+ */
+export const clubSlugPattern = /^[a-z0-9][a-z0-9_-]{1,38}[a-z0-9]$/u;
+export const submittedClubSlugPattern =
+  /^[A-Za-z0-9][A-Za-z0-9_-]{1,38}[A-Za-z0-9]$/u;
+
+export const clubSlugSchema = z
+  .string()
+  .min(minimumClubSlugLength)
+  .max(maximumClubSlugLength)
+  .regex(clubSlugPattern);
+
+export const submittedClubSlugSchema = z
+  .string()
+  .min(minimumClubSlugLength)
+  .max(maximumClubSlugLength)
+  .regex(submittedClubSlugPattern);
+
+/**
+ * Club lifecycle.
+ *
+ * `draft` has no members and no public presence. `published` is visible on the
+ * creator's public page and is the only state an invite may be redeemed into.
+ * `closed` ends the club without deleting it, and existing memberships stop
+ * admitting anybody the moment it happens.
+ */
+export const clubLifecycleValues = ['draft', 'published', 'closed'] as const;
+export const clubLifecycleSchema = z.enum(clubLifecycleValues);
+export type ClubLifecycleValue = z.infer<typeof clubLifecycleSchema>;
+
+/**
+ * Where an entitlement came from.
+ *
+ * Never a boolean. `docs/flows/creator-entitlement.md` requires the access fact
+ * to record its own provenance, and a `paid = true` column would have made a
+ * complimentary invite and a purchase indistinguishable — which is exactly the
+ * confusion that lets somebody be told they bought something they did not.
+ *
+ * `billing` exists in the vocabulary and cannot be written today: no payment
+ * provider is approved, and the seam that would produce it refuses outside
+ * local and test environments.
+ */
+export const membershipSourceValues = [
+  'creator_invite',
+  'admin_grant',
+  'billing',
+] as const;
+export const membershipSourceSchema = z.enum(membershipSourceValues);
+export type MembershipSourceValue = z.infer<typeof membershipSourceSchema>;
+
+export const membershipStateValues = ['active', 'revoked'] as const;
+export const membershipStateSchema = z.enum(membershipStateValues);
+export type MembershipStateValue = z.infer<typeof membershipStateSchema>;
+
+/** The creator's own view of one club, including a draft nobody else can see. */
+export const creatorClubSchema = z
+  .object({
+    createdAt: z.iso.datetime(),
+    description: z.string().max(maximumClubDescriptionLength).optional(),
+    id: z.uuid(),
+    lifecycle: clubLifecycleSchema,
+    /** Members whose entitlement is active right now. Computed, never stored. */
+    memberCount: z.number().int().min(0),
+    name: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
+    publishedAt: z.iso.datetime().optional(),
+    slug: clubSlugSchema,
+    updatedAt: z.iso.datetime(),
+    version: z.number().int().min(1),
+  })
+  .strict();
+export type CreatorClub = z.infer<typeof creatorClubSchema>;
+
+export const creatorClubListResponseSchema = z
+  .object({
+    clubs: z.array(creatorClubSchema).max(50),
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+export type CreatorClubListResponse = z.infer<
+  typeof creatorClubListResponseSchema
+>;
+
+export const saveCreatorClubRequestSchema = z
+  .object({
+    clubId: z.uuid().optional(),
+    description: z.string().max(maximumClubDescriptionLength).optional(),
+    name: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
+    slug: submittedClubSlugSchema,
+    version: z.number().int().min(1).optional(),
+  })
+  .strict();
+export type SaveCreatorClubRequest = z.infer<
+  typeof saveCreatorClubRequestSchema
+>;
+
+export const clubLifecycleRequestSchema = z
+  .object({
+    clubId: z.uuid(),
+    lifecycle: clubLifecycleSchema,
+    version: z.number().int().min(1),
+  })
+  .strict();
+export type ClubLifecycleRequest = z.infer<typeof clubLifecycleRequestSchema>;
+
+/**
+ * An invitation, returned exactly once.
+ *
+ * The secret is in the response of the request that created it and nowhere
+ * else: the server keeps only a digest, so a creator who loses it issues a new
+ * one rather than asking for it again. That is what makes the stored record
+ * useless to anybody who reads the database.
+ */
+export const clubInviteSecretSchema = z.string().min(32).max(128);
+
+export const clubInviteSchema = z
+  .object({
+    clubId: z.uuid(),
+    createdAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
+    id: z.uuid(),
+    redeemedAt: z.iso.datetime().optional(),
+    revokedAt: z.iso.datetime().optional(),
+  })
+  .strict();
+export type ClubInvite = z.infer<typeof clubInviteSchema>;
+
+export const clubInviteIssuedResponseSchema = z
+  .object({
+    invite: clubInviteSchema,
+    /**
+     * Shown once. It is a complimentary invitation and never a purchase: the
+     * membership it creates records `creator_invite` as its source.
+     */
+    secret: clubInviteSecretSchema,
+  })
+  .strict();
+export type ClubInviteIssuedResponse = z.infer<
+  typeof clubInviteIssuedResponseSchema
+>;
+
+export const issueClubInviteRequestSchema = z
+  .object({ clubId: z.uuid() })
+  .strict();
+export type IssueClubInviteRequest = z.infer<
+  typeof issueClubInviteRequestSchema
+>;
+
+export const revokeClubInviteRequestSchema = z
+  .object({ inviteId: z.uuid() })
+  .strict();
+export type RevokeClubInviteRequest = z.infer<
+  typeof revokeClubInviteRequestSchema
+>;
+
+export const clubInviteListResponseSchema = z
+  .object({ invites: z.array(clubInviteSchema).max(50) })
+  .strict();
+export type ClubInviteListResponse = z.infer<
+  typeof clubInviteListResponseSchema
+>;
+
+/**
+ * A member as the creator may see them.
+ *
+ * No display name, no consumer identifier, no email, and no behaviour. A
+ * creator needs to know how many people have access and to be able to withdraw
+ * one, and `docs/domains/private-clubs.md` keeps subscriber private behaviour
+ * out of creator views entirely. The membership identifier is the handle for
+ * revocation and says nothing about who holds it.
+ */
+export const clubMembershipSchema = z
+  .object({
+    clubId: z.uuid(),
+    grantedAt: z.iso.datetime(),
+    id: z.uuid(),
+    revokedAt: z.iso.datetime().optional(),
+    source: membershipSourceSchema,
+    state: membershipStateSchema,
+  })
+  .strict();
+export type ClubMembership = z.infer<typeof clubMembershipSchema>;
+
+export const clubMembershipListResponseSchema = z
+  .object({
+    memberships: z.array(clubMembershipSchema).max(50),
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+export type ClubMembershipListResponse = z.infer<
+  typeof clubMembershipListResponseSchema
+>;
+
+export const revokeClubMembershipRequestSchema = z
+  .object({ membershipId: z.uuid() })
+  .strict();
+export type RevokeClubMembershipRequest = z.infer<
+  typeof revokeClubMembershipRequestSchema
+>;
+
+export const redeemClubInviteRequestSchema = z
+  .object({ secret: clubInviteSecretSchema })
+  .strict();
+export type RedeemClubInviteRequest = z.infer<
+  typeof redeemClubInviteRequestSchema
+>;
+
+/** What a member is told after redeeming, and after asking what they hold. */
+export const clubAccessSchema = z
+  .object({
+    clubId: z.uuid(),
+    clubName: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
+    creatorHandle: creatorHandleSchema,
+    grantedAt: z.iso.datetime(),
+    source: membershipSourceSchema,
+  })
+  .strict();
+export type ClubAccess = z.infer<typeof clubAccessSchema>;
+
+export const clubAccessListResponseSchema = z
+  .object({ access: z.array(clubAccessSchema).max(50) })
+  .strict();
+export type ClubAccessListResponse = z.infer<
+  typeof clubAccessListResponseSchema
+>;
+
+/** Club metadata a visitor may see on a published creator page. */
+export const publicClubSchema = z
+  .object({
+    description: z.string().max(maximumClubDescriptionLength).optional(),
+    name: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
+    slug: clubSlugSchema,
+  })
+  .strict();
+export type PublicClub = z.infer<typeof publicClubSchema>;
+
+export const publicClubListResponseSchema = z
+  .object({
+    clubs: z.array(publicClubSchema).max(50),
+    handle: creatorHandleSchema,
+  })
+  .strict();
+export type PublicClubListResponse = z.infer<
+  typeof publicClubListResponseSchema
+>;
+
+/** Which club a creator-scoped read addresses. */
+export const clubIdSchema = z.uuid();
+/** Which item a protected read addresses. */
+export const contentIdSchema = z.uuid();

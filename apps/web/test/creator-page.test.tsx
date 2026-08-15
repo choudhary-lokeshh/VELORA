@@ -37,6 +37,7 @@ function doubleFor(
     | { readonly kind: 'missing' }
     | { readonly kind: 'offline' },
   catalog: { id: string; summary?: string; title: string }[] = [],
+  clubs: { description?: string; name: string; slug: string }[] = [],
 ): { readonly calls: string[]; readonly fetch: typeof globalThis.fetch } {
   const calls: string[] = [];
   return {
@@ -47,6 +48,17 @@ function doubleFor(
           ? input
           : new Request(input instanceof URL ? input.href : input, init);
       calls.push(request.url);
+      if (
+        answer.kind === 'ok' &&
+        new URL(request.url).pathname === '/v1/creators/clubs'
+      ) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ clubs, handle: answer.body.handle }), {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          }),
+        );
+      }
       if (
         answer.kind === 'ok' &&
         new URL(request.url).pathname === '/v1/creators/catalog'
@@ -225,5 +237,37 @@ describe('the public creator catalog', () => {
 
     const empty = await screen.findByTestId('creator-catalog-empty');
     expect(empty.textContent).toBe('Nothing published yet.');
+  });
+});
+
+describe('the public club listing', () => {
+  it('shows club metadata and nothing about members or payment', async () => {
+    renderPage(
+      doubleFor(
+        { body: published, kind: 'ok' },
+        [],
+        [{ description: 'A quiet room.', name: 'Inner Circle', slug: 'inner' }],
+      ),
+    );
+
+    const list = await screen.findByTestId('creator-public-clubs');
+    expect(within(list).getByRole('heading', { level: 3 }).textContent).toBe(
+      'Inner Circle',
+    );
+    const markup = document.body.textContent;
+    for (const forbidden of ['Join', 'Subscribe', 'Price', 'Buy', '€', '$']) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+    // No member count of any kind, real or invented.
+    expect(markup).not.toMatch(/\d+\s+members?/iu);
+    // The honest statement about how somebody gets in.
+    expect(markup).toContain('by invitation from this creator');
+  });
+
+  it('says nothing at all when a creator has published no club', async () => {
+    renderPage(doubleFor({ body: published, kind: 'ok' }, [], []));
+    await screen.findByTestId('creator-page');
+
+    expect(screen.queryByTestId('creator-public-clubs')).toBeNull();
   });
 });

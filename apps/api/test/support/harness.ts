@@ -259,15 +259,20 @@ export function testCreatorsRuntime(input: {
  * production would decide differently.
  */
 export function testClubsRuntime(input: {
+  readonly config: ServerConfig;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
   readonly now?: () => Date;
+  readonly users: UsersRuntime;
 }): ClubsRuntime {
   return createClubsRuntime({
+    config: input.config,
+    consumerContext: input.users.consumerContext,
     creatorContext: input.creators.creatorContext,
     creators: input.creators.directory,
     database: input.database ?? drizzle.mock(),
     ...(input.now === undefined ? {} : { now: input.now }),
+    standing: input.users.adultStanding,
   });
 }
 

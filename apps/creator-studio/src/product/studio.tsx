@@ -26,6 +26,7 @@ import {
   reduceCreatorAuth,
 } from '../auth/state';
 import { createStudioCreatorApi } from './api';
+import { ClubsPanel } from './clubs';
 import { ContentPanel } from './content';
 import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
 import { ErrorMessage, ResourceState, Section, StatusMessage } from './ui';
@@ -254,6 +255,11 @@ function SignedIn({
             not handed controls the server would refuse.
           */}
           <ContentPanel
+            api={api}
+            editable={onboarding.value.account.status === 'active'}
+            onSessionEnded={onSessionEnded}
+          />
+          <ClubsPanel
             api={api}
             editable={onboarding.value.account.status === 'active'}
             onSessionEnded={onSessionEnded}

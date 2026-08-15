@@ -8,6 +8,12 @@ import type { Executor } from '../database/executor.js';
  * published CREATORS directory satisfies it.
  */
 export interface ContentCreatorPort {
+  /** Public handles for creators the caller already legitimately references. */
+  handlesFor(input: {
+    readonly creatorIds: readonly string[];
+    readonly executor: Executor;
+  }): Promise<ReadonlyMap<string, string>>;
+
   mayOperate(input: {
     readonly executor: Executor;
     readonly creatorId: string;

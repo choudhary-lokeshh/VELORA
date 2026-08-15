@@ -104,7 +104,10 @@ describe('AUTH persistence and invariants', () => {
       'auth_sessions',
     ]);
     expect(names.filter((name) => !name.startsWith('auth_'))).toEqual([
+      'clubs_clubs',
       'clubs_content',
+      'clubs_invites',
+      'clubs_memberships',
       'creators_accounts',
       'creators_policy_acknowledgements',
       'creators_profile_links',

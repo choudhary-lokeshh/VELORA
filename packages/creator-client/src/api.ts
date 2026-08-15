@@ -5,15 +5,22 @@ import {
 } from '@velora/api-client';
 
 import type {
+  ClubInviteIssued,
+  ClubInviteList,
+  ClubLifecycleBody,
+  ClubMembershipList,
   CreatorAccount,
+  CreatorClubList,
   CreatorContentLifecycleBody,
   CreatorContentList,
   CreatorOnboardingState,
   CreatorPolicyDocument,
   CreatorProfile,
   CreatorPublicationBody,
+  PublicClubList,
   PublicCreator,
   PublicCreatorCatalog,
+  SaveCreatorClubBody,
   SaveCreatorContentBody,
   SaveCreatorProfileBody,
 } from './contract.js';
@@ -57,7 +64,25 @@ export interface CreatorApi {
     readonly cursor?: string | undefined;
     readonly pageSize?: number | undefined;
   }): Promise<ApiResult<CreatorContentList>>;
+  clubInvites(clubId: string): Promise<ApiResult<ClubInviteList>>;
+  clubMembers(clubId: string): Promise<ApiResult<ClubMembershipList>>;
+  clubs(): Promise<ApiResult<CreatorClubList>>;
+  issueClubInvite(clubId: string): Promise<ApiResult<ClubInviteIssued>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
+  /** Published clubs on a creator's public page. Carries no credential. */
+  publicClubs(handle: string): Promise<ApiResult<PublicClubList>>;
+  revokeClubInvite(input: {
+    readonly clubId: string;
+    readonly inviteId: string;
+  }): Promise<ApiResult<ClubInviteList>>;
+  revokeClubMembership(input: {
+    readonly clubId: string;
+    readonly membershipId: string;
+  }): Promise<ApiResult<ClubMembershipList>>;
+  saveClub(body: SaveCreatorClubBody): Promise<ApiResult<CreatorClubList>>;
+  setClubLifecycle(
+    body: ClubLifecycleBody,
+  ): Promise<ApiResult<CreatorClubList>>;
   /** The catalog half of a creator's public page. Carries no credential. */
   publicCatalog(query: {
     readonly cursor?: string | undefined;
@@ -136,6 +161,75 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
           ...(await read()),
           params: { query: pageQuery(query) },
         }),
+      );
+    },
+
+    async clubInvites(clubId) {
+      return attempt(async () =>
+        api.GET('/v1/creator/clubs/invites', {
+          ...(await read()),
+          params: { query: { clubId } },
+        }),
+      );
+    },
+
+    async clubMembers(clubId) {
+      return attempt(async () =>
+        api.GET('/v1/creator/clubs/members', {
+          ...(await read()),
+          params: { query: { clubId } },
+        }),
+      );
+    },
+
+    async clubs() {
+      return attempt(async () => api.GET('/v1/creator/clubs', await read()));
+    },
+
+    async issueClubInvite(clubId) {
+      return attempt(async () =>
+        api.POST('/v1/creator/clubs/invites', {
+          ...(await write()),
+          body: { clubId },
+        }),
+      );
+    },
+
+    async publicClubs(handle) {
+      return attempt(async () =>
+        api.GET('/v1/creators/clubs', { params: { query: { handle } } }),
+      );
+    },
+
+    async revokeClubInvite(input) {
+      return attempt(async () =>
+        api.POST('/v1/creator/clubs/invites/revocation', {
+          ...(await write()),
+          body: { inviteId: input.inviteId },
+          params: { query: { clubId: input.clubId } },
+        }),
+      );
+    },
+
+    async revokeClubMembership(input) {
+      return attempt(async () =>
+        api.POST('/v1/creator/clubs/members/revocation', {
+          ...(await write()),
+          body: { membershipId: input.membershipId },
+          params: { query: { clubId: input.clubId } },
+        }),
+      );
+    },
+
+    async saveClub(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/clubs', { ...(await write()), body }),
+      );
+    },
+
+    async setClubLifecycle(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/clubs/lifecycle', { ...(await write()), body }),
       );
     },
 

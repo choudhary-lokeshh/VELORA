@@ -127,6 +127,13 @@
       "when": 1786744466334,
       "tag": "0017_creator_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786766542247,
+      "tag": "0018_private_clubs",
+      "breakpoints": true
     }
   ]
 }
