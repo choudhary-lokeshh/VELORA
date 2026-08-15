@@ -1677,13 +1677,16 @@ export interface components {
                 /** Format: date-time */
                 suspendedAt?: string;
             };
+            /** @enum {string} */
+            disposition: "restrict" | "lift";
             /** Format: uuid */
             enforcementId: string;
             /** @enum {string} */
             reasonCode: "underage_risk" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "platform_integrity";
             /** Format: date-time */
             recordedAt: string;
-            scope: string;
+            /** @enum {string} */
+            scope: "account_restriction" | "conversation_closure" | "creator_suspension" | "creator_object_removal" | "club_membership_revocation";
         };
         AdminReinstateCreatorRequest: {
             /** Format: uuid */

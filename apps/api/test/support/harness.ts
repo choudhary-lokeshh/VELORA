@@ -321,7 +321,7 @@ export function testAdminRuntime(input: {
     ...(input.now === undefined ? {} : { now: input.now }),
     profiles: input.creators.profileRepository,
     refunds: input.billing.refunds,
-    safety: input.safety.repository,
+    safety: input.safety.authority,
   });
 }
 

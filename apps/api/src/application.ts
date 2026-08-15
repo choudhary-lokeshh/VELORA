@@ -277,7 +277,7 @@ export function createApplication(
         // can make. There is no path from an operator to a financial row that
         // does not go through the domain that owns it.
         refunds: billing.refunds,
-        safety: safety.repository,
+        safety: safety.authority,
       });
     discovery =
       injectedDiscovery ??

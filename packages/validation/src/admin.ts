@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 import { creatorAccountStatusSchema, creatorHandleSchema } from './creator.js';
 import { currencyCodeSchema, minorUnitsSchema } from './money.js';
+import {
+  enforcementDispositionSchema,
+  enforcementScopeSchema,
+} from './safety.js';
 
 /**
  * ADMIN wire vocabulary for creator operations.
@@ -126,10 +130,12 @@ export type AdminRevokeMembershipRequest = z.infer<
 export const adminOperationResponseSchema = z
   .object({
     creator: adminCreatorSchema,
+    /** Whether the record imposed a restriction or lifted one. */
+    disposition: enforcementDispositionSchema,
     enforcementId: z.uuid(),
     reasonCode: adminCreatorReasonCodeSchema,
     recordedAt: z.iso.datetime(),
-    scope: z.string().min(1).max(64),
+    scope: enforcementScopeSchema,
   })
   .strict();
 export type AdminOperationResponse = z.infer<

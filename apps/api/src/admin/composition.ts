@@ -7,8 +7,7 @@ import type {
   CreatorsDatabase,
   CreatorsRepository,
 } from '../creators/repository.js';
-import { reportPolicyVersion } from '../safety/policy.js';
-import type { SafetyRepository } from '../safety/repository.js';
+import type { EnforcementAuthority } from '../safety/enforcement.js';
 import { AdminBillingRoutes } from './billing-routes.js';
 import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
@@ -52,18 +51,19 @@ export function createAdminRuntime(input: {
   };
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
-  readonly safety: SafetyRepository;
+  /** TRUST & SAFETY's one writer of enforcement records. */
+  readonly safety: EnforcementAuthority;
 }): AdminRuntime {
   const now = input.now ?? (() => new Date());
   const directory = new AdminCreatorDirectory(input.database, input.profiles);
   const service = new AdminCreatorService({
+    authority: input.safety,
     clubs: input.clubs,
     content: input.content,
     creators: input.creators,
+    database: input.database,
     now,
-    policyVersion: reportPolicyVersion,
     profiles: input.profiles,
-    safety: input.safety,
   });
   const adminContext = new AdminContextResolver({ caller: input.caller, now });
   return {

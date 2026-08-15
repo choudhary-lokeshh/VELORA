@@ -188,7 +188,11 @@ export class AdminRoutes {
     return {
       body: adminOperationResponseSchema.parse({
         creator: creatorBody(view),
-        enforcementId: (outcome.enforcement satisfies EnforcementRow).id,
+        // What was written, including whether it imposed or lifted. A
+        // reinstatement and a suspension now share a scope, so the disposition
+        // is what tells an operator which one they just made.
+        disposition: (outcome.enforcement satisfies EnforcementRow).disposition,
+        enforcementId: outcome.enforcement.id,
         reasonCode,
         recordedAt: outcome.enforcement.effectiveAt.toISOString(),
         scope: outcome.enforcement.scope,

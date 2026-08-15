@@ -107,5 +107,29 @@ export const reportListResponseSchema = z
   })
   .strict();
 
+/**
+ * What an enforcement decision is about, on the wire.
+ *
+ * A closed vocabulary rather than a string, because a wire field that accepts
+ * any word is a vocabulary nothing enforces: an operator surface would render
+ * whatever the server happened to send, and a typo would ship as a scope. It
+ * mirrors the domain vocabulary exactly and a unit assertion keeps the two from
+ * drifting.
+ */
+export const enforcementScopeSchema = z.enum([
+  'account_restriction',
+  'conversation_closure',
+  'creator_suspension',
+  'creator_object_removal',
+  'club_membership_revocation',
+]);
+export type EnforcementScopeValue = z.infer<typeof enforcementScopeSchema>;
+
+/** Whether a record imposed a restriction or took one away. */
+export const enforcementDispositionSchema = z.enum(['restrict', 'lift']);
+export type EnforcementDispositionValue = z.infer<
+  typeof enforcementDispositionSchema
+>;
+
 export type Block = z.infer<typeof blockSchema>;
 export type Report = z.infer<typeof reportSchema>;

@@ -8,6 +8,7 @@ import {
   text,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 import {
@@ -20,10 +21,12 @@ import {
   maximumReportDetailCharacters,
   reportReasonCodes,
   reportStates,
+  enforcementDispositions,
   enforcementObjectTypes,
   enforcementReasonCodes,
   enforcementScopes,
   objectScopedEnforcements,
+  type EnforcementDisposition,
   type EnforcementObjectType,
 } from './policy.js';
 
@@ -157,14 +160,23 @@ export const safetyReports = pgTable(
 );
 
 /**
- * An enforcement action, append-only.
+ * An enforcement decision, append-only.
  *
  * Nothing updates a row here. An enforcement that is lifted is a second record
- * rather than an edit of the first, because the question an audit asks is not
- * "what is in force" but "what was done, by whom, when, and under which policy".
- * The current state lives with the domain that owns it — an account's status is
- * USERS' truth, a conversation's state is MESSAGING's — and this table is the
- * record of the decision that changed it.
+ * that names the first, because the question an audit asks is not only "what is
+ * in force" but "what was done, by whom, when, and under which policy".
+ *
+ * What *is* in force is derivable from this table alone, which it was not
+ * before: `disposition` says whether a record imposes or lifts, `expiresAt`
+ * says when a time-bounded restriction stops on its own, and `supersedesId`
+ * links a lift or a correction to exactly the record it replaces. A live
+ * restriction is one that restricts, has taken effect, has not expired, and has
+ * nothing superseding it.
+ *
+ * The applied state still lives with the domain that owns it — an account's
+ * status is USERS' truth, a conversation's state is MESSAGING's — and this
+ * table remains the record of the decision that changed it rather than a second
+ * opinion about the result.
  */
 export const safetyEnforcements = pgTable(
   'safety_enforcements',
@@ -172,7 +184,14 @@ export const safetyEnforcements = pgTable(
     /** Opaque reference to the actor. No moderator identity is stored here. */
     actorReference: text('actor_reference').notNull(),
     createdAt: timestamptz('created_at').notNull(),
+    /** Whether this record imposes a restriction or takes one away. */
+    disposition: text('disposition').notNull().$type<EnforcementDisposition>(),
     effectiveAt: timestamptz('effective_at').notNull(),
+    /**
+     * When a time-bounded restriction stops of its own accord. Null is
+     * indefinite, which is not the same as permanent: a lift is still a record.
+     */
+    expiresAt: timestamptz('expires_at'),
     id: uuid('id').primaryKey(),
     policyVersion: text('policy_version').notNull(),
     reasonCode: text('reason_code').notNull(),
@@ -180,6 +199,21 @@ export const safetyEnforcements = pgTable(
     reportId: uuid('report_id'),
     scope: text('scope').notNull(),
     subjectId: uuid('subject_id').notNull(),
+    /**
+     * The record this one replaces. A lift always names what it lifts, so a
+     * reversal can never be mistaken for a second restriction and history
+     * reads as a chain rather than as a pile.
+     *
+     * The foreign key is to this same table, which is the one place a foreign
+     * key is right in this domain: it is not a cross-domain reference, and a
+     * supersession pointing at an enforcement that does not exist would be a
+     * chain with a missing link. There is no cascade — nothing deletes an
+     * enforcement, and a rule that would delete history on a parent's removal
+     * is a rule for a table this is not.
+     */
+    supersedesId: uuid('supersedes_id').references(
+      (): AnyPgColumn => safetyEnforcements.id,
+    ),
     /** The conversation a closure applies to, for that scope only. */
     targetConversationId: uuid('target_conversation_id'),
     /**
@@ -196,10 +230,50 @@ export const safetyEnforcements = pgTable(
       table.subjectId,
       table.effectiveAt,
     ),
+    // The authorization query: what restricts this subject in this scope right
+    // now. Ordered as the reader walks it, so "the live one" is an index seek
+    // rather than a scan of everything ever decided about the subject.
+    index('safety_enforcements_live_idx').on(
+      table.subjectId,
+      table.scope,
+      table.effectiveAt,
+    ),
     index('safety_enforcements_report_idx').on(table.reportId),
+    // One record may supersede a given record, and only one. Without this two
+    // reviewers could each lift the same restriction and the chain would fork
+    // into two equally valid histories.
+    uniqueIndex('safety_enforcements_supersedes_uk')
+      .on(table.supersedesId)
+      .where(sql`${table.supersedesId} is not null`),
     check(
       'safety_enforcements_scope_check',
       inList(table.scope, enforcementScopes),
+    ),
+    check(
+      'safety_enforcements_disposition_check',
+      inList(table.disposition, enforcementDispositions),
+    ),
+    // A lift names what it lifts. A record that took something away without
+    // saying what would be an assertion an audit could not follow.
+    check(
+      'safety_enforcements_lift_shape_check',
+      sql`${table.disposition} = 'restrict' or ${table.supersedesId} is not null`,
+    ),
+    check(
+      'safety_enforcements_supersedes_self_check',
+      sql`${table.supersedesId} is null or ${table.supersedesId} <> ${table.id}`,
+    ),
+    // An expiry that is not after the moment the record took effect would be a
+    // restriction that was never in force, recorded as though it had been.
+    check(
+      'safety_enforcements_expiry_check',
+      sql`${table.expiresAt} is null or ${table.expiresAt} > ${table.effectiveAt}`,
+    ),
+    // Nothing that lifts a restriction carries an expiry: a lift is an event,
+    // not a state, and one that stopped applying would silently reinstate.
+    check(
+      'safety_enforcements_lift_expiry_check',
+      sql`${table.disposition} = 'restrict' or ${table.expiresAt} is null`,
     ),
     check(
       'safety_enforcements_reason_check',

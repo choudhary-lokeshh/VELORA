@@ -72,11 +72,45 @@ Submission is retry-safe on the reporter's own client identifier, so a lost resp
 
 The reason codes are a **reporter-facing selection and not the approved risk taxonomy**, which remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`. They are deliberately a different set from the vocabulary an enforcement decision records: a report is an allegation, and only a review makes it anything more. A unit assertion keeps the two sets from converging.
 
+### The enforcement authority
+
+`0029_safety_policy_authority` makes what is in force derivable from the enforcement log itself, which it previously was not.
+
+The problem it fixes was a vocabulary that carried direction inconsistently. `account_restriction` was written both by a decision that restricted an account and by the review that restored one, so two rows with the same scope meant opposite things; creators got a second scope, `creator_reinstatement`, to say the same thing a different way. The only reader that could tell a restriction from its reversal was the domain that had applied the change, which meant SAFETY could not answer a question about its own records.
+
+Three columns settle it. **Disposition** says whether a record imposes or lifts, orthogonally to scope, so `creator_reinstatement` is gone and a reversal shares the scope of the thing it reverses. **Expiry** lets a restriction stop on its own; absent is indefinite, which is not the same as permanent, because a lift is still a record. **Supersession** links a reversal to exactly the record it replaces, with a foreign key so the chain cannot have a missing link and a partial unique index so it cannot fork — two reviewers cannot each lift the same restriction into two equally valid histories.
+
+A restriction is in force when four things hold at once: it restricts rather than lifts, it has taken effect, it has not expired, and nothing supersedes it. That predicate is written in one place, because a reader that dropped any one of the four would authorize against history rather than against the present. The table stays append-only throughout: a lift is a new row, the record it names is byte-for-byte what was written, and nothing is ever edited or swept.
+
+The migration backfills deterministically rather than guessing. Only two code paths ever wrote `account_restriction` — a moderation decision, which always named the report it came from, and an account restoration, which never did — so the old rows can be paired exactly. Anything the backfill cannot pair aborts the migration, because a mislabelled safety record is worse than a migration that stops.
+
+**One writer.** `EnforcementAuthority` is the only thing that appends to the table. Before it, MODERATION and ADMIN each appended their own rows with their own idea of what a scope meant, which is how the direction problem arose in the first place and how ADMIN came to stamp its records with the *reporting* policy version. Imposition is idempotent by identity — scope plus the object it names — because an enforcement decision repeated is the same decision, and how many times an operator clicked is not part of the history of what was done to somebody. A lift with nothing in force to lift is refused rather than recorded.
+
+The authority records; it does not apply. The caller still changes the owning domain's state through that domain's published contract, in the same transaction as the record.
+
+### The capability answer
+
+SAFETY publishes a second contract alongside the pair answer. `SafetyEligibilityPort` takes a capability from a closed vocabulary — consumer interaction, creator operation, creator publication, commercial participation — and answers whether a live enforcement denies it, with a **disclosable** coarse reason, the scope that decided it, and the version of the rule that composed it.
+
+The reason is deliberately not the enforcement's finding. A subject is entitled to the category and the scope of what was done to them; the review's conclusion, the report behind it, and anything that could identify a reporter stay inside this domain. The disclosable vocabulary is asserted to be disjoint from both the reporter vocabulary and the enforcement one, so the three cannot converge by accident.
+
+Which scopes deny which capability is a map here rather than knowledge spread across callers, so adding a scope does not require every caller to learn about it. Publication and commercial participation are separate values from creator operation even though a suspension denies all three today, because the moment a scope exists that stops publication without stopping the capability — which is what the mature-content gates need — that must be one row of the map rather than a change at every call site.
+
+Where several live restrictions could apply, the strongest decides, in a fixed precedence: global account restriction, then capability, then anything scoped to a single object. Two replicas answering the same question at the same moment therefore give the subject the same reason, which an ordering that depended on insertion order would not.
+
+### How an enforcement wins a race
+
+Whether a subject is under enforcement is decided by the *absence* of a live restricting record, and an absent row has nothing to lock — the same check-then-act gap the pair lock closes, on a single subject rather than on a pair. A transaction-scoped advisory lock keyed on the subject closes it, and every transaction that decides something about a subject's enforcement state takes it: imposing, lifting, and any protected mutation authorized by their absence.
+
+The ordering rules are two. Take the subject lock before any row lock, so the lock graph has no cycle — which is why a decision is recorded before the owning domain is asked to apply it, rather than after. And never take a pair lock and a subject lock in the same transaction: the two orderings would form a cycle, and no decision needs both, because a pair decision is about interaction and a subject decision is about standing.
+
+A regression holds the lock from outside the application and observes that an imposition does not proceed until it is released, which is what proves the lock is genuinely taken rather than merely intended.
+
 ### Enforcement, and the moderation seam
 
 Enforcement decides; the domain that owns the thing being changed applies it. An account's standing is USERS' truth and a conversation's state is MESSAGING's, so SAFETY calls two narrow published contracts — restrict/restore an account, close a conversation — and writes to neither schema. Each contract is the whole of what an enforcement decision may do: it cannot delete, rename, read a profile, or read a message.
 
-`safety_enforcements` is append-only. An enforcement that is lifted is a second record rather than an edit of the first, because what an audit asks is what was done, by whom, when, and under which policy — not only what is currently in force.
+An operation and its audit row now genuinely commit together. Platform Admin's creator operations previously ran the state change and the enforcement record as two independent statements, so a failure between them left exactly the state the code claimed was unreachable — and a refusal discovered *after* the record was written left an audit row for an operation that never happened. Both are closed: every operator operation is one transaction, and a refusal rolls it back rather than returning from inside it.
 
 The report transition and the enforcement are one transaction. A report marked actioned with no enforcement behind it, or an enforcement applied against a report a concurrent reviewer already dismissed, are both states an audit could not explain, so neither is reachable: the compare-and-set on the report version decides the winner, and an enforcement that cannot take effect rolls the whole decision back.
 
@@ -88,7 +122,7 @@ Blocks and reports themselves are blocked on nothing: a person must be able to s
 
 ## Where this domain is going
 
-[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture the next milestone builds against: one published policy and eligibility authority every other domain asks rather than re-deriving, enforcement that names an explicit scope from a closed vocabulary and is superseded rather than edited, reports and cases and evidence and decisions and appeals as separate append-oriented records, surface as a first-class closed vocabulary, depicted-person consent held as scoped references to an approved verifier rather than as documents, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
+[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, and the published capability answer are built and described above. Still to come: reports and cases and evidence and decisions and appeals as separate append-oriented records, surface as a first-class closed vocabulary, depicted-person consent held as scoped references to an approved verifier rather than as documents, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
 
 ## Phase/open questions
 

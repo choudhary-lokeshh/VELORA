@@ -403,14 +403,24 @@ export class CreatorProfileRepository {
     });
   }
 
-  /** Sets publication state against the version the caller read. */
-  async setPublication(input: {
-    readonly creatorId: string;
-    readonly expectedVersion: number;
-    readonly now: Date;
-    readonly publication: CreatorProfilePublication;
-  }): Promise<CreatorProfileRecord | undefined> {
-    const updated = await this.database
+  /**
+   * Sets publication state against the version the caller read.
+   *
+   * Takes the caller's executor so an operator taking a page out of view and
+   * the enforcement record of that decision can commit together. A publication
+   * change that succeeded without its audit row, or an audit row for a change
+   * that did not happen, are both states nobody could explain afterwards.
+   */
+  async setPublication(
+    executor: AnyExecutor,
+    input: {
+      readonly creatorId: string;
+      readonly expectedVersion: number;
+      readonly now: Date;
+      readonly publication: CreatorProfilePublication;
+    },
+  ): Promise<CreatorProfileRecord | undefined> {
+    const updated = await executor
       .update(creatorProfiles)
       .set({
         publication: input.publication,
@@ -431,7 +441,7 @@ export class CreatorProfileRepository {
     const profile = updated[0];
     if (profile === undefined) return undefined;
     return {
-      links: await this.linksFor(this.database, input.creatorId),
+      links: await this.linksFor(executor, input.creatorId),
       profile,
     };
   }

@@ -8,8 +8,10 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 
 import type {
@@ -17,7 +19,11 @@ import type {
   Executor,
   TransactionHandle,
 } from '../database/executor.js';
-import { openReportStates, type EnforcementObjectType } from './policy.js';
+import {
+  openReportStates,
+  type EnforcementDisposition,
+  type EnforcementObjectType,
+} from './policy.js';
 import { safetyBlocks, safetyEnforcements, safetyReports } from './schema.js';
 
 export type BlockRow = typeof safetyBlocks.$inferSelect;
@@ -396,13 +402,18 @@ export class SafetyRepository {
     executor: Executor,
     input: {
       readonly actorReference: string;
+      readonly disposition: EnforcementDisposition;
       readonly effectiveAt: Date;
+      /** When a time-bounded restriction stops on its own. */
+      readonly expiresAt?: Date | null;
       readonly now: Date;
       readonly policyVersion: string;
       readonly reasonCode: string;
       readonly reportId: string | null;
       readonly scope: string;
       readonly subjectId: string;
+      /** The record this one replaces. Required of every lift. */
+      readonly supersedesId?: string | null;
       readonly targetConversationId: string | null;
       /** What a creator-scoped enforcement acted on, when it acted on one. */
       readonly targetObjectId?: string | null;
@@ -414,13 +425,16 @@ export class SafetyRepository {
       .values({
         actorReference: input.actorReference,
         createdAt: input.now,
+        disposition: input.disposition,
         effectiveAt: input.effectiveAt,
+        expiresAt: input.expiresAt ?? null,
         id: crypto.randomUUID(),
         policyVersion: input.policyVersion,
         reasonCode: input.reasonCode,
         reportId: input.reportId,
         scope: input.scope,
         subjectId: input.subjectId,
+        supersedesId: input.supersedesId ?? null,
         targetConversationId: input.targetConversationId,
         targetObjectId: input.targetObjectId ?? null,
         targetObjectType: input.targetObjectType ?? null,
@@ -432,6 +446,78 @@ export class SafetyRepository {
     return row;
   }
 
+  /**
+   * Restrictions that are in force for this subject right now, in the scopes
+   * asked about.
+   *
+   * "In force" is four conditions and every one of them matters: the record
+   * restricts rather than lifts, it has taken effect, it has not expired, and
+   * nothing supersedes it. A reader that dropped any one of them would
+   * authorize against history rather than against the present.
+   *
+   * The anti-join is what makes a lift take effect without ever editing the
+   * record it lifts, which is the property the whole table is built around.
+   */
+  async listLiveEnforcements(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly scopes: readonly string[];
+      readonly subjectId: string;
+    },
+  ): Promise<EnforcementRow[]> {
+    if (input.scopes.length === 0) return [];
+    return executor
+      .select()
+      .from(safetyEnforcements)
+      .where(
+        and(
+          eq(safetyEnforcements.subjectId, input.subjectId),
+          inArray(safetyEnforcements.scope, [...input.scopes]),
+          this.liveAt(input.now),
+        ),
+      )
+      .orderBy(desc(safetyEnforcements.effectiveAt));
+  }
+
+  /** Whether one named object is currently restricted. */
+  async findLiveObjectEnforcement(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly objectId: string;
+      readonly objectType: EnforcementObjectType;
+      readonly subjectId: string;
+    },
+  ): Promise<EnforcementRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyEnforcements)
+      .where(
+        and(
+          eq(safetyEnforcements.subjectId, input.subjectId),
+          eq(safetyEnforcements.targetObjectId, input.objectId),
+          eq(safetyEnforcements.targetObjectType, input.objectType),
+          this.liveAt(input.now),
+        ),
+      )
+      .orderBy(desc(safetyEnforcements.effectiveAt))
+      .limit(1);
+    return rows[0];
+  }
+
+  async findEnforcement(
+    executor: Executor,
+    id: string,
+  ): Promise<EnforcementRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyEnforcements)
+      .where(eq(safetyEnforcements.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
   async listEnforcementsFor(
     executor: Executor,
     subjectId: string,
@@ -441,5 +527,24 @@ export class SafetyRepository {
       .from(safetyEnforcements)
       .where(eq(safetyEnforcements.subjectId, subjectId))
       .orderBy(desc(safetyEnforcements.effectiveAt));
+  }
+
+  /**
+   * The four conditions that make a restricting record current.
+   *
+   * Written once so no caller can accidentally ask a weaker question. The
+   * subquery aliases the same table, so the outer reference is the row being
+   * tested and the inner one is any record claiming to replace it.
+   */
+  private liveAt(now: Date): SQL | undefined {
+    return and(
+      eq(safetyEnforcements.disposition, 'restrict'),
+      lte(safetyEnforcements.effectiveAt, now),
+      or(
+        isNull(safetyEnforcements.expiresAt),
+        gt(safetyEnforcements.expiresAt, now),
+      ),
+      sql`not exists (select 1 from ${safetyEnforcements} as superseding where superseding.supersedes_id = ${safetyEnforcements.id})`,
+    );
   }
 }

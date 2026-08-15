@@ -356,17 +356,20 @@ async function fullCreator(
 async function enforcements(): Promise<
   {
     actor_reference: string;
+    disposition: string;
+    id: string;
     reason_code: string;
     scope: string;
     subject_id: string;
+    supersedes_id: string | null;
     target_object_id: string | null;
     target_object_type: string | null;
   }[]
 > {
   return rowsOf(
-    database.sql`select actor_reference, reason_code, scope, subject_id,
-      target_object_id, target_object_type from safety_enforcements
-      order by created_at`,
+    database.sql`select actor_reference, disposition, id, reason_code, scope,
+      subject_id, supersedes_id, target_object_id, target_object_type
+      from safety_enforcements order by created_at`,
   );
 }
 
@@ -580,17 +583,85 @@ describe('Admin creator operations', () => {
         method: 'POST',
       }),
     );
-    const body = (await response.json()) as { creator: { status: string } };
+    const body = (await response.json()) as {
+      creator: { status: string };
+      disposition: string;
+    };
 
     expect(response.status).toBe(200);
     // Back to applicant: whether every gate still passes is the ladder's answer
     // on the next read, not an operator's assertion.
     expect(body.creator.status).toBe('applicant');
+    expect(body.disposition).toBe('lift');
     const records = await enforcements();
+    // Two records in one scope, distinguished by what each of them did. The
+    // reversal names the suspension it lifted, so the original stays exactly as
+    // it was written rather than being edited into a different decision.
     expect(records.map((entry) => entry.scope)).toEqual([
       'creator_suspension',
-      'creator_reinstatement',
+      'creator_suspension',
     ]);
+    expect(records.map((entry) => entry.disposition)).toEqual([
+      'restrict',
+      'lift',
+    ]);
+    expect(records[1]?.supersedes_id).toBe(records[0]?.id ?? '');
+  });
+
+  it('refuses a reinstatement with no suspension of record behind it', async () => {
+    const admin = await adminSession();
+    const creator = await fullCreator(
+      'admin-reinstate-orphan@velora.test',
+      'admin-reinstate-orphan',
+    );
+    // CREATORS is moved to `suspended` behind SAFETY's back, so the two domains
+    // disagree about whether this person is under enforcement. Reinstating
+    // would have to record a reversal of something nobody decided.
+    await execute(
+      database.sql`update creators_accounts
+        set status = 'suspended', status_reason = 'safety_enforcement',
+            suspended_at = now(), status_changed_at = now()
+        where id = ${creator.id}`,
+    );
+
+    const response = await handle(
+      adminRequest('/v1/admin/creators/reinstatement', admin, {
+        body: { creatorId: creator.id, reasonCode: 'platform_integrity' },
+        method: 'POST',
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await enforcements()).toHaveLength(0);
+    const rows = await rowsOf<{ status: string }>(
+      database.sql`select status from creators_accounts where id = ${creator.id}`,
+    );
+    expect(rows[0]?.status).toBe('suspended');
+  });
+
+  it('writes no audit row for an operation that could not be applied', async () => {
+    const admin = await adminSession();
+    const creator = await fullCreator(
+      'admin-atomic@velora.test',
+      'admin-atomic',
+    );
+    await handle(
+      adminRequest('/v1/admin/creators/suspension', admin, {
+        body: { creatorId: creator.id, reasonCode: 'harassment' },
+        method: 'POST',
+      }),
+    );
+    // Already suspended: the second attempt cannot move the capability, and the
+    // enforcement record it would otherwise have left behind is rolled back
+    // with it. The decision and its effect commit together or not at all.
+    const again = await handle(
+      adminRequest('/v1/admin/creators/suspension', admin, {
+        body: { creatorId: creator.id, reasonCode: 'harassment' },
+        method: 'POST',
+      }),
+    );
+    expect(again.status).toBe(409);
+    expect(await enforcements()).toHaveLength(1);
   });
 
   it('takes down a profile, an item, and a club without destroying any of them', async () => {

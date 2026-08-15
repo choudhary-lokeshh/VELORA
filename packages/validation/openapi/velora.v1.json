@@ -19926,6 +19926,13 @@
             ],
             "additionalProperties": false
           },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "restrict",
+              "lift"
+            ]
+          },
           "enforcementId": {
             "type": "string",
             "format": "uuid",
@@ -19949,12 +19956,18 @@
           },
           "scope": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 64
+            "enum": [
+              "account_restriction",
+              "conversation_closure",
+              "creator_suspension",
+              "creator_object_removal",
+              "club_membership_revocation"
+            ]
           }
         },
         "required": [
           "creator",
+          "disposition",
           "enforcementId",
           "reasonCode",
           "recordedAt",

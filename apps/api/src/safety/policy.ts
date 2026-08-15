@@ -71,28 +71,111 @@ export const reportRateWindowMilliseconds = 60 * 60 * 1000;
 export const enforcementPolicyVersion = 'v1-provisional';
 
 /**
- * What an enforcement decision may do in V1.
+ * What an enforcement decision is *about*.
  *
- * Deliberately two things. Restricting an account removes it from discovery,
- * introductions, and messaging at once, because all three read the same
- * admission standing. Closing a conversation ends one relationship without
- * touching the rest of somebody's account. Bans, suspensions with an expiry,
- * appeals, and scope-by-surface enforcement all depend on the policy taxonomy
- * and the appeal process, neither of which is decided.
+ * A scope names the thing being restricted. It does not say whether the record
+ * imposes the restriction or takes it away — that is the disposition below, and
+ * keeping the two apart is what makes "what is in force right now" answerable
+ * from this table rather than only from the domain that applied it.
+ *
+ * Restricting an account removes it from discovery, introductions, and
+ * messaging at once, because all three read the same admission standing.
+ * Closing a conversation ends one relationship without touching the rest of
+ * somebody's account. Creator scopes stop a capability or take one published
+ * object out of view, and never touch the person's consumer account.
+ *
+ * Bans, per-surface scoping, and jurisdiction gates are absent because they
+ * depend on the policy taxonomy, the mature-content gates, and the surface
+ * policy, none of which is decided. [ADR-0022](../../../../docs/decisions/ADR-0022-trust-safety-policy-enforcement-authority.md)
+ * fixes how the next one arrives: a new scope is a vocabulary change with a
+ * migration and a constraint, never a new boolean and never a free string.
  */
 export const enforcementScopes = [
   'account_restriction',
   'conversation_closure',
   /** Creator capability stopped. The person's consumer account is untouched. */
   'creator_suspension',
-  /** A stopped capability restored. Recorded as its own row, never an edit. */
-  'creator_reinstatement',
   /** Something a creator published taken down: a profile, an item, a club. */
   'creator_object_removal',
   /** One person's club entitlement withdrawn by the platform. */
   'club_membership_revocation',
 ] as const;
 export type EnforcementScope = (typeof enforcementScopes)[number];
+
+/**
+ * Whether a record imposes a restriction or lifts one.
+ *
+ * Before this existed, `account_restriction` was written both by a decision
+ * that restricted an account and by the review that restored it, so two rows
+ * with the same scope meant opposite things and nothing could derive what was
+ * in force. `creator_reinstatement` solved the same problem for creators by
+ * inventing a second scope, which made direction a property of *some* scopes
+ * and not others.
+ *
+ * One orthogonal value fixes both. The table stays append-only — a lift is
+ * still a new row and never an edit — and a reader can now ask the question an
+ * audit and an authorization both need: is anything currently in force.
+ */
+export const enforcementDispositions = ['restrict', 'lift'] as const;
+export type EnforcementDisposition = (typeof enforcementDispositions)[number];
+
+/**
+ * Scopes the platform can actually reverse today.
+ *
+ * A conversation closure is absent because MESSAGING publishes no contract that
+ * reopens one, and the object scopes are absent because republishing what an
+ * operator took down is the creator's decision to take again rather than an
+ * operator's to undo. A lift the platform cannot apply would be a record
+ * claiming an effect that never happened.
+ */
+export const liftableEnforcementScopes: readonly EnforcementScope[] = [
+  'account_restriction',
+  'creator_suspension',
+];
+
+/**
+ * Which identifier space a scope's subject lives in.
+ *
+ * One column carries subjects from two domains — a consumer account for the
+ * first two scopes, a creator capability for the rest — and nothing in the
+ * schema distinguishes them, because a cross-domain reference here is a stable
+ * identifier rather than shared schema. Deriving the space from the scope keeps
+ * that from being a guess at every call site, and a unit assertion pins the map
+ * so a new scope cannot be added without deciding which space it belongs to.
+ */
+export const enforcementSubjectKinds = ['consumer_account', 'creator'] as const;
+export type EnforcementSubjectKind = (typeof enforcementSubjectKinds)[number];
+
+const subjectKindByScope: Readonly<
+  Record<EnforcementScope, EnforcementSubjectKind>
+> = {
+  account_restriction: 'consumer_account',
+  club_membership_revocation: 'creator',
+  conversation_closure: 'consumer_account',
+  creator_object_removal: 'creator',
+  creator_suspension: 'creator',
+};
+
+export function subjectKindOf(scope: EnforcementScope): EnforcementSubjectKind {
+  return subjectKindByScope[scope];
+}
+
+/**
+ * Strongest first.
+ *
+ * A composed decision reports the *strongest* live restriction rather than
+ * whichever one a query happened to return first, so the reason a subject is
+ * told is stable and so two replicas answering the same question answer it the
+ * same way. Global account restriction outranks a capability restriction, which
+ * outranks anything scoped to a single object.
+ */
+export const enforcementPrecedence: readonly EnforcementScope[] = [
+  'account_restriction',
+  'creator_suspension',
+  'conversation_closure',
+  'creator_object_removal',
+  'club_membership_revocation',
+];
 
 /**
  * What a creator-scoped enforcement can name.
@@ -130,6 +213,124 @@ export const enforcementReasonCodes = [
   'platform_integrity',
 ] as const;
 export type EnforcementReasonCode = (typeof enforcementReasonCodes)[number];
+
+/**
+ * Version of the rule that composes live enforcements into an answer.
+ *
+ * Separate from `enforcementPolicyVersion` because the two change for different
+ * reasons. That one moves when what an enforcement may record changes; this one
+ * moves when the precedence or the capability map changes, and an eligibility
+ * answer carries it so a decision taken under an older rule stays explicable.
+ */
+export const eligibilityPolicyVersion = 'v1-provisional';
+
+/**
+ * What another domain may ask TRUST & SAFETY about.
+ *
+ * A closed vocabulary rather than a scope, because a caller asks about
+ * something it wants to do and should not have to know which enforcement scopes
+ * bear on it. `docs/architecture/03-domain-boundaries.md` keeps the mapping
+ * here, in the domain that owns enforcement, so adding a scope does not require
+ * every caller to learn about it.
+ *
+ * These answer only the safety question. Account standing is USERS' truth,
+ * creator lifecycle is CREATORS', and commercial terms are BILLING's; a caller
+ * still evaluates its own predicates and this is one conjunct among them.
+ */
+export const safetyCapabilities = [
+  /** May this consumer take part in discovery, introductions, and messaging. */
+  'consumer_interaction',
+  /** May this creator operate creator features at all. */
+  'creator_operation',
+  /** May this creator publish or keep something published. */
+  'creator_publication',
+  /** May this creator take part in commercial activity. */
+  'commercial_participation',
+] as const;
+export type SafetyCapability = (typeof safetyCapabilities)[number];
+
+interface CapabilityRule {
+  readonly blockedBy: readonly EnforcementScope[];
+  readonly subjectKind: EnforcementSubjectKind;
+}
+
+/**
+ * Which live enforcements deny which capability.
+ *
+ * Creator capability, publication, and commercial participation are three
+ * separate questions that a suspension happens to answer identically today.
+ * They stay separate values rather than one because the moment a scope exists
+ * that stops publication without stopping the whole capability — which is what
+ * the mature-content gates will need — that must be a change to one row of this
+ * map rather than a change to every caller.
+ */
+const capabilityRules: Readonly<Record<SafetyCapability, CapabilityRule>> = {
+  commercial_participation: {
+    blockedBy: ['creator_suspension'],
+    subjectKind: 'creator',
+  },
+  consumer_interaction: {
+    blockedBy: ['account_restriction'],
+    subjectKind: 'consumer_account',
+  },
+  creator_operation: {
+    blockedBy: ['creator_suspension'],
+    subjectKind: 'creator',
+  },
+  creator_publication: {
+    blockedBy: ['creator_suspension'],
+    subjectKind: 'creator',
+  },
+};
+
+export function subjectKindForCapability(
+  capability: SafetyCapability,
+): EnforcementSubjectKind {
+  return capabilityRules[capability].subjectKind;
+}
+
+/** The scopes that deny a capability, strongest first. */
+export function blockingScopesFor(
+  capability: SafetyCapability,
+): readonly EnforcementScope[] {
+  const rule = capabilityRules[capability];
+  return enforcementPrecedence.filter((scope) =>
+    rule.blockedBy.includes(scope),
+  );
+}
+
+/**
+ * What a denied subject may be told.
+ *
+ * Deliberately coarse, and deliberately not the enforcement reason code. A
+ * subject is entitled to know the category and the scope of what was done to
+ * them; they are not entitled to the review's finding, the report behind it, or
+ * anything that would identify a reporter. Regulation (EU) 2022/2065's
+ * statement-of-reasons shape is recorded in
+ * `docs/compliance/07-surface-and-distribution-eligibility.md`; this is the
+ * vocabulary that satisfies it without disclosing evidence.
+ */
+export const safetyDenialReasons = [
+  'account_restricted',
+  'creator_capability_suspended',
+  'conversation_closed',
+  'object_restricted',
+] as const;
+export type SafetyDenialReason = (typeof safetyDenialReasons)[number];
+
+const denialReasonByScope: Readonly<
+  Record<EnforcementScope, SafetyDenialReason>
+> = {
+  account_restriction: 'account_restricted',
+  club_membership_revocation: 'object_restricted',
+  conversation_closure: 'conversation_closed',
+  creator_object_removal: 'object_restricted',
+  creator_suspension: 'creator_capability_suspended',
+};
+
+export function denialReasonFor(scope: EnforcementScope): SafetyDenialReason {
+  return denialReasonByScope[scope];
+}
 
 /**
  * What has to be decided before this domain may run in a deployed environment.

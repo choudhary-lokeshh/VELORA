@@ -160,12 +160,15 @@ export class CreatorProfileService {
     ) {
       return { kind: 'conflict' };
     }
-    const record = await this.dependencies.profiles.setPublication({
-      creatorId: input.account.id,
-      expectedVersion: input.version,
-      now: this.dependencies.now(),
-      publication: input.publication,
-    });
+    const record = await this.dependencies.profiles.setPublication(
+      this.dependencies.profiles.transactionless,
+      {
+        creatorId: input.account.id,
+        expectedVersion: input.version,
+        now: this.dependencies.now(),
+        publication: input.publication,
+      },
+    );
     return record === undefined
       ? { kind: 'conflict' }
       : { created: false, kind: 'saved', record };
