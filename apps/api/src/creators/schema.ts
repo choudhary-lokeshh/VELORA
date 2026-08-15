@@ -103,6 +103,12 @@ export const creatorAccounts = pgTable(
     // here, which is why the service can be idempotent without a lock.
     uniqueIndex('creators_accounts_auth_account_uk').on(table.authAccountId),
     index('creators_accounts_status_idx').on(table.status, table.createdAt),
+    // The operator list's ordering, which has no filter to narrow it: every
+    // creator is a candidate, newest first. Measured on twenty thousand rows
+    // the planner otherwise chose a sequential scan and a top-N heapsort —
+    // 2 ms and 267 buffers there, and a table scan at any size. Ordered the
+    // way the cursor pages, so a page is an index walk that stops.
+    index('creators_accounts_created_idx').on(table.createdAt, table.id),
     check(
       'creators_accounts_status_check',
       inList(table.status, creatorAccountStatuses),

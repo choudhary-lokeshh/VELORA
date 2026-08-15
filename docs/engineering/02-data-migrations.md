@@ -36,6 +36,8 @@ Define safe PostgreSQL 18 schema evolution while preserving domain ownership. Dr
 
 `0019_admin_creator_enforcement` widens the enforcement vocabulary to creator decisions and adds the object a creator-scoped enforcement acted on. The scope check gains four values and the two new columns are constrained together: an object-scoped enforcement names an object and nothing else may, the identifier and type are set or absent together, and the type comes from a closed list. No existing row changes, and no enforcement already recorded means anything different than it did.
 
+`0020_creator_admin_ordering` adds `creators_accounts_created_idx` over `(created_at, id)`. The operator list orders by exactly that and has no filter to narrow it — every creator is a candidate — so without the index PostgreSQL scanned the table and ran a top-N heapsort. That was found by reading a query plan on seeded volume rather than by reading the code, and the plan assertion is kept so a later change that loses the index fails the build.
+
 Migration files use the sequential index prefix, matching the committed `0000_bootstrap` and the `idx` ordering in `drizzle/meta/_journal.json`; `drizzle.config.ts` sets `migrations.prefix` to `index` so generation stays consistent. Do not mix index-prefixed and timestamp-prefixed migrations: ordering is taken from the journal, and a mixed scheme makes review order and file order disagree. Migrations run only through the explicit `pnpm db:migrate` command, never at application startup.
 
 ## Rules

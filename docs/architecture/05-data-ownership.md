@@ -35,4 +35,12 @@ The tables this phase adds all grow monotonically and none of them depends on de
 - `notifications_attempts` is append-only evidence of what was tried, bounded per notice by the retry budget.
 - `notifications_feed` grows with what a person has been shown. Its only read is one recipient's newest page, served by `(recipient_id, created_at, id)`.
 
+The creator tables grow the same way and none of them depends on deletion for correctness either.
+
+- `creators_accounts` grows with people who asked for the capability. Two indexes: the unique one per principal that makes onboarding idempotent, and `(created_at, id)` for the operator list. The second was added after measuring — on twenty thousand rows the planner otherwise scanned the table and sorted it, which is 2 ms and 267 buffers there and a table scan at any size.
+- `creators_profiles` is one row per capability, addressed by a unique handle.
+- `clubs_content` grows with what creators write. Its published index is partial, so a creator with a long history of drafts still answers the public catalog from an index the size of what is public, ordered exactly the way the catalog pages so no sort is needed.
+- `clubs_memberships` keeps revoked rows as evidence and permits one live entitlement per person per club through a partial unique index, so revoking frees the slot without destroying the record.
+- `clubs_invites` keeps redeemed and revoked invitations, which is what makes "was this ever used, and by whom" answerable months later.
+
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: retention durations for all four. No duration is invented here, and because no rule depends on a row being physically gone, an approved one can be applied later as a deletion pass without changing behaviour.

@@ -18,6 +18,7 @@ import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
 import {
   connectDatabase,
+  execute,
   provisionDatabase,
   rowsOf,
   type TestDatabase,
@@ -25,6 +26,7 @@ import {
 import {
   silentLogger,
   testConsumerOrigin,
+  testCreatorOrigin,
   testServerConfig,
   testCreatorsRuntime,
   testClubsRuntime,
@@ -623,6 +625,153 @@ describe('the pair lock under load the pool used to lose connections to', () => 
         database.sql`select count(*)::int as count from messaging_messages`,
       ),
     ).toBe(50 + databaseAdmissionLimit);
+    await expectPoolIntact(primary, backendsBefore, deadlocksBefore);
+  });
+});
+
+describe('creator load runs on the same pool as everything else', () => {
+  /**
+   * Creator capabilities seeded directly, with Studio sessions to match.
+   *
+   * The onboarding ladder is exercised elsewhere; what this file is about is
+   * the pool, so the rows are written and the load is driven through the real
+   * `DatabaseService` at production sizes.
+   */
+  async function studioCreators(count: number): Promise<
+    {
+      readonly cookie: string;
+      readonly creatorId: string;
+      readonly csrf: string;
+    }[]
+  > {
+    const opaque = () =>
+      `v1.${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')}`;
+    const digest = (value: string) => Bun.SHA256.hash(value, 'hex');
+    const now = new Date();
+    const built: {
+      cookie: string;
+      creatorId: string;
+      csrf: string;
+    }[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const accountId = crypto.randomUUID();
+      const creatorId = crypto.randomUUID();
+      const token = opaque();
+      const csrf = opaque();
+      await execute(
+        database.sql`insert into auth_accounts (id, status) values (${accountId}, 'active')`,
+      );
+      await execute(database.sql`
+        insert into auth_sessions (
+          id, account_id, audience, assurance, assurance_established_at,
+          authenticated_at, created_at, csrf_digest, idle_expires_at,
+          last_active_at, absolute_expires_at, token_digest
+        ) values (
+          ${crypto.randomUUID()}, ${accountId}, 'creator_studio', 'single_factor', ${now},
+          ${now}, ${now}, ${digest(csrf)}, ${new Date(now.getTime() + 900_000)}, ${now},
+          ${new Date(now.getTime() + 28_800_000)}, ${digest(token)}
+        )
+      `);
+      await execute(database.sql`
+        insert into creators_accounts
+          (activated_at, auth_account_id, created_at, id, status, status_changed_at, status_reason, updated_at)
+        values (${now}, ${accountId}, ${now}, ${creatorId}, 'active', ${now}, null, ${now})
+      `);
+      built.push({
+        cookie: `__Host-velora_creator_studio_session=${token}`,
+        creatorId,
+        csrf,
+      });
+    }
+    return built;
+  }
+
+  function studioPost(
+    path: string,
+    credentials: { readonly cookie: string; readonly csrf: string },
+    body: unknown,
+  ): Request {
+    return new Request(`http://api.test${path}`, {
+      body: JSON.stringify(body),
+      headers: {
+        'content-type': 'application/json',
+        cookie: credentials.cookie,
+        origin: testCreatorOrigin,
+        'x-velora-csrf': credentials.csrf,
+      },
+      method: 'POST',
+    });
+  }
+
+  it('settles fifty simultaneous claims of one handle without costing a connection', async () => {
+    const creators = await studioCreators(50);
+    const backendsBefore = await backendCount();
+    const deadlocksBefore = await deadlockCount();
+
+    const responses = await Promise.all(
+      creators.map(async (creator) =>
+        attempt(async () =>
+          primary.handle(
+            studioPost('/v1/creator/profile', creator, {
+              displayName: 'Contested',
+              handle: 'pool-contested',
+            }),
+          ),
+        ),
+      ),
+    );
+
+    // Exactly one owner, and the rest told the name is unavailable. The unique
+    // index decides it; the pool is untouched either way.
+    expect(responses.filter((entry) => entry.status === 201)).toHaveLength(1);
+    expect(responses.filter((entry) => entry.status === 409)).toHaveLength(49);
+    expect(
+      await countOf(
+        database.sql`select count(*)::int as count from creators_profiles where handle = 'pool-contested'`,
+      ),
+    ).toBe(1);
+    await expectPoolIntact(primary, backendsBefore, deadlocksBefore);
+  });
+
+  it('settles concurrent catalog writes across many creators', async () => {
+    const creators = await studioCreators(10);
+    await Promise.all(
+      creators.map(async (creator, index) =>
+        attempt(async () =>
+          primary.handle(
+            studioPost('/v1/creator/profile', creator, {
+              displayName: 'Writer',
+              handle: `pool-writer-${String(index)}`,
+            }),
+          ),
+        ),
+      ),
+    );
+    const backendsBefore = await backendCount();
+    const deadlocksBefore = await deadlockCount();
+
+    const responses = await Promise.all(
+      creators.flatMap((creator, creatorIndex) =>
+        Array.from({ length: 5 }, async (_unused, item) =>
+          attempt(async () =>
+            primary.handle(
+              studioPost('/v1/creator/content', creator, {
+                title: `Item ${String(creatorIndex)}-${String(item)}`,
+                visibility: 'public',
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(responses).toHaveLength(50);
+    expect(responses.every((entry) => entry.status === 201)).toBe(true);
+    expect(
+      await countOf(
+        database.sql`select count(*)::int as count from clubs_content`,
+      ),
+    ).toBe(50);
     await expectPoolIntact(primary, backendsBefore, deadlocksBefore);
   });
 });
