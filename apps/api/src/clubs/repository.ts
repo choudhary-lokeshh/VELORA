@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, isNull, lt, or, sql } from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import type { CatalogCursor } from './cursor.js';
@@ -6,7 +6,7 @@ import type {
   CreatorContentLifecycle,
   CreatorContentVisibility,
 } from './policy.js';
-import { creatorContent } from './schema.js';
+import { clubs, creatorContent } from './schema.js';
 
 export type ClubsDatabase = BunSQLDatabase;
 export type ClubsExecutor = Parameters<
@@ -95,6 +95,12 @@ export class ClubsRepository {
    * afterwards. A condition applied after paging would change how many results
    * a page holds, and a condition somebody forgets to apply is a draft on the
    * public internet.
+   *
+   * An item scoped to a club is public only when that club is. Without the
+   * club condition a creator preparing a room — writing posts inside it before
+   * deciding to open it — would have had those posts on their public page the
+   * moment they were published, which is exactly the surprise a draft club
+   * exists to prevent. Found in the freeze audit.
    */
   async listPublished(
     executor: AnyExecutor,
@@ -112,6 +118,20 @@ export class ClubsRepository {
           eq(creatorContent.creatorId, input.creatorId),
           eq(creatorContent.lifecycle, 'published'),
           eq(creatorContent.visibility, 'public'),
+          or(
+            isNull(creatorContent.clubId),
+            exists(
+              executor
+                .select({ present: clubs.id })
+                .from(clubs)
+                .where(
+                  and(
+                    eq(clubs.id, creatorContent.clubId),
+                    eq(clubs.lifecycle, 'published'),
+                  ),
+                ),
+            ),
+          ),
           keysetBefore(creatorContent.publishedAt, input.after),
         ),
       )

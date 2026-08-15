@@ -754,6 +754,48 @@ describe('club entitlement at the moment of the read', () => {
     expect(crossed.status).toBe(404);
   });
 
+  it('keeps a public item inside a draft club off the public page', async () => {
+    const creator = await publishedCreator(
+      'entitle-draftclub@velora.test',
+      'entitle-draftclub',
+    );
+    const draftClub = await firstClub(
+      await saveClub(creator.studio, { name: 'Preparing', slug: 'preparing' }),
+    );
+    const inside = await firstOf(
+      await saveContent(creator.studio, {
+        clubId: draftClub.id,
+        title: 'Written while preparing',
+        visibility: 'public',
+      }),
+    );
+    await setLifecycle(creator.studio, inside, 'published');
+    const outside = await publishItem(creator.studio, 'Ordinary post');
+
+    const before = (await (
+      await handle(catalogRequest(creator.handle))
+    ).json()) as PublicCatalog;
+
+    // Found in the freeze audit. A creator writing inside a room they have not
+    // opened yet had those posts on their public page the moment they were
+    // published, which is the surprise a draft club exists to prevent.
+    expect(before.content.map((entry) => entry.title)).toEqual([
+      'Ordinary post',
+    ]);
+
+    await setClubLifecycle(creator.studio, draftClub, 'published');
+    const after = (await (
+      await handle(catalogRequest(creator.handle))
+    ).json()) as PublicCatalog;
+
+    // Opening the room is what makes what is inside it public.
+    expect(after.content.map((entry) => entry.title).toSorted()).toEqual([
+      'Ordinary post',
+      'Written while preparing',
+    ]);
+    expect(outside.lifecycle).toBe('published');
+  });
+
   it('refuses a members-only item that belongs to no club at all', async () => {
     const creator = await publishedCreator(
       'entitle-orphan@velora.test',
