@@ -1,5 +1,17 @@
 # ADMIN domain
 
+## Implemented creator operations
+
+Platform Admin can list and search creators, suspend and reinstate a creator capability, take a profile, an item, or a club out of public view, and withdraw one club entitlement. Every one of those writes through the owning domain — CREATORS for the capability and profile, PRIVATE CLUBS for content, clubs, and memberships — and ADMIN owns no table of its own, so there is no second opinion anywhere about what is true.
+
+Two conditions guard every route and are never collapsed. The audience must be Platform Admin: a consumer session and a Creator Studio session are refused before any lookup happens on their behalf. And the assurance must be phishing-resistant and recent, which [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md) requires for privileged access — so with no approved verifier these operations are unreachable in a deployed environment rather than degraded to something weaker.
+
+Every operation that changes something appends one TRUST & SAFETY enforcement record naming the actor, the action, the reason code, the target, and when it happened. A refused operation writes nothing, including no audit row, so the trail never contains an entry for a change that did not occur. Two operators acting at once settle as one decision and one record, because the state transition names the state it expects.
+
+Creator suspension is scoped to the creator. The person's consumer account is untouched: those are different decisions about different things, and conflating them would ban somebody from a product they were not accused of anything in. Reinstatement is its own record rather than an edit, and republishes nothing — publication is the creator's decision to take again.
+
+What an operator sees is operational state and nothing else: no AUTH subject, no consumer identifier, no contact detail, no financial data, and no moderation narrative. Search is a bounded prefix over the public handle, which is already public; searching by anything a visitor could not already see would make this a lookup tool for private data.
+
 ## Purpose and scope
 
 ADMIN owns privileged operation requests, role grants, scoped operational workflows, approvals, audit records, controlled support views, system configuration/feature/country controls, and health dashboards. It does not own user, payment, creator, moderation, or enforcement truth; it invokes their contracts.

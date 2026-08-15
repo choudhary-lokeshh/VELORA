@@ -1,5 +1,11 @@
 # TRUST & SAFETY domain
 
+## Creator-scoped enforcement
+
+The enforcement log carries creator decisions as well as consumer ones: a capability suspended or reinstated, an object taken out of public view, and an entitlement withdrawn by the platform. Each names its subject — the creator — and, where it acted on something, the object it acted on, using a closed vocabulary rather than a free polymorphic reference: the type is one of a fixed set and the identifier is validated by the domain that owns it before the record is written, so nothing here points at something nobody checked.
+
+The table stays append-only. A reinstatement is a second record rather than an edit of the suspension, because the question an audit asks is what was done, by whom, when, and under which policy — not only what is in force now. Current state remains with the domain that owns it: a creator's status is CREATORS' truth and a club's lifecycle is PRIVATE CLUBS'.
+
 ## Purpose and scope
 
 TRUST & SAFETY owns reports, user-to-user blocks, enforcement policy execution, safety eligibility decisions, and enforcement lifecycle. It does not own moderator queues/evidence tooling, consumer profile source truth, messages/content source data, or direct payment records.

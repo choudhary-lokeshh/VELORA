@@ -271,6 +271,19 @@ export class ClubRepository {
     return rows[0];
   }
 
+  /** One entitlement by identifier, for an operator acting on a named one. */
+  async findMembershipById(
+    executor: AnyExecutor,
+    membershipId: string,
+  ): Promise<ClubMembershipRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(clubMemberships)
+      .where(eq(clubMemberships.id, membershipId))
+      .limit(1);
+    return rows[0];
+  }
+
   /** Every live entitlement one person holds, for their own account view. */
   async listMemberAccess(
     executor: AnyExecutor,

@@ -19,6 +19,7 @@ import {
 } from '@velora/observability/server';
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
+import { createAdminRuntime, type AdminRuntime } from './admin/composition.js';
 import { createClubsRuntime, type ClubsRuntime } from './clubs/composition.js';
 import {
   createCreatorsRuntime,
@@ -63,6 +64,7 @@ import {
 export { maximumRequestBodyBytes } from '@velora/validation';
 
 export interface ApplicationDependencies {
+  readonly admin: AdminRuntime;
   readonly auth: AuthRuntime;
   readonly clubs: ClubsRuntime;
   readonly database: HealthDependency;
@@ -134,6 +136,7 @@ export function createApplication(
   const injectedUsers = options.dependencies?.users;
   const injectedCreators = options.dependencies?.creators;
   const injectedClubs = options.dependencies?.clubs;
+  const injectedAdmin = options.dependencies?.admin;
   const injectedDiscovery = options.dependencies?.discovery;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedNotifications = options.dependencies?.notifications;
@@ -145,6 +148,7 @@ export function createApplication(
   let users: UsersRuntime;
   let creators: CreatorsRuntime;
   let clubs: ClubsRuntime;
+  let admin: AdminRuntime;
   let discovery: DiscoveryRuntime;
   let messaging: MessagingRuntime;
   let notifications: NotificationsApiRuntime;
@@ -207,6 +211,19 @@ export function createApplication(
         database: ownedDatabase.database,
         standing: users.adultStanding,
       });
+    // ADMIN is composed last because it operates every other domain and owns
+    // none of them: it takes their repositories and writes through them.
+    admin =
+      injectedAdmin ??
+      createAdminRuntime({
+        caller: auth.caller,
+        clubs: clubs.clubRepository,
+        content: clubs.repository,
+        creators: creators.repository,
+        database: ownedDatabase.database,
+        profiles: creators.profileRepository,
+        safety: safety.repository,
+      });
     discovery =
       injectedDiscovery ??
       createDiscoveryRuntime({
@@ -249,6 +266,7 @@ export function createApplication(
       injectedUsers === undefined ||
       injectedCreators === undefined ||
       injectedClubs === undefined ||
+      injectedAdmin === undefined ||
       injectedDiscovery === undefined ||
       injectedMessaging === undefined ||
       injectedNotifications === undefined ||
@@ -256,7 +274,7 @@ export function createApplication(
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, ADMIN, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
@@ -264,6 +282,7 @@ export function createApplication(
     users = injectedUsers;
     creators = injectedCreators;
     clubs = injectedClubs;
+    admin = injectedAdmin;
     discovery = injectedDiscovery;
     messaging = injectedMessaging;
     notifications = injectedNotifications;
@@ -291,6 +310,7 @@ export function createApplication(
     new DatabaseAdmission();
 
   const dependencies: ApplicationDependencies = {
+    admin,
     auth,
     clubs,
     creators,
@@ -683,6 +703,26 @@ export function createApplication(
     .get(
       apiRoutePaths.publicCreatorClubs,
       admitted(async (input) => clubs.clubRoutes.getPublicClubs(input)),
+    )
+    .get(
+      apiRoutePaths.adminCreators,
+      admitted(async (input) => admin.routes.listCreators(input)),
+    )
+    .post(
+      apiRoutePaths.adminCreatorSuspension,
+      admitted(async (input) => admin.routes.suspendCreator(input)),
+    )
+    .post(
+      apiRoutePaths.adminCreatorReinstatement,
+      admitted(async (input) => admin.routes.reinstateCreator(input)),
+    )
+    .post(
+      apiRoutePaths.adminCreatorObjectRemoval,
+      admitted(async (input) => admin.routes.removeObject(input)),
+    )
+    .post(
+      apiRoutePaths.adminMembershipRevocation,
+      admitted(async (input) => admin.routes.revokeMembership(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

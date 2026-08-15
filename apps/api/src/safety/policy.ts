@@ -83,8 +83,39 @@ export const enforcementPolicyVersion = 'v1-provisional';
 export const enforcementScopes = [
   'account_restriction',
   'conversation_closure',
+  /** Creator capability stopped. The person's consumer account is untouched. */
+  'creator_suspension',
+  /** A stopped capability restored. Recorded as its own row, never an edit. */
+  'creator_reinstatement',
+  /** Something a creator published taken down: a profile, an item, a club. */
+  'creator_object_removal',
+  /** One person's club entitlement withdrawn by the platform. */
+  'club_membership_revocation',
 ] as const;
 export type EnforcementScope = (typeof enforcementScopes)[number];
+
+/**
+ * What a creator-scoped enforcement can name.
+ *
+ * A closed vocabulary rather than a free polymorphic reference, and every value
+ * is validated by the domain that owns it before an enforcement is recorded —
+ * `docs/domains/trust-safety.md` requires an enforcement to be about something
+ * that exists, and a target nobody validated is a record that cannot be acted
+ * on later.
+ */
+export const enforcementObjectTypes = [
+  'creator_profile',
+  'creator_content',
+  'club',
+  'club_membership',
+] as const;
+export type EnforcementObjectType = (typeof enforcementObjectTypes)[number];
+
+/** Scopes that name an object, and therefore require one. */
+export const objectScopedEnforcements: readonly EnforcementScope[] = [
+  'creator_object_removal',
+  'club_membership_revocation',
+];
 
 /**
  * What a moderation decision may record as its finding. Provisional, and

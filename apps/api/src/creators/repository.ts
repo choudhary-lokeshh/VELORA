@@ -252,6 +252,35 @@ export class CreatorProfileRepository {
   }
 
   /**
+   * Handles and publication state for a bounded set of creators.
+   *
+   * One statement for a page rather than one per row, and deliberately not
+   * restricted to published profiles: an operator has to be able to recognise a
+   * creator they have just suspended, and a suspended creator's page is not
+   * published.
+   */
+  async summariesFor(
+    executor: AnyExecutor,
+    creatorIds: readonly string[],
+  ): Promise<Map<string, { handle: string; published: boolean }>> {
+    if (creatorIds.length === 0) return new Map();
+    const rows = await executor
+      .select({
+        creatorId: creatorProfiles.creatorId,
+        handle: creatorProfiles.handle,
+        publication: creatorProfiles.publication,
+      })
+      .from(creatorProfiles)
+      .where(inArray(creatorProfiles.creatorId, [...creatorIds]));
+    return new Map(
+      rows.map((row) => [
+        row.creatorId,
+        { handle: row.handle, published: row.publication === 'published' },
+      ]),
+    );
+  }
+
+  /**
    * The published profile for a canonical handle, joined to the capability so
    * one statement answers both halves of "is this page public".
    *

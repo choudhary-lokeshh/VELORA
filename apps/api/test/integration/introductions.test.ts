@@ -27,6 +27,7 @@ import {
   testServerConfig,
   testCreatorsRuntime,
   testClubsRuntime,
+  testAdminRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_introductions');
@@ -97,17 +98,24 @@ const creators = testCreatorsRuntime({
   now,
   users,
 });
+const clubsRuntime = testClubsRuntime({
+  config,
+  creators,
+  database: database.drizzle,
+  now,
+  users,
+});
 const application = createApplication({
   config,
   dependencies: {
     auth,
-    clubs: testClubsRuntime({
-      config,
+    admin: testAdminRuntime({
+      caller: auth.caller,
+      clubs: clubsRuntime,
       creators,
-      database: database.drizzle,
-      now,
-      users,
+      safety,
     }),
+    clubs: clubsRuntime,
     creators,
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),

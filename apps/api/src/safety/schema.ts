@@ -10,13 +10,21 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { inList, lengthBetween, timestamptz } from '../database/columns.js';
+import {
+  inList,
+  lengthBetween,
+  nullablePairing,
+  timestamptz,
+} from '../database/columns.js';
 import {
   maximumReportDetailCharacters,
   reportReasonCodes,
   reportStates,
+  enforcementObjectTypes,
   enforcementReasonCodes,
   enforcementScopes,
+  objectScopedEnforcements,
+  type EnforcementObjectType,
 } from './policy.js';
 
 /**
@@ -174,6 +182,14 @@ export const safetyEnforcements = pgTable(
     subjectId: uuid('subject_id').notNull(),
     /** The conversation a closure applies to, for that scope only. */
     targetConversationId: uuid('target_conversation_id'),
+    /**
+     * What a creator-scoped enforcement acted on, when it acted on something.
+     * The type comes from a closed vocabulary and the identifier is validated
+     * by its owning domain before this row is written, so nothing here is a
+     * reference nobody checked.
+     */
+    targetObjectId: uuid('target_object_id'),
+    targetObjectType: text('target_object_type').$type<EnforcementObjectType>(),
   },
   (table) => [
     index('safety_enforcements_subject_idx').on(
@@ -193,6 +209,19 @@ export const safetyEnforcements = pgTable(
     check(
       'safety_enforcements_target_check',
       sql`(${table.scope} = 'conversation_closure') = (${table.targetConversationId} is not null)`,
+    ),
+    // An object-scoped enforcement names an object, and nothing else may.
+    check(
+      'safety_enforcements_object_shape_check',
+      sql`(${table.scope} in (${sql.raw(objectScopedEnforcements.map((scope) => `'${scope}'`).join(', '))})) = (${table.targetObjectId} is not null)`,
+    ),
+    check(
+      'safety_enforcements_object_pairing_check',
+      nullablePairing(table.targetObjectId, table.targetObjectType),
+    ),
+    check(
+      'safety_enforcements_object_type_check',
+      sql`${table.targetObjectType} is null or ${inList(table.targetObjectType, enforcementObjectTypes)}`,
     ),
   ],
 );

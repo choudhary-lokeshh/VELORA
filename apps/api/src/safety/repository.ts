@@ -17,7 +17,7 @@ import type {
   Executor,
   TransactionHandle,
 } from '../database/executor.js';
-import { openReportStates } from './policy.js';
+import { openReportStates, type EnforcementObjectType } from './policy.js';
 import { safetyBlocks, safetyEnforcements, safetyReports } from './schema.js';
 
 export type BlockRow = typeof safetyBlocks.$inferSelect;
@@ -404,6 +404,9 @@ export class SafetyRepository {
       readonly scope: string;
       readonly subjectId: string;
       readonly targetConversationId: string | null;
+      /** What a creator-scoped enforcement acted on, when it acted on one. */
+      readonly targetObjectId?: string | null;
+      readonly targetObjectType?: EnforcementObjectType | null;
     },
   ): Promise<EnforcementRow> {
     const rows = await executor
@@ -419,6 +422,8 @@ export class SafetyRepository {
         scope: input.scope,
         subjectId: input.subjectId,
         targetConversationId: input.targetConversationId,
+        targetObjectId: input.targetObjectId ?? null,
+        targetObjectType: input.targetObjectType ?? null,
       })
       .returning();
     const row = rows[0];

@@ -29,6 +29,7 @@ import {
   testServerConfig,
   testCreatorsRuntime,
   testClubsRuntime,
+  testAdminRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_safety');
@@ -103,17 +104,24 @@ const creators = testCreatorsRuntime({
   now,
   users,
 });
+const clubsRuntime = testClubsRuntime({
+  config,
+  creators,
+  database: database.drizzle,
+  now,
+  users,
+});
 const application = createApplication({
   config,
   dependencies: {
     auth,
-    clubs: testClubsRuntime({
-      config,
+    admin: testAdminRuntime({
+      caller: auth.caller,
+      clubs: clubsRuntime,
       creators,
-      database: database.drizzle,
-      now,
-      users,
+      safety,
     }),
+    clubs: clubsRuntime,
     creators,
     database: healthy,
     databaseAdmission: testDatabaseAdmission(),
@@ -891,10 +899,13 @@ describe('a report is evidence, not a message to the person reported', () => {
 });
 
 describe('a consumer cannot become a moderator', () => {
-  it('publishes no moderation, enforcement, or admin route at all', () => {
+  it('publishes no moderation or report-review route at all', () => {
     const paths = application.app.routes.map((route) => route.path);
     for (const path of paths) {
-      expect(path).not.toMatch(/admin|moderation|enforcement|report.*review/iu);
+      // Platform Admin creator operations exist and are asserted unreachable
+      // below. A moderation queue and a report-review workflow do not: the
+      // review process, its SLA, and the appeal path are undecided.
+      expect(path).not.toMatch(/moderation|enforcement|report.*review/iu);
     }
     // The safety surface a consumer can reach, in full.
     expect(
@@ -906,6 +917,35 @@ describe('a consumer cannot become a moderator', () => {
       '/v1/safety/reports',
       '/v1/safety/reports',
     ]);
+  });
+
+  it('refuses a consumer session at every Platform Admin route', async () => {
+    const actor = await consumer('admin-reach@velora.test');
+    const adminPaths = [
+      ...new Set(
+        application.app.routes
+          .filter((route) => route.path.startsWith('/v1/admin'))
+          .map((route) => `${route.method} ${route.path}`),
+      ),
+    ];
+    expect(adminPaths.length).toBeGreaterThan(0);
+
+    for (const entry of adminPaths) {
+      const [method, path] = entry.split(' ');
+      const response = await handle(
+        method === 'GET'
+          ? new Request(`http://api.test${path ?? ''}`, {
+              headers: { cookie: actor.cookie, origin: testConsumerOrigin },
+            })
+          : post(path ?? '', actor, {}),
+      );
+      // Route visibility is not permission. Every one of them refuses the
+      // audience before it looks at anything.
+      expect(response.status, entry).toBe(403);
+      expect(await response.json(), entry).toMatchObject({
+        code: 'ACTION_NOT_PERMITTED',
+      });
+    }
   });
 
   it('cannot mint a Platform Admin credential at all', async () => {

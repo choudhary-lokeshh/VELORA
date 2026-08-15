@@ -6,6 +6,10 @@ import {
   createAuthRuntime,
   type AuthRuntime,
 } from '../../src/auth/composition.js';
+import {
+  createAdminRuntime,
+  type AdminRuntime,
+} from '../../src/admin/composition.js';
 import type { CallerResolver } from '../../src/auth/caller.js';
 import {
   createClubsRuntime,
@@ -277,6 +281,32 @@ export function testClubsRuntime(input: {
 }
 
 /**
+ * ADMIN wired to the repositories of the domains it operates. It owns no
+ * database of its own, so there is nothing here to substitute: an operation
+ * either goes through the owning domain or it does not happen.
+ */
+export function testAdminRuntime(input: {
+  readonly caller: CallerResolver;
+  readonly clubs: ClubsRuntime;
+  readonly creators: CreatorsRuntime;
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+  readonly safety: SafetyRuntime;
+}): AdminRuntime {
+  const database = input.database ?? drizzle.mock();
+  return createAdminRuntime({
+    caller: input.caller,
+    clubs: input.clubs.clubRepository,
+    content: input.clubs.repository,
+    creators: input.creators.repository,
+    database,
+    ...(input.now === undefined ? {} : { now: input.now }),
+    profiles: input.creators.profileRepository,
+    safety: input.safety.repository,
+  });
+}
+
+/**
  * Every product domain built together over one database and one USERS runtime,
  * for suites that only need the domains present rather than exercised.
  *
@@ -292,6 +322,7 @@ export function testProductRuntimes(input: {
   readonly now?: () => Date;
   readonly users: UsersRuntime;
 }): {
+  readonly admin: AdminRuntime;
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
@@ -302,8 +333,10 @@ export function testProductRuntimes(input: {
   const safety = testSafetyRuntime(input);
   const discovery = testDiscoveryRuntime({ ...input, safety });
   const creators = testCreatorsRuntime(input);
+  const clubs = testClubsRuntime({ ...input, creators });
   return {
-    clubs: testClubsRuntime({ ...input, creators }),
+    admin: testAdminRuntime({ ...input, clubs, creators, safety }),
+    clubs,
     creators,
     discovery,
     messaging: testMessagingRuntime({

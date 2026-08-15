@@ -12,6 +12,15 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  adminCreatorListResponseSchema,
+  adminCreatorSearchSchema,
+  adminOperationResponseSchema,
+  adminReinstateCreatorRequestSchema,
+  adminRemoveObjectRequestSchema,
+  adminRevokeMembershipRequestSchema,
+  adminSuspendCreatorRequestSchema,
+} from './admin.js';
+import {
   clubAccessListResponseSchema,
   clubIdSchema,
   clubInviteIssuedResponseSchema,
@@ -98,6 +107,7 @@ import {
   recoveryStartRequestSchema,
 } from './auth.js';
 
+export * from './admin.js';
 export * from './auth.js';
 export * from './clubs.js';
 export * from './creator.js';
@@ -153,6 +163,11 @@ export const apiRoutePaths = {
   creatorAccountSelf: '/v1/creator/me',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  adminCreatorObjectRemoval: '/v1/admin/creators/object-removal',
+  adminCreatorReinstatement: '/v1/admin/creators/reinstatement',
+  adminCreatorSuspension: '/v1/admin/creators/suspension',
+  adminCreators: '/v1/admin/creators',
+  adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
   clubAccess: '/v1/clubs/access',
   clubContent: '/v1/clubs/content',
   clubRedemptions: '/v1/clubs/redemptions',
@@ -251,6 +266,12 @@ export const apiSchemas = {
   CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
+  AdminCreatorListResponse: adminCreatorListResponseSchema,
+  AdminOperationResponse: adminOperationResponseSchema,
+  AdminReinstateCreatorRequest: adminReinstateCreatorRequestSchema,
+  AdminRemoveObjectRequest: adminRemoveObjectRequestSchema,
+  AdminRevokeMembershipRequest: adminRevokeMembershipRequestSchema,
+  AdminSuspendCreatorRequest: adminSuspendCreatorRequestSchema,
   ClubAccessListResponse: clubAccessListResponseSchema,
   ClubInviteIssuedResponse: clubInviteIssuedResponseSchema,
   ClubInviteListResponse: clubInviteListResponseSchema,
@@ -324,6 +345,7 @@ export const apiSchemas = {
 export const apiQueryParameters = {
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
+  adminSearch: adminCreatorSearchSchema,
   clubId: clubIdSchema,
   contentId: contentIdSchema,
   handle: creatorHandleSchema,
@@ -426,6 +448,28 @@ const creatorAuthenticationResponses = {
   },
   '403': {
     description: `The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code ${productErrorCodes.creatorSurfaceRequired} in the audience case.`,
+    schemaName: 'ApiError',
+  },
+} as const;
+
+/**
+ * Rejections every Admin operation can produce.
+ *
+ * The audience is `platform_admin` and nothing else reaches these routes: a
+ * consumer session and a Creator Studio session are refused before any lookup
+ * happens on their behalf. Step-up is separate from audience: an operator who
+ * is signed in but has not proved a phishing-resistant authenticator recently
+ * enough is refused as well, which is why these routes are unreachable in a
+ * deployed environment until such a verifier is approved.
+ */
+const adminAuthenticationResponses = {
+  '401': {
+    description:
+      'No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED.',
+    schemaName: 'ApiError',
+  },
+  '403': {
+    description: `The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ${productErrorCodes.actionNotPermitted} in the audience and step-up cases.`,
     schemaName: 'ApiError',
   },
 } as const;
@@ -1396,6 +1440,113 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminCreators',
+    path: apiRoutePaths.adminCreators,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum creators to return', name: 'pageSize' },
+      {
+        description: 'Public handle prefix to search for',
+        name: 'adminSearch',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Creators in operational terms, newest first, bounded and paged.',
+        schemaName: 'AdminCreatorListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Operational state only: no AUTH subject, no consumer identifier, no contact detail, no financial data, and no moderation narrative. Search is a bounded prefix over the public handle, which is already public.',
+  },
+  {
+    method: 'post',
+    operationId: 'suspendCreator',
+    path: apiRoutePaths.adminCreatorSuspension,
+    requestSchemaName: 'AdminSuspendCreatorRequest',
+    responses: {
+      '200': {
+        description:
+          'The capability is suspended and the enforcement record that says so is returned.',
+        schemaName: 'AdminOperationResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      "Stops the creator operating and takes their public surfaces down immediately, because every public read rechecks current creator state. It does not touch the person's consumer account: a creator suspension and a global restriction are different decisions with different scopes, and conflating them would ban somebody from a product they were not accused of anything in.",
+  },
+  {
+    method: 'post',
+    operationId: 'reinstateCreator',
+    path: apiRoutePaths.adminCreatorReinstatement,
+    requestSchemaName: 'AdminReinstateCreatorRequest',
+    responses: {
+      '200': {
+        description: 'The capability is restored and the record is returned.',
+        schemaName: 'AdminOperationResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Restoration is its own record rather than an edit of the suspension, because the question an audit asks is what was done and by whom, not only what is in force now. Nothing a creator had published comes back automatically: publication is their decision to take again.',
+  },
+  {
+    method: 'post',
+    operationId: 'removeCreatorObject',
+    path: apiRoutePaths.adminCreatorObjectRemoval,
+    requestSchemaName: 'AdminRemoveObjectRequest',
+    responses: {
+      '200': {
+        description:
+          'The object is no longer public and the enforcement record is returned.',
+        schemaName: 'AdminOperationResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Takes one profile, item, or club out of public view without destroying it. Removal and deletion are different acts, and an object that is merely unpublished remains evidence and remains the creator\u2019s. The object must belong to the named creator; one that does not is answered exactly as one that does not exist.',
+  },
+  {
+    method: 'post',
+    operationId: 'revokeMembershipAsAdmin',
+    path: apiRoutePaths.adminMembershipRevocation,
+    requestSchemaName: 'AdminRevokeMembershipRequest',
+    responses: {
+      '200': {
+        description: 'The entitlement is withdrawn and the record is returned.',
+        schemaName: 'AdminOperationResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Withdraws one entitlement as a platform action. It takes effect on the next protected read, because every read asks whether the entitlement is live rather than trusting anything computed earlier.',
   },
   {
     method: 'get',

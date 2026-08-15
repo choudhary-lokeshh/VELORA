@@ -28,6 +28,7 @@ import {
   testServerConfig,
   testCreatorsRuntime,
   testClubsRuntime,
+  testAdminRuntime,
 } from '../support/harness.js';
 
 /**
@@ -159,16 +160,23 @@ function createInstance(name: string): Instance {
     database: service.database,
     users,
   });
+  const clubsRuntime = testClubsRuntime({
+    config,
+    creators,
+    database: service.database,
+    users,
+  });
   const application = createApplication({
     config,
     dependencies: {
       auth,
-      clubs: testClubsRuntime({
-        config,
+      admin: testAdminRuntime({
+        caller: auth.caller,
+        clubs: clubsRuntime,
         creators,
-        database: service.database,
-        users,
+        safety,
       }),
+      clubs: clubsRuntime,
       creators,
       database: service,
       databaseAdmission: service.admission,
