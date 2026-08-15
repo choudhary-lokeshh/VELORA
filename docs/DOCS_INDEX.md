@@ -28,6 +28,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [Scale and resilience](architecture/07-scale-and-resilience.md) | Scaling, failure containment, recoverability direction |
 | [AI integration boundary](architecture/08-ai-platform.md) | How isolated AI PLATFORM fits overall architecture; dedicated AI section owns AI details |
 | [Technical stack](architecture/09-technical-stack.md) | Concise locked stack, dependency map, initial topology, classifications, and replacement boundaries |
+| [Money flow](architecture/10-money-flow.md) | End-to-end map of commercial, entitlement, earnings, payout, and reversal paths and the boundaries between them |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
@@ -129,6 +130,7 @@ These are architecture/product gates, not legal advice:
 | [Creator/content gates](compliance/03-creator-content-gates.md) | Creator eligibility, content publication, mature-content gates |
 | [Payments/tax/payout gates](compliance/04-payments-tax-payout-gates.md) | Commercial and creator-finance country/provider prerequisites |
 | [Data residency/retention](compliance/05-data-residency-retention.md) | Data mapping, region/provider routing, retention/deletion gates |
+| [Provider eligibility](compliance/06-payment-provider-eligibility.md) | Dated primary-source findings on payment/payout provider and card-network eligibility for Velora's business model |
 
 ## Operations authority
 
@@ -171,6 +173,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0018](decisions/ADR-0018-toolchain-provisioning-verification-ci.md) | mise toolchain provisioning, four-source pin agreement, and the GitHub Actions verification pipeline |
 | [ADR-0019](decisions/ADR-0019-database-connection-admission.md) | Bounded database admission, pool warm-up, and the capacity refusal contract; resolves the pair-lock contention decision |
 | [ADR-0020](decisions/ADR-0020-creator-capability-activation.md) | Creator capability lifecycle, its activation gates, and identity verification as a separate predicate |
+| [ADR-0021](decisions/ADR-0021-monetization-money-architecture.md) | How ADR-0011's locked money decisions become code: money value type, two owner journals, orchestration ordering, webhook inbox, entitlement bridge, fail-closed capability configuration |
 
 ## Technical implementation reading paths
 
@@ -185,7 +188,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0016, ADR-0019, unaffected portions of ADR-0007, observability/testing, affected domain/flow.
 - Realtime and RTC: REALTIME, RTC flow, provider adapters, Trust & Safety, ADR-0007, ADR-0008, ADR-0009, ADR-0013, ADR-0014.
 - Media/storage: media security, content owner/flow, outbound networking, ADR-0007, ADR-0010, ADR-0014.
-- Billing and payouts: monetisation, BILLING/PAYOUTS, payment flow/security/compliance/operations, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013.
+- Billing and payouts: monetisation, BILLING/PAYOUTS, money flow, payment flow/security/compliance/operations, provider eligibility, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0019, ADR-0021.
 - AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
 - Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, dependency risk acceptance, ADR-0016, ADR-0019, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
 - AUTH and privileged access: AUTH domain, onboarding, RBAC, security baseline, admin operations, incident response, ADR-0009, ADR-0017, then the affected surface and owning domain.

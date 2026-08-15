@@ -32,4 +32,6 @@ Gate loss stops new commercial operations as defined while preserving lawful cus
 
 Balanced owner-specific financial journals are locked by [ADR-0011](../decisions/ADR-0011-payments-payouts.md). `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: launch currencies/countries, providers, PCI scope, tax calculation/remittance, receipts, renewal/cancellation/refund/dispute terms, app-store billing, journal posting/accounting mappings and recognition policy, creator commission, reserves, KYC/tax, payout countries, reconciliation, and finance approvals.
 
-See [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [payment security](../security/05-payments-webhooks.md), [PAYOUTS](../domains/payouts.md), and [finance operations](../operations/03-finance-payout-operations.md).
+Provider-by-provider findings against Velora's actual business model, with primary sources and retrieval dates, are in [provider eligibility](06-payment-provider-eligibility.md). No assessed provider is eligible today.
+
+See [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [PAYOUTS](../domains/payouts.md), [finance operations](../operations/03-finance-payout-operations.md), and [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md).
