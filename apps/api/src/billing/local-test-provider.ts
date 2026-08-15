@@ -5,12 +5,16 @@ import type {
   PaymentProviderPort,
   ProviderCheckoutRequest,
   ProviderCheckoutSession,
+  ProviderDisputeEvidence,
+  ProviderDisputeReason,
+  ProviderDisputeStatus,
   ProviderEventEnvelope,
   ProviderPaymentSnapshot,
   ProviderPaymentStatus,
   ProviderRefundRequest,
   ProviderRefundSnapshot,
 } from './provider.js';
+import { providerDisputeReasons, providerDisputeStatuses } from './provider.js';
 
 /**
  * A deterministic payment provider for development and tests.
@@ -42,8 +46,67 @@ interface Recorded {
   status: ProviderPaymentStatus;
 }
 
-/** How the adapter is asked to behave, encoded in the operation itself. */
-export type LocalTestBehaviour = 'ambiguous' | 'declined' | 'normal';
+/**
+ * Reads a money value out of a test payload, or refuses.
+ *
+ * It refuses rather than defaulting, exactly as a real adapter must: a dispute
+ * event whose amount could not be read is not a dispute for zero, and the whole
+ * point of carrying the amount past the port is to be able to check it against
+ * Velora's own record.
+ */
+function amountOf(amountMinor: unknown, currency: unknown): Money | undefined {
+  if (amountMinor === undefined && currency === undefined) return undefined;
+  if (typeof amountMinor !== 'string' || typeof currency !== 'string') {
+    throw new Error('local-test: amount is malformed');
+  }
+  return money(BigInt(amountMinor), currency);
+}
+
+function disputeOf(value: unknown): ProviderDisputeEvidence | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('local-test: dispute is malformed');
+  }
+  const body = value as Readonly<Record<string, unknown>>;
+  const amount = amountOf(body.amountMinor, body.currency);
+  const reference = body.providerDisputeReference;
+  const reason = body.reason;
+  const status = body.status;
+  if (
+    amount === undefined ||
+    typeof reference !== 'string' ||
+    typeof reason !== 'string' ||
+    typeof status !== 'string' ||
+    !(providerDisputeReasons as readonly string[]).includes(reason) ||
+    !(providerDisputeStatuses as readonly string[]).includes(status)
+  ) {
+    throw new Error('local-test: dispute is malformed');
+  }
+  const openedAt = body.openedAt;
+  const evidenceDueAt = body.evidenceDueAt;
+  return {
+    amount,
+    ...(typeof evidenceDueAt === 'string'
+      ? { evidenceDueAt: new Date(evidenceDueAt) }
+      : {}),
+    openedAt: typeof openedAt === 'string' ? new Date(openedAt) : new Date(0),
+    providerDisputeReference: reference,
+    reason: reason as ProviderDisputeReason,
+    status: status as ProviderDisputeStatus,
+  };
+}
+
+/**
+ * How the adapter is asked to behave.
+ *
+ * `pending` is the ordinary case for a reversal at several real providers: the
+ * instruction is accepted, an object is created, and whether the money actually
+ * moved is confirmed by a webhook later. It is a separate behaviour from
+ * `ambiguous` because the two differ in exactly the way that matters — a
+ * pending answer names the object, and an ambiguous one names nothing.
+ */
+export type LocalTestBehaviour =
+  'ambiguous' | 'declined' | 'normal' | 'pending';
 
 export class LocalTestPaymentProvider implements PaymentProviderPort {
   readonly provider = 'local-test';
@@ -57,9 +120,22 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
 
   private behaviour: LocalTestBehaviour = 'normal';
 
+  private refundBehaviour: LocalTestBehaviour = 'normal';
+
   /** Test-only control. Not reachable from any request path. */
   behaveAs(behaviour: LocalTestBehaviour): void {
     this.behaviour = behaviour;
+  }
+
+  /**
+   * Test-only control over reversals, separate from checkout.
+   *
+   * Separate because the interesting cases are combinations: a charge that
+   * settled normally and a refund whose answer was then lost is exactly the
+   * shape reconciliation exists for, and one shared switch could not express it.
+   */
+  refundBehaveAs(behaviour: LocalTestBehaviour): void {
+    this.refundBehaviour = behaviour;
   }
 
   createCheckout(
@@ -110,15 +186,38 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
   refundPayment(
     request: ProviderRefundRequest,
   ): Promise<ProviderRefundSnapshot> {
+    // The key is what makes a retried instruction return the object the first
+    // attempt created rather than reversing the money a second time.
     const existing = this.refunds.get(request.idempotencyKey);
     if (existing !== undefined) return Promise.resolve(existing);
+    const reference = this.reference(request.idempotencyKey);
+    if (this.refundBehaviour === 'ambiguous') {
+      // The provider acted and the answer was lost. The record is kept so
+      // reconciliation can find it under the same key; the caller gets nothing.
+      this.refunds.set(request.idempotencyKey, {
+        amount: request.amount,
+        providerReference: reference,
+        status: 'succeeded',
+      });
+      return Promise.reject(new Error('local-test: ambiguous refund outcome'));
+    }
     const snapshot: ProviderRefundSnapshot = {
       amount: request.amount,
-      providerReference: this.reference(request.idempotencyKey),
-      status: 'succeeded',
+      providerReference: reference,
+      status:
+        this.refundBehaviour === 'declined'
+          ? 'failed'
+          : this.refundBehaviour === 'pending'
+            ? 'pending'
+            : 'succeeded',
     };
     this.refunds.set(request.idempotencyKey, snapshot);
     return Promise.resolve(snapshot);
+  }
+
+  /** Test-only: what the provider believes about a refund it was asked for. */
+  refundFor(idempotencyKey: string): ProviderRefundSnapshot | undefined {
+    return this.refunds.get(idempotencyKey);
   }
 
   retrievePayment(providerReference: string): Promise<ProviderPaymentSnapshot> {
@@ -164,9 +263,13 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
       return Promise.reject(new Error('local-test: body is not JSON'));
     }
     const body = parsed as Readonly<{
+      readonly amountMinor?: unknown;
+      readonly currency?: unknown;
+      readonly dispute?: unknown;
       readonly eventId?: unknown;
       readonly eventType?: unknown;
       readonly providerPaymentReference?: unknown;
+      readonly providerRefundReference?: unknown;
       readonly status?: unknown;
     }>;
     const eventId = body.eventId;
@@ -181,12 +284,27 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
     if (recorded !== undefined && typeof status === 'string') {
       recorded.status = status as ProviderPaymentStatus;
     }
+    let amount: Money | undefined;
+    let dispute: ProviderDisputeEvidence | undefined;
+    try {
+      amount = amountOf(body.amountMinor, body.currency);
+      dispute = disputeOf(body.dispute);
+    } catch {
+      // Malformed after verification is the same answer as unverified, so a
+      // caller learns nothing about how close a forged signature was.
+      return Promise.reject(new Error('local-test: event is malformed'));
+    }
     return Promise.resolve({
+      ...(amount === undefined ? {} : { amount }),
+      ...(dispute === undefined ? {} : { dispute }),
       eventId,
       eventType,
       occurredAt: new Date(0),
       ...(typeof reference === 'string'
         ? { providerPaymentReference: reference }
+        : {}),
+      ...(typeof body.providerRefundReference === 'string'
+        ? { providerRefundReference: body.providerRefundReference }
         : {}),
       ...(typeof status === 'string'
         ? { status: status as ProviderPaymentStatus }

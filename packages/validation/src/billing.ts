@@ -314,3 +314,157 @@ export const commercialOfferLifecycleRequestSchema = z
 export type CommercialOfferLifecycleRequest = z.infer<
   typeof commercialOfferLifecycleRequestSchema
 >;
+
+/**
+ * The states one refund can hold.
+ *
+ * The same six-answer discipline a payment gets, for the same reason: a refund
+ * whose provider answer was lost is neither issued nor refused, and collapsing
+ * that into either would either return money twice or tell somebody they were
+ * repaid when they were not.
+ *
+ * There is no `cancelled`. A refund exists because an operator decided to
+ * reverse a charge; abandoning one after the instruction is in flight would
+ * mean guessing what the provider did with it, which is precisely what
+ * `reconciliation_pending` refuses to do.
+ */
+export const refundStateValues = [
+  'requested',
+  'provider_pending',
+  'succeeded',
+  'failed',
+  'reconciliation_pending',
+] as const;
+export const refundStateSchema = z.enum(refundStateValues);
+export type RefundStateValue = z.infer<typeof refundStateSchema>;
+
+/**
+ * Why an operator reversed a charge.
+ *
+ * `v1-provisional`, and deliberately not a refund policy. Refund eligibility —
+ * who may ask, within what window, for what proportion — is unresolved in
+ * `docs/decisions/DECISIONS_REQUIRED.md` and is not decided by this list. What
+ * this records is the reason the operator gave, which an audit needs whatever
+ * the eventual policy turns out to be.
+ */
+export const refundReasonCodeValues = [
+  'duplicate_charge',
+  'not_delivered',
+  'operator_correction',
+  'dispute_resolution',
+] as const;
+export const refundReasonCodeSchema = z.enum(refundReasonCodeValues);
+export type RefundReasonCodeValue = z.infer<typeof refundReasonCodeSchema>;
+
+/** Why a refund did not go through, in Velora's vocabulary. */
+export const refundFailureReasonValues = [
+  'declined',
+  'provider_error',
+] as const;
+export const refundFailureReasonSchema = z.enum(refundFailureReasonValues);
+
+export const refundIdSchema = z.uuid();
+export const disputeIdSchema = z.uuid();
+
+/**
+ * One refund, as an operator sees it.
+ *
+ * No provider reference, no provider status string, and no operator name. The
+ * actor is an opaque session reference on the row itself, which an audit can
+ * follow and a screen has no use for.
+ */
+export const refundSchema = z
+  .object({
+    amount: moneySchema,
+    createdAt: z.iso.datetime(),
+    failureReason: refundFailureReasonSchema.optional(),
+    id: refundIdSchema,
+    paymentId: paymentIdSchema,
+    reasonCode: refundReasonCodeSchema,
+    state: refundStateSchema,
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type Refund = z.infer<typeof refundSchema>;
+
+/**
+ * Asking for a reversal.
+ *
+ * The amount and currency are both explicit and both re-checked against the
+ * captured payment. A request that omitted the amount and meant "all of it"
+ * would be a different instruction depending on when it was evaluated, and a
+ * request that omitted the currency would let a partial refund of a JPY charge
+ * be read as minor units of something else.
+ */
+export const issueRefundRequestSchema = z
+  .object({
+    amountMinor: positiveMinorUnitsSchema,
+    currency: currencyCodeSchema,
+    paymentId: paymentIdSchema,
+    reasonCode: refundReasonCodeSchema,
+  })
+  .strict();
+export type IssueRefundRequest = z.infer<typeof issueRefundRequestSchema>;
+
+export const refundResponseSchema = z.object({ refund: refundSchema }).strict();
+export type RefundResponse = z.infer<typeof refundResponseSchema>;
+
+/**
+ * A dispute's lifecycle, in Velora's vocabulary rather than a provider's.
+ *
+ * `won` and `lost` are stated from the platform's side and describe where the
+ * money ended up: `lost` means the provider returned it to the cardholder, so
+ * it is a reversal with the same financial consequence as a full refund.
+ * `withdrawn` is the cardholder standing the claim down, which leaves the sale
+ * intact.
+ */
+export const disputeStateValues = [
+  'opened',
+  'under_review',
+  'won',
+  'lost',
+  'withdrawn',
+] as const;
+export const disputeStateSchema = z.enum(disputeStateValues);
+export type DisputeStateValue = z.infer<typeof disputeStateSchema>;
+
+/**
+ * Why a cardholder disputed, normalized from whatever a provider calls it.
+ *
+ * `v1-provisional`. Every provider publishes its own reason vocabulary and none
+ * of them agree; mapping happens in an adapter so a provider that renames a
+ * reason changes an adapter rather than Velora's records.
+ */
+export const disputeReasonCodeValues = [
+  'unrecognized',
+  'product_not_received',
+  'product_unacceptable',
+  'duplicate',
+  'fraudulent',
+  'subscription_cancelled',
+  'other',
+] as const;
+export const disputeReasonCodeSchema = z.enum(disputeReasonCodeValues);
+export type DisputeReasonCodeValue = z.infer<typeof disputeReasonCodeSchema>;
+
+/**
+ * One dispute, as an operator sees it.
+ *
+ * The evidence deadline is present exactly when the provider gave one. Velora
+ * never invents it: a deadline nobody published would be a date an operator
+ * would plan around.
+ */
+export const disputeSchema = z
+  .object({
+    amount: moneySchema,
+    createdAt: z.iso.datetime(),
+    evidenceDueAt: z.iso.datetime().optional(),
+    id: disputeIdSchema,
+    openedAt: z.iso.datetime(),
+    paymentId: paymentIdSchema,
+    reasonCode: disputeReasonCodeSchema,
+    resolvedAt: z.iso.datetime().optional(),
+    state: disputeStateSchema,
+  })
+  .strict();
+export type Dispute = z.infer<typeof disputeSchema>;

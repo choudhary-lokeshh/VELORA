@@ -20,12 +20,16 @@ import {
   UnpublishedCommercePolicy,
   type CommercePolicy,
 } from './commerce-policy.js';
+import { DisputeRepository } from './dispute-repository.js';
+import { DisputeService } from './dispute-service.js';
 import { LocalTestPaymentProvider } from './local-test-provider.js';
 import { OfferRepository } from './offer-repository.js';
 import { OfferRoutes } from './offer-routes.js';
 import { OfferService } from './offer-service.js';
 import { ProviderEventRepository } from './event-repository.js';
 import { PaymentRepository } from './payment-repository.js';
+import { RefundRepository } from './refund-repository.js';
+import { RefundService } from './refund-service.js';
 import { SubscriptionRepository } from './subscription-repository.js';
 import { WebhookRoutes } from './webhook-routes.js';
 import { WebhookService } from './webhook-service.js';
@@ -54,6 +58,8 @@ export interface BillingRuntime {
   readonly checkout: CheckoutService;
   readonly checkoutRoutes: CheckoutRoutes;
   readonly database: DatabaseHandle;
+  readonly disputeRepository: DisputeRepository;
+  readonly disputes: DisputeService;
   readonly eventRepository: ProviderEventRepository;
   readonly journal: JournalStore;
   /** BILLING's transactional outbox, drained by the shared relay. */
@@ -66,6 +72,9 @@ export interface BillingRuntime {
   readonly policy: CommercePolicy;
   /** The payment adapter. `unavailable` in every deployed environment. */
   readonly provider: PaymentProviderPort;
+  readonly refundRepository: RefundRepository;
+  /** Reversal orchestration. Operator-driven only; no consumer path reaches it. */
+  readonly refunds: RefundService;
   readonly subscriptionRepository: SubscriptionRepository;
   readonly webhookRoutes: WebhookRoutes;
   readonly webhooks: WebhookService;
@@ -123,6 +132,8 @@ export function createBillingRuntime(input: {
   const paymentRepository = new PaymentRepository(input.database);
   const eventRepository = new ProviderEventRepository(input.database);
   const subscriptionRepository = new SubscriptionRepository(input.database);
+  const refundRepository = new RefundRepository(input.database);
+  const disputeRepository = new DisputeRepository(input.database);
   const outbox = new OutboxRepository(input.database, billingOutbox);
   const journal = new JournalStore({
     now,
@@ -137,7 +148,26 @@ export function createBillingRuntime(input: {
     trace: () => undefined,
     warn: () => undefined,
   };
+  const refunds = new RefundService({
+    journal,
+    now,
+    offers: offerRepository,
+    outbox,
+    payments: paymentRepository,
+    policy,
+    provider,
+    refunds: refundRepository,
+  });
+  const disputes = new DisputeService({
+    disputes: disputeRepository,
+    journal,
+    now,
+    offers: offerRepository,
+    outbox,
+  });
   const webhooks = new WebhookService({
+    disputeService: disputes,
+    disputes: disputeRepository,
     events: eventRepository,
     journal,
     logger,
@@ -147,10 +177,13 @@ export function createBillingRuntime(input: {
     owner: input.eventOwner ?? 'billing-api',
     payments: paymentRepository,
     provider,
+    refundService: refunds,
+    refunds: refundRepository,
     subscriptions: subscriptionRepository,
   });
   const checkout = new CheckoutService({
     consumers: input.consumers,
+    disputes: disputeRepository,
     now,
     offers: offerRepository,
     payments: paymentRepository,
@@ -177,6 +210,8 @@ export function createBillingRuntime(input: {
       subscriptions: subscriptionRepository,
     }),
     database: input.database,
+    disputeRepository,
+    disputes,
     eventRepository,
     journal,
     offerRepository,
@@ -189,6 +224,8 @@ export function createBillingRuntime(input: {
     paymentRepository,
     policy,
     provider,
+    refundRepository,
+    refunds,
     subscriptionRepository,
     webhookRoutes: new WebhookRoutes({ service: webhooks }),
     webhooks,

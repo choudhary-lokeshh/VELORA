@@ -104,6 +104,7 @@ describe('AUTH persistence and invariants', () => {
       'auth_sessions',
     ]);
     expect(names.filter((name) => !name.startsWith('auth_'))).toEqual([
+      'billing_disputes',
       'billing_journal_accounts',
       'billing_journal_entries',
       'billing_journal_transactions',
@@ -112,6 +113,7 @@ describe('AUTH persistence and invariants', () => {
       'billing_payments',
       'billing_prices',
       'billing_provider_events',
+      'billing_refunds',
       'billing_subscriptions',
       'clubs_clubs',
       'clubs_content',

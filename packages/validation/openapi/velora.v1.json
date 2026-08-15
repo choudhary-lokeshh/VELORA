@@ -11877,6 +11877,229 @@
         "summary": "Withdraws one entitlement as a platform action. It takes effect on the next protected read, because every read asks whether the entitlement is live rather than trusting anything computed earlier."
       }
     },
+    "/v1/admin/billing/refunds": {
+      "post": {
+        "operationId": "issueRefund",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Contract header x-velora-idempotency-key",
+            "in": "header",
+            "name": "x-velora-idempotency-key",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRefundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundResponse"
+                }
+              }
+            },
+            "description": "The refund operation exists. It is committed before the provider is contacted, so a process that dies between the two leaves something reconciliation can resolve rather than a reversal nobody has a record of. A replayed idempotency key answers with the operation it already created.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The reversal could not be recorded: the payment did not settle, the currency is not the currency it was captured in, the refunds outstanding against it would exceed what was captured, or the same idempotency key was reused for a different amount. The body is an ApiError with code STATE_CONFLICT or IDEMPOTENCY_KEY_MISMATCH.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "There is no consumer-facing refund path anywhere in the API, because refund eligibility is unresolved commercial policy and a self-service control would be a promise nobody approved. This operator route exists so the accounting is exercisable; in a deployed environment it refuses, because no payment provider is approved and no Platform Admin session can hold the assurance it requires."
+      }
+    },
     "/v1/discovery/candidates": {
       "get": {
         "operationId": "getDiscoveryCandidates",
@@ -16265,6 +16488,81 @@
         ],
         "additionalProperties": false
       },
+      "IssueRefundRequest": {
+        "type": "object",
+        "properties": {
+          "amountMinor": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,18}$"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "AED",
+              "AUD",
+              "BHD",
+              "BRL",
+              "CAD",
+              "CHF",
+              "CLP",
+              "CNY",
+              "COP",
+              "CZK",
+              "DKK",
+              "EUR",
+              "GBP",
+              "HKD",
+              "IDR",
+              "ILS",
+              "INR",
+              "ISK",
+              "JOD",
+              "JPY",
+              "KRW",
+              "KWD",
+              "MXN",
+              "MYR",
+              "NOK",
+              "NZD",
+              "OMR",
+              "PHP",
+              "PLN",
+              "RON",
+              "SAR",
+              "SEK",
+              "SGD",
+              "THB",
+              "TND",
+              "TRY",
+              "TWD",
+              "USD",
+              "VND",
+              "ZAR"
+            ]
+          },
+          "paymentId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "duplicate_charge",
+              "not_delivered",
+              "operator_correction",
+              "dispute_resolution"
+            ]
+          }
+        },
+        "required": [
+          "amountMinor",
+          "currency",
+          "paymentId",
+          "reasonCode"
+        ],
+        "additionalProperties": false
+      },
       "ProviderEventAcknowledgement": {
         "type": "object",
         "properties": {
@@ -16275,6 +16573,135 @@
         },
         "required": [
           "received"
+        ],
+        "additionalProperties": false
+      },
+      "RefundResponse": {
+        "type": "object",
+        "properties": {
+          "refund": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "object",
+                "properties": {
+                  "amountMinor": {
+                    "type": "string",
+                    "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "AED",
+                      "AUD",
+                      "BHD",
+                      "BRL",
+                      "CAD",
+                      "CHF",
+                      "CLP",
+                      "CNY",
+                      "COP",
+                      "CZK",
+                      "DKK",
+                      "EUR",
+                      "GBP",
+                      "HKD",
+                      "IDR",
+                      "ILS",
+                      "INR",
+                      "ISK",
+                      "JOD",
+                      "JPY",
+                      "KRW",
+                      "KWD",
+                      "MXN",
+                      "MYR",
+                      "NOK",
+                      "NZD",
+                      "OMR",
+                      "PHP",
+                      "PLN",
+                      "RON",
+                      "SAR",
+                      "SEK",
+                      "SGD",
+                      "THB",
+                      "TND",
+                      "TRY",
+                      "TWD",
+                      "USD",
+                      "VND",
+                      "ZAR"
+                    ]
+                  }
+                },
+                "required": [
+                  "amountMinor",
+                  "currency"
+                ],
+                "additionalProperties": false
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "failureReason": {
+                "type": "string",
+                "enum": [
+                  "declined",
+                  "provider_error"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "paymentId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "reasonCode": {
+                "type": "string",
+                "enum": [
+                  "duplicate_charge",
+                  "not_delivered",
+                  "operator_correction",
+                  "dispute_resolution"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "requested",
+                  "provider_pending",
+                  "succeeded",
+                  "failed",
+                  "reconciliation_pending"
+                ]
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              }
+            },
+            "required": [
+              "amount",
+              "createdAt",
+              "id",
+              "paymentId",
+              "reasonCode",
+              "state",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "refund"
         ],
         "additionalProperties": false
       },

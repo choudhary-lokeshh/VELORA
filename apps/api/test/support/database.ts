@@ -82,6 +82,10 @@ const truncationRoots = [
   'billing_outbox',
   'billing_provider_events',
   'billing_subscriptions',
+  // Reversals reference a capture, and the capture is retained rather than
+  // deletable, so both are listed explicitly ahead of the payments they name.
+  'billing_disputes',
+  'billing_refunds',
   'billing_payments',
   'billing_prices',
   'billing_offers',

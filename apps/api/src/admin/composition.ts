@@ -1,4 +1,5 @@
 import type { CallerResolver } from '../auth/caller.js';
+import type { RefundService } from '../billing/refund-service.js';
 import type { ClubRepository } from '../clubs/club-repository.js';
 import type { ClubsRepository } from '../clubs/repository.js';
 import type {
@@ -8,6 +9,7 @@ import type {
 } from '../creators/repository.js';
 import { reportPolicyVersion } from '../safety/policy.js';
 import type { SafetyRepository } from '../safety/repository.js';
+import { AdminBillingRoutes } from './billing-routes.js';
 import { AdminContextResolver } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
 import { AdminRoutes } from './routes.js';
@@ -15,6 +17,8 @@ import { AdminCreatorService } from './service.js';
 
 export interface AdminRuntime {
   readonly adminContext: AdminContextResolver;
+  /** Operator financial surface. Nothing here owns a financial row. */
+  readonly billingRoutes: AdminBillingRoutes;
   readonly directory: AdminCreatorDirectory;
   readonly routes: AdminRoutes;
   readonly service: AdminCreatorService;
@@ -36,6 +40,8 @@ export function createAdminRuntime(input: {
   readonly database: CreatorsDatabase;
   readonly now?: () => Date;
   readonly profiles: CreatorProfileRepository;
+  /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
+  readonly refunds: RefundService;
   readonly safety: SafetyRepository;
 }): AdminRuntime {
   const now = input.now ?? (() => new Date());
@@ -52,6 +58,10 @@ export function createAdminRuntime(input: {
   const adminContext = new AdminContextResolver({ caller: input.caller, now });
   return {
     adminContext,
+    billingRoutes: new AdminBillingRoutes({
+      adminContext,
+      refunds: input.refunds,
+    }),
     directory,
     routes: new AdminRoutes({ adminContext, directory, service }),
     service,

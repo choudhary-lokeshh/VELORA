@@ -290,6 +290,7 @@ export function testClubsRuntime(input: {
  * either goes through the owning domain or it does not happen.
  */
 export function testAdminRuntime(input: {
+  readonly billing: BillingRuntime;
   readonly caller: CallerResolver;
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
@@ -306,6 +307,7 @@ export function testAdminRuntime(input: {
     database,
     ...(input.now === undefined ? {} : { now: input.now }),
     profiles: input.creators.profileRepository,
+    refunds: input.billing.refunds,
     safety: input.safety.repository,
   });
 }
@@ -366,9 +368,13 @@ export function testProductRuntimes(input: {
   const discovery = testDiscoveryRuntime({ ...input, safety });
   const creators = testCreatorsRuntime(input);
   const clubs = testClubsRuntime({ ...input, creators });
+  // BILLING before ADMIN, exactly as the application composes them: an operator
+  // reversal is BILLING's decision taken with an operator's authority, so ADMIN
+  // receives the service rather than a database of its own.
+  const billing = testBillingRuntime({ ...input, clubs, creators });
   return {
-    admin: testAdminRuntime({ ...input, clubs, creators, safety }),
-    billing: testBillingRuntime({ ...input, clubs, creators }),
+    admin: testAdminRuntime({ ...input, billing, clubs, creators, safety }),
+    billing,
     clubs,
     creators,
     discovery,

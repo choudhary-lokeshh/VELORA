@@ -245,6 +245,10 @@ export function createApplication(
         creators: creators.repository,
         database: ownedDatabase.database,
         profiles: creators.profileRepository,
+        // ADMIN authorizes a reversal and BILLING decides whether it is one it
+        // can make. There is no path from an operator to a financial row that
+        // does not go through the domain that owns it.
+        refunds: billing.refunds,
         safety: safety.repository,
       });
     discovery =
@@ -789,6 +793,10 @@ export function createApplication(
     .post(
       apiRoutePaths.adminMembershipRevocation,
       admitted(async (input) => admin.routes.revokeMembership(input)),
+    )
+    .post(
+      apiRoutePaths.adminBillingRefunds,
+      admitted(async (input) => admin.billingRoutes.issueRefund(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

@@ -40,28 +40,40 @@ export class ProviderEventRepository {
   async receive(
     executor: Executor,
     input: {
+      readonly amountMinor: bigint | undefined;
+      readonly currency: string | undefined;
       readonly eventType: string;
+      readonly evidenceDueAt: Date | undefined;
       readonly now: Date;
       readonly occurredAt: Date;
       readonly payloadDigest: string;
       readonly provider: string;
+      readonly providerDisputeReference: string | undefined;
       readonly providerEventId: string;
       readonly providerPaymentReference: string | undefined;
+      readonly providerRefundReference: string | undefined;
+      readonly reasonCode: string | undefined;
       readonly status: string | undefined;
     },
   ): Promise<ProviderEventRow | undefined> {
     const inserted = await executor
       .insert(billingProviderEvents)
       .values({
+        amountMinor: input.amountMinor ?? null,
         attempts: 0,
         availableAt: input.now,
+        currency: input.currency ?? null,
         eventType: input.eventType,
+        evidenceDueAt: input.evidenceDueAt ?? null,
         id: crypto.randomUUID(),
         occurredAt: input.occurredAt,
         payloadDigest: input.payloadDigest,
         provider: input.provider,
+        providerDisputeReference: input.providerDisputeReference ?? null,
         providerEventId: input.providerEventId,
         providerPaymentReference: input.providerPaymentReference ?? null,
+        providerRefundReference: input.providerRefundReference ?? null,
+        reasonCode: input.reasonCode ?? null,
         receivedAt: input.now,
         state: 'received',
         status: input.status ?? null,

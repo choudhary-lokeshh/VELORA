@@ -120,13 +120,73 @@ export interface ProviderRefundSnapshot {
 }
 
 /**
+ * Why a cardholder disputed, normalized from whatever a provider calls it.
+ *
+ * Every provider publishes its own reason vocabulary and none of them agree, so
+ * the mapping belongs in the adapter. A reason Velora has no equivalent for maps
+ * to `other` rather than being passed through, because an unmapped provider
+ * string in a Velora column is a provider's vocabulary leaking past the port.
+ */
+export const providerDisputeReasons = [
+  'unrecognized',
+  'product_not_received',
+  'product_unacceptable',
+  'duplicate',
+  'fraudulent',
+  'subscription_cancelled',
+  'other',
+] as const;
+export type ProviderDisputeReason = (typeof providerDisputeReasons)[number];
+
+/**
+ * What a provider says has happened to a dispute, in Velora's terms.
+ *
+ * `lost` means the money went back to the cardholder. That is a statement about
+ * where the money is, not about who was right, and it is the only reading that
+ * makes the accounting consequence unambiguous.
+ */
+export const providerDisputeStatuses = [
+  'opened',
+  'under_review',
+  'won',
+  'lost',
+  'withdrawn',
+] as const;
+export type ProviderDisputeStatus = (typeof providerDisputeStatuses)[number];
+
+/**
+ * The dispute a verified event is about.
+ *
+ * Carried as one value rather than as loose fields, because a dispute event
+ * without its amount and currency cannot be accounted for and a partial one
+ * would be worse than an absent one.
+ */
+export interface ProviderDisputeEvidence {
+  readonly amount: Money;
+  /** When the provider says evidence is due. Absent when it publishes none. */
+  readonly evidenceDueAt?: Date;
+  readonly openedAt: Date;
+  readonly providerDisputeReference: string;
+  readonly reason: ProviderDisputeReason;
+  readonly status: ProviderDisputeStatus;
+}
+
+/**
  * A provider event, after its signature has been verified.
  *
  * The payload is deliberately minimized rather than passed through: a verified
  * event contributes an identity, a type, and the references BILLING needs to
  * find its own record. Everything else stays at the provider.
+ *
+ * The amount is the one exception to minimization, and it is carried on
+ * purpose: `docs/security/05-payments-webhooks.md` requires an inbound amount
+ * and currency to be verified against Velora's own immutable record, which is
+ * impossible if the adapter discards what the provider actually said.
  */
 export interface ProviderEventEnvelope {
+  /** What the provider says the event is worth, where the event has a value. */
+  readonly amount?: Money;
+  readonly dispute?: ProviderDisputeEvidence;
   readonly eventId: string;
   readonly eventType: string;
   readonly occurredAt: Date;

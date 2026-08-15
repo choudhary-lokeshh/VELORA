@@ -94,9 +94,18 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   const discovery = testDiscoveryRuntime({ safety, users });
   const creators = testCreatorsRuntime({ caller: auth.caller, users });
   const clubs = testClubsRuntime({ config, creators, users });
+  // BILLING before ADMIN, exactly as the application composes them: an operator
+  // reversal is BILLING's decision taken with an operator's authority.
+  const billing = testBillingRuntime({ clubs, config, creators, users });
   return {
-    admin: testAdminRuntime({ caller: auth.caller, clubs, creators, safety }),
-    billing: testBillingRuntime({ clubs, config, creators, users }),
+    admin: testAdminRuntime({
+      billing,
+      caller: auth.caller,
+      clubs,
+      creators,
+      safety,
+    }),
+    billing,
     clubs,
     creators,
     discovery,

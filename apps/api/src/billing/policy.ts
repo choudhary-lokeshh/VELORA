@@ -95,8 +95,17 @@ export type BillingJournalReason = (typeof billingJournalReasons)[number];
 export const billingBusinessTypes = {
   /** A ledger repair, referenced by the operation that authorized it. */
   correction: 'billing.correction',
-  /** A dispute, referenced by its internal dispute identifier. */
+  /** A dispute being opened, referenced by its internal dispute identifier. */
   dispute: 'billing.dispute',
+  /**
+   * A dispute reaching its outcome, referenced by the same dispute identifier.
+   *
+   * A separate type rather than a decorated reference, because the pair of type
+   * and reference is the idempotency identity of a posting: opening a dispute
+   * and resolving one are two business events about the same object, and they
+   * must be able to post one transaction each.
+   */
+  disputeResolution: 'billing.dispute_resolution',
   /** A payment operation, referenced by its internal identifier. */
   payment: 'billing.payment',
   /** A refund, referenced by its internal refund identifier. */

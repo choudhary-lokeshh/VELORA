@@ -14,10 +14,20 @@ import type {
   ProviderEventRepository,
   ProviderEventRow,
 } from './event-repository.js';
+import type { DisputeRepository } from './dispute-repository.js';
+import type { DisputeEvidence, DisputeService } from './dispute-service.js';
 import type { OfferRepository } from './offer-repository.js';
 import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
+import type { RefundRepository } from './refund-repository.js';
+import type { RefundService } from './refund-service.js';
+import {
+  disputeReasonCodes,
+  disputeStates,
+  type DisputeReasonCode,
+  type DisputeState,
+} from './reversal-policy.js';
 import type { SubscriptionRepository } from './subscription-repository.js';
 import {
   maximumProviderEventAttempts,
@@ -56,6 +66,8 @@ export interface WebhookProcessReport {
 }
 
 export interface WebhookServiceDependencies {
+  readonly disputeService: DisputeService;
+  readonly disputes: DisputeRepository;
   readonly events: ProviderEventRepository;
   readonly journal: JournalStore;
   readonly logger: SafeLogger;
@@ -65,7 +77,60 @@ export interface WebhookServiceDependencies {
   readonly owner: string;
   readonly payments: PaymentRepository;
   readonly provider: PaymentProviderPort;
+  readonly refundService: RefundService;
+  readonly refunds: RefundRepository;
   readonly subscriptions: SubscriptionRepository;
+}
+
+/**
+ * Whether a verified event's money agrees with the record it names.
+ *
+ * An event that carries no amount is not a disagreement — several event types
+ * legitimately have none — so absence passes. What fails is a stated amount or
+ * currency that is not the one Velora already holds, which is either a provider
+ * misunderstanding or a tampered payload, and neither is something to account
+ * for.
+ */
+function agreesWithRecord(
+  event: ProviderEventRow,
+  record: { readonly amountMinor: bigint; readonly currency: string },
+): boolean {
+  if (event.amountMinor === null || event.currency === null) return true;
+  return (
+    event.amountMinor === record.amountMinor &&
+    event.currency === record.currency
+  );
+}
+
+/**
+ * The dispute a verified receipt describes, or nothing.
+ *
+ * Every field is required together. A dispute notice missing its amount, its
+ * reason, or its own reference is not a partial dispute to be filled in later;
+ * it is a receipt Velora cannot account for, and it is recorded as seen rather
+ * than acted on.
+ */
+function disputeEvidenceOf(
+  event: ProviderEventRow,
+): DisputeEvidence | undefined {
+  const reference = event.providerDisputeReference;
+  const reason = event.reasonCode;
+  const status = event.status;
+  if (reference === null || reason === null || status === null)
+    return undefined;
+  if (event.amountMinor === null || event.currency === null) return undefined;
+  if (!(disputeReasonCodes as readonly string[]).includes(reason)) {
+    return undefined;
+  }
+  if (!(disputeStates as readonly string[]).includes(status)) return undefined;
+  return {
+    amount: money(event.amountMinor, event.currency),
+    evidenceDueAt: event.evidenceDueAt ?? undefined,
+    occurredAt: event.occurredAt,
+    providerReference: reference,
+    reasonCode: reason as DisputeReasonCode,
+    state: status as DisputeState,
+  };
 }
 
 /** How long one worker may hold a claimed event before another may take it. */
@@ -143,9 +208,18 @@ export class WebhookService {
     }
 
     const now = this.dependencies.now();
+    // A dispute carries its own amount, which is not the payment's. Normalizing
+    // both onto the receipt means the verification `docs/security/05-payments-webhooks.md`
+    // requires — that an inbound amount and currency agree with Velora's own
+    // immutable record — is performed against what the provider actually sent
+    // rather than against something re-derived afterwards.
+    const amount = envelope.dispute?.amount ?? envelope.amount;
     const received = await events.transaction(async (executor) =>
       events.receive(executor, {
+        amountMinor: amount?.amountMinor,
+        currency: amount?.currency,
         eventType: envelope.eventType,
+        evidenceDueAt: envelope.dispute?.evidenceDueAt,
         now,
         occurredAt: envelope.occurredAt,
         // The exact verified bytes, as a digest. Enough to prove later which
@@ -155,9 +229,12 @@ export class WebhookService {
           .update(input.rawBody, 'utf8')
           .digest('hex'),
         provider: provider.provider,
+        providerDisputeReference: envelope.dispute?.providerDisputeReference,
         providerEventId: envelope.eventId,
         providerPaymentReference: envelope.providerPaymentReference,
-        status: envelope.status,
+        providerRefundReference: envelope.providerRefundReference,
+        reasonCode: envelope.dispute?.reason,
+        status: envelope.dispute?.status ?? envelope.status,
       }),
     );
     return { duplicate: received === undefined, kind: 'accepted' };
@@ -245,6 +322,15 @@ export class WebhookService {
    * noticed.
    */
   private async apply(event: ProviderEventRow): Promise<boolean> {
+    // A refund notice names a reversal rather than a capture, so it is resolved
+    // first and against its own table. Everything else is about a payment.
+    if (event.eventType === 'refund.succeeded') {
+      return this.settleRefund(event);
+    }
+    if (event.eventType === 'refund.failed') {
+      return this.failRefund(event);
+    }
+
     const { payments } = this.dependencies;
     const reference = event.providerPaymentReference;
     if (reference === null) return false;
@@ -259,6 +345,13 @@ export class WebhookService {
 
     switch (event.eventType) {
       case 'payment.succeeded': {
+        // The amount the provider claims has to be the amount Velora recorded.
+        // A settlement for a different figure is not a settlement of this
+        // purchase, and accounting for it would put a number nobody agreed to
+        // in the books.
+        if (!agreesWithRecord(event, payment)) {
+          return this.holdForReconciliation(payment);
+        }
         return this.settlePayment(event, payment);
       }
       case 'payment.failed': {
@@ -270,10 +363,115 @@ export class WebhookService {
       case 'subscription.cancelled': {
         return this.cancelSubscription(event, payment);
       }
+      case 'dispute.opened':
+      case 'dispute.closed': {
+        return this.applyDispute(event, payment);
+      }
       default: {
         return false;
       }
     }
+  }
+
+  /**
+   * A verified reversal, settled with its compensating entries.
+   *
+   * The reversal is found by the provider's own refund reference, so a
+   * confirmation that arrives while the request thread is still waiting — or
+   * after that thread lost the answer entirely — lands in exactly the same
+   * place and posts exactly once.
+   */
+  private async settleRefund(event: ProviderEventRow): Promise<boolean> {
+    const { payments, refunds, refundService } = this.dependencies;
+    const reference = event.providerRefundReference;
+    if (reference === null) return false;
+    const refund = await refunds.findByProviderReference(
+      refunds.transactionless,
+      { provider: event.provider, providerReference: reference },
+    );
+    if (refund === undefined) return false;
+    const payment = await payments.findById(
+      payments.transactionless,
+      refund.paymentId,
+    );
+    if (payment === undefined) return false;
+    if (!agreesWithRecord(event, refund)) return false;
+    await refunds.transaction(async (executor) =>
+      refundService.settle(executor, {
+        occurredAt: event.occurredAt,
+        payment,
+        providerReference: reference,
+        refund,
+      }),
+    );
+    return true;
+  }
+
+  private async failRefund(event: ProviderEventRow): Promise<boolean> {
+    const { refunds } = this.dependencies;
+    const reference = event.providerRefundReference;
+    if (reference === null) return false;
+    const refund = await refunds.findByProviderReference(
+      refunds.transactionless,
+      { provider: event.provider, providerReference: reference },
+    );
+    if (refund === undefined) return false;
+    await refunds.transaction(async (executor) =>
+      refunds.transition(executor, {
+        failureReason: 'declined',
+        // Never from a terminal state. A late refusal for a reversal that
+        // already settled is a contradiction the provider resolves through
+        // reconciliation, not something this handler settles by overwriting a
+        // movement of money that happened.
+        from: ['requested', 'provider_pending', 'reconciliation_pending'],
+        lastProviderSyncAt: this.dependencies.now(),
+        now: this.dependencies.now(),
+        refundId: refund.id,
+        to: 'failed',
+      }),
+    );
+    return true;
+  }
+
+  /** A cardholder's claim, applied to the books and to future commerce. */
+  private async applyDispute(
+    event: ProviderEventRow,
+    payment: PaymentRow,
+  ): Promise<boolean> {
+    const { disputeService, disputes } = this.dependencies;
+    const evidence = disputeEvidenceOf(event);
+    if (evidence === undefined) return false;
+    return disputes.transaction(async (executor) =>
+      disputeService.apply(executor, {
+        evidence,
+        payment,
+        provider: event.provider,
+      }),
+    );
+  }
+
+  /**
+   * An answer that disagrees with Velora's own record settles nothing.
+   *
+   * Not a failure either: the provider may be right and the local record may be
+   * the thing that is wrong. It becomes a reconciliation case, which is the one
+   * state that means "this platform does not know yet".
+   */
+  private async holdForReconciliation(payment: PaymentRow): Promise<boolean> {
+    const { logger, payments } = this.dependencies;
+    logger.error(
+      { paymentId: payment.id, provider: payment.provider },
+      'provider event amount disagrees with the recorded operation',
+    );
+    await payments.transaction(async (executor) =>
+      payments.transition(executor, {
+        from: ['provider_pending', 'requires_action'],
+        now: this.dependencies.now(),
+        paymentId: payment.id,
+        to: 'reconciliation_pending',
+      }),
+    );
+    return true;
   }
 
   /**

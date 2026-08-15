@@ -44,6 +44,19 @@ import {
   type PaymentState,
 } from './payment-policy.js';
 import {
+  disputeReasonCodes,
+  disputeStates,
+  maximumRefundIdempotencyKeyLength,
+  refundFailureReasons,
+  refundStates,
+  refundReasonCodes,
+  type DisputeReasonCode,
+  type DisputeState,
+  type RefundFailureReason,
+  type RefundReasonCode,
+  type RefundState,
+} from './reversal-policy.js';
+import {
   maximumProviderEventIdLength,
   maximumProviderEventTypeLength,
   providerEventStates,
@@ -307,6 +320,11 @@ export const billingPayments = pgTable(
       table.offerId,
       table.idempotencyKey,
     ),
+    // The foreign-key target that makes a reversal's currency agree with the
+    // capture it reverses. A EUR refund against a USD charge would balance
+    // perfectly inside its own transaction and mean nothing, so the pairing is
+    // a key rather than a check some service performs.
+    unique('billing_payments_currency_uk').on(table.id, table.currency),
     uniqueIndex('billing_payments_provider_key_uk').on(
       table.providerIdempotencyKey,
     ),
@@ -403,10 +421,23 @@ export const billingPayments = pgTable(
 export const billingProviderEvents = pgTable(
   'billing_provider_events',
   {
+    /**
+     * The monetary amount this event is about, where it has one.
+     *
+     * Normalized from the provider's payload at verification time rather than
+     * re-read later, because `docs/security/05-payments-webhooks.md` requires
+     * an inbound amount and currency to be checked against Velora's own
+     * immutable record — and a check needs the value the provider actually
+     * sent, kept beside the digest that proves which bytes carried it.
+     */
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }),
     attempts: integer('attempts').notNull().default(0),
     /** Not claimable before this instant. Retry backoff is written here. */
     availableAt: timestamptz('available_at').notNull(),
+    currency: text('currency'),
     eventType: text('event_type').notNull(),
+    /** When the provider says evidence is due, when it says so at all. */
+    evidenceDueAt: timestamptz('evidence_due_at'),
     /** A redacted code, never a provider message or a payload fragment. */
     failureReason: text('failure_reason'),
     id: uuid('id').primaryKey(),
@@ -418,9 +449,15 @@ export const billingProviderEvents = pgTable(
     payloadDigest: digestColumn('payload_digest').notNull(),
     processedAt: timestamptz('processed_at'),
     provider: text('provider').notNull(),
+    /** Normalized dispute reference, where the event is about one. */
+    providerDisputeReference: text('provider_dispute_reference'),
     providerEventId: text('provider_event_id').notNull(),
     /** Normalized reference into Velora's own record, where the event has one. */
     providerPaymentReference: text('provider_payment_reference'),
+    /** Normalized refund reference, where the event is about one. */
+    providerRefundReference: text('provider_refund_reference'),
+    /** Normalized dispute reason, in Velora's vocabulary rather than theirs. */
+    reasonCode: text('reason_code'),
     receivedAt: timestamptz('received_at').notNull(),
     state: text('state').notNull().$type<ProviderEventState>(),
     /** Normalized provider status, in Velora's vocabulary rather than theirs. */
@@ -475,6 +512,247 @@ export const billingProviderEvents = pgTable(
       'billing_provider_events_processed_shape_check',
       sql`(${table.state} in ('processed', 'ignored')) = (${table.processedAt} is not null)`,
     ),
+    // An amount without a currency is a number, and a currency without an
+    // amount is a label. Neither is evidence, so the pair is set together or
+    // not at all.
+    check(
+      'billing_provider_events_amount_shape_check',
+      nullablePairing(table.amountMinor, table.currency),
+    ),
+    check(
+      'billing_provider_events_amount_check',
+      sql`${table.amountMinor} is null or ${table.amountMinor} > 0`,
+    ),
+    check(
+      'billing_provider_events_currency_check',
+      sql`${table.currency} is null or ${table.currency} ~ ${sql.raw(`'${currencyCodePattern}'`)}`,
+    ),
+    check(
+      'billing_provider_events_reason_code_check',
+      sql`${table.reasonCode} is null or ${inList(table.reasonCode, disputeReasonCodes)}`,
+    ),
+    check(
+      'billing_provider_events_refund_reference_check',
+      sql`${table.providerRefundReference} is null or ${lengthBetween(table.providerRefundReference, 1, maximumProviderReferenceLength)}`,
+    ),
+    check(
+      'billing_provider_events_dispute_reference_check',
+      sql`${table.providerDisputeReference} is null or ${lengthBetween(table.providerDisputeReference, 1, maximumProviderReferenceLength)}`,
+    ),
+  ],
+);
+
+/**
+ * A reversal of money already captured.
+ *
+ * A refund is a new financial event, not an edit of the payment it reverses.
+ * Nothing here rewrites `billing_payments`: the capture keeps its amount, its
+ * state, and its provider reference forever, and what somebody was actually
+ * left paying is derived by reading the refunds against it. That is the whole
+ * reason this is a table rather than a nullable `refunded_amount` column — a
+ * column has no history, no provenance, and no way to describe two partial
+ * reversals issued by two operators on two days.
+ *
+ * The currency is carried and keyed to the payment's, so a cross-currency
+ * refund cannot be inserted at all. The over-refund guard is a trigger rather
+ * than a service check, for the reason `docs/engineering/03-jobs-idempotency-concurrency.md`
+ * gives about every financial invariant: a rule the writer upholds is a rule the
+ * next writer can break, and fifty simultaneous full refunds are exactly the
+ * case where a read-then-decide check has already lost.
+ */
+export const billingRefunds = pgTable(
+  'billing_refunds',
+  {
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
+    correlationId: text('correlation_id'),
+    createdAt: timestamptz('created_at').notNull(),
+    /** Repeated from the payment so currency agreement is a foreign key. */
+    currency: text('currency').notNull(),
+    failureReason: text('failure_reason').$type<RefundFailureReason>(),
+    id: uuid('id').primaryKey(),
+    /**
+     * The operator's key, scoped to the payment rather than globally.
+     *
+     * One payment may legitimately be refunded twice in parts, so a global key
+     * would be wrong; two refunds of the same payment under one key are the
+     * same instruction sent twice, which is what this deduplicates.
+     */
+    idempotencyKey: text('idempotency_key').notNull(),
+    /**
+     * Who asked for this, as an opaque session reference.
+     *
+     * Never an operator's name or address. An audit needs to identify the actor
+     * deterministically; a financial table is the last place to accumulate
+     * staff identity.
+     */
+    initiatedBy: text('initiated_by').notNull(),
+    lastProviderSyncAt: timestamptz('last_provider_sync_at'),
+    paymentId: uuid('payment_id').notNull(),
+    provider: text('provider').notNull(),
+    /** Velora's key for the instruction. Unique platform-wide, forever. */
+    providerIdempotencyKey: text('provider_idempotency_key').notNull(),
+    providerReference: text('provider_reference'),
+    reasonCode: text('reason_code').notNull().$type<RefundReasonCode>(),
+    state: text('state').notNull().$type<RefundState>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.paymentId, table.currency],
+      foreignColumns: [billingPayments.id, billingPayments.currency],
+      name: 'billing_refunds_payment_fk',
+    }),
+    // The duplicate-refund guarantee. A retried operator request, a
+    // double-submitted form, and a client that reconnected all resolve to one
+    // reversal because the database admits one.
+    uniqueIndex('billing_refunds_idempotency_uk').on(
+      table.paymentId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex('billing_refunds_provider_key_uk').on(
+      table.providerIdempotencyKey,
+    ),
+    uniqueIndex('billing_refunds_provider_reference_uk')
+      .on(table.provider, table.providerReference)
+      .where(sql`${table.providerReference} is not null`),
+    // Every refund against one payment, which is what the over-refund guard
+    // sums and what an operator's view of a charge reads.
+    index('billing_refunds_payment_idx').on(table.paymentId, table.createdAt),
+    // The reconciliation sweep: reversals still waiting, oldest first.
+    index('billing_refunds_unsettled_idx')
+      .on(table.updatedAt, table.id)
+      .where(
+        sql`${table.state} in ('requested', 'provider_pending', 'reconciliation_pending')`,
+      ),
+    check('billing_refunds_state_check', inList(table.state, refundStates)),
+    check(
+      'billing_refunds_reason_check',
+      inList(table.reasonCode, refundReasonCodes),
+    ),
+    check('billing_refunds_amount_check', sql`${table.amountMinor} > 0`),
+    check(
+      'billing_refunds_currency_check',
+      sql`${table.currency} ~ ${sql.raw(`'${currencyCodePattern}'`)}`,
+    ),
+    check(
+      'billing_refunds_failure_reason_check',
+      sql`${table.failureReason} is null or ${inList(table.failureReason, refundFailureReasons)}`,
+    ),
+    check(
+      'billing_refunds_failure_shape_check',
+      sql`${table.failureReason} is null or ${table.state} = 'failed'`,
+    ),
+    // Nothing may claim a reversal settled without naming the provider object
+    // that settled it. This is the constraint that makes a fabricated refund
+    // impossible to write, whatever a service believes.
+    check(
+      'billing_refunds_settled_reference_check',
+      sql`${table.state} <> 'succeeded' or ${table.providerReference} is not null`,
+    ),
+    check(
+      'billing_refunds_idempotency_key_check',
+      lengthBetween(table.idempotencyKey, 8, maximumRefundIdempotencyKeyLength),
+    ),
+    check(
+      'billing_refunds_provider_key_check',
+      lengthBetween(
+        table.providerIdempotencyKey,
+        8,
+        maximumProviderReferenceLength,
+      ),
+    ),
+    check(
+      'billing_refunds_provider_reference_check',
+      sql`${table.providerReference} is null or ${lengthBetween(table.providerReference, 1, maximumProviderReferenceLength)}`,
+    ),
+    check(
+      'billing_refunds_initiated_by_check',
+      lengthBetween(table.initiatedBy, 1, 200),
+    ),
+    check('billing_refunds_version_check', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
+ * A cardholder's claim against a capture, tracked separately from a refund.
+ *
+ * Deliberately its own table. A refund is Velora deciding to return money; a
+ * dispute is somebody else's bank taking it, on a timetable Velora does not
+ * control, with an outcome Velora may lose. Modelling one as the other would
+ * mean an operator's decision and a provider's notice sharing a lifecycle, and
+ * the two have different authorities, different evidence, and different
+ * accounting.
+ *
+ * The row is created by a verified provider event and by nothing else. There is
+ * no route that opens a dispute, because a dispute is not something Velora can
+ * decide has happened.
+ */
+export const billingDisputes = pgTable(
+  'billing_disputes',
+  {
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
+    createdAt: timestamptz('created_at').notNull(),
+    /** Repeated from the payment so currency agreement is a foreign key. */
+    currency: text('currency').notNull(),
+    /**
+     * When the provider says evidence is due, when it says so at all.
+     *
+     * Null is a truthful answer. A provider that publishes no deadline gets
+     * none recorded, because a date Velora invented is a date an operator would
+     * plan around.
+     */
+    evidenceDueAt: timestamptz('evidence_due_at'),
+    id: uuid('id').primaryKey(),
+    /** When the claim was raised, per the provider, not when it arrived. */
+    openedAt: timestamptz('opened_at').notNull(),
+    paymentId: uuid('payment_id').notNull(),
+    provider: text('provider').notNull(),
+    /** The provider's identifier for the dispute. Required: it is the identity. */
+    providerReference: text('provider_reference').notNull(),
+    reasonCode: text('reason_code').notNull().$type<DisputeReasonCode>(),
+    resolvedAt: timestamptz('resolved_at'),
+    state: text('state').notNull().$type<DisputeState>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.paymentId, table.currency],
+      foreignColumns: [billingPayments.id, billingPayments.currency],
+      name: 'billing_disputes_payment_fk',
+    }),
+    // One provider dispute, one row. A redelivered opening and an opening that
+    // arrives after its own resolution both resolve to this.
+    uniqueIndex('billing_disputes_provider_uk').on(
+      table.provider,
+      table.providerReference,
+    ),
+    index('billing_disputes_payment_idx').on(table.paymentId, table.openedAt),
+    // Live claims an operator has to answer, soonest deadline first. Partial,
+    // so it stays the size of the caseload rather than of the history.
+    index('billing_disputes_open_idx')
+      .on(table.evidenceDueAt, table.id)
+      .where(sql`${table.state} in ('opened', 'under_review')`),
+    check('billing_disputes_state_check', inList(table.state, disputeStates)),
+    check(
+      'billing_disputes_reason_check',
+      inList(table.reasonCode, disputeReasonCodes),
+    ),
+    check('billing_disputes_amount_check', sql`${table.amountMinor} > 0`),
+    check(
+      'billing_disputes_currency_check',
+      sql`${table.currency} ~ ${sql.raw(`'${currencyCodePattern}'`)}`,
+    ),
+    check(
+      'billing_disputes_resolved_shape_check',
+      sql`(${table.state} in ('won', 'lost', 'withdrawn')) = (${table.resolvedAt} is not null)`,
+    ),
+    check(
+      'billing_disputes_provider_reference_check',
+      lengthBetween(table.providerReference, 1, maximumProviderReferenceLength),
+    ),
+    check('billing_disputes_version_check', sql`${table.version} >= 1`),
   ],
 );
 

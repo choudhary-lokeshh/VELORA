@@ -120,6 +120,26 @@ export class PaymentRepository {
     return rows[0];
   }
 
+  /**
+   * One operation by identifier, with no consumer in the predicate.
+   *
+   * For the paths where the caller is not the payer: a verified provider event
+   * about a reversal, and reconciliation resolving one. It is safe precisely
+   * because it grants nothing — every consumer-facing read still goes through
+   * `findOwnPayment`, which puts the payer in the predicate.
+   */
+  async findById(
+    executor: Executor,
+    paymentId: string,
+  ): Promise<PaymentRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(billingPayments)
+      .where(eq(billingPayments.id, paymentId))
+      .limit(1);
+    return rows[0];
+  }
+
   async findByProviderReference(
     executor: Executor,
     input: { readonly provider: string; readonly providerReference: string },

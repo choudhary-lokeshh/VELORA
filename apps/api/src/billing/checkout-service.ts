@@ -5,6 +5,7 @@ import { money } from '../money/money.js';
 import type { CommercePolicy } from './commerce-policy.js';
 import type { BillingInterval } from './offer-policy.js';
 import type { OfferRepository } from './offer-repository.js';
+import type { DisputeRepository } from './dispute-repository.js';
 import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { CommercialConsumerPort } from './ports.js';
@@ -61,6 +62,7 @@ export type CheckoutOutcome =
 
 export interface CheckoutServiceDependencies {
   readonly consumers: CommercialConsumerPort;
+  readonly disputes: DisputeRepository;
   readonly now: () => Date;
   readonly offers: OfferRepository;
   readonly payments: PaymentRepository;
@@ -267,6 +269,20 @@ export class CheckoutService {
     if (standing?.inGoodStanding !== true) {
       return { kind: 'refused', reason: 'not_eligible' };
     }
+
+    // A live cardholder claim stops *new* commerce and nothing else.
+    //
+    // Whether somebody keeps what they already bought while a dispute is open
+    // is unresolved commercial policy, recorded in
+    // `docs/decisions/DECISIONS_REQUIRED.md`, and inventing either answer would
+    // be inventing a commercial term. Refusing to take more money from the same
+    // person while their bank is reversing the last payment withdraws nothing
+    // they hold and is the fail-closed reading of the question that *is* open.
+    const disputed = await this.dependencies.disputes.hasOpenDisputeFor(
+      executor,
+      { consumerId: input.consumerId },
+    );
+    if (disputed) return { kind: 'refused', reason: 'not_eligible' };
 
     const offer = await offers.findOfferForPurchase(executor, input.offerId);
     if (offer?.state !== 'active') {

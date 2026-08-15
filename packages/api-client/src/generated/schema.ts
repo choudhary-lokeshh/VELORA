@@ -882,6 +882,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/billing/refunds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** There is no consumer-facing refund path anywhere in the API, because refund eligibility is unresolved commercial policy and a self-service control would be a promise nobody approved. This operator route exists so the accounting is exercisable; in a deployed environment it refuses, because no payment provider is approved and no Platform Admin session can hold the assurance it requires. */
+        post: operations["issueRefund"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/discovery/candidates": {
         parameters: {
             query?: never;
@@ -1212,9 +1229,41 @@ export interface components {
                 state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
             }[];
         };
+        IssueRefundRequest: {
+            amountMinor: string;
+            /** @enum {string} */
+            currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            /** Format: uuid */
+            paymentId: string;
+            /** @enum {string} */
+            reasonCode: "duplicate_charge" | "not_delivered" | "operator_correction" | "dispute_resolution";
+        };
         ProviderEventAcknowledgement: {
             /** @constant */
             received: true;
+        };
+        RefundResponse: {
+            refund: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                failureReason?: "declined" | "provider_error";
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                paymentId: string;
+                /** @enum {string} */
+                reasonCode: "duplicate_charge" | "not_delivered" | "operator_correction" | "dispute_resolution";
+                /** @enum {string} */
+                state: "requested" | "provider_pending" | "succeeded" | "failed" | "reconciliation_pending";
+                /** Format: date-time */
+                updatedAt: string;
+            };
         };
         StartCheckoutRequest: {
             /** @enum {string} */
@@ -8636,6 +8685,127 @@ export interface operations {
                 };
             };
             /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    issueRefund: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+                /** @description Contract header x-velora-idempotency-key */
+                "x-velora-idempotency-key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueRefundRequest"];
+            };
+        };
+        responses: {
+            /** @description The refund operation exists. It is committed before the provider is contacted, so a process that dies between the two leaves something reconciliation can resolve rather than a reversal nobody has a record of. A replayed idempotency key answers with the operation it already created. */
+            201: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefundResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The reversal could not be recorded: the payment did not settle, the currency is not the currency it was captured in, the refunds outstanding against it would exceed what was captured, or the same idempotency key was reused for a different amount. The body is an ApiError with code STATE_CONFLICT or IDEMPOTENCY_KEY_MISMATCH. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

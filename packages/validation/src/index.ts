@@ -14,8 +14,10 @@ import {
 import {
   checkoutResponseSchema,
   consumerSubscriptionListResponseSchema,
+  issueRefundRequestSchema,
   providerEventAcknowledgementSchema,
   paymentIdSchema,
+  refundResponseSchema,
   commercialOfferLifecycleRequestSchema,
   commercialOfferListResponseSchema,
   commercialOfferResponseSchema,
@@ -183,6 +185,7 @@ export const apiRoutePaths = {
   creatorOffers: '/v1/creator/offers',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  adminBillingRefunds: '/v1/admin/billing/refunds',
   adminCreatorObjectRemoval: '/v1/admin/creators/object-removal',
   adminCreatorReinstatement: '/v1/admin/creators/reinstatement',
   adminCreatorSuspension: '/v1/admin/creators/suspension',
@@ -291,7 +294,9 @@ export const apiSchemas = {
     creatorPolicyAcknowledgementRequestSchema,
   CheckoutResponse: checkoutResponseSchema,
   ConsumerSubscriptionListResponse: consumerSubscriptionListResponseSchema,
+  IssueRefundRequest: issueRefundRequestSchema,
   ProviderEventAcknowledgement: providerEventAcknowledgementSchema,
+  RefundResponse: refundResponseSchema,
   StartCheckoutRequest: startCheckoutRequestSchema,
   CommercialOfferLifecycleRequest: commercialOfferLifecycleRequestSchema,
   CommercialOfferListResponse: commercialOfferListResponseSchema,
@@ -1786,6 +1791,31 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Withdraws one entitlement as a platform action. It takes effect on the next protected read, because every read asks whether the entitlement is live rather than trusting anything computed earlier.',
+  },
+  {
+    method: 'post',
+    operationId: 'issueRefund',
+    path: apiRoutePaths.adminBillingRefunds,
+    requestHeaders: [idempotencyHeader],
+    requestSchemaName: 'IssueRefundRequest',
+    responses: {
+      '201': {
+        description:
+          'The refund operation exists. It is committed before the provider is contacted, so a process that dies between the two leaves something reconciliation can resolve rather than a reversal nobody has a record of. A replayed idempotency key answers with the operation it already created.',
+        schemaName: 'RefundResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': {
+        description: `The reversal could not be recorded: the payment did not settle, the currency is not the currency it was captured in, the refunds outstanding against it would exceed what was captured, or the same idempotency key was reused for a different amount. The body is an ApiError with code ${productErrorCodes.conflict} or ${productErrorCodes.idempotencyMismatch}.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'There is no consumer-facing refund path anywhere in the API, because refund eligibility is unresolved commercial policy and a self-service control would be a promise nobody approved. This operator route exists so the accounting is exercisable; in a deployed environment it refuses, because no payment provider is approved and no Platform Admin session can hold the assurance it requires.',
   },
   {
     method: 'get',

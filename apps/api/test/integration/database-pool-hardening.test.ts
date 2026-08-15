@@ -169,18 +169,22 @@ function createInstance(name: string): Instance {
     database: service.database,
     users,
   });
+  // BILLING before ADMIN, exactly as the application composes them: an operator
+  // reversal is BILLING's decision taken with an operator's authority.
+  const billingRuntime = testBillingRuntime({
+    clubs: clubsRuntime,
+    config,
+    creators,
+    database: database.drizzle,
+    users,
+  });
   const application = createApplication({
     config,
     dependencies: {
       auth,
-      billing: testBillingRuntime({
-        clubs: clubsRuntime,
-        config,
-        creators,
-        database: database.drizzle,
-        users,
-      }),
+      billing: billingRuntime,
       admin: testAdminRuntime({
+        billing: billingRuntime,
         caller: auth.caller,
         clubs: clubsRuntime,
         creators,
