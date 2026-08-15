@@ -42,7 +42,22 @@ export const commerceEligibilityGates = [
 export type CommerceEligibilityGate = (typeof commerceEligibilityGates)[number];
 
 export interface CommerceEligibilityRequest {
-  /** ISO 3166-1 alpha-2, or nothing when Velora does not know it. */
+  /**
+   * ISO 3166-1 alpha-2, or nothing when Velora does not know it.
+   *
+   * Self-declared, and worth saying plainly here because this is where it is
+   * used as if it were a fact. It comes from the consumer's own adult
+   * declaration, recorded with assurance class `self_declared`, and no approved
+   * verifier can produce anything stronger — that is `LEGAL REVIEW REQUIRED`
+   * under adult/age assurance and launch-country gates in
+   * `docs/decisions/DECISIONS_REQUIRED.md`.
+   *
+   * So this gate refuses a country nobody approved, but it cannot prove that a
+   * consumer who names an approved one is in it. That is tolerable only while
+   * live money movement is blocked. Enabling a payment provider without
+   * deciding what assurance a commerce country claim requires would turn a
+   * refusal into a compliance control it is not.
+   */
   readonly consumerCountry: string | undefined;
   readonly creatorCountry: string | undefined;
   readonly currency: CurrencyCode;

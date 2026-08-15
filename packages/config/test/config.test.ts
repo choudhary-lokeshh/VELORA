@@ -79,6 +79,60 @@ describe('server configuration', () => {
     ).toContain('USERS_ADULT_ASSURANCE_VERIFIER');
   });
 
+  /**
+   * Every seam that could move money, refused in every deployed environment.
+   *
+   * This is what "live money movement is blocked" actually rests on. Each of
+   * these refusals exists in the loader, and until now not one of them was
+   * asserted anywhere — which is the same state the payout overdraw trigger was
+   * in before it turned out to have never run. An enforcement nothing exercises
+   * is an enforcement nobody notices has stopped.
+   *
+   * The `local-test` adapters are deterministic and reach no network, but they
+   * fabricate successful payments, priced offers, and paid instructions. One of
+   * them reachable in production would mean fake paid subscriptions and a
+   * creator balance nobody was ever charged for.
+   */
+  const moneySeams = [
+    ['BILLING_COMMERCE_ELIGIBILITY', 'local-test', 'unavailable'],
+    ['BILLING_COMMERCE_POLICY', 'local-test', 'unpublished'],
+    ['BILLING_PAYMENT_PROVIDER', 'local-test', 'unavailable'],
+    ['BILLING_TAX_AUTHORITY', 'local-test', 'unavailable'],
+    ['CLUBS_BILLING_ENTITLEMENT', 'local-test', 'unavailable'],
+    ['PAYOUTS_POLICY', 'local-test', 'unpublished'],
+    ['PAYOUTS_PROVIDER', 'local-test', 'unavailable'],
+  ] as const;
+
+  for (const [seam, live, blocked] of moneySeams) {
+    it(`defaults ${seam} to the adapter that refuses, and blocks the other when deployed`, () => {
+      // What a deployed environment gets when nobody sets anything.
+      expect(
+        loadServerConfig(validEnvironment)[
+          seam as keyof ReturnType<typeof loadServerConfig>
+        ],
+      ).toBe(blocked);
+
+      // Usable where money cannot actually move.
+      expect(
+        loadServerConfig({ ...validEnvironment, [seam]: live })[
+          seam as keyof ReturnType<typeof loadServerConfig>
+        ],
+      ).toBe(live);
+
+      // And refused in both deployed environments, by name.
+      for (const environment of ['staging', 'production'] as const) {
+        expect(
+          loadServerConfigResult({
+            ...validEnvironment,
+            APP_ENV: environment,
+            [seam]: live,
+          }),
+          `${seam} in ${environment}`,
+        ).toContain(seam);
+      }
+    });
+  }
+
   it('defaults safety eligibility to the source that denies everything', () => {
     // Message retention duration and post-block history visibility are both
     // undecided, so messaging in a deployed environment refuses to carry a

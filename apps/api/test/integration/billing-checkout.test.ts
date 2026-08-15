@@ -568,6 +568,55 @@ describe('checkout with no approved payment provider', () => {
   });
 });
 
+/**
+ * One person's idempotency key is not another's.
+ *
+ * The key is a caller-chosen string, so two people will eventually send the
+ * same one — a client library that seeds from a timestamp, a retry helper with
+ * a fixed prefix, or somebody trying it deliberately. If the identity were the
+ * key alone, the second person's purchase would resolve to the first person's
+ * operation: they would be shown a payment that is not theirs, and the charge
+ * they meant to make would never happen.
+ */
+describe('whose purchase a key belongs to', () => {
+  it('gives two people sending one key two separate purchases', async () => {
+    const offerId = await sellableOffer(
+      live.runtime,
+      'shared@velora.test',
+      'sharedkey',
+      'sharedkey',
+    );
+    const first = await consumer(live.runtime, 'sharedone@velora.test');
+    const second = await consumer(live.runtime, 'sharedtwo@velora.test');
+    const collidingKey = 'checkout-key-collide';
+
+    const opened = await startCheckout(first, offerId, collidingKey);
+    const other = await startCheckout(second, offerId, collidingKey);
+    expect(opened.status).toBe(201);
+    expect(other.status).toBe(201);
+
+    const bodies = (await Promise.all([
+      opened.json(),
+      other.json(),
+    ])) as CheckoutBody[];
+    // Two operations, not one answered twice.
+    expect(new Set(bodies.map((body) => body.payment.id)).size).toBe(2);
+    expect(await paymentCount()).toBe('2');
+    // And each is answered with a payment link of its own, because each is a
+    // purchase that has not been made yet.
+    expect(
+      bodies.filter((body) => body.redirectUrl !== undefined),
+    ).toHaveLength(2);
+
+    // And the two operations belong to two different people, which is the
+    // property the key alone could never have carried.
+    const owners = await rowsOf<{ consumer_id: string }>(
+      database.sql`select distinct consumer_id::text as consumer_id from billing_payments`,
+    );
+    expect(owners).toHaveLength(2);
+  });
+});
+
 describe('establishing one purchase identity', () => {
   /**
    * The provider key is derived from the purchase identity, and the column that

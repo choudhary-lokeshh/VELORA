@@ -1643,6 +1643,107 @@ describe('the database enforces the reversal invariants', () => {
   });
 });
 
+/**
+ * The operator's view of the platform's money.
+ *
+ * It is the one screen that reads across every consumer and every creator at
+ * once, which makes it the one screen where a leak is not one person's data but
+ * everybody's. Two things are asserted: who may see it, and that what it
+ * returns cannot identify anybody even to somebody entitled to read it.
+ */
+describe('what an operator may see of the platform', () => {
+  const readState = async (actor: Session | undefined) =>
+    actor === undefined
+      ? handle(new Request('http://api.test/v1/admin/billing/state'))
+      : handle(signed('/v1/admin/billing/state', actor, testAdminOrigin));
+
+  it('answers nobody who has not proved a phishing-resistant factor', async () => {
+    const { offerId } = await sellable('opsee@velora.test', 'opseeing');
+    const consumer = await consumerSession('opseebuyer@velora.test');
+
+    // No session at all.
+    expect((await readState(undefined)).status).toBe(401);
+    // A consumer session, which is not an operator however valid it is.
+    expect(
+      (
+        await handle(
+          signed('/v1/admin/billing/state', consumer, testConsumerOrigin),
+        )
+      ).status,
+    ).not.toBe(200);
+    // An operator who signed in with one factor. ADR-0017 requires a recent
+    // phishing-resistant assurance for privileged reads, and this is one.
+    expect((await readState(await adminSession('single_factor'))).status).toBe(
+      403,
+    );
+    // An operator whose step-up has gone stale.
+    const stale = await adminSession(
+      'phishing_resistant',
+      new Date(Date.now() - 86_400_000),
+    );
+    expect((await readState(stale)).status).toBe(403);
+    void offerId;
+  });
+
+  it('reports counts and totals and never names anybody', async () => {
+    const { offerId } = await sellable('opsees@velora.test', 'opseesee');
+    const bought = await settledPurchase({
+      buyer: 'opseesbuyer@velora.test',
+      key: 'reversal-key-opsees',
+      offerId,
+    });
+    const operator = await adminSession();
+    await requestRefund(
+      operator,
+      {
+        amountMinor: '500',
+        currency: 'USD',
+        paymentId: bought.paymentId,
+        reasonCode: 'duplicate_charge',
+      },
+      'reversal-key-opsees-1',
+    );
+    await drain();
+
+    const response = await readState(operator);
+    expect(response.status).toBe(200);
+    const raw = await response.text();
+
+    // The identifiers that exist in this scenario, none of which an operator
+    // needs in order to know what state the platform's money is in.
+    const [payment] = await rowsOf<{
+      consumer_id: string;
+      provider_idempotency_key: string;
+      provider_reference: string;
+    }>(
+      database.sql`select consumer_id, provider_idempotency_key, provider_reference
+         from billing_payments where id = ${bought.paymentId}`,
+    );
+    const [creator] = await rowsOf<{ creator_id: string }>(
+      database.sql`select creator_id from billing_offers`,
+    );
+    for (const secret of [
+      bought.paymentId,
+      bought.providerReference,
+      payment?.consumer_id ?? '',
+      payment?.provider_idempotency_key ?? '',
+      payment?.provider_reference ?? '',
+      creator?.creator_id ?? '',
+    ]) {
+      if (secret.length === 0) continue;
+      expect(raw, secret).not.toContain(secret);
+    }
+    // What it does carry: states, counts, and per-currency totals.
+    const body = JSON.parse(raw) as {
+      readonly payments: readonly {
+        readonly count: number;
+        readonly state: string;
+      }[];
+    };
+    expect(body.payments).toContainEqual({ count: 1, state: 'succeeded' });
+  });
+});
+
 describe('a deployed environment cannot reverse anything', () => {
   it('refuses when no payment provider and no commercial terms are approved', async () => {
     const { offerId } = await sellable('blocked@velora.test', 'blocking');
