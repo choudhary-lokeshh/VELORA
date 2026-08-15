@@ -57,8 +57,10 @@ const healthy = {
 };
 const logger = silentLogger();
 const config = testServerConfig({
+  BILLING_COMMERCE_ELIGIBILITY: 'local-test',
   BILLING_COMMERCE_POLICY: 'local-test',
   BILLING_PAYMENT_PROVIDER: 'local-test',
+  BILLING_TAX_AUTHORITY: 'local-test',
 });
 
 const auth = createAuthRuntime({

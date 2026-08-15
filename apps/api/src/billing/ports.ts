@@ -23,6 +23,21 @@ export interface CommercialCreatorPort {
     readonly creatorId: string;
     readonly executor: Executor;
   }): Promise<boolean>;
+  /**
+   * Which country this creator operates from, or nothing when Velora does not
+   * know.
+   *
+   * Asked of CREATORS rather than derived here, because "where is this creator"
+   * is not BILLING's fact to hold and reaching into `creators_` or `users_` to
+   * answer it would be the boundary violation this port exists to prevent. An
+   * absent answer refuses: a sale from a country nobody approved is exactly
+   * what the eligibility gate is for.
+   */
+  operatingCountryFor(input: {
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<string | undefined>;
 }
 
 /**
@@ -61,7 +76,12 @@ export interface CommercialConsumerPort {
     readonly now: Date;
     readonly userId: string;
   }): Promise<
-    | { readonly adultAssurance: string; readonly inGoodStanding: boolean }
+    | {
+        readonly adultAssurance: string;
+        readonly inGoodStanding: boolean;
+        /** Where this person told Velora they are. Absent refuses. */
+        readonly region: string | undefined;
+      }
     | undefined
   >;
 }

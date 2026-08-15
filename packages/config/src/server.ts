@@ -81,6 +81,21 @@ export const localTestPaymentProvider = 'local-test';
  * Either alone is enough to stop a payout, and a deployed environment holds
  * both.
  */
+/**
+ * The country and tax authorities a sale has to pass.
+ *
+ * Separate from the commerce policy because they answer different questions to
+ * different owners. Commercial terms decide what Velora may charge; these
+ * decide whether it may charge anybody in this pairing of countries at all, and
+ * what a sale owes a government. A platform with published prices and no launch
+ * country would sell everywhere, quietly, the first time somebody with an
+ * unexpected address completed a checkout.
+ */
+export const unavailableCommerceEligibility = 'unavailable';
+export const localTestCommerceEligibility = 'local-test';
+export const unavailableTaxAuthority = 'unavailable';
+export const localTestTaxAuthority = 'local-test';
+
 export const unavailablePayoutProvider = 'unavailable';
 export const localTestPayoutProvider = 'local-test';
 export const unpublishedPayoutPolicy = 'unpublished';
@@ -240,12 +255,18 @@ export const serverConfigSchema = z
       .enum([localRecoveryDelivery])
       .default(localRecoveryDelivery),
     AUTH_TOKEN_ISSUER: z.url().default('https://auth.velora.invalid'),
+    BILLING_COMMERCE_ELIGIBILITY: z
+      .enum([unavailableCommerceEligibility, localTestCommerceEligibility])
+      .default(unavailableCommerceEligibility),
     BILLING_COMMERCE_POLICY: z
       .enum([unpublishedCommercePolicy, localTestCommercePolicy])
       .default(unpublishedCommercePolicy),
     BILLING_PAYMENT_PROVIDER: z
       .enum([unavailablePaymentProvider, localTestPaymentProvider])
       .default(unavailablePaymentProvider),
+    BILLING_TAX_AUTHORITY: z
+      .enum([unavailableTaxAuthority, localTestTaxAuthority])
+      .default(unavailableTaxAuthority),
     DATABASE_URL: postgresUrlSchema,
     EPHEMERAL_REDIS_URL: redisUrlSchema,
     HOST: z.string().min(1).optional(),
@@ -305,6 +326,22 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `BILLING_COMMERCE_POLICY is not usable in ${config.APP_ENV}: platform fee, revenue share, currencies, price bounds, billing intervals, refund and cancellation terms are all undecided; see DECISIONS_REQUIRED`,
         path: ['BILLING_COMMERCE_POLICY'],
+      });
+    }
+    if (
+      config.BILLING_COMMERCE_ELIGIBILITY !== unavailableCommerceEligibility
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `BILLING_COMMERCE_ELIGIBILITY is not usable in ${config.APP_ENV}: no launch country, no creator country, and no country-currency pairing is approved; see the market entry gates and DECISIONS_REQUIRED`,
+        path: ['BILLING_COMMERCE_ELIGIBILITY'],
+      });
+    }
+    if (config.BILLING_TAX_AUTHORITY !== unavailableTaxAuthority) {
+      context.addIssue({
+        code: 'custom',
+        message: `BILLING_TAX_AUTHORITY is not usable in ${config.APP_ENV}: no tax engine, registration, merchant-of-record position, or remittance process is approved, and an assumed zero is an unremitted liability nobody decided to accrue; see DECISIONS_REQUIRED`,
+        path: ['BILLING_TAX_AUTHORITY'],
       });
     }
     if (config.BILLING_PAYMENT_PROVIDER !== unavailablePaymentProvider) {
@@ -413,7 +450,9 @@ export function redactServerConfig(config: ServerConfig) {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
     adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
+    commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
+    taxAuthority: config.BILLING_TAX_AUTHORITY,
     paymentProvider: config.BILLING_PAYMENT_PROVIDER,
     payoutPolicy: config.PAYOUTS_POLICY,
     payoutProvider: config.PAYOUTS_PROVIDER,

@@ -24,6 +24,8 @@ export interface CreatorAdultEligibilityPort {
     | {
         readonly adultAssurance: AdultAssuranceLevel;
         readonly inGoodStanding: boolean;
+        /** Where this person told Velora they are. Absent is a real state. */
+        readonly region: string | undefined;
         readonly userId: string;
       }
     | undefined

@@ -50,6 +50,8 @@ export class PaymentRepository {
       readonly priceId: string;
       readonly provider: string;
       readonly providerIdempotencyKey: string;
+      readonly taxAuthority: string;
+      readonly taxMinor: bigint;
     },
   ): Promise<PaymentRow | undefined> {
     const inserted = await executor
@@ -67,6 +69,8 @@ export class PaymentRepository {
         provider: input.provider,
         providerIdempotencyKey: input.providerIdempotencyKey,
         state: 'created',
+        taxAuthority: input.taxAuthority,
+        taxMinor: input.taxMinor,
         updatedAt: input.now,
         version: 1,
       })

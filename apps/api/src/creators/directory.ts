@@ -53,9 +53,60 @@ export interface CreatorDirectoryPort {
     readonly creatorIds: readonly string[];
     readonly executor: Executor;
   }): Promise<ReadonlyMap<string, string>>;
+
+  /**
+   * Which country this creator operates from, or nothing.
+   *
+   * CREATORS holds no country of its own: a creator is a person, and where that
+   * person is, is USERS' fact. This asks USERS through its published standing
+   * contract rather than reading `users_`, and answers nothing when the person
+   * has not told Velora — which is a state commerce eligibility must refuse
+   * rather than fill in.
+   */
+  operatingCountryFor(input: {
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<string | undefined>;
 }
 
 export class CreatorDirectory implements CreatorDirectoryPort {
+  /**
+   * The standing contract is optional so a composition that has no use for the
+   * country question — the worker, which serves no creator route — is not
+   * forced to build one. Absent, the answer is absent, which refuses.
+   */
+  constructor(
+    private readonly standing?: {
+      standingForAuthAccount(input: {
+        readonly authAccountId: string;
+        readonly executor: Executor;
+        readonly now: Date;
+      }): Promise<{ readonly region: string | undefined } | undefined>;
+    },
+  ) {}
+
+  async operatingCountryFor(input: {
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<string | undefined> {
+    if (this.standing === undefined) return undefined;
+    const rows = await input.executor
+      .select({ authAccountId: creatorAccounts.authAccountId })
+      .from(creatorAccounts)
+      .where(eq(creatorAccounts.id, input.creatorId))
+      .limit(1);
+    const authAccountId = rows[0]?.authAccountId;
+    if (authAccountId === undefined) return undefined;
+    const standing = await this.standing.standingForAuthAccount({
+      authAccountId,
+      executor: input.executor,
+      now: input.now,
+    });
+    return standing?.region;
+  }
+
   async publishedCreatorFor(input: {
     readonly executor: Executor;
     readonly handle: string;

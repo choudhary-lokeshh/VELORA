@@ -7,7 +7,6 @@ import type { OfferCursor } from './cursor.js';
 import {
   creatorPayableAccount,
   platformRevenueAccount,
-  taxPayableAccount,
 } from './revenue-entries.js';
 import { openDisputeStates } from './reversal-policy.js';
 import {
@@ -215,18 +214,32 @@ export class EarningsRepository {
       input.currency,
       platformRevenueAccount(input.creatorId),
     );
-    const taxLedger = await this.journal.balanceOf(
-      executor,
-      input.currency,
-      taxPayableAccount(input.creatorId),
-    );
+    // Tax is read from the assessments snapshotted on the sales rather than
+    // from a ledger position, and nothing posts one. Posting tax would require
+    // deciding how a reversal apportions it back, which is unresolved tax
+    // treatment rather than arithmetic — and a book carrying a number nobody
+    // has decided how to unwind is worse than one carrying none. The evidence
+    // is on the payment, frozen with the rest of what the purchase meant.
+    const [assessed] = await executor
+      .select({
+        total: sql<string>`coalesce(sum(${billingPayments.taxMinor}), 0)::text`,
+      })
+      .from(billingPayments)
+      .innerJoin(billingOffers, eq(billingPayments.offerId, billingOffers.id))
+      .where(
+        and(
+          eq(billingOffers.creatorId, input.creatorId),
+          eq(billingPayments.currency, input.currency),
+          eq(billingPayments.state, 'succeeded'),
+        ),
+      );
     const payable = money(-ledger.amountMinor, input.currency);
     const gross = money(BigInt(captured?.gross ?? '0'), input.currency);
     const reversedTotal = money(
       BigInt(refunded?.total ?? '0') + BigInt(chargedBack?.total ?? '0'),
       input.currency,
     );
-    const tax = money(-taxLedger.amountMinor, input.currency);
+    const tax = money(BigInt(assessed?.total ?? '0'), input.currency);
 
     return {
       disputed: money(BigInt(disputed?.total ?? '0'), input.currency),

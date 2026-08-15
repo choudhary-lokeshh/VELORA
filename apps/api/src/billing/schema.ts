@@ -308,6 +308,19 @@ export const billingPayments = pgTable(
     /** The provider's identifier, once it has given one. */
     providerReference: text('provider_reference'),
     state: text('state').notNull().$type<PaymentState>(),
+    /**
+     * Which authority assessed the tax on this sale, and what it said.
+     *
+     * A snapshot, frozen with the rest of what the purchase meant. Recomputing
+     * a historical sale against today's rates would silently rewrite what
+     * somebody was charged, and a rate change is exactly what makes that
+     * happen. The pair is set together or not at all: an amount with no
+     * authority is a number nobody stands behind, and an authority with no
+     * amount is a claim with no content. Zero with an authority is a real
+     * answer; absent is the honest state of a platform with no tax engine.
+     */
+    taxAuthority: text('tax_authority'),
+    taxMinor: bigint('tax_minor', { mode: 'bigint' }),
     updatedAt: timestamptz('updated_at').notNull(),
     version: integer('version').notNull().default(1),
   },
@@ -397,6 +410,17 @@ export const billingPayments = pgTable(
       sql`${table.providerReference} is null or ${lengthBetween(table.providerReference, 1, maximumProviderReferenceLength)}`,
     ),
     check('billing_payments_version_check', sql`${table.version} >= 1`),
+    check(
+      'billing_payments_tax_shape_check',
+      nullablePairing(table.taxMinor, table.taxAuthority),
+    ),
+    // Tax cannot be negative and cannot exceed what was charged. Both are
+    // arithmetic bounds rather than tax opinions: an assessment outside them is
+    // a malfunction, not a jurisdiction.
+    check(
+      'billing_payments_tax_range_check',
+      sql`${table.taxMinor} is null or (${table.taxMinor} >= 0 and ${table.taxMinor} <= ${table.amountMinor})`,
+    ),
   ],
 );
 

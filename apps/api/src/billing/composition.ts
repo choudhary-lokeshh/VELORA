@@ -1,7 +1,11 @@
 import {
+  localTestCommerceEligibility,
   localTestCommercePolicy,
   localTestPaymentProvider,
+  localTestTaxAuthority,
+  unavailableCommerceEligibility,
   unavailablePaymentProvider,
+  unavailableTaxAuthority,
   unpublishedCommercePolicy,
   type ServerConfig,
 } from '@velora/config/server';
@@ -15,6 +19,11 @@ import { JournalStore } from '../money/journal.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import { CheckoutRoutes } from './checkout-routes.js';
 import { CheckoutService } from './checkout-service.js';
+import {
+  LocalTestCommerceEligibility,
+  UnavailableCommerceEligibility,
+  type CommerceEligibility,
+} from './commerce-eligibility.js';
 import {
   LocalTestCommercePolicy,
   UnpublishedCommercePolicy,
@@ -33,6 +42,11 @@ import { PaymentRepository } from './payment-repository.js';
 import { RefundRepository } from './refund-repository.js';
 import { RefundService } from './refund-service.js';
 import { SubscriptionRepository } from './subscription-repository.js';
+import {
+  LocalTestTaxAuthority,
+  UnavailableTaxAuthority,
+  type TaxAuthorityPort,
+} from './tax.js';
 import { WebhookRoutes } from './webhook-routes.js';
 import { WebhookService } from './webhook-service.js';
 import { billingJournalPrefix } from './policy.js';
@@ -73,8 +87,12 @@ export interface BillingRuntime {
   readonly offerRoutes: OfferRoutes;
   readonly offers: OfferService;
   readonly paymentRepository: PaymentRepository;
+  /** The country and capability authority. `unavailable` in every deployed environment. */
+  readonly eligibility: CommerceEligibility;
   /** The commercial terms in force. `unpublished` in every deployed environment. */
   readonly policy: CommercePolicy;
+  /** The tax authority. `unavailable` in every deployed environment. */
+  readonly tax: TaxAuthorityPort;
   /** The payment adapter. `unavailable` in every deployed environment. */
   readonly provider: PaymentProviderPort;
   readonly refundRepository: RefundRepository;
@@ -95,6 +113,18 @@ export interface BillingRuntime {
 const commercePolicies: Readonly<Record<string, () => CommercePolicy>> = {
   [localTestCommercePolicy]: () => new LocalTestCommercePolicy(),
   [unpublishedCommercePolicy]: () => new UnpublishedCommercePolicy(),
+};
+
+const commerceEligibilities: Readonly<
+  Record<string, () => CommerceEligibility>
+> = {
+  [localTestCommerceEligibility]: () => new LocalTestCommerceEligibility(),
+  [unavailableCommerceEligibility]: () => new UnavailableCommerceEligibility(),
+};
+
+const taxAuthorities: Readonly<Record<string, () => TaxAuthorityPort>> = {
+  [localTestTaxAuthority]: () => new LocalTestTaxAuthority(),
+  [unavailableTaxAuthority]: () => new UnavailableTaxAuthority(),
 };
 
 const paymentProviders: Readonly<Record<string, () => PaymentProviderPort>> = {
@@ -131,8 +161,23 @@ export function createBillingRuntime(input: {
       `Unknown payment provider: ${input.config.BILLING_PAYMENT_PROVIDER}`,
     );
   }
+  const buildEligibility =
+    commerceEligibilities[input.config.BILLING_COMMERCE_ELIGIBILITY];
+  if (buildEligibility === undefined) {
+    throw new Error(
+      `Unknown commerce eligibility: ${input.config.BILLING_COMMERCE_ELIGIBILITY}`,
+    );
+  }
+  const buildTax = taxAuthorities[input.config.BILLING_TAX_AUTHORITY];
+  if (buildTax === undefined) {
+    throw new Error(
+      `Unknown tax authority: ${input.config.BILLING_TAX_AUTHORITY}`,
+    );
+  }
   const policy = buildPolicy();
   const provider = buildProvider();
+  const eligibility = buildEligibility();
+  const tax = buildTax();
   const offerRepository = new OfferRepository(input.database);
   const paymentRepository = new PaymentRepository(input.database);
   const eventRepository = new ProviderEventRepository(input.database);
@@ -192,7 +237,9 @@ export function createBillingRuntime(input: {
   });
   const checkout = new CheckoutService({
     consumers: input.consumers,
+    creators: input.creators,
     disputes: disputeRepository,
+    eligibility,
     now,
     offers: offerRepository,
     payments: paymentRepository,
@@ -203,6 +250,7 @@ export function createBillingRuntime(input: {
     // browser origin is that place; where none is configured, checkout refuses
     // rather than inventing a host.
     returnOrigin: input.config.AUTH_BROWSER_ORIGINS_CONSUMER_WEB[0],
+    tax,
   });
   const offers = new OfferService({
     creators: input.creators,
@@ -222,6 +270,7 @@ export function createBillingRuntime(input: {
     disputeRepository,
     disputes,
     earnings,
+    eligibility,
     earningsRoutes: new EarningsRoutes({
       creatorContext: input.creatorContext,
       earnings,
@@ -242,6 +291,7 @@ export function createBillingRuntime(input: {
     refundRepository,
     refunds,
     subscriptionRepository,
+    tax,
     webhookRoutes: new WebhookRoutes({ service: webhooks }),
     webhooks,
   };

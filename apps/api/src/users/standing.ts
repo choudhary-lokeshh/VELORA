@@ -62,6 +62,16 @@ export interface ConsumerAdultStanding {
    * a discoverable consumer profile has done nothing wrong.
    */
   readonly inGoodStanding: boolean;
+  /**
+   * Where this person told Velora they are, or nothing when they have not.
+   *
+   * The account's own region rather than an inferred one: no geolocation, no
+   * address, no card country. It crosses this boundary because commerce
+   * eligibility is a question about countries and USERS owns the only answer
+   * Velora holds — and it is optional because an absent region is a real state
+   * that has to refuse rather than default.
+   */
+  readonly region: string | undefined;
   /** The consumer account identifier, for a caller that needs to reference it. */
   readonly userId: string;
 }
@@ -150,6 +160,7 @@ export class ConsumerAdultStandingDirectory implements ConsumerAdultStandingPort
     return {
       adultAssurance: adultAssuranceLevelOf(latest, now),
       inGoodStanding: operableStatuses.has(account.status),
+      region: account.region ?? undefined,
       userId: account.id,
     };
   }

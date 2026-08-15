@@ -57,7 +57,7 @@ export function createCreatorsRuntime(input: {
   });
   return {
     creatorContext,
-    directory: new CreatorDirectory(),
+    directory: new CreatorDirectory(input.eligibility),
     profileRepository,
     profileRoutes: new CreatorProfileRoutes({ creatorContext, profiles }),
     profiles,

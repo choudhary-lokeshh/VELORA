@@ -89,8 +89,10 @@ function applicationFor(overrides: Readonly<Record<string, string>>) {
 }
 
 const live = applicationFor({
+  BILLING_COMMERCE_ELIGIBILITY: 'local-test',
   BILLING_COMMERCE_POLICY: 'local-test',
   BILLING_PAYMENT_PROVIDER: 'local-test',
+  BILLING_TAX_AUTHORITY: 'local-test',
 });
 const withoutProvider = applicationFor({
   BILLING_COMMERCE_POLICY: 'local-test',
@@ -680,5 +682,83 @@ describe('the database enforces the payment invariants', () => {
         ),
       ),
     ).toBe(true);
+  });
+});
+
+describe('where Velora may transact at all', () => {
+  it('refuses a country pairing no authority approved, and writes nothing', async () => {
+    const offerId = await sellableOffer(
+      live.runtime,
+      'geogate@velora.test',
+      'geogate',
+      'geogating',
+    );
+    // A consumer whose region the test authority does not sell into. The gate
+    // is about countries rather than about this person: nothing is wrong with
+    // them, and the platform has simply not been approved to sell there.
+    const buyer = await session(
+      live.runtime,
+      'geobuyer@velora.test',
+      'consumer_web',
+    );
+    await handle(
+      signed('/v1/users', buyer, testConsumerOrigin, { method: 'POST' }),
+    );
+    await handle(
+      signed(
+        '/v1/users/me/onboarding/adult-declaration',
+        buyer,
+        testConsumerOrigin,
+        { body: { declaresAdult: true, region: 'BR' }, method: 'POST' },
+      ),
+    );
+
+    const response = await startCheckout(
+      buyer,
+      offerId,
+      'checkout-key-geogate',
+    );
+    expect(response.status).toBe(403);
+    // No operation, and therefore no tax engine was asked about a sale that was
+    // never going to happen.
+    expect(await paymentCount()).toBe('0');
+  });
+
+  it('snapshots the tax assessment and freezes it', async () => {
+    const offerId = await sellableOffer(
+      live.runtime,
+      'taxsnap@velora.test',
+      'taxsnap',
+      'taxsnapping',
+    );
+    const buyer = await consumer(live.runtime, 'taxsnapbuyer@velora.test');
+    const response = await startCheckout(
+      buyer,
+      offerId,
+      'checkout-key-taxsnap',
+    );
+    expect(response.status).toBe(201);
+
+    const [payment] = await rowsOf<{
+      tax_authority: string;
+      tax_minor: string;
+    }>(
+      database.sql`select tax_authority, tax_minor::text as tax_minor from billing_payments`,
+    );
+    // A zero that names who said it. An authority with no amount, or an amount
+    // with no authority, is refused by a CHECK rather than stored as half an
+    // answer.
+    expect(payment).toEqual({ tax_authority: 'local-test', tax_minor: '0' });
+
+    for (const statement of [
+      database.sql`update billing_payments set tax_minor = 100`,
+      database.sql`update billing_payments set tax_authority = 'somebody-else'`,
+      database.sql`update billing_payments set tax_authority = null, tax_minor = null`,
+    ]) {
+      // Recomputing a historical sale against today's rates would silently
+      // rewrite what somebody was charged, and a rate change is exactly what
+      // makes somebody want to.
+      expect(await refused(async () => execute(statement))).toBe(true);
+    }
   });
 });

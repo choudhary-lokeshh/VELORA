@@ -1,14 +1,16 @@
 import type { Executor } from '../database/executor.js';
 import { isCurrencyCode } from '@velora/validation';
 
-import { money } from '../money/money.js';
+import { money, type Money } from '../money/money.js';
 import type { CommercePolicy } from './commerce-policy.js';
 import type { BillingInterval } from './offer-policy.js';
 import type { OfferRepository } from './offer-repository.js';
+import type { CommerceEligibility } from './commerce-eligibility.js';
 import type { DisputeRepository } from './dispute-repository.js';
 import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import type { PaymentProviderPort } from './provider.js';
-import type { CommercialConsumerPort } from './ports.js';
+import type { CommercialConsumerPort, CommercialCreatorPort } from './ports.js';
+import type { TaxAssessment, TaxAuthorityPort } from './tax.js';
 
 /**
  * Turning an intention to buy into a durable operation, and only then asking a
@@ -36,6 +38,8 @@ import type { CommercialConsumerPort } from './ports.js';
 
 export type CheckoutRefusal =
   | 'conflict'
+  /** A country, currency, tax, or capability gate is shut for this pairing. */
+  | 'not_available_here'
   | 'not_eligible'
   | 'provider_unavailable'
   | 'surface_not_permitted'
@@ -62,6 +66,9 @@ export type CheckoutOutcome =
 
 export interface CheckoutServiceDependencies {
   readonly consumers: CommercialConsumerPort;
+  /** The country, currency, and capability authority. Refuses everything in production. */
+  readonly eligibility: CommerceEligibility;
+  readonly creators: CommercialCreatorPort;
   readonly disputes: DisputeRepository;
   readonly now: () => Date;
   readonly offers: OfferRepository;
@@ -70,6 +77,8 @@ export interface CheckoutServiceDependencies {
   readonly provider: PaymentProviderPort;
   /** Where the provider returns a consumer. Consumer Web, from configuration. */
   readonly returnOrigin: string | undefined;
+  /** The tax authority. Assesses nothing in production, which blocks commerce. */
+  readonly tax: TaxAuthorityPort;
 }
 
 function refused(reason: CheckoutRefusal): CheckoutOutcome {
@@ -108,11 +117,62 @@ export class CheckoutService {
     }
     const now = this.dependencies.now();
 
-    const prepared = await payments.transaction(async (executor) =>
-      this.prepare(executor, { ...input, now }),
-    );
-    if (prepared.kind === 'refused') return prepared;
-    const operation = prepared.payment;
+    // A replay is answered before anything else happens.
+    //
+    // It comes first for two reasons. A repeated submission must resolve to the
+    // operation it already created whatever the gates say today — a country
+    // withdrawn after somebody started paying does not un-start their payment.
+    // And a replay must not reach a tax engine: asking somebody else's service
+    // about a sale that was already assessed would bill Velora for the question
+    // and put a duplicate in their records.
+    const replay = await payments.findByIdempotency(payments.transactionless, {
+      consumerId: input.consumerId,
+      idempotencyKey: input.idempotencyKey,
+      offerId: input.offerId,
+    });
+    if (replay !== undefined && replay.currency !== input.currency) {
+      // The same key against a different currency is not a replay; it is a
+      // different purchase wearing a used key, and answering it with the old
+      // operation would charge for the wrong thing.
+      return refused('conflict');
+    }
+
+    let operation = replay;
+    let interval: BillingInterval | undefined;
+    if (operation === undefined) {
+      // Everything the eligibility gate and the tax authority need, read before
+      // the write transaction opens. Both are re-checked inside it against the
+      // same values, so a country, a price, or a policy that changed in between
+      // refuses rather than being charged against stale facts.
+      const context = await payments.transaction(async (executor) =>
+        this.context(executor, { ...input, now }),
+      );
+      if (context.kind === 'refused') return context;
+
+      let assessment;
+      try {
+        // Outside every transaction. A tax engine is somebody else's network
+        // service, and holding a PostgreSQL transaction across one is forbidden
+        // for the same reason holding one across a payment provider is.
+        assessment = await this.dependencies.tax.assess({
+          consumerCountry: context.consumerCountry,
+          creatorCountry: context.creatorCountry,
+          gross: context.gross,
+        });
+      } catch {
+        return refused('not_available_here');
+      }
+      // No authority, no sale. An assumed zero is how a platform accrues an
+      // unremitted tax liability without anybody deciding to.
+      if (assessment === undefined) return refused('not_available_here');
+
+      const prepared = await payments.transaction(async (executor) =>
+        this.prepare(executor, { ...input, assessment, now }),
+      );
+      if (prepared.kind === 'refused') return prepared;
+      operation = prepared.payment;
+      interval = prepared.interval;
+    }
 
     // Already past the provider call. A replay answers with current state and
     // asks for nothing new.
@@ -160,11 +220,9 @@ export class CheckoutService {
         cancelUrl: `${this.dependencies.returnOrigin}/checkout/cancelled?payment=${operation.id}`,
         consumerReference: operation.consumerId,
         correlationId: input.correlationId,
-        ...(prepared.interval === undefined
-          ? {}
-          : { interval: prepared.interval }),
+        ...(interval === undefined ? {} : { interval }),
         idempotencyKey: operation.providerIdempotencyKey,
-        mode: prepared.interval === undefined ? 'payment' : 'subscription',
+        mode: interval === undefined ? 'payment' : 'subscription',
         operationReference: operation.id,
         returnUrl: `${this.dependencies.returnOrigin}/checkout/return?payment=${operation.id}`,
       });
@@ -216,6 +274,76 @@ export class CheckoutService {
   }
 
   /**
+   * What the tax authority has to be asked about, read before it is asked.
+   *
+   * A short read rather than a held transaction: the eligibility gate and the
+   * assessment both need the amount, the currency, and both countries, and a
+   * transaction held open across a tax engine's network call is exactly what
+   * `docs/engineering/03-jobs-idempotency-concurrency.md` forbids. Everything
+   * read here is read again inside the write, so this is an input to a question
+   * rather than a decision.
+   */
+  private async context(
+    executor: Executor,
+    input: {
+      readonly consumerId: string;
+      readonly currency: string;
+      readonly idempotencyKey: string;
+      readonly now: Date;
+      readonly offerId: string;
+    },
+  ): Promise<
+    | { readonly kind: 'refused'; readonly reason: CheckoutRefusal }
+    | {
+        readonly consumerCountry: string | undefined;
+        readonly creatorCountry: string | undefined;
+        readonly gross: Money;
+        readonly kind: 'context';
+      }
+  > {
+    const { consumers, creators, offers } = this.dependencies;
+    const standing = await consumers.standingForUser({
+      executor,
+      now: input.now,
+      userId: input.consumerId,
+    });
+    if (standing?.inGoodStanding !== true) {
+      return { kind: 'refused', reason: 'not_eligible' };
+    }
+    const offer = await offers.findOfferForPurchase(executor, input.offerId);
+    if (offer?.state !== 'active') {
+      return { kind: 'refused', reason: 'not_eligible' };
+    }
+    const prices = await offers.livePricesFor(executor, offer.id);
+    const price = prices.find((row) => row.currency === input.currency);
+    if (price === undefined) return { kind: 'refused', reason: 'not_eligible' };
+    if (!isCurrencyCode(price.currency)) {
+      return { kind: 'refused', reason: 'unavailable' };
+    }
+    const creatorCountry = await creators.operatingCountryFor({
+      creatorId: offer.creatorId,
+      executor,
+      now: input.now,
+    });
+    // The gate first, so a pairing nobody approved never reaches a tax engine
+    // and never appears in anybody's assessment logs.
+    const verdict = this.dependencies.eligibility.evaluate({
+      consumerCountry: standing.region,
+      creatorCountry,
+      currency: price.currency,
+    });
+    if (verdict.kind === 'refused') {
+      return { kind: 'refused', reason: 'not_available_here' };
+    }
+    return {
+      consumerCountry: standing.region,
+      creatorCountry,
+      gross: money(price.amountMinor, price.currency),
+      kind: 'context',
+    };
+  }
+
+  /**
    * The transactional half: eligibility, the price snapshot, and the operation.
    *
    * Everything it reads, it reads inside the transaction that writes, so a
@@ -225,6 +353,7 @@ export class CheckoutService {
   private async prepare(
     executor: Executor,
     input: {
+      readonly assessment: TaxAssessment;
       readonly consumerId: string;
       readonly correlationId: string;
       readonly currency: string;
@@ -298,6 +427,32 @@ export class CheckoutService {
       return { kind: 'refused', reason: 'unavailable' };
     }
 
+    // The gate, re-evaluated inside the transaction that writes. A launch
+    // country withdrawn, a currency pairing closed, or a creator who moved
+    // between the first read and this one refuses here rather than being
+    // charged against an answer that was true a moment ago.
+    const verdict = this.dependencies.eligibility.evaluate({
+      consumerCountry: standing.region,
+      creatorCountry: await this.dependencies.creators.operatingCountryFor({
+        creatorId: offer.creatorId,
+        executor,
+        now: input.now,
+      }),
+      currency: price.currency,
+    });
+    if (verdict.kind === 'refused') {
+      return { kind: 'refused', reason: 'not_available_here' };
+    }
+    // The assessment was made against this exact amount and currency. If either
+    // moved while the authority was being asked, the answer describes a
+    // different sale.
+    if (
+      input.assessment.amount.currency !== price.currency ||
+      input.assessment.amount.amountMinor > price.amountMinor
+    ) {
+      return { kind: 'refused', reason: 'conflict' };
+    }
+
     const inserted = await payments.insertOperation(executor, {
       amountMinor: price.amountMinor,
       consumerId: input.consumerId,
@@ -316,6 +471,8 @@ export class CheckoutService {
           0,
           200,
         ),
+      taxAuthority: input.assessment.authority,
+      taxMinor: input.assessment.amount.amountMinor,
     });
     if (inserted === undefined) {
       // Another request for the same key won between the read above and this
