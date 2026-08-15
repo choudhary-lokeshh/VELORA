@@ -613,7 +613,7 @@ describe('browser session cookie policy', () => {
     expect(readCookie(null, 'missing')).toBeUndefined();
   });
 
-  it('refuses to guess when more than one audience cookie is presented', () => {
+  it('refuses to guess when more than one audience cookie is presented and nothing says which', () => {
     expect(
       presentedSessionCookie(
         '__Host-velora_consumer_web_session=v1.a; __Host-velora_platform_admin_session=v1.b',
@@ -796,5 +796,72 @@ describe('local identity adapter containment', () => {
       );
     });
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('which session cookie a request is using', () => {
+  const allowedOrigins = {
+    consumer_web: ['https://consumer.velora.test'],
+    creator_studio: ['https://studio.velora.test'],
+    platform_admin: ['https://admin.velora.test'],
+  } as const;
+  const both = [
+    '__Host-velora_consumer_web_session=v1.consumer',
+    '__Host-velora_creator_studio_session=v1.creator',
+  ].join('; ');
+
+  it('needs no disambiguation when only one cookie is presented', () => {
+    expect(
+      presentedSessionCookie('__Host-velora_consumer_web_session=v1.only'),
+    ).toEqual({ audience: 'consumer_web', token: 'v1.only' });
+  });
+
+  it('uses the cookie belonging to the surface that sent the request', () => {
+    // Two surfaces sharing a host means the browser sends both cookies. The
+    // origin is set by the browser, cannot be forged by page script, and says
+    // which surface this is.
+    expect(
+      presentedSessionCookie(both, {
+        allowedOrigins,
+        origin: 'https://studio.velora.test',
+      }),
+    ).toEqual({ audience: 'creator_studio', token: 'v1.creator' });
+    expect(
+      presentedSessionCookie(both, {
+        allowedOrigins,
+        origin: 'https://consumer.velora.test',
+      }),
+    ).toEqual({ audience: 'consumer_web', token: 'v1.consumer' });
+  });
+
+  it('refuses rather than guessing when nothing identifies the surface', () => {
+    // A foreign origin belongs to no audience, an absent origin identifies
+    // nothing, and no disambiguation at all is the same ambiguity. Every one of
+    // them is refused rather than resolved by preference order.
+    expect(presentedSessionCookie(both)).toBeUndefined();
+    expect(
+      presentedSessionCookie(both, { allowedOrigins, origin: null }),
+    ).toBeUndefined();
+    expect(
+      presentedSessionCookie(both, {
+        allowedOrigins,
+        origin: 'https://evil.test',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('refuses when one origin is configured for two audiences', () => {
+    // A misconfiguration that made two surfaces share an origin would make the
+    // request genuinely ambiguous again, and it fails closed.
+    expect(
+      presentedSessionCookie(both, {
+        allowedOrigins: {
+          consumer_web: ['https://shared.velora.test'],
+          creator_studio: ['https://shared.velora.test'],
+          platform_admin: [],
+        },
+        origin: 'https://shared.velora.test',
+      }),
+    ).toBeUndefined();
   });
 });

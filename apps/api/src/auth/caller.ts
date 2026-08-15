@@ -107,7 +107,10 @@ export class CallerResolver {
    */
   async resolve(request: Request): Promise<ResolvedCaller> {
     const cookieHeader = request.headers.get('cookie');
-    const presented = presentedSessionCookie(cookieHeader);
+    const presented = presentedSessionCookie(cookieHeader, {
+      allowedOrigins: this.dependencies.allowedOrigins,
+      origin: request.headers.get('origin'),
+    });
 
     if (presented !== undefined) {
       const rejection = this.browserVerdict(request, presented.audience, true);

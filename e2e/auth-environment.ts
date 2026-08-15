@@ -22,6 +22,7 @@ const stateFile = resolve(repositoryRoot, 'test-results/auth-environment.json');
 export const authApiPort = 4100;
 export const authApiBaseUrl = `http://127.0.0.1:${String(authApiPort)}`;
 export const consumerWebOrigin = 'http://127.0.0.1:3000';
+export const creatorStudioOrigin = 'http://127.0.0.1:3001';
 
 interface EnvironmentState {
   readonly apiPid: number;
@@ -87,6 +88,12 @@ export async function startAuthEnvironment(): Promise<void> {
       ...process.env,
       APP_ENV: 'test',
       AUTH_BROWSER_ORIGINS_CONSUMER_WEB: consumerWebOrigin,
+      // Creator Studio is a separate audience with its own cookie, so it needs
+      // its own approved origin. Without it AUTH refuses every Studio request
+      // before it reaches a handler, which is the correct production behaviour
+      // and would make the creator journey untestable rather than merely
+      // failing.
+      AUTH_BROWSER_ORIGINS_CREATOR_STUDIO: creatorStudioOrigin,
       DATABASE_URL: databaseUrl,
       EPHEMERAL_REDIS_URL: `${redisUrl}/0`,
       HOST: '127.0.0.1',

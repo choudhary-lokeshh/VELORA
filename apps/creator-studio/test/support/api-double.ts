@@ -41,6 +41,22 @@ export interface CreatorApiDoubleState {
     slug: string;
     version: number;
   }[];
+  invites: {
+    clubId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    redeemedAt?: string;
+    revokedAt?: string;
+  }[];
+  memberships: {
+    clubId: string;
+    grantedAt: string;
+    id: string;
+    revokedAt?: string;
+    source: 'creator_invite' | 'admin_grant' | 'billing';
+    state: 'active' | 'revoked';
+  }[];
   content: {
     id: string;
     lifecycle: 'draft' | 'published' | 'archived';
@@ -99,6 +115,8 @@ export function emptyCreatorState(): CreatorApiDoubleState {
     adultGateReason: undefined,
     clubs: [],
     content: [],
+    invites: [],
+    memberships: [],
     adultGateSatisfied: true,
     outstandingPolicies: [],
     profile: null,
@@ -344,6 +362,34 @@ export function createCreatorApiDouble(
         club.id === moved.id ? moved : club,
       );
       return json(200, { clubs: [clubBody(moved)] });
+    }
+    if (path === '/v1/creator/clubs/invites' && method === 'GET') {
+      return json(200, { invites: state.invites });
+    }
+    if (path === '/v1/creator/clubs/members' && method === 'GET') {
+      return json(200, { memberships: state.memberships });
+    }
+    if (path === '/v1/creator/clubs/members/revocation' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as { membershipId: string };
+      state.memberships = state.memberships.map((entry) =>
+        entry.id === requested.membershipId
+          ? { ...entry, revokedAt: iso(), state: 'revoked' as const }
+          : entry,
+      );
+      return json(200, { memberships: state.memberships });
+    }
+    if (path === '/v1/creator/clubs/invites/revocation' && method === 'POST') {
+      if (state.account.status !== 'active')
+        return error(409, 'STATE_CONFLICT');
+      const requested = body as { inviteId: string };
+      state.invites = state.invites.map((entry) =>
+        entry.id === requested.inviteId
+          ? { ...entry, revokedAt: iso() }
+          : entry,
+      );
+      return json(200, { invites: state.invites });
     }
     if (path === '/v1/creator/clubs/invites' && method === 'POST') {
       if (state.account.status !== 'active')

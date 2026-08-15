@@ -18,6 +18,8 @@ AUTH owns identity/session records and exposes opaque subject ID plus assurance 
 
 ## Session, recovery, and privileged policy
 
+Each browser surface has its own audience-scoped session cookie with its own name, so a browser normally holds at most one and there is nothing to resolve. Two surfaces deployed on one host is the exception — a cookie is scoped to a host and ignores the port, so a browser then sends both. AUTH resolves that by the request's `Origin`, matched against the origins the audience is configured to accept: the browser sets that header, page script cannot forge it, and the selected cookie still passes the same origin check every browser request already passes. Anything that does not resolve to exactly one audience — no origin, a foreign origin, or one origin configured for two audiences — is refused rather than guessed at, because guessing is exactly the audience confusion the separate cookie names exist to prevent.
+
 Exact session lifetimes, cookie policy, Mobile access/refresh token behaviour, refresh reuse response, account-recovery channels/limits, post-recovery revocation, Admin MFA/session/step-up values, privileged recovery, and break-glass semantics are locked by [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md) inside the [ADR-0009](../decisions/ADR-0009-auth-authorization.md) architecture. Implementation reads those values from that authority instead of choosing constants. In code they exist once, in the API's AUTH policy module, and `pnpm auth:policy` fails if that module, the ADR, or any other document disagrees.
 
 ## Implemented persistence

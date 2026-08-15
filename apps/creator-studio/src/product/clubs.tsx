@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 
 import type {
   ApiResult,
+  ClubInviteList,
+  ClubMembershipList,
   CreatorApi,
   CreatorClub,
   CreatorClubList,
@@ -47,6 +49,7 @@ export function ClubsPanel({
   });
   const [message, setMessage] = useState<string | undefined>(undefined);
   const [secret, setSecret] = useState<string | undefined>(undefined);
+  const [open, setOpen] = useState<string | undefined>(undefined);
   const { busy, run } = useSingleFlight();
 
   const act = (work: () => Promise<ApiResult<unknown>>) => {
@@ -114,7 +117,21 @@ export function ClubsPanel({
                   }),
                 );
               }}
-            />
+              onToggleAccess={() => {
+                setOpen(open === club.id ? undefined : club.id);
+              }}
+              open={open === club.id}
+            >
+              {open === club.id ? (
+                <ClubAccess
+                  api={api}
+                  busy={busy}
+                  clubId={club.id}
+                  editable={editable}
+                  onAct={act}
+                />
+              ) : null}
+            </ClubRow>
           ))}
         </ul>
       )}
@@ -194,16 +211,22 @@ function NewClub({
 
 function ClubRow({
   busy,
+  children,
   club,
   editable,
   onInvite,
   onLifecycle,
+  onToggleAccess,
+  open,
 }: {
   readonly busy: boolean;
+  readonly children?: ReactNode;
   readonly club: CreatorClub;
   readonly editable: boolean;
   readonly onInvite: () => void;
   readonly onLifecycle: (lifecycle: 'draft' | 'published' | 'closed') => void;
+  readonly onToggleAccess: () => void;
+  readonly open: boolean;
 }) {
   return (
     <li data-testid={`club-item-${club.id}`}>
@@ -270,6 +293,135 @@ function ClubRow({
           </button>
         </>
       ) : null}
+
+      {club.lifecycle === 'published' ? (
+        <button
+          aria-expanded={open}
+          data-testid={`club-access-${club.id}`}
+          onClick={onToggleAccess}
+          type="button"
+        >
+          {open ? 'Hide access' : 'Manage access'}
+        </button>
+      ) : null}
+      {children}
     </li>
+  );
+}
+
+/**
+ * Who holds access to one club, and the invitations that could create more.
+ *
+ * A creator sees how many people hold access and can withdraw one. They do not
+ * see who those people are: there is no name, no identifier, and no behaviour
+ * here, because subscriber privacy is not a setting a creator turns off.
+ */
+function ClubAccess({
+  api,
+  busy,
+  clubId,
+  editable,
+  onAct,
+}: {
+  readonly api: CreatorApi;
+  readonly busy: boolean;
+  readonly clubId: string;
+  readonly editable: boolean;
+  readonly onAct: (work: () => Promise<ApiResult<unknown>>) => void;
+}) {
+  const loadMembers = useCallback(
+    async () => api.clubMembers(clubId),
+    [api, clubId],
+  );
+  const loadInvites = useCallback(
+    async () => api.clubInvites(clubId),
+    [api, clubId],
+  );
+  const members = useResource<ClubMembershipList>(loadMembers);
+  const invites = useResource<ClubInviteList>(loadInvites);
+
+  const live = (members.value?.memberships ?? []).filter(
+    (entry) => entry.state === 'active',
+  );
+  const usable = (invites.value?.invites ?? []).filter(
+    (entry) => entry.redeemedAt === undefined && entry.revokedAt === undefined,
+  );
+
+  return (
+    <div data-testid={`club-access-panel-${clubId}`}>
+      <ResourceState
+        resource={members}
+        testId={`club-members-list-${clubId}`}
+      />
+
+      <h4>Access</h4>
+      {live.length === 0 ? (
+        <p data-testid={`club-no-members-${clubId}`}>
+          Nobody has access to this club yet.
+        </p>
+      ) : (
+        <ul>
+          {live.map((entry) => (
+            <li key={entry.id}>
+              {/*
+                Where the access came from, never a claim that money moved.
+                Today there is only one source it can be.
+              */}
+              <span data-testid={`club-member-source-${entry.id}`}>
+                {entry.source === 'creator_invite'
+                  ? 'Admitted by your invitation'
+                  : 'Admitted by the platform'}
+              </span>
+              {editable ? (
+                <button
+                  data-testid={`club-revoke-${entry.id}`}
+                  disabled={busy}
+                  onClick={() => {
+                    onAct(async () =>
+                      api.revokeClubMembership({
+                        clubId,
+                        membershipId: entry.id,
+                      }),
+                    );
+                    members.reload();
+                  }}
+                  type="button"
+                >
+                  Withdraw access
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h4>Unused invitations</h4>
+      {usable.length === 0 ? (
+        <p data-testid={`club-no-invites-${clubId}`}>No unused invitations.</p>
+      ) : (
+        <ul>
+          {usable.map((entry) => (
+            <li key={entry.id}>
+              <span>Expires {entry.expiresAt}</span>
+              {editable ? (
+                <button
+                  data-testid={`club-revoke-invite-${entry.id}`}
+                  disabled={busy}
+                  onClick={() => {
+                    onAct(async () =>
+                      api.revokeClubInvite({ clubId, inviteId: entry.id }),
+                    );
+                    invites.reload();
+                  }}
+                  type="button"
+                >
+                  Withdraw invitation
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

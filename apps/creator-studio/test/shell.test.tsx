@@ -75,6 +75,16 @@ function doubleWith(state: CreatorApiDoubleState): CreatorApiDouble {
   return createCreatorApiDouble(state);
 }
 
+/**
+ * Moves to one Studio area, the way a creator would.
+ *
+ * The areas are peers rather than a stack, so a test that wants the catalog
+ * asks for the catalog instead of scrolling past everything else.
+ */
+async function goTo(area: 'home' | 'profile' | 'catalog' | 'clubs') {
+  await press(`nav-${area}`);
+}
+
 describe('Creator Studio surface isolation', () => {
   it('identifies itself and carries nothing consumer or privileged', async () => {
     renderStudio(doubleWith(emptyCreatorState()));
@@ -130,6 +140,8 @@ describe('Creator Studio activation ladder', () => {
     await waitFor(() => {
       expect(textOf('creator-standing')).toBe('Creator access active');
     });
+    // The workspace appears only once the ladder is finished.
+    await goTo('profile');
     expect(await screen.findByTestId('creator-save-profile')).toBeDefined();
     expect(double.state.account?.status).toBe('active');
   });
@@ -184,6 +196,7 @@ describe('Creator Studio activation ladder', () => {
     await waitFor(() => {
       expect(textOf('creator-standing')).toBe('Creator access is suspended');
     });
+    await goTo('profile');
     await press('creator-toggle-publication');
     const refused = await screen.findByTestId('creator-profile-error');
     expect(refused.textContent).toContain('unavailable');
@@ -197,6 +210,7 @@ describe('Creator Studio public profile', () => {
     renderStudio(double);
     await signIn();
 
+    await goTo('profile');
     await waitFor(() => {
       expect(textOf('creator-publication')).toBe('No public profile yet');
     });
@@ -238,6 +252,7 @@ describe('Creator Studio public profile', () => {
     renderStudio(double);
     await signIn();
 
+    await goTo('profile');
     await waitFor(() => {
       expect(textOf('creator-handle-fixed')).toBe('ember');
     });
@@ -258,6 +273,7 @@ describe('Creator Studio public profile', () => {
     });
     renderStudio(double);
     await signIn();
+    await goTo('profile');
     await waitFor(() => {
       expect(textOf('creator-handle-fixed')).toBe('ember');
     });
@@ -275,6 +291,7 @@ describe('Creator Studio public profile', () => {
     const double = doubleWith(activeCreatorState());
     renderStudio(double);
     await signIn();
+    await goTo('profile');
     await waitFor(() => {
       expect(screen.getByTestId('creator-save-profile')).toBeDefined();
     });
@@ -347,6 +364,7 @@ describe('Creator Studio catalog', () => {
     const double = doubleWith(activeCreatorState());
     renderStudio(double);
     await signIn();
+    await goTo('catalog');
     await waitFor(() => {
       expect(screen.getByTestId('creator-content-empty')).toBeDefined();
     });
@@ -375,6 +393,7 @@ describe('Creator Studio catalog', () => {
   it('says plainly that a members-only item is reachable by nobody yet', async () => {
     renderStudio(doubleWith(activeCreatorState()));
     await signIn();
+    await goTo('catalog');
     await waitFor(() => {
       expect(screen.getByTestId('content-visibility')).toBeDefined();
     });
@@ -408,6 +427,7 @@ describe('Creator Studio catalog', () => {
     });
     renderStudio(double);
     await signIn();
+    await goTo('catalog');
 
     await waitFor(() => {
       expect(screen.getByTestId('content-item-content-1')).toBeDefined();
@@ -436,6 +456,7 @@ describe('Creator Studio catalog', () => {
       }),
     );
     await signIn();
+    await goTo('catalog');
     await screen.findByTestId('content-item-content-1');
 
     const markup = document.body.textContent;
@@ -459,6 +480,7 @@ describe('Creator Studio catalog', () => {
     });
     renderStudio(double);
     await signIn();
+    await goTo('catalog');
     const control = await screen.findByTestId('content-publish-content-1');
 
     fireEvent.click(control);
@@ -482,6 +504,7 @@ describe('Creator Studio private clubs', () => {
     const double = doubleWith(activeCreatorState());
     renderStudio(double);
     await signIn();
+    await goTo('clubs');
     await waitFor(() => {
       expect(screen.getByTestId('creator-clubs-empty')).toBeDefined();
     });
@@ -525,6 +548,7 @@ describe('Creator Studio private clubs', () => {
     });
     renderStudio(double);
     await signIn();
+    await goTo('clubs');
 
     await press('club-invite-club-1');
 
@@ -551,6 +575,7 @@ describe('Creator Studio private clubs', () => {
       }),
     );
     await signIn();
+    await goTo('clubs');
     await screen.findByTestId('club-item-club-1');
 
     expect(textOf('club-members-club-1')).toBe('1 member');
@@ -590,10 +615,226 @@ describe('Creator Studio private clubs', () => {
       }),
     );
     await signIn();
+    await goTo('clubs');
     await screen.findByTestId('club-item-club-1');
 
     expect(screen.queryByTestId('club-create')).toBeNull();
     expect(screen.queryByTestId('club-invite-club-1')).toBeNull();
     expect(screen.queryByTestId('club-unpublish-club-1')).toBeNull();
+  });
+});
+
+describe('Creator Studio home', () => {
+  const busyCreator = () => ({
+    ...activeCreatorState(),
+    clubs: [
+      {
+        id: 'club-1',
+        lifecycle: 'published' as const,
+        memberCount: 2,
+        name: 'Inner Circle',
+        slug: 'inner',
+        version: 2,
+      },
+      {
+        id: 'club-2',
+        lifecycle: 'draft' as const,
+        memberCount: 0,
+        name: 'Quiet',
+        slug: 'quiet',
+        version: 1,
+      },
+    ],
+    content: [
+      {
+        id: 'content-1',
+        lifecycle: 'published' as const,
+        title: 'Out there',
+        version: 2,
+        visibility: 'public' as const,
+      },
+      {
+        id: 'content-2',
+        lifecycle: 'draft' as const,
+        title: 'Not yet',
+        version: 1,
+        visibility: 'public' as const,
+      },
+    ],
+    profile: {
+      displayName: 'Ember Vale',
+      handle: 'ember',
+      links: [],
+      publication: 'published' as const,
+      publishedAt: '2026-08-15T12:00:00.000Z',
+      version: 3,
+    },
+  });
+
+  it('counts only what the server actually returned', async () => {
+    renderStudio(doubleWith(busyCreator()));
+    await signIn();
+
+    await waitFor(() => {
+      expect(textOf('dashboard-drafts')).toBe('1');
+    });
+    expect(textOf('dashboard-published')).toBe('1');
+    expect(textOf('dashboard-clubs-count')).toBe('1');
+    // Summed from live entitlements the server counted, not invented.
+    expect(textOf('dashboard-members')).toBe('2');
+    expect(textOf('dashboard-public-path')).toContain('/c/ember');
+  });
+
+  it('shows no metric the platform does not compute', async () => {
+    renderStudio(doubleWith(busyCreator()));
+    await signIn();
+    await screen.findByTestId('dashboard-members');
+
+    const markup = document.body.textContent;
+    for (const forbidden of [
+      'Earnings',
+      'Revenue',
+      'Views',
+      'Followers',
+      'Growth',
+      'Conversion',
+      'Sales',
+      'Trend',
+    ]) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+});
+
+describe('Creator Studio club access', () => {
+  const withAccess = () => ({
+    ...activeCreatorState(),
+    clubs: [
+      {
+        id: 'club-1',
+        lifecycle: 'published' as const,
+        memberCount: 1,
+        name: 'Inner Circle',
+        slug: 'inner',
+        version: 2,
+      },
+    ],
+    invites: [
+      {
+        clubId: 'club-1',
+        createdAt: '2026-08-15T12:00:00.000Z',
+        expiresAt: '2026-08-22T12:00:00.000Z',
+        id: 'invite-1',
+      },
+    ],
+    memberships: [
+      {
+        clubId: 'club-1',
+        grantedAt: '2026-08-15T12:00:00.000Z',
+        id: 'membership-1',
+        source: 'creator_invite' as const,
+        state: 'active' as const,
+      },
+    ],
+  });
+
+  it('says how somebody was admitted and never who they are', async () => {
+    renderStudio(doubleWith(withAccess()));
+    await signIn();
+    await goTo('clubs');
+    await press('club-access-club-1');
+
+    const source = await screen.findByTestId('club-member-source-membership-1');
+    expect(source.textContent).toBe('Admitted by your invitation');
+    const panel = screen.getByTestId('club-access-panel-club-1');
+    const markup = panel.textContent;
+    // A creator learns that somebody has access and nothing about them.
+    for (const forbidden of ['@', 'member-', 'user', 'email']) {
+      expect(markup, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('withdraws access and withdraws an unused invitation', async () => {
+    const double = doubleWith(withAccess());
+    renderStudio(double);
+    await signIn();
+    await goTo('clubs');
+    await press('club-access-club-1');
+
+    await press('club-revoke-membership-1');
+    await waitFor(() => {
+      expect(double.state.memberships[0]?.state).toBe('revoked');
+    });
+
+    await press('club-revoke-invite-invite-1');
+    await waitFor(() => {
+      expect(double.state.invites[0]?.revokedAt).toBeDefined();
+    });
+  });
+
+  it('offers a suspended creator no way to withdraw anything', async () => {
+    renderStudio(
+      doubleWith({
+        ...withAccess(),
+        account: {
+          createdAt: '2026-08-15T12:00:00.000Z',
+          id: 'x',
+          status: 'suspended',
+          statusReason: 'safety_enforcement',
+        },
+      }),
+    );
+    await signIn();
+    await goTo('clubs');
+    await press('club-access-club-1');
+
+    await screen.findByTestId('club-member-source-membership-1');
+    expect(screen.queryByTestId('club-revoke-membership-1')).toBeNull();
+    expect(screen.queryByTestId('club-revoke-invite-invite-1')).toBeNull();
+  });
+});
+
+describe('Creator Studio accessibility', () => {
+  it('exposes one document heading, named landmarks, and current-page state', async () => {
+    renderStudio(doubleWith(activeCreatorState()));
+    await signIn();
+
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('main')).toBeDefined();
+    const navigation = await screen.findByRole('navigation', {
+      name: 'Creator Studio areas',
+    });
+    expect(navigation).toBeDefined();
+    // Which area is open is announced rather than only coloured.
+    expect(
+      within(navigation).getByRole('button', { current: 'page' }).textContent,
+    ).toBe('Home');
+  });
+
+  it('labels every field it asks a creator to fill in', async () => {
+    renderStudio(doubleWith(activeCreatorState()));
+    await signIn();
+    await goTo('profile');
+
+    for (const label of ['Public handle', 'Display name', 'Bio']) {
+      expect(screen.getByLabelText(label), label).toBeDefined();
+    }
+    await goTo('clubs');
+    for (const label of ['Name', 'Address', 'Description']) {
+      expect(screen.getByLabelText(label), label).toBeDefined();
+    }
+  });
+
+  it('announces a failure assertively and progress politely', async () => {
+    const double = doubleWith(activeCreatorState());
+    double.failNext('/v1/creator/onboarding');
+    renderStudio(double);
+    await signIn();
+
+    const failure = await screen.findByTestId('creator-status-failed');
+    expect(within(failure).getByRole('alert')).toBeDefined();
+    expect(screen.getByTestId('auth-status').getAttribute('role')).toBe(
+      'status',
+    );
   });
 });

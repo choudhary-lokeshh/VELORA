@@ -28,6 +28,7 @@ import {
 import { createStudioCreatorApi } from './api';
 import { ClubsPanel } from './clubs';
 import { ContentPanel } from './content';
+import { Dashboard } from './dashboard';
 import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
 import { ErrorMessage, ResourceState, Section, StatusMessage } from './ui';
 
@@ -173,6 +174,15 @@ export function CreatorStudio({
   );
 }
 
+const studioAreas = [
+  { id: 'home', label: 'Home' },
+  { id: 'profile', label: 'Public profile' },
+  { id: 'catalog', label: 'Catalog' },
+  { id: 'clubs', label: 'Private clubs' },
+] as const;
+
+type AreaId = (typeof studioAreas)[number]['id'];
+
 function SignedIn({
   api,
   onSessionEnded,
@@ -195,6 +205,7 @@ function SignedIn({
     profile.reload();
   }, [onboarding, profile]);
 
+  const [area, setArea] = useState<AreaId>('home');
   const stage = creatorStage({
     onboarding: onboarding.value,
     profile: profile.value,
@@ -243,27 +254,65 @@ function SignedIn({
 
       {onboarding.value?.step === 'completed' ? (
         <>
-          <ProfileEditor
-            api={api}
-            onSaved={reloadAll}
-            profile={profile.value}
-            state={profile}
-          />
+          {/*
+            One workspace with peer areas rather than a stack, so a creator
+            with a long catalog is not scrolling past it to reach a club. The
+            navigation is real links to real state; nothing here is a
+            decorative tab that renders the same thing.
+          */}
+          <nav aria-label="Creator Studio areas">
+            <ul className="tabs">
+              {studioAreas.map((entry) => (
+                <li key={entry.id}>
+                  <button
+                    aria-current={entry.id === area ? 'page' : undefined}
+                    data-testid={`nav-${entry.id}`}
+                    onClick={() => {
+                      setArea(entry.id);
+                    }}
+                    type="button"
+                  >
+                    {entry.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          {area === 'home' ? (
+            <Dashboard
+              api={api}
+              onSessionEnded={onSessionEnded}
+              profile={profile.value}
+            />
+          ) : null}
+          {area === 'profile' ? (
+            <ProfileEditor
+              api={api}
+              onSaved={reloadAll}
+              profile={profile.value}
+              state={profile}
+            />
+          ) : null}
           {/*
             Writes are offered only while the capability may actually operate.
             A suspended creator still sees their catalog — it is theirs — but is
             not handed controls the server would refuse.
           */}
-          <ContentPanel
-            api={api}
-            editable={onboarding.value.account.status === 'active'}
-            onSessionEnded={onSessionEnded}
-          />
-          <ClubsPanel
-            api={api}
-            editable={onboarding.value.account.status === 'active'}
-            onSessionEnded={onSessionEnded}
-          />
+          {area === 'catalog' ? (
+            <ContentPanel
+              api={api}
+              editable={onboarding.value.account.status === 'active'}
+              onSessionEnded={onSessionEnded}
+            />
+          ) : null}
+          {area === 'clubs' ? (
+            <ClubsPanel
+              api={api}
+              editable={onboarding.value.account.status === 'active'}
+              onSessionEnded={onSessionEnded}
+            />
+          ) : null}
         </>
       ) : null}
     </>

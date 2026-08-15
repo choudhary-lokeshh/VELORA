@@ -62,23 +62,64 @@ export function readCookie(
   return undefined;
 }
 
+export interface PresentedSessionCookie {
+  readonly audience: BrowserAuthAudience;
+  readonly token: string;
+}
+
 /**
- * Finds which audience-scoped session cookie the caller presented. Presenting
- * more than one is ambiguous and is refused rather than resolved by preference
- * order, because guessing would be exactly the audience confusion the separate
- * names exist to prevent.
+ * Every audience-scoped session cookie the caller presented.
+ *
+ * Usually there is at most one: the cookies carry different names and, in a
+ * deployment where each surface has its own host, a browser only holds the one
+ * for the host it is talking about. More than one appears when two surfaces
+ * share a host — which is what a developer running everything on loopback has,
+ * because a cookie is scoped to a host and ignores the port.
  */
-export function presentedSessionCookie(
+export function presentedSessionCookies(
   header: string | null,
-):
-  | { readonly audience: BrowserAuthAudience; readonly token: string }
-  | undefined {
-  const found: { audience: BrowserAuthAudience; token: string }[] = [];
+): readonly PresentedSessionCookie[] {
+  const found: PresentedSessionCookie[] = [];
   for (const [audience, name] of Object.entries(browserSessionCookieNames)) {
     const token = readCookie(header, name);
     if (token !== undefined) {
       found.push({ audience: audience as BrowserAuthAudience, token });
     }
   }
-  return found.length === 1 ? found[0] : undefined;
+  return found;
+}
+
+/**
+ * Which audience-scoped session cookie this request is actually using.
+ *
+ * With one cookie there is nothing to decide. With several, the surface that
+ * sent the request says which it is: the `Origin` header is set by the browser,
+ * cannot be forged by page script, and is matched against the origins that
+ * audience is configured to accept — so this is a lookup, not a preference
+ * order, and the answer is then validated by the same origin check every
+ * browser request already passes.
+ *
+ * Anything that does not resolve to exactly one audience is refused rather than
+ * guessed at, because guessing would be exactly the audience confusion the
+ * separate names exist to prevent. A request with no origin and several cookies
+ * is therefore refused, and a foreign origin matches no audience at all.
+ */
+export function presentedSessionCookie(
+  header: string | null,
+  disambiguation?: {
+    readonly allowedOrigins: Readonly<
+      Record<BrowserAuthAudience, readonly string[]>
+    >;
+    readonly origin: string | null;
+  },
+): PresentedSessionCookie | undefined {
+  const found = presentedSessionCookies(header);
+  if (found.length <= 1) return found[0];
+  if (disambiguation === undefined) return undefined;
+  const { allowedOrigins, origin } = disambiguation;
+  if (origin === null) return undefined;
+  const matching = found.filter((candidate) =>
+    allowedOrigins[candidate.audience].includes(origin),
+  );
+  return matching.length === 1 ? matching[0] : undefined;
 }

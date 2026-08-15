@@ -829,7 +829,11 @@ describe('cross-surface authority', () => {
     }
   });
 
-  it('refuses to resolve two audience cookies presented together', async () => {
+  it('uses the cookie belonging to the surface that sent the request', async () => {
+    // One person holding a Consumer Web session and a Creator Studio session at
+    // once is what the architecture describes, and two surfaces sharing a host
+    // means the browser sends both cookies to the API. Which one a request is
+    // using is decided by the origin it came from, never by preference order.
     const application = harness();
     try {
       const subject = 'ambiguous@velora.test';
@@ -839,10 +843,100 @@ describe('cross-surface authority', () => {
         subject,
       });
       const merged = `${web.cookies}; ${studio.cookies}`;
-      const response = await application.handle(
-        browserRequest(apiRoutePaths.session, { cookies: merged }),
+
+      const asConsumer = await application.handle(
+        browserRequest(apiRoutePaths.session, {
+          cookies: merged,
+          origin: testConsumerOrigin,
+        }),
       );
-      expect(response.status).toBe(401);
+      const asCreator = await application.handle(
+        browserRequest(apiRoutePaths.session, {
+          cookies: merged,
+          origin: testCreatorOrigin,
+        }),
+      );
+
+      expect(asConsumer.status).toBe(200);
+      expect(await asConsumer.json()).toMatchObject({
+        audience: 'consumer_web',
+      });
+      expect(asCreator.status).toBe(200);
+      expect(await asCreator.json()).toMatchObject({
+        audience: 'creator_studio',
+      });
+    } finally {
+      await application.close();
+    }
+  });
+
+  it('never lets one surface reach the other surface authority', async () => {
+    const application = harness();
+    try {
+      const subject = 'ambiguous-authority@velora.test';
+      const web = await signInWeb(application, { subject });
+      const studio = await signInWeb(application, {
+        audience: 'creator_studio',
+        subject,
+      });
+      const merged = `${web.cookies}; ${studio.cookies}`;
+
+      // Holding both cookies buys nothing: a consumer-origin request is a
+      // consumer, whatever else the browser is carrying.
+      const creatorRoute = await application.handle(
+        browserRequest(apiRoutePaths.creatorAccountSelf, {
+          cookies: merged,
+          origin: testConsumerOrigin,
+        }),
+      );
+      const consumerRoute = await application.handle(
+        browserRequest(apiRoutePaths.consumerAccountSelf, {
+          cookies: merged,
+          origin: testCreatorOrigin,
+        }),
+      );
+
+      expect(creatorRoute.status).toBe(403);
+      expect(await creatorRoute.json()).toMatchObject({
+        code: 'CREATOR_SURFACE_REQUIRED',
+      });
+      expect(consumerRoute.status).toBe(403);
+      expect(await consumerRoute.json()).toMatchObject({
+        code: 'CONSUMER_SURFACE_REQUIRED',
+      });
+    } finally {
+      await application.close();
+    }
+  });
+
+  it('refuses two cookies when nothing identifies the surface', async () => {
+    const application = harness();
+    try {
+      const subject = 'ambiguous-anonymous@velora.test';
+      const web = await signInWeb(application, { subject });
+      const studio = await signInWeb(application, {
+        audience: 'creator_studio',
+        subject,
+      });
+      const merged = `${web.cookies}; ${studio.cookies}`;
+
+      const noOrigin = await application.handle(
+        browserRequest(apiRoutePaths.session, {
+          cookies: merged,
+          origin: null,
+        }),
+      );
+      const foreignOrigin = await application.handle(
+        browserRequest(apiRoutePaths.session, {
+          cookies: merged,
+          origin: testForeignOrigin,
+        }),
+      );
+
+      // No origin identifies nothing and a foreign origin belongs to no
+      // audience. Both fail closed rather than being guessed at.
+      expect(noOrigin.status).toBe(401);
+      expect(foreignOrigin.status).toBe(401);
     } finally {
       await application.close();
     }
