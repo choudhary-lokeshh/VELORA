@@ -132,6 +132,7 @@ These are architecture/product gates, not legal advice:
 | [Payments/tax/payout gates](compliance/04-payments-tax-payout-gates.md) | Commercial and creator-finance country/provider prerequisites |
 | [Data residency/retention](compliance/05-data-residency-retention.md) | Data mapping, region/provider routing, retention/deletion gates |
 | [Provider eligibility](compliance/06-payment-provider-eligibility.md) | Dated primary-source findings on payment/payout provider and card-network eligibility for Velora's business model |
+| [Surface and distribution eligibility](compliance/07-surface-and-distribution-eligibility.md) | Dated primary-source findings on app-store, age-assurance, depicted-person, and notice/appeal requirements deciding which surfaces may carry which content |
 
 ## Operations authority
 
@@ -175,6 +176,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0019](decisions/ADR-0019-database-connection-admission.md) | Bounded database admission, pool warm-up, and the capacity refusal contract; resolves the pair-lock contention decision |
 | [ADR-0020](decisions/ADR-0020-creator-capability-activation.md) | Creator capability lifecycle, its activation gates, and identity verification as a separate predicate |
 | [ADR-0021](decisions/ADR-0021-monetization-money-architecture.md) | How ADR-0011's locked money decisions become code: money value type, two owner journals, orchestration ordering, webhook inbox, entitlement bridge, fail-closed capability configuration |
+| [ADR-0022](decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) | One safety policy and eligibility authority, scoped append-only enforcement with supersession, report/case/evidence/decision/appeal separation, surface as a first-class closed vocabulary, depicted-person consent by reference, versioned deadline policy, and fail-closed mature-content enablement |
 
 ## Technical implementation reading paths
 
@@ -205,10 +207,10 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - RTC: phases, REALTIME, RTC flow, surfaces, provider adapters, Trust & Safety, media/privacy, Design/Figma.
 - Billing: phases, monetisation, BILLING, payment lifecycle/security, jobs/concurrency, compliance, finance operations, Admin approval.
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
-- Moderation/Trust & Safety: phase, both domains, report flow, moderation operations, evidence/privacy, Admin/RBAC, creator gates where applicable.
+- Moderation/Trust & Safety: phase, both domains, report flow, moderation operations, evidence/privacy, Admin/RBAC, ADR-0022, creator gates and surface/distribution eligibility where applicable.
 - Security/privacy: security baseline and every relevant specialized security/compliance/incident authority plus owning domain/flow.
 - Design/Figma: relevant product/surface/flow/security/phase, then all six Design/Figma documents and exact approved Figma handoff.
 - Provider integration: provider adapters, owner domain/flow/security, compliance gates, jobs/idempotency, observability/operations, open decisions, then provider-specific ADR. Start with local/mock/test adapter.
-- Compliance/market entry: all five compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
+- Compliance/market entry: all seven compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
 - Operations: relevant operations document, Admin surface/domain/RBAC/flow, affected domain/flow, observability, security/privacy/compliance.
 - AI: every document in AI authority, AI action flow/integration docs, product phases/surface, provider/outbound/jobs/RBAC/privacy/testing/operations, and every domain/tool contract involved.

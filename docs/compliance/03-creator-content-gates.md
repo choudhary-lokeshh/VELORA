@@ -48,4 +48,6 @@ Restrict verification and consent evidence to justified roles. Never place raw e
 
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: creator countries, categories/taxonomy, participant evidence, consent withdrawal, prohibited-content policy, pre/post moderation, appeal/takedown SLA, provider/channel support, public preview, geo enforcement, record retention, and launch operations.
 
+The dated primary-source findings that decide which surfaces and distribution channels may carry mature content at all, and what depicted-person evidence it requires, are in [surface and distribution eligibility](07-surface-and-distribution-eligibility.md). The architecture that keeps every gate above a separately revocable predicate rather than one flag is [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md).
+
 See [Creator Private Clubs](../product/03-creator-private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [media security](../security/04-media-upload-delivery.md), [entitlement flow](../flows/creator-entitlement.md), and [moderation operations](../operations/02-moderation-operations.md).

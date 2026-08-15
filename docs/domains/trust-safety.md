@@ -86,6 +86,10 @@ The report transition and the enforcement are one transaction. A report marked a
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
+## Where this domain is going
+
+[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture the next milestone builds against: one published policy and eligibility authority every other domain asks rather than re-deriving, enforcement that names an explicit scope from a closed vocabulary and is superseded rather than edited, reports and cases and evidence and decisions and appeals as separate append-oriented records, surface as a first-class closed vocabulary, depicted-person consent held as scoped references to an approved verifier rather than as documents, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
+
 ## Phase/open questions
 
 V1 blocks, reports, basic enforcement predicates. Phase 2 AI assistance remains advisory. Separately reviewed deterministic automation may perform only explicitly specified non-high-impact policy steps with audit, monitoring, human override, and no model judgment. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: policy taxonomy, permitted deterministic automation, appeal/SLA, evidence retention, regional requirements, enforcement propagation timing. See [report to enforcement](../flows/report-to-enforcement.md), [MODERATION](moderation.md), [moderation operations](../operations/02-moderation-operations.md), [AI action flow](../flows/ai-assisted-action.md), [RBAC](../security/02-access-control-rbac.md).
