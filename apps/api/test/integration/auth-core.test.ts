@@ -141,6 +141,7 @@ describe('AUTH persistence and invariants', () => {
       'payouts_outbox',
       'payouts_recipients',
       'safety_blocks',
+      'safety_cases',
       'safety_enforcements',
       'safety_reports',
       'users_accounts',

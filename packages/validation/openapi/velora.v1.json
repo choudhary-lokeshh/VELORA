@@ -22163,16 +22163,119 @@
               "other"
             ]
           },
-          "subjectId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "consumer_account"
+                  }
+                },
+                "required": [
+                  "accountId",
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "handle": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30,
+                    "pattern": "^[a-z0-9][a-z0-9_-]{1,28}[a-z0-9]$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "creator_profile"
+                  }
+                },
+                "required": [
+                  "handle",
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contentId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "creator_content"
+                  }
+                },
+                "required": [
+                  "contentId",
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "handle": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30,
+                    "pattern": "^[a-z0-9][a-z0-9_-]{1,28}[a-z0-9]$"
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 40,
+                    "pattern": "^[a-z0-9][a-z0-9_-]{1,38}[a-z0-9]$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "club"
+                  }
+                },
+                "required": [
+                  "handle",
+                  "slug",
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "conversationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "conversation"
+                  }
+                },
+                "required": [
+                  "conversationId",
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "required": [
           "clientReportId",
           "reasonCode",
-          "subjectId"
+          "target"
         ],
         "additionalProperties": false
       },
@@ -22209,10 +22312,15 @@
               "dismissed"
             ]
           },
-          "subjectId": {
+          "targetType": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "enum": [
+              "consumer_account",
+              "creator_profile",
+              "creator_content",
+              "club",
+              "conversation"
+            ]
           }
         },
         "required": [
@@ -22220,7 +22328,7 @@
           "id",
           "reasonCode",
           "state",
-          "subjectId"
+          "targetType"
         ],
         "additionalProperties": false
       },
@@ -22265,10 +22373,15 @@
                     "dismissed"
                   ]
                 },
-                "subjectId": {
+                "targetType": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "enum": [
+                    "consumer_account",
+                    "creator_profile",
+                    "creator_content",
+                    "club",
+                    "conversation"
+                  ]
                 }
               },
               "required": [
@@ -22276,7 +22389,7 @@
                 "id",
                 "reasonCode",
                 "state",
-                "subjectId"
+                "targetType"
               ],
               "additionalProperties": false
             }

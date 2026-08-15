@@ -2217,8 +2217,31 @@ export interface components {
             messageId?: string;
             /** @enum {string} */
             reasonCode: "underage_concern" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
-            /** Format: uuid */
-            subjectId: string;
+            target: {
+                /** Format: uuid */
+                accountId: string;
+                /** @constant */
+                type: "consumer_account";
+            } | {
+                handle: string;
+                /** @constant */
+                type: "creator_profile";
+            } | {
+                /** Format: uuid */
+                contentId: string;
+                /** @constant */
+                type: "creator_content";
+            } | {
+                handle: string;
+                slug: string;
+                /** @constant */
+                type: "club";
+            } | {
+                /** Format: uuid */
+                conversationId: string;
+                /** @constant */
+                type: "conversation";
+            };
         };
         Report: {
             /** Format: date-time */
@@ -2229,8 +2252,8 @@ export interface components {
             reasonCode: "underage_concern" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
             /** @enum {string} */
             state: "received" | "under_review" | "actioned" | "dismissed";
-            /** Format: uuid */
-            subjectId: string;
+            /** @enum {string} */
+            targetType: "consumer_account" | "creator_profile" | "creator_content" | "club" | "conversation";
         };
         ReportListResponse: {
             nextCursor?: string;
@@ -2243,8 +2266,8 @@ export interface components {
                 reasonCode: "underage_concern" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
                 /** @enum {string} */
                 state: "received" | "under_review" | "actioned" | "dismissed";
-                /** Format: uuid */
-                subjectId: string;
+                /** @enum {string} */
+                targetType: "consumer_account" | "creator_profile" | "creator_content" | "club" | "conversation";
             }[];
         };
         ProfileMediaReferenceRequest: {

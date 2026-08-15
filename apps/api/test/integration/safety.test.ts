@@ -5,7 +5,10 @@ import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { createDiscoveryRuntime } from '../../src/discovery/composition.js';
 import { createMessagingRuntime } from '../../src/messaging/composition.js';
+import { ClubSafetyDirectory } from '../../src/clubs/safety-directory.js';
+import { CreatorDirectory } from '../../src/creators/directory.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
+import { ConversationParticipation } from '../../src/messaging/participation.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
 import { reportRateLimitCount } from '../../src/safety/policy.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
@@ -75,8 +78,12 @@ const users = createUsersRuntime({
 });
 const safety = createSafetyRuntime({
   accounts: users.enforcement,
+  catalog: new ClubSafetyDirectory(),
   consumerContext: users.consumerContext,
+  consumers: users.existence,
+  conversationTargets: new ConversationParticipation(),
   conversations: new ConversationEnforcement(database.drizzle),
+  creators: new CreatorDirectory(),
   database: database.drizzle,
   now,
   users: users.service,
@@ -724,20 +731,22 @@ describe('a report is evidence, not a message to the person reported', () => {
         clientReportId: 'report-key-0001',
         detail: 'a private narrative that must never be republished',
         reasonCode: 'harassment',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     expect(created.status).toBe(200);
     const body = (await created.json()) as Record<string, unknown>;
     expect(body.state).toBe('received');
-    expect(body.subjectId).toBe(subject.id);
+    expect(body.targetType).toBe('consumer_account');
+    // The reporter is not handed an identifier back; they named the person.
+    expect(body.subjectId).toBeUndefined();
     // Nothing about the reporter, and nothing they wrote, comes back.
     expect(Object.keys(body).sort()).toEqual([
       'createdAt',
       'id',
       'reasonCode',
       'state',
-      'subjectId',
+      'targetType',
     ]);
 
     const mine = await handle(get('/v1/safety/reports', reporter));
@@ -761,7 +770,7 @@ describe('a report is evidence, not a message to the person reported', () => {
         clientReportId: 'privacy-key-0001',
         detail: narrative,
         reasonCode: 'impersonation',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
 
@@ -810,7 +819,7 @@ describe('a report is evidence, not a message to the person reported', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'quiet-key-0001',
         reasonCode: 'spam_or_scam',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
 
@@ -828,7 +837,7 @@ describe('a report is evidence, not a message to the person reported', () => {
         post('/v1/safety/reports', reporter, {
           clientReportId,
           reasonCode: 'harassment',
-          subjectId: subject.id,
+          target: { accountId: subject.id, type: 'consumer_account' },
         }),
       );
 
@@ -858,14 +867,14 @@ describe('a report is evidence, not a message to the person reported', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'invalid-key-0001',
         reasonCode: 'other',
-        subjectId: reporter.id,
+        target: { accountId: reporter.id, type: 'consumer_account' },
       }),
     );
     const absent = await handle(
       post('/v1/safety/reports', reporter, {
         clientReportId: 'invalid-key-0002',
         reasonCode: 'other',
-        subjectId: crypto.randomUUID(),
+        target: { accountId: crypto.randomUUID(), type: 'consumer_account' },
       }),
     );
     expect([self.status, absent.status]).toEqual([422, 422]);
@@ -880,7 +889,7 @@ describe('a report is evidence, not a message to the person reported', () => {
         post('/v1/safety/reports', reporter, {
           clientReportId: `rate-key-${String(index).padStart(4, '0')}`,
           reasonCode: 'other',
-          subjectId: subject.id,
+          target: { accountId: subject.id, type: 'consumer_account' },
         }),
       );
       expect(response.status).toBe(200);
@@ -890,7 +899,7 @@ describe('a report is evidence, not a message to the person reported', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'rate-key-overflow',
         reasonCode: 'other',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     expect(beyond.status).toBe(409);
@@ -909,7 +918,7 @@ describe('a report is evidence, not a message to the person reported', () => {
         clientReportId: 'evidence-key-0001',
         messageId: crypto.randomUUID(),
         reasonCode: 'harassment',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     // The database refuses it too; this is the contract refusing first.
@@ -1011,7 +1020,7 @@ describe('a consumer cannot become a moderator', () => {
       asCreator('/v1/safety/reports', {
         clientReportId: 'escalation-key-01',
         reasonCode: 'other',
-        subjectId: consumerCaller.id,
+        target: { accountId: consumerCaller.id, type: 'consumer_account' },
       }),
     );
     const listed = await handle(
@@ -1037,7 +1046,7 @@ describe('a consumer cannot become a moderator', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'no-enforce-0001',
         reasonCode: 'underage_concern',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     await blockOf(reporter, subject.id);
@@ -1065,7 +1074,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'enforce-account-01',
         reasonCode: 'harassment',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
@@ -1111,7 +1120,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
         clientReportId: 'enforce-conv-0002',
         conversationId: pair.conversationId,
         reasonCode: 'harassment',
-        subjectId: pair.second.id,
+        target: { accountId: pair.second.id, type: 'consumer_account' },
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
@@ -1148,7 +1157,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'dismiss-key-0001',
         reasonCode: 'other',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
@@ -1176,7 +1185,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'concurrent-key-01',
         reasonCode: 'harassment',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
@@ -1208,7 +1217,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'rollback-key-01',
         reasonCode: 'harassment',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
@@ -1236,7 +1245,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       post('/v1/safety/reports', reporter, {
         clientReportId: 'restore-key-0001',
         reasonCode: 'harassment',
-        subjectId: subject.id,
+        target: { accountId: subject.id, type: 'consumer_account' },
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
@@ -1266,7 +1275,7 @@ describe('enforcement is applied by the domain that owns what changes', () => {
 });
 
 describe('the database enforces the safety invariants', () => {
-  it('owns exactly the three safety tables and nothing else', async () => {
+  it('owns exactly the four safety tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
         where table_schema = 'public' and table_name like 'safety_%'
@@ -1274,6 +1283,7 @@ describe('the database enforces the safety invariants', () => {
     );
     expect(rows.map((row) => row.table_name)).toEqual([
       'safety_blocks',
+      'safety_cases',
       'safety_enforcements',
       'safety_reports',
     ]);

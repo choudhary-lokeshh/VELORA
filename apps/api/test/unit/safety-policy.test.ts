@@ -3,10 +3,16 @@ import {
   enforcementDispositionSchema,
   enforcementScopeSchema,
   reportReasonSchema,
+  reportTargetTypeSchema,
 } from '@velora/validation';
 
 import {
   blockingScopesFor,
+  caseClaimLeaseMilliseconds,
+  casePolicyVersion,
+  casePriorities,
+  caseQueues,
+  caseStates,
   denialReasonFor,
   eligibilityPolicyVersion,
   enforcementDispositions,
@@ -22,7 +28,11 @@ import {
   productionBlockers,
   reportPolicyVersion,
   reportReasonCodes,
+  openCaseStates,
+  queueFor,
+  reportSourceSurfaces,
   reportStates,
+  reportTargetTypes,
   safetyCapabilities,
   safetyDenialReasons,
   subjectKindForCapability,
@@ -183,6 +193,63 @@ describe('safety vocabularies stay provisional and separate', () => {
     for (const scope of objectScopedEnforcements) {
       expect(enforcementScopes, scope).toContain(scope);
     }
+  });
+
+  it('opens a case in a state something can move it out of', () => {
+    // `decision_pending`, `decided`, and `appealed` arrive with the phases that
+    // can reach them. Declaring them now would put states in the schema no code
+    // could move a row out of, which is how a value nothing is entitled to
+    // write ends up being set for convenience later.
+    expect([...caseStates]).toEqual([
+      'new',
+      'triaged',
+      'investigating',
+      'closed',
+    ]);
+    expect([...openCaseStates]).toEqual(['new', 'triaged', 'investigating']);
+    for (const state of openCaseStates) {
+      expect([...caseStates], state).toContain(state);
+    }
+  });
+
+  it('starts every case untriaged, because nobody has looked yet', () => {
+    // A default of `normal` would be a claim about urgency that no reviewer
+    // made. `untriaged` is a real answer rather than a missing one.
+    expect(casePriorities[0]).toBe('untriaged');
+    expect([...casePriorities]).toEqual([
+      'untriaged',
+      'low',
+      'normal',
+      'high',
+      'urgent',
+    ]);
+    expect(casePolicyVersion).toBe('v1-provisional');
+    expect(caseClaimLeaseMilliseconds).toBeGreaterThan(0);
+  });
+
+  it('routes a case by what it is about rather than what a reporter said', () => {
+    // Routing keyed on the reporter's chosen category would let a reporter
+    // steer which queue somebody's case lands in.
+    for (const targetType of reportTargetTypes) {
+      expect([...caseQueues], targetType).toContain(queueFor(targetType));
+    }
+    expect(queueFor('consumer_account')).toBe('consumer_conduct');
+    expect(queueFor('conversation')).toBe('consumer_conduct');
+    expect(queueFor('creator_profile')).toBe('creator_identity');
+    expect(queueFor('creator_content')).toBe('creator_content');
+    expect(queueFor('club')).toBe('creator_content');
+  });
+
+  it('keeps the report target and surface vocabularies closed and published', () => {
+    expect(reportTargetTypeSchema.options).toEqual([...reportTargetTypes]);
+    // The surface is derived from the credential's audience, so the vocabulary
+    // is the set of audiences that may file a report and nothing wider.
+    expect([...reportSourceSurfaces]).toEqual([
+      'consumer_web',
+      'consumer_mobile',
+      'creator_studio',
+    ]);
+    expect([...reportSourceSurfaces]).not.toContain('platform_admin');
   });
 
   it('names what blocks production rather than implying nothing does', () => {

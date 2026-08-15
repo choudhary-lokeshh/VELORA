@@ -211,6 +211,13 @@
       "when": 1786822403798,
       "tag": "0029_safety_policy_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786824751882,
+      "tag": "0030_safety_case_management",
+      "breakpoints": true
     }
   ]
 }

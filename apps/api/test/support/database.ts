@@ -114,6 +114,9 @@ const truncationRoots = [
   'notifications_feed',
   'notifications_intents',
   'safety_blocks',
+  // Cases are the parent of reports, so truncating them cascades. Listing the
+  // reports as well keeps the intent readable rather than implicit.
+  'safety_cases',
   'safety_enforcements',
   'safety_reports',
   'users_accounts',

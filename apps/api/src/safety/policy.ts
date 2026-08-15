@@ -53,6 +53,49 @@ export type ReportState = (typeof reportStates)[number];
 
 export const openReportStates = ['received', 'under_review'] as const;
 
+/**
+ * What a report can be about.
+ *
+ * A closed vocabulary, because a target type is what decides which domain
+ * validates the identifier and which queue the case lands in. A free string
+ * would be a report pointing at something nobody checked and nobody owns.
+ *
+ * The identifier a report stores is always Velora's own, resolved server-side.
+ * A reporter names a creator by the public handle they were looking at and a
+ * club by its slug, because those are the only identifiers a public page
+ * exposes; the resolution happens through the owning domain's contract, so a
+ * caller can neither invent an identifier nor learn one for something that is
+ * not published.
+ */
+export const reportTargetTypes = [
+  'consumer_account',
+  'creator_profile',
+  'creator_content',
+  'club',
+  'conversation',
+] as const;
+export type ReportTargetType = (typeof reportTargetTypes)[number];
+
+/**
+ * Where a report was filed from.
+ *
+ * Derived from the credential's audience rather than from anything the request
+ * body carries. A client-declared surface would be a client-authoritative fact
+ * about policy, and surface is exactly the axis
+ * `docs/compliance/07-surface-and-distribution-eligibility.md` makes
+ * load-bearing.
+ *
+ * `consumer_mobile` does not distinguish iOS from Android, because the AUTH
+ * audience does not. That distinction matters for mature-content surface policy
+ * and is recorded as unresolved rather than guessed at here.
+ */
+export const reportSourceSurfaces = [
+  'consumer_web',
+  'consumer_mobile',
+  'creator_studio',
+] as const;
+export type ReportSourceSurface = (typeof reportSourceSurfaces)[number];
+
 /** Longest reporter narrative accepted. Evidence, and bounded like any input. */
 export const maximumReportDetailCharacters = 2_000;
 
@@ -66,6 +109,98 @@ export const maximumReportDetailCharacters = 2_000;
  */
 export const reportRateLimitCount = 20;
 export const reportRateWindowMilliseconds = 60 * 60 * 1000;
+
+/**
+ * Which case-management rule was in force. Recorded on every case.
+ *
+ * Separate from the reporting and enforcement versions because it moves for its
+ * own reasons: the queue map, the priority vocabulary, and the lease length are
+ * operational policy rather than either of the other two.
+ */
+export const casePolicyVersion = 'v1-provisional';
+
+/**
+ * Case lifecycle.
+ *
+ * Only the states this milestone can actually reach. `decision_pending` and
+ * `decided` arrive with moderation decisions and `appealed` with appeals;
+ * declaring them now would put states in the schema that no code could move a
+ * row out of, which is how a value nothing is entitled to write ends up being
+ * set for convenience later.
+ */
+export const caseStates = [
+  'new',
+  'triaged',
+  'investigating',
+  'closed',
+] as const;
+export type CaseState = (typeof caseStates)[number];
+
+/** Cases a new report joins rather than opening a second one beside. */
+export const openCaseStates = ['new', 'triaged', 'investigating'] as const;
+
+/**
+ * How urgent a reviewer judged a case to be.
+ *
+ * **Set by a reviewer and by nothing else.** It is never derived from how many
+ * reports a case carries: `docs/flows/report-to-enforcement.md` forbids report
+ * volume from deciding anything, and making volume an input to priority is the
+ * same mistake wearing a different word — twenty coordinated accounts would be
+ * able to escalate anybody.
+ *
+ * `untriaged` is the state every case starts in, and it is a real answer rather
+ * than a missing one: nobody has looked yet.
+ *
+ * Provisional. The approved severity taxonomy is `DECISION REQUIRED / LEGAL
+ * REVIEW REQUIRED` alongside the risk taxonomy.
+ */
+export const casePriorities = [
+  'untriaged',
+  'low',
+  'normal',
+  'high',
+  'urgent',
+] as const;
+export type CasePriority = (typeof casePriorities)[number];
+
+/**
+ * Which operator queue a case belongs to.
+ *
+ * Derived from what the case is about rather than from who filed it or what
+ * they said, so routing is a property of the target and cannot be steered by a
+ * reporter's choice of category. Provisional, like everything else here.
+ */
+export const caseQueues = [
+  'consumer_conduct',
+  'creator_content',
+  'creator_identity',
+] as const;
+export type CaseQueue = (typeof caseQueues)[number];
+
+const queueByTargetType: Readonly<Record<ReportTargetType, CaseQueue>> = {
+  club: 'creator_content',
+  consumer_account: 'consumer_conduct',
+  conversation: 'consumer_conduct',
+  creator_content: 'creator_content',
+  creator_profile: 'creator_identity',
+};
+
+export function queueFor(targetType: ReportTargetType): CaseQueue {
+  return queueByTargetType[targetType];
+}
+
+/**
+ * How long a reviewer holds a case before the claim lapses.
+ *
+ * A lease rather than an assignment, because a reviewer whose session ends
+ * mid-review must not take a case out of the queue permanently.
+ * `docs/operations/02-moderation-operations.md` requires assignment to use a
+ * lease or a version to prevent conflicting review; this is both.
+ */
+export const caseClaimLeaseMilliseconds = 30 * 60 * 1000;
+
+/** Largest page of cases one queue read returns. */
+export const maximumCasePageSize = 50;
 
 /** Which enforcement rule produced an action. Recorded on every enforcement. */
 export const enforcementPolicyVersion = 'v1-provisional';

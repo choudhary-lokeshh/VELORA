@@ -36,6 +36,7 @@ import { UsersRoutes } from './routes.js';
 import { UsersService } from './service.js';
 import {
   ConsumerAdultStandingDirectory,
+  ConsumerExistenceDirectory,
   ConsumerStanding,
 } from './standing.js';
 
@@ -43,6 +44,8 @@ export interface UsersRuntime {
   readonly adultAssuranceVerifier: AdultAssuranceVerifier;
   /** The adult standing this domain publishes for CREATORS. */
   readonly adultStanding: ConsumerAdultStandingDirectory;
+  /** Whether an account exists at all, for TRUST & SAFETY's report targets. */
+  readonly existence: ConsumerExistenceDirectory;
   readonly availability: AvailabilityService;
   readonly availabilityRoutes: AvailabilityRoutes;
   readonly consumerContext: ConsumerContextResolver;
@@ -150,6 +153,7 @@ export function createUsersRuntime(input: {
   return {
     adultAssuranceVerifier,
     adultStanding: new ConsumerAdultStandingDirectory(repository),
+    existence: new ConsumerExistenceDirectory(repository),
     availability,
     availabilityRoutes: new AvailabilityRoutes({
       availability,

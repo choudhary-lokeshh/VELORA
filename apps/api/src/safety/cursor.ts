@@ -51,6 +51,39 @@ export function decodeBlockCursor(value: string): BlockCursor | undefined {
   return { createdAt: moment, id };
 }
 
+/**
+ * Case queue paging position.
+ *
+ * Keyed on when a case was opened rather than on its priority, so a reviewer
+ * re-prioritising a case cannot move a page boundary under somebody else's
+ * paging. Priority orders what an operator sees; it does not order the cursor.
+ */
+export interface CaseCursor {
+  readonly id: string;
+  readonly openedAt: Date;
+}
+
+export function encodeCaseCursor(cursor: CaseCursor): string {
+  return Buffer.from(
+    JSON.stringify({ i: cursor.id, t: cursor.openedAt.toISOString() }),
+    'utf8',
+  ).toString('base64url');
+}
+
+export function decodeCaseCursor(value: string): CaseCursor | undefined {
+  const decoded = decodeJson(value);
+  if (typeof decoded !== 'object' || decoded === null) return undefined;
+  const { i: id, t: openedAt } = decoded as {
+    readonly i?: unknown;
+    readonly t?: unknown;
+  };
+  if (typeof id !== 'string' || !uuidPattern.test(id)) return undefined;
+  if (typeof openedAt !== 'string') return undefined;
+  const moment = new Date(openedAt);
+  if (Number.isNaN(moment.getTime())) return undefined;
+  return { id, openedAt: moment };
+}
+
 export interface ReportCursor {
   readonly createdAt: Date;
   readonly id: string;

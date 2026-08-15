@@ -19,14 +19,27 @@ import type {
   Executor,
   TransactionHandle,
 } from '../database/executor.js';
+import type { CaseCursor } from './cursor.js';
 import {
+  openCaseStates,
   openReportStates,
+  type CasePriority,
+  type CaseQueue,
+  type CaseState,
   type EnforcementDisposition,
   type EnforcementObjectType,
+  type ReportSourceSurface,
+  type ReportTargetType,
 } from './policy.js';
-import { safetyBlocks, safetyEnforcements, safetyReports } from './schema.js';
+import {
+  safetyBlocks,
+  safetyCases,
+  safetyEnforcements,
+  safetyReports,
+} from './schema.js';
 
 export type BlockRow = typeof safetyBlocks.$inferSelect;
+export type CaseRow = typeof safetyCases.$inferSelect;
 export type ReportRow = typeof safetyReports.$inferSelect;
 export type EnforcementRow = typeof safetyEnforcements.$inferSelect;
 
@@ -240,6 +253,7 @@ export class SafetyRepository {
   async insertReport(
     executor: Executor,
     input: {
+      readonly caseId: string;
       readonly clientReportId: string;
       readonly conversationId: string | null;
       readonly detail: string | null;
@@ -248,12 +262,15 @@ export class SafetyRepository {
       readonly policyVersion: string;
       readonly reasonCode: string;
       readonly reporterId: string;
+      readonly sourceSurface: ReportSourceSurface;
       readonly subjectId: string;
+      readonly targetType: ReportTargetType;
     },
   ): Promise<ReportRow | undefined> {
     const inserted = await executor
       .insert(safetyReports)
       .values({
+        caseId: input.caseId,
         clientReportId: input.clientReportId,
         conversationId: input.conversationId,
         createdAt: input.now,
@@ -263,13 +280,218 @@ export class SafetyRepository {
         policyVersion: input.policyVersion,
         reasonCode: input.reasonCode,
         reporterId: input.reporterId,
+        sourceSurface: input.sourceSurface,
         state: 'received',
         subjectId: input.subjectId,
+        targetType: input.targetType,
         updatedAt: input.now,
       })
       .onConflictDoNothing()
       .returning();
     return inserted[0];
+  }
+
+  /**
+   * The open case for a target, if there is one.
+   *
+   * A new report joins it rather than opening a second case beside it, which is
+   * what makes several reports about one thing a single review without any of
+   * them being discarded.
+   */
+  async findOpenCaseForTarget(
+    executor: Executor,
+    input: {
+      readonly targetId: string;
+      readonly targetType: ReportTargetType;
+    },
+  ): Promise<CaseRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyCases)
+      .where(
+        and(
+          eq(safetyCases.targetType, input.targetType),
+          eq(safetyCases.targetId, input.targetId),
+          inArray(safetyCases.state, [...openCaseStates]),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Opens a case, or reports that one is already open for the target.
+   *
+   * The partial unique index decides rather than a prior read, so two reports
+   * arriving together produce one case and the loser is handed the winner's.
+   */
+  async insertCase(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly policyVersion: string;
+      readonly priority: CasePriority;
+      readonly queue: CaseQueue;
+      readonly targetId: string;
+      readonly targetType: ReportTargetType;
+    },
+  ): Promise<CaseRow | undefined> {
+    const inserted = await executor
+      .insert(safetyCases)
+      .values({
+        id: crypto.randomUUID(),
+        openedAt: input.now,
+        policyVersion: input.policyVersion,
+        priority: input.priority,
+        queue: input.queue,
+        state: 'new',
+        targetId: input.targetId,
+        targetType: input.targetType,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted[0];
+  }
+
+  async findCase(executor: Executor, id: string): Promise<CaseRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyCases)
+      .where(eq(safetyCases.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
+  /** The queue: open cases, oldest first, bounded and keyset paged. */
+  async listCases(
+    executor: Executor,
+    input: {
+      readonly after: CaseCursor | undefined;
+      readonly limit: number;
+      readonly queue: CaseQueue | undefined;
+      readonly states: readonly CaseState[];
+    },
+  ): Promise<CaseRow[]> {
+    const position =
+      input.after === undefined
+        ? undefined
+        : or(
+            gt(safetyCases.openedAt, input.after.openedAt),
+            and(
+              eq(safetyCases.openedAt, input.after.openedAt),
+              gt(safetyCases.id, input.after.id),
+            ),
+          );
+    return executor
+      .select()
+      .from(safetyCases)
+      .where(
+        and(
+          inArray(safetyCases.state, [...input.states]),
+          input.queue === undefined
+            ? undefined
+            : eq(safetyCases.queue, input.queue),
+          position,
+        ),
+      )
+      .orderBy(asc(safetyCases.openedAt), asc(safetyCases.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * Claims a case for a reviewer, against the version they read.
+   *
+   * The predicate also refuses a case somebody else currently holds, so a claim
+   * is not a way to take a review out from under whoever is doing it. A lapsed
+   * lease is claimable again, which is what stops a reviewer who disappeared
+   * from holding a case for ever.
+   */
+  async claimCase(
+    executor: Executor,
+    input: {
+      readonly actorReference: string;
+      readonly caseId: string;
+      readonly expectedVersion: number;
+      readonly expiresAt: Date;
+      readonly now: Date;
+    },
+  ): Promise<CaseRow | undefined> {
+    const updated = await executor
+      .update(safetyCases)
+      .set({
+        assignedActorReference: input.actorReference,
+        assignedAt: input.now,
+        assignmentExpiresAt: input.expiresAt,
+        updatedAt: input.now,
+        version: sql`${safetyCases.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyCases.id, input.caseId),
+          eq(safetyCases.version, input.expectedVersion),
+          inArray(safetyCases.state, [...openCaseStates]),
+          or(
+            isNull(safetyCases.assignmentExpiresAt),
+            lte(safetyCases.assignmentExpiresAt, input.now),
+            eq(safetyCases.assignedActorReference, input.actorReference),
+          ),
+        ),
+      )
+      .returning();
+    return updated[0];
+  }
+
+  /** Moves a case, and optionally its priority, against the version read. */
+  async transitionCase(
+    executor: Executor,
+    input: {
+      readonly caseId: string;
+      readonly expectedVersion: number;
+      readonly now: Date;
+      readonly priority?: CasePriority | undefined;
+      readonly state: CaseState;
+    },
+  ): Promise<CaseRow | undefined> {
+    const closing = input.state === 'closed';
+    const updated = await executor
+      .update(safetyCases)
+      .set({
+        ...(closing
+          ? {
+              assignedActorReference: null,
+              assignedAt: null,
+              assignmentExpiresAt: null,
+              closedAt: input.now,
+            }
+          : {}),
+        ...(input.priority === undefined ? {} : { priority: input.priority }),
+        state: input.state,
+        updatedAt: input.now,
+        version: sql`${safetyCases.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyCases.id, input.caseId),
+          eq(safetyCases.version, input.expectedVersion),
+          inArray(safetyCases.state, [...openCaseStates]),
+        ),
+      )
+      .returning();
+    return updated[0];
+  }
+
+  /** Every report a case carries, oldest first. Evidence, never a count. */
+  async listReportsForCase(
+    executor: Executor,
+    input: { readonly caseId: string; readonly limit: number },
+  ): Promise<ReportRow[]> {
+    return executor
+      .select()
+      .from(safetyReports)
+      .where(eq(safetyReports.caseId, input.caseId))
+      .orderBy(asc(safetyReports.createdAt), asc(safetyReports.id))
+      .limit(input.limit);
   }
 
   async findReportByClientId(

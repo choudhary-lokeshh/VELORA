@@ -19,6 +19,7 @@ import {
   createClubsRuntime,
   type ClubsRuntime,
 } from '../../src/clubs/composition.js';
+import { ClubSafetyDirectory } from '../../src/clubs/safety-directory.js';
 import {
   createCreatorsRuntime,
   type CreatorsRuntime,
@@ -39,6 +40,7 @@ import {
   type MessagingRuntime,
 } from '../../src/messaging/composition.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
+import { ConversationParticipation } from '../../src/messaging/participation.js';
 import {
   createNotificationsApiRuntime,
   type NotificationsApiRuntime,
@@ -181,6 +183,7 @@ export function testDiscoveryRuntime(input: {
  * published contract into another domain's tables.
  */
 export function testSafetyRuntime(input: {
+  readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
   readonly now?: () => Date;
   readonly users: UsersRuntime;
@@ -188,8 +191,12 @@ export function testSafetyRuntime(input: {
   const database = input.database ?? drizzle.mock();
   return createSafetyRuntime({
     accounts: input.users.enforcement,
+    catalog: new ClubSafetyDirectory(),
     consumerContext: input.users.consumerContext,
+    consumers: input.users.existence,
     conversations: new ConversationEnforcement(database),
+    conversationTargets: new ConversationParticipation(),
+    creators: input.creators.directory,
     database,
     ...(input.now === undefined ? {} : { now: input.now }),
     users: input.users.service,
@@ -399,10 +406,13 @@ export function testProductRuntimes(input: {
   readonly payouts: PayoutsRuntime;
   readonly safety: SafetyRuntime;
 } {
-  const safety = testSafetyRuntime(input);
-  const discovery = testDiscoveryRuntime({ ...input, safety });
+  // CREATORS and PRIVATE CLUBS first: TRUST & SAFETY consumes two narrow
+  // answers from them about what a report may name, and neither consumes
+  // anything of SAFETY's, so the order is the contract direction.
   const creators = testCreatorsRuntime(input);
   const clubs = testClubsRuntime({ ...input, creators });
+  const safety = testSafetyRuntime({ ...input, creators });
+  const discovery = testDiscoveryRuntime({ ...input, safety });
   // BILLING before ADMIN, exactly as the application composes them: an operator
   // reversal is BILLING's decision taken with an operator's authority, so ADMIN
   // receives the service rather than a database of its own.

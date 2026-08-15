@@ -767,7 +767,7 @@ export function SafetyArea({ api }: { readonly api: ConsumerApi }) {
                 clientReportId: crypto.randomUUID(),
                 ...(detail.trim().length === 0 ? {} : { detail }),
                 reasonCode,
-                subjectId: targetId,
+                target: { accountId: targetId, type: 'consumer_account' },
               }),
             'Report received. The other person is not told you reported them.',
           );

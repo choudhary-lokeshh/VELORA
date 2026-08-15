@@ -226,7 +226,10 @@ function ReportForm({
                 clientReportId: crypto.randomUUID(),
                 ...(detail.trim().length === 0 ? {} : { detail }),
                 reasonCode,
-                subjectId,
+                // The union names what is being reported. A consumer surface
+                // reports a person; a creator, a club, or an item is named by
+                // the public address the reporter was looking at.
+                target: { accountId: subjectId, type: 'consumer_account' },
               });
               if (result.kind === 'ok') {
                 setMessage(

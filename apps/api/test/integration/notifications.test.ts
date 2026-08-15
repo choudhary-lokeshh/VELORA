@@ -6,7 +6,10 @@ import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { createDiscoveryRuntime } from '../../src/discovery/composition.js';
 import { OutboxRelay } from '../../src/events/relay.js';
 import { createMessagingRuntime } from '../../src/messaging/composition.js';
+import { ClubSafetyDirectory } from '../../src/clubs/safety-directory.js';
+import { CreatorDirectory } from '../../src/creators/directory.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
+import { ConversationParticipation } from '../../src/messaging/participation.js';
 import {
   LocalTestNotificationChannel,
   UnavailableNotificationChannel,
@@ -83,8 +86,12 @@ const users = createUsersRuntime({
 });
 const safety = createSafetyRuntime({
   accounts: users.enforcement,
+  catalog: new ClubSafetyDirectory(),
   consumerContext: users.consumerContext,
+  consumers: users.existence,
+  conversationTargets: new ConversationParticipation(),
   conversations: new ConversationEnforcement(database.drizzle),
+  creators: new CreatorDirectory(),
   database: database.drizzle,
   now,
   users: users.service,

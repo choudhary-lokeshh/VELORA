@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { clubSlugSchema } from './clubs.js';
+import { creatorHandleSchema } from './creator.js';
 import { idempotencyKeySchema } from './product.js';
 
 /**
@@ -62,6 +64,55 @@ export const blockListResponseSchema = z
 /** Longest reporter narrative accepted. */
 export const maximumReportDetailCharacters = 2_000;
 
+/**
+ * What a reporter names.
+ *
+ * A discriminated union rather than one identifier, because a reporter names
+ * what they were looking at and public surfaces expose different addresses for
+ * different things: an account has an identifier, a creator has a handle, a
+ * club has a handle and a slug, a content item has an identifier, and a
+ * conversation has one only to the people in it.
+ *
+ * The server resolves each of these through the owning domain's contract before
+ * anything is recorded, so a caller can neither invent a target nor learn an
+ * internal identifier for something they could not already see.
+ */
+export const reportTargetSchema = z.discriminatedUnion('type', [
+  z
+    .object({ accountId: z.uuid(), type: z.literal('consumer_account') })
+    .strict(),
+  z
+    .object({
+      handle: creatorHandleSchema,
+      type: z.literal('creator_profile'),
+    })
+    .strict(),
+  z
+    .object({ contentId: z.uuid(), type: z.literal('creator_content') })
+    .strict(),
+  z
+    .object({
+      handle: creatorHandleSchema,
+      slug: clubSlugSchema,
+      type: z.literal('club'),
+    })
+    .strict(),
+  z
+    .object({ conversationId: z.uuid(), type: z.literal('conversation') })
+    .strict(),
+]);
+export type ReportTarget = z.infer<typeof reportTargetSchema>;
+
+/** What kind of thing a report is about. */
+export const reportTargetTypeSchema = z.enum([
+  'consumer_account',
+  'creator_profile',
+  'creator_content',
+  'club',
+  'conversation',
+]);
+export type ReportTargetTypeValue = z.infer<typeof reportTargetTypeSchema>;
+
 export const createReportRequestSchema = z
   .object({
     /** Makes submission retry-safe. Scoped by the server to the reporter. */
@@ -72,7 +123,7 @@ export const createReportRequestSchema = z
     /** Opaque message reference. Only meaningful with a conversation. */
     messageId: z.uuid().optional(),
     reasonCode: reportReasonSchema,
-    subjectId: z.uuid(),
+    target: reportTargetSchema,
   })
   .strict()
   .refine(
@@ -96,7 +147,12 @@ export const reportSchema = z
     id: z.uuid(),
     reasonCode: reportReasonSchema,
     state: reportStateSchema,
-    subjectId: z.uuid(),
+    /**
+     * What kind of thing was reported, and deliberately not which one. The
+     * reporter named it publicly; echoing Velora's internal identifier back
+     * would hand them one they never had.
+     */
+    targetType: reportTargetTypeSchema,
   })
   .strict();
 

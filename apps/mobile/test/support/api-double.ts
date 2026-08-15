@@ -395,13 +395,16 @@ export function createMobileApiDouble(
       return json(200, { blockedId: input.targetId, createdAt: iso() });
     }
     if (path === '/v1/safety/reports' && method === 'POST') {
-      const input = body as { reasonCode: string; subjectId: string };
+      const input = body as {
+        reasonCode: string;
+        target: { readonly type: string };
+      };
       return json(200, {
         createdAt: iso(),
         id: '66666666-6666-4666-8666-666666666666',
         reasonCode: input.reasonCode,
         state: 'received',
-        subjectId: input.subjectId,
+        targetType: input.target.type,
       });
     }
 

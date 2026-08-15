@@ -18,16 +18,26 @@ import {
   timestamptz,
 } from '../database/columns.js';
 import {
+  casePriorities,
+  caseQueues,
+  caseStates,
   maximumReportDetailCharacters,
   reportReasonCodes,
+  reportSourceSurfaces,
   reportStates,
+  reportTargetTypes,
   enforcementDispositions,
   enforcementObjectTypes,
   enforcementReasonCodes,
   enforcementScopes,
   objectScopedEnforcements,
+  type CasePriority,
+  type CaseQueue,
+  type CaseState,
   type EnforcementDisposition,
   type EnforcementObjectType,
+  type ReportSourceSurface,
+  type ReportTargetType,
 } from './policy.js';
 
 /**
@@ -87,6 +97,92 @@ export const safetyBlocks = pgTable(
 );
 
 /**
+ * A moderation case.
+ *
+ * The unit of review, and deliberately not the unit of intake. A report is
+ * evidence somebody filed; a case is the platform's decision to look at
+ * something. Keeping them apart is what lets several reports about one target
+ * be reviewed once without any of them being discarded, and what stops "how
+ * many people complained" from being a fact the workflow acts on.
+ *
+ * A case names what it is about rather than who reported it. There is no
+ * reporter column here at all, so no query over this table can group people by
+ * who they complained about.
+ *
+ * At most one case is open per target at a time, enforced by a partial unique
+ * index rather than by a read: two reports arriving together must converge on
+ * one case, and the database is what decides which.
+ */
+export const safetyCases = pgTable(
+  'safety_cases',
+  {
+    /** Opaque reference to the reviewer holding the claim, when one does. */
+    assignedActorReference: text('assigned_actor_reference'),
+    assignedAt: timestamptz('assigned_at'),
+    /** A claim lapses so a reviewer who disappears does not hold a case. */
+    assignmentExpiresAt: timestamptz('assignment_expires_at'),
+    closedAt: timestamptz('closed_at'),
+    id: uuid('id').primaryKey(),
+    openedAt: timestamptz('opened_at').notNull(),
+    policyVersion: text('policy_version').notNull(),
+    /** A reviewer's judgement. Never derived from how many reports there are. */
+    priority: text('priority').notNull().$type<CasePriority>(),
+    queue: text('queue').notNull().$type<CaseQueue>(),
+    state: text('state').notNull().$type<CaseState>(),
+    targetId: uuid('target_id').notNull(),
+    targetType: text('target_type').notNull().$type<ReportTargetType>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    /** Optimistic concurrency. Two reviewers acting at once produce one move. */
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    uniqueIndex('safety_cases_open_target_uk')
+      .on(table.targetType, table.targetId)
+      .where(sql`${table.state} <> 'closed'`),
+    // The queue, ordered exactly as the cursor pages it, so a page is an index
+    // walk that stops rather than a scan of every case ever opened.
+    index('safety_cases_queue_idx').on(
+      table.queue,
+      table.state,
+      table.openedAt,
+      table.id,
+    ),
+    // Reclaiming lapsed assignments, which a worker asks for by deadline.
+    index('safety_cases_assignment_idx')
+      .on(table.assignmentExpiresAt)
+      .where(sql`${table.assignmentExpiresAt} is not null`),
+    index('safety_cases_target_idx').on(table.targetType, table.targetId),
+    check('safety_cases_state_check', inList(table.state, caseStates)),
+    check(
+      'safety_cases_priority_check',
+      inList(table.priority, casePriorities),
+    ),
+    check('safety_cases_queue_check', inList(table.queue, caseQueues)),
+    check(
+      'safety_cases_target_type_check',
+      inList(table.targetType, reportTargetTypes),
+    ),
+    // A closed case has a moment and an open one has none.
+    check(
+      'safety_cases_closed_shape_check',
+      sql`(${table.state} = 'closed') = (${table.closedAt} is not null)`,
+    ),
+    // A claim is a reviewer, a moment, and a deadline, or it is nothing. Two of
+    // the three would be a case somebody holds with no way to release it.
+    check(
+      'safety_cases_assignment_shape_check',
+      sql`(${table.assignedActorReference} is null) = (${table.assignedAt} is null)
+        and (${table.assignedActorReference} is null) = (${table.assignmentExpiresAt} is null)`,
+    ),
+    check(
+      'safety_cases_assignment_expiry_check',
+      sql`${table.assignmentExpiresAt} is null or ${table.assignmentExpiresAt} > ${table.assignedAt}`,
+    ),
+    check('safety_cases_version_check', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
  * A report.
  *
  * The reporter identifier is stored because a report without a reporter cannot
@@ -103,6 +199,12 @@ export const safetyBlocks = pgTable(
 export const safetyReports = pgTable(
   'safety_reports',
   {
+    /**
+     * The case this report is evidence in. Every report gets one, and several
+     * reports about one target share it — which is what lets a duplicate be
+     * reviewed once without any of them being discarded.
+     */
+    caseId: uuid('case_id').references(() => safetyCases.id),
     clientReportId: text('client_report_id').notNull(),
     /** Opaque MESSAGING reference, when the report came from a conversation. */
     conversationId: uuid('conversation_id'),
@@ -117,8 +219,25 @@ export const safetyReports = pgTable(
     reasonCode: text('reason_code').notNull(),
     reporterId: uuid('reporter_id').notNull(),
     resolvedAt: timestamptz('resolved_at'),
+    /**
+     * Which surface it was filed from, taken from the credential's audience.
+     *
+     * Nullable only for reports filed before Velora recorded a surface at all.
+     * Absent means exactly that and is a real state rather than a gap: the old
+     * API accepted both consumer surfaces and kept nothing that distinguishes
+     * them, so inventing one would be a fact nobody observed. Every report
+     * written from here on carries it.
+     */
+    sourceSurface: text('source_surface').$type<ReportSourceSurface>(),
     state: text('state').notNull(),
+    /**
+     * What is being reported. The identifier's meaning is qualified by
+     * `targetType`: a consumer account, a creator, a content item, a club, or a
+     * conversation. It is always resolved server-side through the owning
+     * domain's contract before this row is written.
+     */
     subjectId: uuid('subject_id').notNull(),
+    targetType: text('target_type').notNull().$type<ReportTargetType>(),
     updatedAt: timestamptz('updated_at').notNull(),
     /** Optimistic concurrency for the review transition. */
     version: integer('version').notNull().default(1),
@@ -130,11 +249,25 @@ export const safetyReports = pgTable(
     ),
     // The moderation queue: open reports, oldest first.
     index('safety_reports_state_idx').on(table.state, table.createdAt),
-    index('safety_reports_subject_idx').on(table.subjectId),
+    index('safety_reports_subject_idx').on(table.targetType, table.subjectId),
     index('safety_reports_reporter_idx').on(table.reporterId, table.createdAt),
+    // Every report a case carries, which is what a reviewer reads.
+    index('safety_reports_case_idx').on(table.caseId, table.createdAt),
+    // Reporting yourself is refused where "yourself" is a thing this domain can
+    // compare. A creator reporting their own item is a different question,
+    // decided by the domain that owns the item rather than by an identifier
+    // equality that would be comparing two different identifier spaces.
     check(
       'safety_reports_not_self_check',
-      sql`${table.reporterId} <> ${table.subjectId}`,
+      sql`${table.targetType} <> 'consumer_account' or ${table.reporterId} <> ${table.subjectId}`,
+    ),
+    check(
+      'safety_reports_target_type_check',
+      inList(table.targetType, reportTargetTypes),
+    ),
+    check(
+      'safety_reports_source_surface_check',
+      sql`${table.sourceSurface} is null or ${inList(table.sourceSurface, reportSourceSurfaces)}`,
     ),
     check('safety_reports_state_check', inList(table.state, reportStates)),
     check(

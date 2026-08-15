@@ -22,6 +22,7 @@ import {
   type ConsumerContextResolver,
   type ConsumerRouteContext,
 } from '../users/context.js';
+import type { ReportSourceSurface } from './policy.js';
 import type { BlockView, ReportView, SafetyService } from './service.js';
 
 export interface SafetyRoutesDependencies {
@@ -117,9 +118,15 @@ export class SafetyRoutes {
     const parsed = parseRouteBody(createReportRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
 
+    // The surface comes from the credential's audience, never from the body. A
+    // client-declared surface would be a client-authoritative fact about
+    // policy, and surface is the axis mature-content eligibility turns on.
+    const sourceSurface = surfaceOf(resolved.context.auth.audience);
+    if (sourceSurface === undefined) return this.invalid(input);
+
     const outcome = await this.dependencies.safety.report(
       resolved.context.account,
-      parsed.value,
+      { ...parsed.value, sourceSurface },
     );
     switch (outcome.kind) {
       case 'report': {
@@ -218,6 +225,31 @@ function reportBody(view: ReportView) {
     id: view.id,
     reasonCode: view.reasonCode,
     state: view.state,
-    subjectId: view.subjectId,
+    targetType: view.targetType,
   };
+}
+
+/**
+ * The reporting surface a credential speaks for.
+ *
+ * Platform Admin is deliberately absent: an operator does not file consumer
+ * reports, and the consumer context refuses that audience before this is
+ * reached anyway. Mapping it to anything would be a second, weaker opinion
+ * about who may report.
+ */
+function surfaceOf(audience: string): ReportSourceSurface | undefined {
+  switch (audience) {
+    case 'consumer_web': {
+      return 'consumer_web';
+    }
+    case 'consumer_mobile': {
+      return 'consumer_mobile';
+    }
+    case 'creator_studio': {
+      return 'creator_studio';
+    }
+    default: {
+      return undefined;
+    }
+  }
 }

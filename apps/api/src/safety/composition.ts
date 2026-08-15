@@ -10,6 +10,13 @@ import { ModerationService } from './moderation.js';
 import { SafetyRepository } from './repository.js';
 import { SafetyRoutes } from './routes.js';
 import { SafetyService } from './service.js';
+import {
+  ReportTargetResolver,
+  type SafetyCatalogTargetPort,
+  type SafetyConsumerTargetPort,
+  type SafetyConversationTargetPort,
+  type SafetyCreatorTargetPort,
+} from './targets.js';
 
 export interface SafetyRuntime {
   /** The one writer of enforcement records. MODERATION and ADMIN call it. */
@@ -34,15 +41,34 @@ export interface SafetyRuntime {
  */
 export function createSafetyRuntime(input: {
   readonly accounts: ConsumerEnforcementPort;
+  /** PRIVATE CLUBS' answer about what a visitor could have been looking at. */
+  readonly catalog: SafetyCatalogTargetPort;
   readonly consumerContext: ConsumerContextResolver;
+  /** USERS' answer about whether an account exists at all. */
+  readonly consumers: SafetyConsumerTargetPort;
   readonly conversations: ConversationEnforcementPort;
+  /** MESSAGING's answer about who is in a conversation. */
+  readonly conversationTargets: SafetyConversationTargetPort;
+  /** CREATORS' answer resolving a public handle. */
+  readonly creators: SafetyCreatorTargetPort;
   readonly database: DatabaseHandle;
   readonly now?: () => Date;
   readonly users: UsersService;
 }): SafetyRuntime {
   const now = input.now ?? (() => new Date());
   const repository = new SafetyRepository(input.database);
-  const service = new SafetyService({ now, repository, users: input.users });
+  const targets = new ReportTargetResolver({
+    catalog: input.catalog,
+    consumers: input.consumers,
+    conversations: input.conversationTargets,
+    creators: input.creators,
+  });
+  const service = new SafetyService({
+    now,
+    repository,
+    targets,
+    users: input.users,
+  });
   const authority = new EnforcementAuthority({ now, repository });
   return {
     authority,

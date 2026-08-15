@@ -25,6 +25,40 @@ export interface ConsumerStandingPort {
   }): Promise<boolean>;
 }
 
+/**
+ * Whether an account exists at all.
+ *
+ * Deliberately weaker than deliverability, and deliberately separate from it. A
+ * person must be reportable while restricted, deactivated, or mid-deletion —
+ * often those are exactly the accounts a report is about — so TRUST & SAFETY
+ * needs existence rather than good standing, and conflating the two would make
+ * an enforcement decision quietly un-reportable.
+ *
+ * A boolean and nothing else. A caller that could read the status could infer
+ * an enforcement decision from a reporting form.
+ */
+export interface ConsumerExistencePort {
+  accountExists(input: {
+    readonly accountId: string;
+    readonly executor: Executor;
+  }): Promise<boolean>;
+}
+
+export class ConsumerExistenceDirectory implements ConsumerExistencePort {
+  constructor(private readonly repository: UsersRepository) {}
+
+  async accountExists(input: {
+    readonly accountId: string;
+    readonly executor: Executor;
+  }): Promise<boolean> {
+    const account = await this.repository.findById(
+      input.executor,
+      input.accountId,
+    );
+    return account !== undefined;
+  }
+}
+
 export class ConsumerStanding implements ConsumerStandingPort {
   constructor(private readonly repository: UsersRepository) {}
 

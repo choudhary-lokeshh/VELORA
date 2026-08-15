@@ -10,7 +10,10 @@ import {
 import { databaseAdmissionLimit } from '../../src/database/admission.js';
 import { createDiscoveryRuntime } from '../../src/discovery/composition.js';
 import { createMessagingRuntime } from '../../src/messaging/composition.js';
+import { ClubSafetyDirectory } from '../../src/clubs/safety-directory.js';
+import { CreatorDirectory } from '../../src/creators/directory.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
+import { ConversationParticipation } from '../../src/messaging/participation.js';
 import { createNotificationsApiRuntime } from '../../src/notifications/composition.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
@@ -137,8 +140,12 @@ function createInstance(name: string): Instance {
   });
   const safety = createSafetyRuntime({
     accounts: users.enforcement,
+    catalog: new ClubSafetyDirectory(),
     consumerContext: users.consumerContext,
+    consumers: users.existence,
+    conversationTargets: new ConversationParticipation(),
     conversations: new ConversationEnforcement(service.database),
+    creators: new CreatorDirectory(),
     database: service.database,
     users: users.service,
   });

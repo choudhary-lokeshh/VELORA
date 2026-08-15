@@ -70,6 +70,18 @@ The reporter learns that their report exists and what state it is in. Their iden
 
 Submission is retry-safe on the reporter's own client identifier, so a lost response does not become a second report, while a genuinely second report under a new identifier is a second report. Volume is bounded per account per window. Reaching the bound refuses further submissions and never removes or alters a report already made, because a discarded report is destroyed evidence.
 
+### What a report may name
+
+A report used to be about a consumer account and nothing else. It now names a target from a closed vocabulary — an account, a creator, a published item, a club, or a conversation — and the type is what decides which domain validates the identifier and which queue the case lands in. A free string would be a report pointing at something nobody checked and nobody owns.
+
+**A reporter names what they were looking at; SAFETY stores Velora's own identifier.** Public surfaces expose a handle, a slug, or an item identifier and never an internal one, so the request carries what a visitor could see and the server resolves it through the owning domain's published contract: USERS answers whether an account exists, CREATORS resolves a published handle, PRIVATE CLUBS answers whether an item or club is published, MESSAGING answers whether the reporter is in the conversation. SAFETY reads none of their tables.
+
+The gap between the two is the point. A caller cannot invent a target, cannot report something that was never published, and cannot learn an internal identifier for something they could not already see. Every resolution answers with one value or nothing, and *nothing* covers the unknown, the unpublished, the not-yours, and the reporter themselves identically — so no shape of refusal can be used to enumerate. The reporter's own view carries the target *type* and no identifier at all, because echoing a resolved identifier back would hand them one they never had.
+
+A conversation is reportable only by somebody in it. A report naming an arbitrary conversation would otherwise be a way to assert that two other people are talking, and that disclosure would stand however the report was later handled.
+
+The surface a report was filed from is taken from the credential's audience and never from the request body. A client-declared surface would be a client-authoritative fact about policy, and surface is the axis [surface and distribution eligibility](../compliance/07-surface-and-distribution-eligibility.md) makes load-bearing. It is recorded as absent for reports filed before Velora kept one, which is true rather than a guess.
+
 The reason codes are a **reporter-facing selection and not the approved risk taxonomy**, which remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`. They are deliberately a different set from the vocabulary an enforcement decision records: a report is an allegation, and only a review makes it anything more. A unit assertion keeps the two sets from converging.
 
 ### The enforcement authority

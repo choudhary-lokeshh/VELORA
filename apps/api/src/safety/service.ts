@@ -1,4 +1,6 @@
+import type { TransactionHandle } from '../database/executor.js';
 import { lockPair } from '../database/pair-lock.js';
+import { lockSubject } from '../database/subject-lock.js';
 import type { UserAccountRow } from '../users/repository.js';
 import type { UsersService } from '../users/service.js';
 import {
@@ -8,13 +10,27 @@ import {
   encodeReportCursor,
 } from './cursor.js';
 import {
+  casePolicyVersion,
   maximumSafetyPageSize,
+  queueFor,
   reportPolicyVersion,
   reportRateLimitCount,
   reportRateWindowMilliseconds,
   type ReportReasonCode,
+  type ReportSourceSurface,
+  type ReportTargetType,
 } from './policy.js';
-import type { BlockRow, ReportRow, SafetyRepository } from './repository.js';
+import type {
+  BlockRow,
+  CaseRow,
+  ReportRow,
+  SafetyRepository,
+} from './repository.js';
+import type {
+  ReportTargetRequest,
+  ReportTargetResolver,
+  ResolvedReportTarget,
+} from './targets.js';
 
 export interface BlockView {
   readonly blockedId: string;
@@ -26,7 +42,16 @@ export interface ReportView {
   readonly id: string;
   readonly reasonCode: ReportReasonCode;
   readonly state: 'received' | 'under_review' | 'actioned' | 'dismissed';
-  readonly subjectId: string;
+  /**
+   * What kind of thing was reported, and deliberately not which one.
+   *
+   * The reporter named it — a handle, a slug, an identifier from a page they
+   * were on — so echoing Velora's internal identifier back would hand them one
+   * they did not have, for a creator, a club, or a content item they only ever
+   * saw addressed publicly. The type is enough to render "you reported a
+   * creator" and carries nothing that was not already theirs.
+   */
+  readonly targetType: ReportTargetType;
 }
 
 export type BlockOutcome =
@@ -67,6 +92,7 @@ export type ReportListOutcome =
 export interface SafetyServiceDependencies {
   readonly now: () => Date;
   readonly repository: SafetyRepository;
+  readonly targets: ReportTargetResolver;
   readonly users: UsersService;
 }
 
@@ -203,26 +229,33 @@ export class SafetyService {
       readonly detail?: string | undefined;
       readonly messageId?: string | undefined;
       readonly reasonCode: ReportReasonCode;
-      readonly subjectId: string;
+      readonly sourceSurface: ReportSourceSurface;
+      readonly target: ReportTargetRequest;
     },
   ): Promise<ReportOutcome> {
-    if (input.subjectId === actor.id) return { kind: 'invalid_target' };
-    const subject = await this.dependencies.users.findAccountById(
-      input.subjectId,
-    );
-    if (subject === undefined) return { kind: 'invalid_target' };
+    const { repository } = this.dependencies;
+    const resolved = await this.dependencies.targets.resolve({
+      executor: repository.transactionless,
+      reporterId: actor.id,
+      target: input.target,
+    });
+    // One refusal for a target that does not exist, one that is not published,
+    // one that belongs to somebody else, and one that is the reporter. A caller
+    // probing this endpoint learns nothing finer than "not a thing you can
+    // report", which is what stops it becoming an enumeration oracle.
+    if (resolved === undefined) return { kind: 'invalid_target' };
 
     const now = this.dependencies.now();
-    const existing = await this.dependencies.repository.findReportByClientId(
-      this.dependencies.repository.transactionless,
+    const existing = await repository.findReportByClientId(
+      repository.transactionless,
       { clientReportId: input.clientReportId, reporterId: actor.id },
     );
     if (existing !== undefined) {
       return { kind: 'report', view: reportView(existing) };
     }
 
-    const recent = await this.dependencies.repository.countReportsSince(
-      this.dependencies.repository.transactionless,
+    const recent = await repository.countReportsSince(
+      repository.transactionless,
       {
         reporterId: actor.id,
         since: new Date(now.getTime() - reportRateWindowMilliseconds),
@@ -230,9 +263,15 @@ export class SafetyService {
     );
     if (recent >= reportRateLimitCount) return { kind: 'rate_limited' };
 
-    const created = await this.dependencies.repository.insertReport(
-      this.dependencies.repository.transactionless,
-      {
+    // The report and the case it joins commit together, under the lock that
+    // serializes decisions about this target. Without it two reports arriving
+    // at once could each find no open case and each open one, and the target
+    // would have two reviews of the same thing.
+    const row = await repository.transaction(async (executor) => {
+      await lockSubject(executor, resolved.targetId);
+      const openCase = await this.caseFor(executor, resolved, now);
+      const created = await repository.insertReport(executor, {
+        caseId: openCase.id,
         clientReportId: input.clientReportId,
         conversationId: input.conversationId ?? null,
         detail: input.detail ?? null,
@@ -241,18 +280,59 @@ export class SafetyService {
         policyVersion: reportPolicyVersion,
         reasonCode: input.reasonCode,
         reporterId: actor.id,
-        subjectId: input.subjectId,
-      },
-    );
-    const row =
-      created ??
-      (await this.dependencies.repository.findReportByClientId(
-        this.dependencies.repository.transactionless,
-        { clientReportId: input.clientReportId, reporterId: actor.id },
-      ));
+        sourceSurface: input.sourceSurface,
+        subjectId: resolved.targetId,
+        targetType: resolved.targetType,
+      });
+      return (
+        created ??
+        (await repository.findReportByClientId(executor, {
+          clientReportId: input.clientReportId,
+          reporterId: actor.id,
+        }))
+      );
+    });
     return row === undefined
       ? { kind: 'invalid_target' }
       : { kind: 'report', view: reportView(row) };
+  }
+
+  /**
+   * The open case this report belongs in, opening one if there is none.
+   *
+   * Joining an existing case is grouping, not escalation. Nothing about the
+   * case changes because a second report arrived: not its priority, not its
+   * state, not its queue. `docs/flows/report-to-enforcement.md` forbids report
+   * volume from deciding anything, and a case that quietly got more urgent
+   * because more people complained would be exactly that rule broken by a
+   * side effect.
+   */
+  private async caseFor(
+    executor: TransactionHandle,
+    target: ResolvedReportTarget,
+    now: Date,
+  ): Promise<CaseRow> {
+    const { repository } = this.dependencies;
+    const open = await repository.findOpenCaseForTarget(executor, target);
+    if (open !== undefined) return open;
+    const created = await repository.insertCase(executor, {
+      now,
+      policyVersion: casePolicyVersion,
+      // Untriaged is a real answer rather than a missing one: nobody has looked
+      // at this yet, and only a reviewer may say how urgent it is.
+      priority: 'untriaged',
+      queue: queueFor(target.targetType),
+      targetId: target.targetId,
+      targetType: target.targetType,
+    });
+    if (created !== undefined) return created;
+    // The partial unique index refused the insert, so somebody else opened the
+    // case between the read and the write. Theirs is the case.
+    const winner = await repository.findOpenCaseForTarget(executor, target);
+    if (winner === undefined) {
+      throw new Error('Case insert conflicted with no open case to join');
+    }
+    return winner;
   }
 
   /** The caller's own reports. There is no route to anybody else's. */
@@ -304,6 +384,6 @@ function reportView(row: ReportRow): ReportView {
     id: row.id,
     reasonCode: row.reasonCode as ReportReasonCode,
     state: row.state as ReportView['state'],
-    subjectId: row.subjectId,
+    targetType: row.targetType,
   };
 }

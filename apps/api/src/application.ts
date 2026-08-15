@@ -25,6 +25,7 @@ import {
   type BillingRuntime,
 } from './billing/composition.js';
 import { createClubsRuntime, type ClubsRuntime } from './clubs/composition.js';
+import { ClubSafetyDirectory } from './clubs/safety-directory.js';
 import {
   createCreatorsRuntime,
   type CreatorsRuntime,
@@ -38,6 +39,7 @@ import {
   type MessagingRuntime,
 } from './messaging/composition.js';
 import { ConversationEnforcement } from './messaging/enforcement.js';
+import { ConversationParticipation } from './messaging/participation.js';
 import {
   createNotificationsApiRuntime,
   type NotificationsApiRuntime,
@@ -187,20 +189,8 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
-    // Composition order follows the contracts, not the domain list. TRUST &
-    // SAFETY publishes the eligibility answer DISCOVERY and MESSAGING both
-    // consume, and consumes only the two narrow enforcement contracts USERS and
-    // MESSAGING publish — neither of which needs a full runtime — so there is no
-    // cycle to break with a late setter.
-    safety =
-      injectedSafety ??
-      createSafetyRuntime({
-        accounts: users.enforcement,
-        consumerContext: users.consumerContext,
-        conversations: new ConversationEnforcement(ownedDatabase.database),
-        database: ownedDatabase.database,
-        users: users.service,
-      });
+    // Composition order follows the contracts, not the domain list.
+    //
     // CREATORS depends on USERS' published adult standing and on AUTH's caller
     // resolver, and on nothing else. It is composed before the consumer product
     // domains because none of them depend on it: a creator capability changes
@@ -224,6 +214,27 @@ export function createApplication(
         creators: creators.directory,
         database: ownedDatabase.database,
         standing: users.adultStanding,
+      });
+    // TRUST & SAFETY publishes the eligibility answer DISCOVERY and MESSAGING
+    // both consume, and the enforcement authority ADMIN calls. It consumes the
+    // two narrow enforcement contracts USERS and MESSAGING publish, and four
+    // narrow answers about what a report may name — an account exists, a public
+    // handle resolves, a published item or club exists, somebody is in a
+    // conversation. It is composed after CREATORS and PRIVATE CLUBS because two
+    // of those answers are theirs; none of them consumes anything of SAFETY's,
+    // so there is still no cycle to break with a late setter.
+    safety =
+      injectedSafety ??
+      createSafetyRuntime({
+        accounts: users.enforcement,
+        catalog: new ClubSafetyDirectory(),
+        consumerContext: users.consumerContext,
+        consumers: users.existence,
+        conversations: new ConversationEnforcement(ownedDatabase.database),
+        conversationTargets: new ConversationParticipation(),
+        creators: creators.directory,
+        database: ownedDatabase.database,
+        users: users.service,
       });
     // BILLING depends on CREATORS' eligibility answer and on PRIVATE CLUBS'
     // published resource contract, so it is composed after both. Neither of

@@ -1,13 +1,22 @@
 import { lockSubject } from '../database/subject-lock.js';
 import type { ConversationEnforcementPort } from '../messaging/enforcement.js';
 import type { ConsumerEnforcementPort } from '../users/enforcement.js';
+import { decodeCaseCursor, encodeCaseCursor } from './cursor.js';
 import type { EnforcementAuthority } from './enforcement.js';
 import {
+  caseClaimLeaseMilliseconds,
+  maximumCasePageSize,
   maximumSafetyPageSize,
+  openCaseStates,
+  type CasePriority,
+  type CaseQueue,
+  type CaseState,
   type EnforcementReasonCode,
   type EnforcementScope,
+  type ReportTargetType,
 } from './policy.js';
 import type {
+  CaseRow,
   EnforcementRow,
   ReportRow,
   SafetyRepository,
@@ -23,6 +32,7 @@ import type {
  * elicit one.
  */
 export interface ModerationReportView {
+  readonly caseId: string | null;
   readonly conversationId: string | null;
   readonly createdAt: Date;
   readonly detail: string | null;
@@ -31,10 +41,53 @@ export interface ModerationReportView {
   readonly policyVersion: string;
   readonly reasonCode: string;
   readonly reporterId: string;
+  readonly sourceSurface: string | null;
   readonly state: string;
   readonly subjectId: string;
+  readonly targetType: ReportTargetType;
   readonly version: number;
 }
+
+/**
+ * A case as a reviewer sees it.
+ *
+ * There is no reporter here and no report count. A case is about a target, and
+ * a reviewer who could see how many people complained would have a number that
+ * `docs/flows/report-to-enforcement.md` says must decide nothing — which is a
+ * number that decides something the moment somebody sees it.
+ */
+export interface ModerationCaseView {
+  readonly assignedActorReference: string | null;
+  readonly assignmentExpiresAt: Date | null;
+  readonly id: string;
+  readonly openedAt: Date;
+  readonly policyVersion: string;
+  readonly priority: CasePriority;
+  readonly queue: CaseQueue;
+  readonly state: CaseState;
+  readonly targetId: string;
+  readonly targetType: ReportTargetType;
+  readonly version: number;
+}
+
+export interface CaseDetail {
+  readonly case: ModerationCaseView;
+  readonly reports: readonly ModerationReportView[];
+}
+
+export type CaseQueuePage =
+  | {
+      readonly kind: 'page';
+      readonly cases: readonly ModerationCaseView[];
+      readonly nextCursor: string | undefined;
+    }
+  | { readonly kind: 'invalid_cursor' };
+
+export type CaseOutcome =
+  | { readonly kind: 'recorded'; readonly case: ModerationCaseView }
+  | { readonly kind: 'not_found' }
+  /** Somebody else moved or holds it; re-read and decide again. */
+  | { readonly kind: 'conflict' };
 
 export type ModerationOutcome =
   | { readonly kind: 'recorded'; readonly report: ModerationReportView }
@@ -87,6 +140,141 @@ export interface ModerationServiceDependencies {
  */
 export class ModerationService {
   constructor(private readonly dependencies: ModerationServiceDependencies) {}
+
+  /**
+   * The case queue: open cases, oldest first, keyset paged.
+   *
+   * Ordered by when a case was opened rather than by how many reports it
+   * carries. Volume orders nothing here, because a queue sorted by complaint
+   * count is a queue anybody with several accounts can steer.
+   */
+  async openCases(
+    input: {
+      readonly cursor?: string | undefined;
+      readonly pageSize?: number | undefined;
+      readonly queue?: CaseQueue | undefined;
+    } = {},
+  ): Promise<CaseQueuePage> {
+    const decoded =
+      input.cursor === undefined ? undefined : decodeCaseCursor(input.cursor);
+    if (input.cursor !== undefined && decoded === undefined) {
+      return { kind: 'invalid_cursor' };
+    }
+    const pageSize = Math.max(
+      1,
+      Math.min(input.pageSize ?? maximumCasePageSize, maximumCasePageSize),
+    );
+    const rows = await this.dependencies.repository.listCases(
+      this.dependencies.repository.transactionless,
+      {
+        after: decoded,
+        limit: pageSize + 1,
+        queue: input.queue,
+        states: [...openCaseStates],
+      },
+    );
+    const page = rows.slice(0, pageSize);
+    const last = page.at(-1);
+    return {
+      cases: page.map(caseView),
+      kind: 'page',
+      nextCursor:
+        rows.length > pageSize && last !== undefined
+          ? encodeCaseCursor({ id: last.id, openedAt: last.openedAt })
+          : undefined,
+    };
+  }
+
+  /** One case and the reports that are evidence in it. */
+  async caseDetail(caseId: string): Promise<CaseDetail | undefined> {
+    const { repository } = this.dependencies;
+    const found = await repository.findCase(repository.transactionless, caseId);
+    if (found === undefined) return undefined;
+    const reports = await repository.listReportsForCase(
+      repository.transactionless,
+      { caseId, limit: maximumCasePageSize },
+    );
+    return { case: caseView(found), reports: reports.map(moderationView) };
+  }
+
+  /**
+   * Claims a case for review.
+   *
+   * A lease rather than an assignment: a reviewer whose session ends mid-review
+   * releases the case when the lease lapses, rather than holding it out of the
+   * queue for ever. Re-claiming a case one already holds renews the lease,
+   * which is what makes a long review possible without a second mechanism.
+   */
+  async claimCase(input: {
+    readonly actorReference: string;
+    readonly caseId: string;
+  }): Promise<CaseOutcome> {
+    const { repository } = this.dependencies;
+    const now = this.dependencies.now();
+    const found = await repository.findCase(
+      repository.transactionless,
+      input.caseId,
+    );
+    if (found === undefined) return { kind: 'not_found' };
+    const claimed = await repository.claimCase(repository.transactionless, {
+      actorReference: input.actorReference,
+      caseId: input.caseId,
+      expectedVersion: found.version,
+      expiresAt: new Date(now.getTime() + caseClaimLeaseMilliseconds),
+      now,
+    });
+    return claimed === undefined
+      ? { kind: 'conflict' }
+      : { case: caseView(claimed), kind: 'recorded' };
+  }
+
+  /**
+   * Records a reviewer's judgement of how urgent a case is, and moves it.
+   *
+   * Priority is an input here and nowhere else. Nothing computes it, nothing
+   * raises it because a second report arrived, and no default other than
+   * `untriaged` exists — which is the honest state for a case nobody has looked
+   * at rather than a quiet claim that it is ordinary.
+   */
+  async triageCase(input: {
+    readonly caseId: string;
+    readonly priority: CasePriority;
+    readonly state: 'triaged' | 'investigating';
+  }): Promise<CaseOutcome> {
+    return this.moveCase({
+      caseId: input.caseId,
+      priority: input.priority,
+      state: input.state,
+    });
+  }
+
+  /** Closes a case without a decision. A decision is a separate record. */
+  async closeCase(input: { readonly caseId: string }): Promise<CaseOutcome> {
+    return this.moveCase({ caseId: input.caseId, state: 'closed' });
+  }
+
+  private async moveCase(input: {
+    readonly caseId: string;
+    readonly priority?: CasePriority | undefined;
+    readonly state: CaseState;
+  }): Promise<CaseOutcome> {
+    const { repository } = this.dependencies;
+    const found = await repository.findCase(
+      repository.transactionless,
+      input.caseId,
+    );
+    if (found === undefined) return { kind: 'not_found' };
+    const moved = await repository.transitionCase(repository.transactionless, {
+      caseId: input.caseId,
+      expectedVersion: found.version,
+      now: this.dependencies.now(),
+      priority: input.priority,
+      state: input.state,
+    });
+    return moved === undefined
+      ? { kind: 'conflict' }
+      : { case: caseView(moved), kind: 'recorded' };
+  }
 
   /** The queue: unresolved reports, oldest first. */
   async openReports(
@@ -307,6 +495,7 @@ class EnforcementNotApplicable extends Error {
 
 function moderationView(row: ReportRow): ModerationReportView {
   return {
+    caseId: row.caseId,
     conversationId: row.conversationId,
     createdAt: row.createdAt,
     detail: row.detail,
@@ -315,8 +504,26 @@ function moderationView(row: ReportRow): ModerationReportView {
     policyVersion: row.policyVersion,
     reasonCode: row.reasonCode,
     reporterId: row.reporterId,
+    sourceSurface: row.sourceSurface,
     state: row.state,
     subjectId: row.subjectId,
+    targetType: row.targetType,
+    version: row.version,
+  };
+}
+
+function caseView(row: CaseRow): ModerationCaseView {
+  return {
+    assignedActorReference: row.assignedActorReference,
+    assignmentExpiresAt: row.assignmentExpiresAt,
+    id: row.id,
+    openedAt: row.openedAt,
+    policyVersion: row.policyVersion,
+    priority: row.priority,
+    queue: row.queue,
+    state: row.state,
+    targetId: row.targetId,
+    targetType: row.targetType,
     version: row.version,
   };
 }
