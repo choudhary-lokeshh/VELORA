@@ -71,6 +71,12 @@ export interface TestDatabase {
 const truncationRoots = [
   'auth_accounts',
   'auth_recovery_rate_events',
+  // BILLING's journal. Entries cascade from neither table — the composite
+  // currency foreign keys carry `no action` so nothing can delete a posted
+  // entry — so all three are listed, entries first.
+  'billing_journal_entries',
+  'billing_journal_transactions',
+  'billing_journal_accounts',
   // PRIVATE CLUBS references a creator by opaque identifier with no foreign
   // key, so nothing cascades into its catalog either.
   'clubs_clubs',

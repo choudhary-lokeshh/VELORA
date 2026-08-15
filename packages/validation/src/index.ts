@@ -113,6 +113,7 @@ export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
 export * from './messaging.js';
+export * from './money.js';
 export * from './notifications.js';
 export * from './product.js';
 export * from './profile.js';

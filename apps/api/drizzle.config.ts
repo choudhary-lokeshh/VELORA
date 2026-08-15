@@ -10,6 +10,7 @@ export default defineConfig({
   out: './drizzle',
   schema: [
     './src/auth/schema.ts',
+    './src/billing/schema.ts',
     './src/clubs/schema.ts',
     './src/creators/schema.ts',
     './src/discovery/schema.ts',
