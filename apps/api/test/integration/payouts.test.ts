@@ -918,6 +918,7 @@ describe('a deployed environment cannot pay anybody', () => {
       config: testServerConfig(),
       creatorContext: product.creators.creatorContext,
       database: database.drizzle,
+      logger,
     });
     expect(deployed.provider.provider).toBe('unavailable');
     expect(deployed.policy.source).toBe('unpublished');

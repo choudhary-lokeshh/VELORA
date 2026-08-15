@@ -39,6 +39,7 @@ import { OfferRoutes } from './offer-routes.js';
 import { OfferService } from './offer-service.js';
 import { ProviderEventRepository } from './event-repository.js';
 import { PaymentRepository } from './payment-repository.js';
+import { BillingReconciliation } from './reconciliation.js';
 import { RefundRepository } from './refund-repository.js';
 import { RefundService } from './refund-service.js';
 import { SubscriptionRepository } from './subscription-repository.js';
@@ -95,6 +96,8 @@ export interface BillingRuntime {
   readonly tax: TaxAuthorityPort;
   /** The payment adapter. `unavailable` in every deployed environment. */
   readonly provider: PaymentProviderPort;
+  /** Resolves ambiguous outcomes from provider truth. Runs on the worker only. */
+  readonly reconciliation: BillingReconciliation;
   readonly refundRepository: RefundRepository;
   /** Reversal orchestration. Operator-driven only; no consumer path reaches it. */
   readonly refunds: RefundService;
@@ -235,6 +238,19 @@ export function createBillingRuntime(input: {
     refunds: refundRepository,
     subscriptions: subscriptionRepository,
   });
+  const reconciliation = new BillingReconciliation({
+    logger,
+    now,
+    payments: paymentRepository,
+    provider,
+    refundService: refunds,
+    refunds: refundRepository,
+    // Long enough that an ordinary provider round trip is never mistaken for a
+    // lost one, and short enough that a person is not the first to notice. It
+    // is an operational constant rather than a commercial term.
+    staleAfterMilliseconds: 60_000,
+    webhooks,
+  });
   const checkout = new CheckoutService({
     consumers: input.consumers,
     creators: input.creators,
@@ -288,6 +304,7 @@ export function createBillingRuntime(input: {
     paymentRepository,
     policy,
     provider,
+    reconciliation,
     refundRepository,
     refunds,
     subscriptionRepository,

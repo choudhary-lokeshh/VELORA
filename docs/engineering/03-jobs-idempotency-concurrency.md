@@ -97,3 +97,9 @@ BILLING's reversals and PAYOUTS' instructions have the same two-index shape and 
 `billing_payments.provider_idempotency_key` is bounded at 200 characters and an idempotency key may be 128, so the original derivation — the two identifiers and the key written out — reached 209 and was truncated. Truncation is what breaks it: two submissions differing only past the cut derive the same provider key, so the second collides on the index that exists to keep instructions distinct and is refused as a duplicate of a purchase it is not. This needs no concurrency at all.
 
 The derivation is now a SHA-256 digest of the whole identity, which is fixed-width and cannot overrun the bound. Stored keys are never recomputed — reconciliation re-sends the key the row already holds — so the change reaches new operations only.
+
+## Measured: a cycle that is constructed and never started
+
+The worker composed four recurring cycles, wired all four into shutdown, ran all four once at boot, and started two. The provider-event drain was one of the two that were never started — and it is the only thing that applies verified provider events, because the webhook route records and returns and deliberately never posts money on a request thread. A settled payment arriving after boot therefore stayed unapplied until somebody restarted the worker, while the process reported itself healthy throughout. Nothing failed, which is what made it invisible: an unstarted cycle has no error to log.
+
+`startBackgroundCycles` now selects cycles by type rather than by name, so a cycle added later is started without anybody remembering to add a line, and `Poller.scheduling` makes "is this actually running" observable instead of private. `test/unit/worker-cycles.test.ts` holds both halves — every poller in a composition is scheduling afterwards, including one the test never names.

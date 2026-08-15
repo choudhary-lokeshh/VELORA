@@ -6,6 +6,8 @@ import {
   type ServerConfig,
 } from '@velora/config/server';
 
+import type { SafeLogger } from '@velora/observability/server';
+
 import type { CreatorContextResolver } from '../creators/context.js';
 import type { DatabaseHandle } from '../database/executor.js';
 import { OutboxRepository } from '../events/outbox.js';
@@ -21,6 +23,7 @@ import {
   UnavailablePayoutProvider,
   type PayoutProviderPort,
 } from './provider.js';
+import { PayoutsReconciliation } from './reconciliation.js';
 import { PayoutsRepository } from './repository.js';
 import { PayoutRoutes } from './routes.js';
 import { payoutsJournalTables, payoutsOutbox } from './schema.js';
@@ -50,6 +53,8 @@ export interface PayoutsRuntime {
   readonly policy: PayoutPolicy;
   /** The payout adapter. `unavailable` in every deployed environment. */
   readonly provider: PayoutProviderPort;
+  /** Resolves instructions the platform sent and never heard back about. */
+  readonly reconciliation: PayoutsReconciliation;
   readonly repository: PayoutsRepository;
   readonly routes: PayoutRoutes;
   readonly service: PayoutsService;
@@ -69,6 +74,7 @@ export function createPayoutsRuntime(input: {
   readonly config: ServerConfig;
   readonly creatorContext: CreatorContextResolver;
   readonly database: DatabaseHandle;
+  readonly logger: SafeLogger;
   readonly now?: () => Date;
 }): PayoutsRuntime {
   const now = input.now ?? (() => new Date());
@@ -105,6 +111,13 @@ export function createPayoutsRuntime(input: {
     outbox,
     policy,
     provider,
+    reconciliation: new PayoutsReconciliation({
+      logger: input.logger,
+      now,
+      provider,
+      repository,
+      service,
+    }),
     repository,
     routes: new PayoutRoutes({
       creatorContext: input.creatorContext,

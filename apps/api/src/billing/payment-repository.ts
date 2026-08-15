@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -179,6 +179,34 @@ export class PaymentRepository {
     return rows[0];
   }
 
+  /**
+   * Operations that have sat unsettled too long, oldest first.
+   *
+   * The partial index over the unsettled states is what makes this the size of
+   * the backlog rather than of the history. Bounded by the caller, so a
+   * reconciliation cycle cannot be stalled by one.
+   */
+  async listUnsettledBefore(
+    executor: Executor,
+    input: { readonly before: Date; readonly limit: number },
+  ): Promise<readonly PaymentRow[]> {
+    return executor
+      .select()
+      .from(billingPayments)
+      .where(
+        and(
+          inArray(billingPayments.state, [
+            'created',
+            'provider_pending',
+            'requires_action',
+            'reconciliation_pending',
+          ]),
+          lt(billingPayments.updatedAt, input.before),
+        ),
+      )
+      .orderBy(billingPayments.updatedAt, billingPayments.id)
+      .limit(input.limit);
+  }
   async listOwnPayments(
     executor: Executor,
     input: {

@@ -28,6 +28,18 @@ Velora stores no bank account number, routing or sort code, IBAN, government ide
 
 Two configuration values stop all of it, for two independent reasons. `PAYOUTS_PROVIDER` selects who could send money and its only deployable value refuses every call — [provider eligibility](../compliance/06-payment-provider-eligibility.md) records why, from primary sources: Stripe Connect and PayPal Payouts inherit their platforms' prohibitions, Wise prohibits both the content category and third-party money transmission, and Airwallex lists adult content as unsupported. `PAYOUTS_POLICY` selects the approved settlement terms and its only deployable value releases nothing, because the settlement window, the reserve, the minimum payout, the negative-balance treatment, and the payout countries are all undecided. Staging and production refuse any other value for either. The creator surface reports both plainly and still shows what is owed, because the money is real whatever the platform can currently do with it.
 
+## Implemented: resolving an instruction nobody heard back about
+
+An instruction in `submitted` has either moved money or it has not, and the reservation it holds keeps a creator's balance earmarked until somebody finds out which. Reconciliation is what finds out.
+
+It asks the provider for the instruction under the key Velora already used. A provider that acted returns the object that key created; one that never received it acts now. Either way there is exactly one payout, which is what makes this a read rather than a second instruction — and it is the only thing that may be done to an unconfirmed disbursement, because sending again under a new key is how a platform pays twice.
+
+A `reserved` instruction is the crash-before-call case: the reservation was committed and the process died before the provider was reached. The same call under the same key resolves it, and it is the only way to learn a reference the platform never received.
+
+Nothing is released on a guess. An instruction whose outcome is still unknown — an unreachable provider, or an answer whose amount disagrees with the recorded instruction — stays exactly where it is with its reservation intact, and the next sweep tries again. A disagreeing amount is logged and left for a person rather than accounted for, because a provider answer is evidence and not authority. No provider call happens inside a transaction, and the sweep runs on the worker inside one database admission permit, never on a request thread.
+
+In a deployed environment it examines nothing, because no payout provider is approved and there is nobody to ask. It does not treat that silence as failure.
+
 ## Phase/events/open questions
 
 Phase 3 and only after real payout infrastructure approval. Events: earnings eligibility, hold/release, payout state. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: payout countries, KYC/tax, commission, rolling reserve, negative balance, dispute window, provider. See [Creator Private Clubs](../product/03-creator-private-clubs.md), [BILLING](billing.md), [money flow](../architecture/10-money-flow.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment security](../security/05-payments-webhooks.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), and [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md).

@@ -312,6 +312,18 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
     });
   }
 
+  /**
+   * Test-only: the provider now reports this payment as settled.
+   *
+   * What a real provider does on its own schedule, made deterministic. It moves
+   * the adapter's own record, so a reconciliation sweep that reads it learns the
+   * same thing a webhook would have told it.
+   */
+  markSucceeded(providerReference: string): void {
+    const recorded = this.payments.get(providerReference);
+    if (recorded !== undefined) recorded.status = 'succeeded';
+  }
+
   /** Test-only: the amount a reference was created for. */
   amountFor(providerReference: string): Money | undefined {
     const recorded = this.payments.get(providerReference);

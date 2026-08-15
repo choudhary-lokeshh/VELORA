@@ -271,6 +271,33 @@ export class RefundRepository {
     return rows[0];
   }
 
+  /**
+   * Reversals that have sat unsettled too long, oldest first.
+   *
+   * Served by the partial index over the in-flight states, so it stays the size
+   * of the backlog rather than of the history.
+   */
+  async listUnsettledBefore(
+    executor: Executor,
+    input: { readonly before: Date; readonly limit: number },
+  ): Promise<readonly RefundRow[]> {
+    return executor
+      .select()
+      .from(billingRefunds)
+      .where(
+        and(
+          inArray(billingRefunds.state, [
+            'requested',
+            'provider_pending',
+            'reconciliation_pending',
+          ]),
+          lt(billingRefunds.updatedAt, input.before),
+        ),
+      )
+      .orderBy(billingRefunds.updatedAt, billingRefunds.id)
+      .limit(input.limit);
+  }
+
   /** Every reversal against one capture, oldest first. */
   async listForPayment(
     executor: Executor,

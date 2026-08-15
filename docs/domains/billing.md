@@ -118,6 +118,20 @@ A replay is answered before any of this runs. A repeated submission resolves to 
 
 Nothing in any of this is legal or tax advice, and nothing in the repository decides a country list, a registration, or a rate.
 
+## Implemented: reconciliation
+
+Every ambiguous outcome leaves a durable row saying so, and reconciliation is what makes that a temporary state rather than a permanent one. A capture whose provider answer was lost, a reversal in the same position, and a payout instruction that was sent and never confirmed are all resolved from what the provider itself holds.
+
+Resolving is a read, not a retry. A capture is resolved with `retrievePayment`; a reversal by re-issuing `refundPayment` under the idempotency key Velora already sent, which returns the reversal that key created if there is one and creates one if there is not; a payout the same way. An operation with no provider reference at all is the crash-before-record case, and re-issuing under its own key is the only way to learn a reference the platform never received. In every case there is exactly one movement of money, because the key decides rather than the call count.
+
+No provider call happens inside a transaction. The stale rows are read, the transaction closes, the provider is asked, and a second transaction records the answer — the same ordering every other provider interaction here follows. A provider that is unreachable, or that answers something the platform cannot use, leaves the row exactly where it was: nothing is guessed and nothing is written, and the next sweep tries again.
+
+A settlement discovered by reconciliation posts through exactly the code a verified webhook takes. That is what makes a repair indistinguishable from the thing it repairs — it posts once, publishes once, and cannot produce a transaction shape the ordinary path could not. An amount that disagrees with what Velora recorded is not accounted for at all; it is logged and left for a person, because a provider answer is evidence rather than authority.
+
+The sweep runs on the worker beside the outbox relay and the provider-event drain, inside one database admission permit, and never on a request thread. PostgreSQL remains the durable financial truth throughout: the queue is a wake-up, and losing every job in it would delay a repair rather than erase an obligation, because the obligation is a committed row. Nothing here deletes anything — financial record retention is unresolved and `LEGAL REVIEW REQUIRED`, and a sweep that tidied up would be the one retention decision that cannot be undone.
+
+In a deployed environment the sweep examines nothing, because there is nobody to ask. It does not treat that silence as failure.
+
 ## Cross-references
 
 [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md), [PAYOUTS](payouts.md).

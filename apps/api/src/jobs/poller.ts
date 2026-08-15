@@ -27,6 +27,11 @@ export class Poller {
     },
   ) {}
 
+  /** Whether the recurring timer is running. A cycle in flight is not this. */
+  get scheduling(): boolean {
+    return this.timer !== undefined;
+  }
+
   start(): void {
     if (this.timer !== undefined || this.stopped) return;
     this.timer = setInterval(() => {

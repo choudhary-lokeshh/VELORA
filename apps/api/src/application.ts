@@ -251,6 +251,7 @@ export function createApplication(
         config,
         creatorContext: creators.creatorContext,
         database: ownedDatabase.database,
+        logger,
       });
     // ADMIN is composed last because it operates every other domain and owns
     // none of them: it takes their repositories and writes through them.

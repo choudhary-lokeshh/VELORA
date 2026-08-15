@@ -318,6 +318,38 @@ export class WebhookService {
   }
 
   /**
+   * Applies a provider snapshot to one operation, through the ordinary door.
+   *
+   * Reconciliation's entry point. A settlement discovered by asking the
+   * provider posts through exactly the code a verified webhook takes, so it
+   * posts once, publishes once, and cannot produce a transaction shape the
+   * ordinary path could not — which is the property that makes a repair
+   * indistinguishable from the thing it repairs.
+   */
+  async applyProviderSnapshot(input: {
+    readonly occurredAt: Date;
+    readonly payment: PaymentRow;
+    readonly status:
+      'cancelled' | 'failed' | 'pending' | 'requires_action' | 'succeeded';
+  }): Promise<boolean> {
+    const event = {
+      occurredAt: input.occurredAt,
+    } as unknown as ProviderEventRow;
+    if (input.status === 'succeeded') {
+      return this.settlePayment(event, input.payment);
+    }
+    if (input.status === 'failed') {
+      return this.failPayment(event, input.payment, 'declined');
+    }
+    if (input.status === 'cancelled') {
+      return this.failPayment(event, input.payment, 'cancelled_by_consumer');
+    }
+    // Still in flight at the provider. Nothing is decided, and the operation
+    // keeps waiting rather than being moved somewhere that reads as an answer.
+    return false;
+  }
+
+  /**
    * Applies one verified event to current state, atomically.
    *
    * Returns false when the event is one Velora holds no rule for, or names

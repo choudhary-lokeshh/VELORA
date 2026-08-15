@@ -369,12 +369,14 @@ export function testPayoutsRuntime(input: {
   readonly config: ServerConfig;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
   readonly now?: () => Date;
 }): PayoutsRuntime {
   return createPayoutsRuntime({
     config: input.config,
     creatorContext: input.creators.creatorContext,
     database: input.database ?? drizzle.mock(),
+    logger: input.logger ?? silentLogger(),
     ...(input.now === undefined ? {} : { now: input.now }),
   });
 }

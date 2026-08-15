@@ -76,6 +76,33 @@ import {
  * work; the sweep is what makes the queue optional rather than load-bearing.
  */
 
+/**
+ * How often ambiguous financial state is checked against provider truth.
+ *
+ * An operational constant rather than a commercial term. Frequent enough that a
+ * lost answer is resolved long before a person notices it, and infrequent
+ * enough that a provider is not asked about the same object continuously.
+ */
+export const financialReconciliationIntervalMilliseconds = 30_000;
+
+/**
+ * Starts every recurring cycle this worker composes.
+ *
+ * Named by type rather than one by one, deliberately. A cycle that was
+ * constructed, wired into `close`, and never started is invisible: the process
+ * comes up, reports itself healthy, and quietly does that work only once at
+ * boot. The provider-event drain was in exactly that state — and it is the
+ * component that applies verified provider events, which the webhook route
+ * never applies on a request thread, so settled money would have gone unposted
+ * until the next restart. Enumerating by type means a cycle added later cannot
+ * be forgotten here, which is the only version of this that stays true.
+ */
+export function startBackgroundCycles(composition: WorkerComposition): void {
+  for (const value of Object.values(composition)) {
+    if (value instanceof Poller) value.start();
+  }
+}
+
 export interface WorkerComposition {
   /** BILLING, composed here because this process drains its inbox and outbox. */
   readonly billing: BillingRuntime;
@@ -83,6 +110,8 @@ export interface WorkerComposition {
   readonly payouts: PayoutsRuntime;
   close(): Promise<void>;
   readonly deliverySweep: Poller;
+  /** Resolves ambiguous financial outcomes from provider truth. */
+  readonly financialReconciliation: Poller;
   /** Applies verified provider events. Never runs on a request thread. */
   readonly providerEventDrain: Poller;
   readonly relay: OutboxRelay;
@@ -153,6 +182,7 @@ export function createWorkerComposition(input: {
     config: input.config,
     creatorContext: undefined as never,
     database: handle,
+    logger: input.logger,
     now,
   });
 
@@ -233,6 +263,45 @@ export function createWorkerComposition(input: {
     logger: input.logger,
     name: 'billing-provider-events',
   });
+  // Reconciliation is what makes an ambiguous outcome a temporary state rather
+  // than a permanent one. It asks providers what they hold under keys Velora
+  // already sent, which is a read rather than a retry, and every correction it
+  // applies goes through the same code an ordinary verified event would.
+  const financialReconciliation = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const money = await billing.reconciliation.reconcileOnce();
+        const disbursements = await payouts.reconciliation.reconcileOnce();
+        const examined =
+          money.paymentsExamined +
+          money.refundsExamined +
+          disbursements.examined;
+        const failed = money.failed + disbursements.failed;
+        // Silent when there was nothing to resolve, which is the ordinary case
+        // and would otherwise be a line every thirty seconds saying so. Counts
+        // only: what an operator needs is how much is unresolved and whether it
+        // is falling, and an identifier here would put one person's purchase in
+        // a log line that nothing else in this domain writes.
+        if (examined === 0 && failed === 0) return;
+        const cycle = {
+          disbursementsExamined: disbursements.examined,
+          disbursementsResolved: disbursements.resolved,
+          failed,
+          paymentsExamined: money.paymentsExamined,
+          paymentsResolved: money.paymentsResolved,
+          refundsExamined: money.refundsExamined,
+          refundsResolved: money.refundsResolved,
+        };
+        const message = 'financial reconciliation cycle';
+        // A cycle that could not resolve something is worth an operator's
+        // attention; one that simply had work to do is not.
+        if (failed === 0) input.logger.info(cycle, message);
+        else input.logger.warn(cycle, message);
+      }),
+    intervalMilliseconds: financialReconciliationIntervalMilliseconds,
+    logger: input.logger,
+    name: 'financial-reconciliation',
+  });
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -242,11 +311,13 @@ export function createWorkerComposition(input: {
 
   return {
     billing,
+    financialReconciliation,
     payouts,
     async close() {
       await Promise.all([
         relayPoller.stop(),
         providerEventDrain.stop(),
+        financialReconciliation.stop(),
         deliverySweep.stop(),
       ]);
     },
@@ -257,6 +328,7 @@ export function createWorkerComposition(input: {
       // and its entitlement in a single pass.
       await providerEventDrain.runOnce();
       await relayPoller.runOnce();
+      await financialReconciliation.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,
@@ -332,8 +404,7 @@ export async function runWorkerMain(): Promise<void> {
   // due. Draining once before the timers begin means recovery does not wait for
   // the first interval.
   await composition.drainOnce();
-  composition.relayPoller.start();
-  composition.deliverySweep.start();
+  startBackgroundCycles(composition);
 
   // Announced once the process is actually doing its job, so a supervisor
   // reading this line knows the drain is done and the loops are running.
