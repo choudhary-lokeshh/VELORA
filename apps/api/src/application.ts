@@ -20,6 +20,10 @@ import {
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
 import { createAdminRuntime, type AdminRuntime } from './admin/composition.js';
+import {
+  createBillingRuntime,
+  type BillingRuntime,
+} from './billing/composition.js';
 import { createClubsRuntime, type ClubsRuntime } from './clubs/composition.js';
 import {
   createCreatorsRuntime,
@@ -66,6 +70,7 @@ export { maximumRequestBodyBytes } from '@velora/validation';
 export interface ApplicationDependencies {
   readonly admin: AdminRuntime;
   readonly auth: AuthRuntime;
+  readonly billing: BillingRuntime;
   readonly clubs: ClubsRuntime;
   readonly database: HealthDependency;
   /**
@@ -136,6 +141,7 @@ export function createApplication(
   const injectedUsers = options.dependencies?.users;
   const injectedCreators = options.dependencies?.creators;
   const injectedClubs = options.dependencies?.clubs;
+  const injectedBilling = options.dependencies?.billing;
   const injectedAdmin = options.dependencies?.admin;
   const injectedDiscovery = options.dependencies?.discovery;
   const injectedMessaging = options.dependencies?.messaging;
@@ -148,6 +154,7 @@ export function createApplication(
   let users: UsersRuntime;
   let creators: CreatorsRuntime;
   let clubs: ClubsRuntime;
+  let billing: BillingRuntime;
   let admin: AdminRuntime;
   let discovery: DiscoveryRuntime;
   let messaging: MessagingRuntime;
@@ -211,6 +218,20 @@ export function createApplication(
         database: ownedDatabase.database,
         standing: users.adultStanding,
       });
+    // BILLING depends on CREATORS' eligibility answer and on PRIVATE CLUBS'
+    // published resource contract, so it is composed after both. Neither of
+    // them depends on it: a commercial offer changes nothing about a club, and
+    // the commercial fact that grants access travels the other way, through the
+    // outbox, rather than as a call back into this domain.
+    billing =
+      injectedBilling ??
+      createBillingRuntime({
+        config,
+        creatorContext: creators.creatorContext,
+        creators: creators.directory,
+        database: ownedDatabase.database,
+        resources: clubs.commercialDirectory,
+      });
     // ADMIN is composed last because it operates every other domain and owns
     // none of them: it takes their repositories and writes through them.
     admin =
@@ -266,6 +287,7 @@ export function createApplication(
       injectedUsers === undefined ||
       injectedCreators === undefined ||
       injectedClubs === undefined ||
+      injectedBilling === undefined ||
       injectedAdmin === undefined ||
       injectedDiscovery === undefined ||
       injectedMessaging === undefined ||
@@ -274,7 +296,7 @@ export function createApplication(
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, ADMIN, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, ADMIN, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
@@ -282,6 +304,7 @@ export function createApplication(
     users = injectedUsers;
     creators = injectedCreators;
     clubs = injectedClubs;
+    billing = injectedBilling;
     admin = injectedAdmin;
     discovery = injectedDiscovery;
     messaging = injectedMessaging;
@@ -312,6 +335,7 @@ export function createApplication(
   const dependencies: ApplicationDependencies = {
     admin,
     auth,
+    billing,
     clubs,
     creators,
     database,
@@ -703,6 +727,26 @@ export function createApplication(
     .get(
       apiRoutePaths.publicCreatorClubs,
       admitted(async (input) => clubs.clubRoutes.getPublicClubs(input)),
+    )
+    .get(
+      apiRoutePaths.creatorOffers,
+      admitted(async (input) => billing.offerRoutes.listOffers(input)),
+    )
+    .post(
+      apiRoutePaths.creatorOffers,
+      admitted(async (input) => billing.offerRoutes.createOffer(input)),
+    )
+    .post(
+      apiRoutePaths.creatorOfferPrices,
+      admitted(async (input) => billing.offerRoutes.publishPrice(input)),
+    )
+    .post(
+      apiRoutePaths.creatorOfferPriceRetirement,
+      admitted(async (input) => billing.offerRoutes.retirePrice(input)),
+    )
+    .post(
+      apiRoutePaths.creatorOfferLifecycle,
+      admitted(async (input) => billing.offerRoutes.setOfferLifecycle(input)),
     )
     .get(
       apiRoutePaths.adminCreators,

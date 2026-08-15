@@ -1,7 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
-import { createBillingRuntime } from '../../src/billing/composition.js';
-import { billingBusinessTypes } from '../../src/billing/policy.js';
+import {
+  billingBusinessTypes,
+  billingJournalPrefix,
+} from '../../src/billing/policy.js';
+import { billingJournalTables } from '../../src/billing/schema.js';
+import { JournalStore } from '../../src/money/journal.js';
 import { money, minorUnitsOf } from '../../src/money/money.js';
 import type { JournalPosting } from '../../src/money/journal.js';
 import {
@@ -33,11 +37,14 @@ const databaseUrl = await provisionDatabase('velora_billing_journal');
 const database: TestDatabase = connectDatabase(databaseUrl);
 
 const now = new Date('2026-08-15T10:00:00.000Z');
-const billing = createBillingRuntime({
-  database: database.drizzle,
+// The journal alone, rather than the whole BILLING runtime. This suite is about
+// the book's invariants and nothing else composes into them: offers, prices,
+// and the commerce policy have their own suite and cannot reach these tables.
+const journal = new JournalStore({
   now: () => now,
+  prefix: billingJournalPrefix,
+  tables: billingJournalTables,
 });
-const journal = billing.journal;
 
 const providerClearing = {
   category: 'provider_clearing',
@@ -135,10 +142,10 @@ afterAll(async () => {
 });
 
 describe('billing journal persistence', () => {
-  it('owns exactly the three billing tables and nothing else', async () => {
+  it('owns exactly the three journal tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
-        where table_schema = 'public' and table_name like 'billing_%'
+        where table_schema = 'public' and table_name like 'billing_journal%'
         order by table_name`,
     );
     expect(rows.map((row) => row.table_name)).toEqual([

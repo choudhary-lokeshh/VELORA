@@ -11,6 +11,7 @@ import {
   UnavailableBillingEntitlement,
   type BillingEntitlementPort,
 } from './billing.js';
+import { ClubCommercialDirectory } from './commercial.js';
 import { ClubRepository } from './club-repository.js';
 import { ClubRoutes } from './club-routes.js';
 import { ClubService, type ClubMemberStandingPort } from './club-service.js';
@@ -25,6 +26,8 @@ export interface ClubsRuntime {
   readonly clubRepository: ClubRepository;
   readonly clubRoutes: ClubRoutes;
   readonly clubs: ClubService;
+  /** The one question BILLING may ask about a club, published for it. */
+  readonly commercialDirectory: ClubCommercialDirectory;
   readonly repository: ClubsRepository;
   readonly routes: ClubsRoutes;
   readonly service: ClubsService;
@@ -94,6 +97,7 @@ export function createClubsRuntime(input: {
       service: clubs,
     }),
     clubs,
+    commercialDirectory: new ClubCommercialDirectory(),
     repository,
     routes: new ClubsRoutes({
       creatorContext: input.creatorContext,

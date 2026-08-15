@@ -12,6 +12,14 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  commercialOfferLifecycleRequestSchema,
+  commercialOfferListResponseSchema,
+  commercialOfferResponseSchema,
+  createCommercialOfferRequestSchema,
+  publishCommercialPriceRequestSchema,
+  retireCommercialPriceRequestSchema,
+} from './billing.js';
+import {
   adminCreatorListResponseSchema,
   adminCreatorSearchSchema,
   adminOperationResponseSchema,
@@ -109,6 +117,7 @@ import {
 
 export * from './admin.js';
 export * from './auth.js';
+export * from './billing.js';
 export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
@@ -162,6 +171,10 @@ export const apiRoutePaths = {
   consumerAvailability: '/v1/users/me/availability',
   creatorAccount: '/v1/creator',
   creatorAccountSelf: '/v1/creator/me',
+  creatorOfferLifecycle: '/v1/creator/offers/lifecycle',
+  creatorOfferPriceRetirement: '/v1/creator/offers/prices/retirement',
+  creatorOfferPrices: '/v1/creator/offers/prices',
+  creatorOffers: '/v1/creator/offers',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
   adminCreatorObjectRemoval: '/v1/admin/creators/object-removal',
@@ -267,6 +280,12 @@ export const apiSchemas = {
   CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
+  CommercialOfferLifecycleRequest: commercialOfferLifecycleRequestSchema,
+  CommercialOfferListResponse: commercialOfferListResponseSchema,
+  CommercialOfferResponse: commercialOfferResponseSchema,
+  CreateCommercialOfferRequest: createCommercialOfferRequestSchema,
+  PublishCommercialPriceRequest: publishCommercialPriceRequestSchema,
+  RetireCommercialPriceRequest: retireCommercialPriceRequestSchema,
   AdminCreatorListResponse: adminCreatorListResponseSchema,
   AdminOperationResponse: adminOperationResponseSchema,
   AdminReinstateCreatorRequest: adminReinstateCreatorRequestSchema,
@@ -512,6 +531,22 @@ const messagingNotPermittedResponse = {
 
 const messageSendConflictResponse = {
   description: `The caller may not send here — account, conversation state, or current safety eligibility — or the same client message identifier was already used for a different body. The body is an ApiError with code ${productErrorCodes.accountNotEligible}, ${productErrorCodes.actionNotPermitted}, or ${productErrorCodes.idempotencyMismatch}.`,
+  schemaName: 'ApiError',
+} as const;
+
+const commerceConflictResponse = {
+  description: `A concurrent change won, the offer is not in a state that allows this, a live offer already covers this resource and mode, or a live price already exists in this currency. The body is an ApiError with code ${productErrorCodes.conflict}. The caller should re-read and decide again.`,
+  schemaName: 'ApiError',
+} as const;
+
+const commerceNotEligibleResponse = {
+  description: `The commercial action is not permitted: the creator may not operate, the resource does not exist or does not belong to them, activation was attempted against a resource that is not published, or the amount, currency, or cadence is outside approved commercial terms. The body is an ApiError with code ${productErrorCodes.accountNotEligible} or ${productErrorCodes.actionNotPermitted}. It never says which — an offer endpoint that distinguished "no such club" from "not yours" would let one creator enumerate another's catalog.`,
+  schemaName: 'ApiError',
+} as const;
+
+const commerceUnavailableResponse = {
+  description: `No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
+  headers: { [retryAfterResponseHeader]: retryAfterHeader },
   schemaName: 'ApiError',
 } as const;
 
@@ -1441,6 +1476,113 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button.',
+  },
+  {
+    method: 'get',
+    operationId: 'listCommercialOffers',
+    path: apiRoutePaths.creatorOffers,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum offers to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "The creator's own commercial offers with their price history, and a readiness statement describing what the platform may currently sell. Readiness is returned whether or not anything is sellable, because a creator is entitled to know that monetisation is unavailable rather than meeting a form that refuses.",
+        schemaName: 'CommercialOfferListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'createCommercialOffer',
+    path: apiRoutePaths.creatorOffers,
+    requestSchemaName: 'CreateCommercialOfferRequest',
+    responses: {
+      '201': {
+        description:
+          'Draft commercial terms were opened against a resource the creator owns. A draft carries no price and nothing can be bought under it.',
+        schemaName: 'CommercialOfferResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '403': commerceNotEligibleResponse,
+      '409': commerceConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'An offer points at a resource another domain owns and says what kind of commercial relationship it would create. It does not say what it costs and it is not purchasable.',
+  },
+  {
+    method: 'post',
+    operationId: 'publishCommercialPrice',
+    path: apiRoutePaths.creatorOfferPrices,
+    requestSchemaName: 'PublishCommercialPriceRequest',
+    responses: {
+      '201': {
+        description:
+          'A price was published against the offer and is frozen from this moment.',
+        schemaName: 'CommercialOfferResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '403': commerceNotEligibleResponse,
+      '409': commerceConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A price is never edited. The amount is an integer count of minor units carried beside its currency, and changing what something costs means retiring one price and publishing another, because a purchase references the exact row it was made against.',
+  },
+  {
+    method: 'post',
+    operationId: 'retireCommercialPrice',
+    path: apiRoutePaths.creatorOfferPriceRetirement,
+    requestSchemaName: 'RetireCommercialPriceRequest',
+    responses: {
+      '200': {
+        description:
+          'The price was withdrawn. It is retained in full, and any purchase made under it is unaffected.',
+        schemaName: 'CommercialOfferResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '403': commerceNotEligibleResponse,
+      '409': commerceConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'setCommercialOfferLifecycle',
+    path: apiRoutePaths.creatorOfferLifecycle,
+    requestSchemaName: 'CommercialOfferLifecycleRequest',
+    responses: {
+      '200': {
+        description: 'The offer lifecycle transition was applied.',
+        schemaName: 'CommercialOfferResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '403': commerceNotEligibleResponse,
+      '409': commerceConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Activation re-reads every authority inside the transaction that performs it: approved commercial terms, the creator standing, the resource being owned and published, and at least one live price in a currency still approved. Retiring withdraws the offer and every live price on it, and deletes nothing.',
   },
   {
     method: 'get',

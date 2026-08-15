@@ -117,6 +117,17 @@ export const currencyCodeSchema = z.enum(
  */
 export const minorUnitsSchema = z.string().regex(/^(?:0|-?[1-9][0-9]{0,18})$/u);
 
+/**
+ * A strictly positive count of minor units.
+ *
+ * A price, a charge, a refund amount, and a payout are all quantities that
+ * cannot be zero or negative — the direction of a movement is carried by what
+ * the operation is, never by the sign of its amount. Refusing it at the
+ * contract boundary means a negative price is a validation failure rather than
+ * something a policy bound has to catch downstream.
+ */
+export const positiveMinorUnitsSchema = z.string().regex(/^[1-9][0-9]{0,18}$/u);
+
 export const moneySchema = z
   .object({
     amountMinor: minorUnitsSchema,

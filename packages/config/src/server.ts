@@ -34,6 +34,23 @@ export const unavailablePrivilegedVerifier = 'unavailable';
  */
 export const unavailableBillingEntitlement = 'unavailable';
 export const localTestBillingEntitlement = 'local-test';
+
+/**
+ * Where BILLING takes approved commercial terms from.
+ *
+ * Not a provider. This gates *policy*: the currencies commerce may run in, the
+ * billing intervals a subscription may use, and the price bounds an offer must
+ * sit inside. Every one of those is an unresolved business decision in
+ * `docs/decisions/DECISIONS_REQUIRED.md`, so `unpublished` publishes none of
+ * them and nothing can be made purchasable. It is not an error state; it is the
+ * accurate description of a platform whose commercial terms nobody has approved.
+ *
+ * `local-test` publishes a deterministic policy so the activation path is
+ * exercisable during development, and is named so no test using it can be read
+ * as evidence about real terms. Staging and production reject it below.
+ */
+export const unpublishedCommercePolicy = 'unpublished';
+export const localTestCommercePolicy = 'local-test';
 export const unavailableAdultAssuranceVerifier = 'unavailable';
 export const localTestAdultAssuranceVerifier = 'local-test';
 
@@ -189,6 +206,9 @@ export const serverConfigSchema = z
       .enum([localRecoveryDelivery])
       .default(localRecoveryDelivery),
     AUTH_TOKEN_ISSUER: z.url().default('https://auth.velora.invalid'),
+    BILLING_COMMERCE_POLICY: z
+      .enum([unpublishedCommercePolicy, localTestCommercePolicy])
+      .default(unpublishedCommercePolicy),
     DATABASE_URL: postgresUrlSchema,
     EPHEMERAL_REDIS_URL: redisUrlSchema,
     HOST: z.string().min(1).optional(),
@@ -235,6 +255,13 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `CLUBS_BILLING_ENTITLEMENT is not usable in ${config.APP_ENV}: no payment provider is approved and creator subscriptions are a later phase; see DECISIONS_REQUIRED`,
         path: ['CLUBS_BILLING_ENTITLEMENT'],
+      });
+    }
+    if (config.BILLING_COMMERCE_POLICY !== unpublishedCommercePolicy) {
+      context.addIssue({
+        code: 'custom',
+        message: `BILLING_COMMERCE_POLICY is not usable in ${config.APP_ENV}: platform fee, revenue share, currencies, price bounds, billing intervals, refund and cancellation terms are all undecided; see DECISIONS_REQUIRED`,
+        path: ['BILLING_COMMERCE_POLICY'],
       });
     }
     if (config.MESSAGING_SAFETY_ELIGIBILITY !== unavailableSafetyEligibility) {
@@ -322,6 +349,7 @@ export function redactServerConfig(config: ServerConfig) {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
     adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
+    commercePolicy: config.BILLING_COMMERCE_POLICY,
     profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
     accessTokenSigningKeyConfigured:
       config.AUTH_ACCESS_TOKEN_SIGNING_KEY !== undefined,

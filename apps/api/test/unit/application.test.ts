@@ -19,6 +19,7 @@ import type { HealthDependency } from '../../src/database/database.service.js';
 import { DenyAllOutboundHttp } from '../../src/security/ports.js';
 import {
   testAuthRuntime,
+  testBillingRuntime,
   testDiscoveryRuntime,
   testMessagingRuntime,
   testNotificationsApiRuntime,
@@ -95,6 +96,7 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   const clubs = testClubsRuntime({ config, creators, users });
   return {
     admin: testAdminRuntime({ caller: auth.caller, clubs, creators, safety }),
+    billing: testBillingRuntime({ clubs, config, creators }),
     clubs,
     creators,
     discovery,

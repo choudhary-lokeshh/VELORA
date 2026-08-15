@@ -34,6 +34,18 @@ Balances are derived on every read, never stored. A cached balance is a second s
 
 Nothing posts to this book yet except a test. No provider is approved, no offer exists, and no reason but `correction` is reachable from application code; the rest of the vocabulary is declared with the phase that makes each one writable.
 
+## Implemented: commercial offers and frozen prices
+
+An offer says what a creator sells; a price says what it costs. They are separate rows with separate lifecycles because they answer to different rules: an offer can be withdrawn and reopened, and a price can never change at all.
+
+An offer points at a resource another domain owns — a private club today — by opaque identifier. BILLING never learns what is inside a club and PRIVATE CLUBS never learns what one costs. They meet through one published contract, `ClubCommercialDirectory`, which answers exactly one question: is this club owned by this creator, and is it published. An unknown club and somebody else's club give the same answer, so no creator can enumerate another's catalog by identifier.
+
+Activation is a conjunction re-evaluated inside the transaction that performs it, never inferred from an earlier decision. Approved commercial terms must exist; the creator must currently be able to operate, read from CREATORS' published contract; the resource must be owned and published; and the offer must carry at least one live price in a currency the policy still approves. A price approved yesterday in a currency withdrawn today does not activate.
+
+A price is never edited. Changing what something costs means retiring one row and publishing another, and a database trigger enforces it: only the lifecycle columns may move, and neither a price nor an offer may be deleted. Retiring an offer retires every live price on it and deletes nothing, so a purchase made under the old terms still points at the exact row it was made against.
+
+What any of this may cost is not decided here. `BILLING_COMMERCE_POLICY` selects the approved terms — the currencies, the cadences, and the price bounds — and its only deployable value is `unpublished`, which approves nothing. Staging and production refuse any other value. With no approved terms every commercial mutation answers `503 DEPENDENCY_UNAVAILABLE`, and the offer list still answers `200` with a readiness statement saying monetisation is not enabled: a creator is entitled to be told that plainly rather than meeting a form that cannot succeed.
+
 ## Cross-references
 
 [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md), [PAYOUTS](payouts.md).

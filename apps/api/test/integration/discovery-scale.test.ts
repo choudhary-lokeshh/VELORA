@@ -33,6 +33,7 @@ import {
   testCreatorsRuntime,
   testClubsRuntime,
   testAdminRuntime,
+  testBillingRuntime,
 } from '../support/harness.js';
 
 /**
@@ -128,6 +129,12 @@ const application = createApplication({
   config,
   dependencies: {
     auth,
+    billing: testBillingRuntime({
+      clubs: clubsRuntime,
+      config,
+      creators,
+      database: database.drizzle,
+    }),
     admin: testAdminRuntime({
       caller: auth.caller,
       clubs: clubsRuntime,

@@ -680,6 +680,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/creator/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCommercialOffers"];
+        put?: never;
+        /** An offer points at a resource another domain owns and says what kind of commercial relationship it would create. It does not say what it costs and it is not purchasable. */
+        post: operations["createCommercialOffer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creator/offers/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A price is never edited. The amount is an integer count of minor units carried beside its currency, and changing what something costs means retiring one price and publishing another, because a purchase references the exact row it was made against. */
+        post: operations["publishCommercialPrice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creator/offers/prices/retirement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retireCommercialPrice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creator/offers/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activation re-reads every authority inside the transaction that performs it: approved commercial terms, the creator standing, the resource being owned and published, and at least one live price in a currency still approved. Retiring withdraws the offer and every live price on it, and deletes nothing. */
+        post: operations["setCommercialOfferLifecycle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/creators": {
         parameters: {
             query?: never;
@@ -1052,6 +1119,128 @@ export interface components {
                 key: "creator_terms" | "creator_content_policy";
                 version: string;
             }[];
+        };
+        CommercialOfferLifecycleRequest: {
+            /** Format: uuid */
+            offerId: string;
+            /** @enum {string} */
+            state: "active" | "retired";
+            version: number;
+        };
+        CommercialOfferListResponse: {
+            nextCursor?: string;
+            offers: {
+                /** Format: date-time */
+                activatedAt?: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                mode: "subscription" | "one_time";
+                prices: {
+                    amount: {
+                        amountMinor: string;
+                        /** @enum {string} */
+                        currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                    };
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    effectiveFrom: string;
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    interval?: "month" | "year";
+                    /** Format: date-time */
+                    retiredAt?: string;
+                    /** @enum {string} */
+                    state: "active" | "retired";
+                }[];
+                /** Format: uuid */
+                resourceId: string;
+                /** @enum {string} */
+                resourceType: "club";
+                /** Format: date-time */
+                retiredAt?: string;
+                /** @enum {string} */
+                state: "draft" | "active" | "retired";
+                /** Format: date-time */
+                updatedAt: string;
+                version: number;
+            }[];
+            readiness: {
+                currencies: ("AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR")[];
+                enabled: boolean;
+                intervals: ("month" | "year")[];
+                modes: ("subscription" | "one_time")[];
+                source: string;
+            };
+        };
+        CommercialOfferResponse: {
+            offer: {
+                /** Format: date-time */
+                activatedAt?: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                mode: "subscription" | "one_time";
+                prices: {
+                    amount: {
+                        amountMinor: string;
+                        /** @enum {string} */
+                        currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                    };
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** Format: date-time */
+                    effectiveFrom: string;
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    interval?: "month" | "year";
+                    /** Format: date-time */
+                    retiredAt?: string;
+                    /** @enum {string} */
+                    state: "active" | "retired";
+                }[];
+                /** Format: uuid */
+                resourceId: string;
+                /** @enum {string} */
+                resourceType: "club";
+                /** Format: date-time */
+                retiredAt?: string;
+                /** @enum {string} */
+                state: "draft" | "active" | "retired";
+                /** Format: date-time */
+                updatedAt: string;
+                version: number;
+            };
+        };
+        CreateCommercialOfferRequest: {
+            /** @enum {string} */
+            mode: "subscription" | "one_time";
+            /** Format: uuid */
+            resourceId: string;
+            /** @enum {string} */
+            resourceType: "club";
+        };
+        PublishCommercialPriceRequest: {
+            amountMinor: string;
+            /** @enum {string} */
+            currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            /** @enum {string} */
+            interval?: "month" | "year";
+            /** Format: uuid */
+            offerId: string;
+        };
+        RetireCommercialPriceRequest: {
+            /** Format: uuid */
+            offerId: string;
+            /** Format: uuid */
+            priceId: string;
         };
         AdminCreatorListResponse: {
             creators: {
@@ -6770,6 +6959,591 @@ export interface operations {
                 };
             };
             /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listCommercialOffers: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this list */
+                cursor?: string;
+                /** @description Maximum offers to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The creator's own commercial offers with their price history, and a readiness statement describing what the platform may currently sell. Readiness is returned whether or not anything is sellable, because a creator is entitled to know that monetisation is unavailable rather than meeting a form that refuses. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialOfferListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createCommercialOffer: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCommercialOfferRequest"];
+            };
+        };
+        responses: {
+            /** @description Draft commercial terms were opened against a resource the creator owns. A draft carries no price and nothing can be bought under it. */
+            201: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialOfferResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The commercial action is not permitted: the creator may not operate, the resource does not exist or does not belong to them, activation was attempted against a resource that is not published, or the amount, currency, or cadence is outside approved commercial terms. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE or ACTION_NOT_PERMITTED. It never says which — an offer endpoint that distinguished "no such club" from "not yours" would let one creator enumerate another's catalog. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A concurrent change won, the offer is not in a state that allows this, a live offer already covers this resource and mode, or a live price already exists in this currency. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    publishCommercialPrice: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishCommercialPriceRequest"];
+            };
+        };
+        responses: {
+            /** @description A price was published against the offer and is frozen from this moment. */
+            201: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialOfferResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The commercial action is not permitted: the creator may not operate, the resource does not exist or does not belong to them, activation was attempted against a resource that is not published, or the amount, currency, or cadence is outside approved commercial terms. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE or ACTION_NOT_PERMITTED. It never says which — an offer endpoint that distinguished "no such club" from "not yours" would let one creator enumerate another's catalog. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A concurrent change won, the offer is not in a state that allows this, a live offer already covers this resource and mode, or a live price already exists in this currency. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    retireCommercialPrice: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetireCommercialPriceRequest"];
+            };
+        };
+        responses: {
+            /** @description The price was withdrawn. It is retained in full, and any purchase made under it is unaffected. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialOfferResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The commercial action is not permitted: the creator may not operate, the resource does not exist or does not belong to them, activation was attempted against a resource that is not published, or the amount, currency, or cadence is outside approved commercial terms. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE or ACTION_NOT_PERMITTED. It never says which — an offer endpoint that distinguished "no such club" from "not yours" would let one creator enumerate another's catalog. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A concurrent change won, the offer is not in a state that allows this, a live offer already covers this resource and mode, or a live price already exists in this currency. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    setCommercialOfferLifecycle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommercialOfferLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description The offer lifecycle transition was applied. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommercialOfferResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The commercial action is not permitted: the creator may not operate, the resource does not exist or does not belong to them, activation was attempted against a resource that is not published, or the amount, currency, or cadence is outside approved commercial terms. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE or ACTION_NOT_PERMITTED. It never says which — an offer endpoint that distinguished "no such club" from "not yours" would let one creator enumerate another's catalog. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A concurrent change won, the offer is not in a state that allows this, a live offer already covers this resource and mode, or a live price already exists in this currency. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

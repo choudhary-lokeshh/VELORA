@@ -180,6 +180,8 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'billing_journal_accounts',
         'billing_journal_entries',
         'billing_journal_transactions',
+        'billing_offers',
+        'billing_prices',
         'clubs_clubs',
         'clubs_content',
         'clubs_invites',

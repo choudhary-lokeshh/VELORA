@@ -31,6 +31,7 @@ import {
   testCreatorsRuntime,
   testClubsRuntime,
   testAdminRuntime,
+  testBillingRuntime,
 } from '../support/harness.js';
 
 /**
@@ -172,6 +173,12 @@ function createInstance(name: string): Instance {
     config,
     dependencies: {
       auth,
+      billing: testBillingRuntime({
+        clubs: clubsRuntime,
+        config,
+        creators,
+        database: database.drizzle,
+      }),
       admin: testAdminRuntime({
         caller: auth.caller,
         clubs: clubsRuntime,

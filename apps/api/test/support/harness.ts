@@ -12,6 +12,10 @@ import {
 } from '../../src/admin/composition.js';
 import type { CallerResolver } from '../../src/auth/caller.js';
 import {
+  createBillingRuntime,
+  type BillingRuntime,
+} from '../../src/billing/composition.js';
+import {
   createClubsRuntime,
   type ClubsRuntime,
 } from '../../src/clubs/composition.js';
@@ -314,6 +318,30 @@ export function testAdminRuntime(input: {
  * refuses to wire domains to a database it was not given — so this returns the
  * whole set rather than only the consumer half.
  */
+/**
+ * BILLING wired to the same database, taking CREATORS' real eligibility answer
+ * and PRIVATE CLUBS' real resource contract. A suite that wants an unpublished
+ * club unpublishes it rather than substituting the port, so no test can prove a
+ * gate that production would decide differently. The commerce policy comes from
+ * configuration exactly as it does in production.
+ */
+export function testBillingRuntime(input: {
+  readonly clubs: ClubsRuntime;
+  readonly config: ServerConfig;
+  readonly creators: CreatorsRuntime;
+  readonly database?: UsersDatabase;
+  readonly now?: () => Date;
+}): BillingRuntime {
+  return createBillingRuntime({
+    config: input.config,
+    creatorContext: input.creators.creatorContext,
+    creators: input.creators.directory,
+    database: input.database ?? drizzle.mock(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+    resources: input.clubs.commercialDirectory,
+  });
+}
+
 export function testProductRuntimes(input: {
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
@@ -323,6 +351,7 @@ export function testProductRuntimes(input: {
   readonly users: UsersRuntime;
 }): {
   readonly admin: AdminRuntime;
+  readonly billing: BillingRuntime;
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
@@ -336,6 +365,7 @@ export function testProductRuntimes(input: {
   const clubs = testClubsRuntime({ ...input, creators });
   return {
     admin: testAdminRuntime({ ...input, clubs, creators, safety }),
+    billing: testBillingRuntime({ ...input, clubs, creators }),
     clubs,
     creators,
     discovery,
