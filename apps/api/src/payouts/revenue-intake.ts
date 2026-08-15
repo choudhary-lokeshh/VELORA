@@ -3,6 +3,7 @@ import type { SafeLogger } from '@velora/observability/server';
 import type { DatabaseHandle } from '../database/executor.js';
 import type { OutboxConsumer, OutboxEvent } from '../events/relay.js';
 import type { JournalStore } from '../money/journal.js';
+import { lockCreatorPosition } from './creator-position-lock.js';
 import { money } from '../money/money.js';
 import { payoutsBusinessTypes } from './policy.js';
 
@@ -93,6 +94,10 @@ export class BillingRevenueIntake implements OutboxConsumer {
     const settled = kind === 'settled';
 
     await database.transaction(async (executor) => {
+      // The same lock every other writer of this position takes. Without it a
+      // reversal and a payout can each pass the not-overdrawn check and commit,
+      // because that check runs at commit and cannot see the other's entries.
+      await lockCreatorPosition(executor, fact.creatorId);
       await journal.post(executor, {
         // The BILLING event's own identity, so a redelivery posts nothing.
         businessReference: fact.reference,

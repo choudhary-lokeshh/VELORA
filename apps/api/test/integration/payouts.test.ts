@@ -37,6 +37,7 @@ import {
 } from '../support/database.js';
 import {
   silentLogger,
+  testAdminOrigin,
   testConsumerOrigin,
   testCreatorOrigin,
   testDatabaseAdmission,
@@ -360,6 +361,34 @@ async function settledPurchase(input: {
     }),
   );
   await drain();
+}
+
+async function platformAdminSession(): Promise<Session> {
+  const accountId = crypto.randomUUID();
+  await execute(
+    database.sql`insert into auth_accounts (id, status) values (${accountId}, 'active')`,
+  );
+  const opaque = () =>
+    `v1.${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')}`;
+  const token = opaque();
+  const csrf = opaque();
+  const digest = (value: string) => Bun.SHA256.hash(value, 'hex');
+  const now = new Date();
+  await execute(database.sql`
+    insert into auth_sessions (
+      id, account_id, audience, assurance, assurance_established_at,
+      authenticated_at, created_at, csrf_digest, idle_expires_at,
+      last_active_at, absolute_expires_at, token_digest
+    ) values (
+      ${crypto.randomUUID()}, ${accountId}, 'platform_admin', 'phishing_resistant', ${now},
+      ${now}, ${now}, ${digest(csrf)}, ${new Date(now.getTime() + 900_000)}, ${now},
+      ${new Date(now.getTime() + 28_800_000)}, ${digest(token)}
+    )
+  `);
+  return {
+    cookie: `__Host-velora_platform_admin_session=${token}`,
+    csrf,
+  };
 }
 
 interface Readiness {
@@ -826,6 +855,12 @@ describe('the database enforces the payout invariants', () => {
 
     // A hand-written posting that pays out more than the creator ever earned.
     // Nothing about the service is involved: the bound is the database's.
+    //
+    // The refusal is read by its message rather than by the fact that something
+    // failed. This assertion used to accept any error, and the error it was
+    // actually getting was the journal's same-transaction rule — so it passed
+    // for years without the overdraw bound ever running. A bound nothing
+    // exercises is a bound nobody notices has stopped working.
     const transactionId = crypto.randomUUID();
     const [account] = await rowsOf<{ id: string }>(
       database.sql`select id from payouts_journal_accounts
@@ -834,23 +869,33 @@ describe('the database enforces the payout invariants', () => {
     const [platform] = await rowsOf<{ id: string }>(
       database.sql`select id from payouts_journal_accounts where category = 'revenue_intake'`,
     );
-    expect(
-      await refused(async () =>
-        execute(database.sql`
-          with posted as (
+    // Posted the way the application posts — the transaction row and its
+    // entries as separate statements inside one transaction — because a
+    // single-statement CTE trips the journal's same-transaction rule first and
+    // never reaches the bound this test is about.
+    const refusal = await (async () => {
+      try {
+        await database.sql.begin(async (tx) => {
+          await tx`
             insert into payouts_journal_transactions
               (business_reference, business_type, created_at, currency, id, occurred_at, reason)
-            values ('direct-overdraw', 'payouts.correction', now(), 'USD', ${transactionId}, now(), 'payout_paid')
-            returning id
-          )
-          insert into payouts_journal_entries
-            (account_id, amount_minor, created_at, currency, direction, id, transaction_id)
-          values
-            (${account?.id ?? ''}, 9999, now(), 'USD', 'debit', ${crypto.randomUUID()}, ${transactionId}),
-            (${platform?.id ?? ''}, 9999, now(), 'USD', 'credit', ${crypto.randomUUID()}, ${transactionId})
-        `),
-      ),
-    ).toBe(true);
+            values ('direct-overdraw', 'payouts.correction', now(), 'USD', ${transactionId}, now(), 'payout_paid')`;
+          await tx`
+            insert into payouts_journal_entries
+              (account_id, amount_minor, created_at, currency, direction, id, transaction_id)
+            values
+              (${account?.id ?? ''}, 9999, now(), 'USD', 'debit', ${crypto.randomUUID()}, ${transactionId}),
+              (${platform?.id ?? ''}, 9999, now(), 'USD', 'credit', ${crypto.randomUUID()}, ${transactionId})`;
+        });
+        return 'ACCEPTED';
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    })();
+    // By its message, not merely by having failed. Asserting only that
+    // something went wrong is how a bound stops being enforced without any
+    // test noticing.
+    expect(refusal).toContain('overdrawn');
   });
 
   it('freezes what an instruction means and retains every row', async () => {
@@ -907,6 +952,115 @@ describe('the database enforces the payout invariants', () => {
         `),
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * A balance claimed from both ends at once.
+ *
+ * BILLING reverses a sale and PAYOUTS pays the same money out, and neither
+ * reads the other's tables: what a creator is owed moves between them as a
+ * published fact. So the interesting question is not who wins — it is whether
+ * anything the loser does can leave the book wrong.
+ *
+ * What is asserted here is only what is settled. Whether a creator who has been
+ * paid may be carried negative after a reversal is `DECISION REQUIRED` in
+ * `docs/domains/payouts.md`, so this asserts no outcome for it. What it does
+ * assert is that no interleaving produces an overdrawn creator, an unbalanced
+ * journal, or a disbursement larger than what was reserved — and that the
+ * platform refuses rather than absorbs when the two collide.
+ */
+describe('a balance claimed from both ends at once', () => {
+  it('never overdraws a creator, whichever of the two wins', async () => {
+    const sold = await seller({
+      slug: 'contended',
+      subject: 'contend@velora.test',
+    });
+    await settledPurchase({
+      buyer: 'contendbuyer@velora.test',
+      key: 'payout-key-contend',
+      offerId: sold.offerId,
+    });
+    await onboarded(sold);
+    const [payment] = await rowsOf<{ id: string }>(
+      database.sql`select id from billing_payments`,
+    );
+
+    const operator = await platformAdminSession();
+    // The whole of what the creator is owed, and the whole of the sale it came
+    // from, at the same moment.
+    const [paid, reversed] = await Promise.all([
+      requestPayout(
+        sold.studio,
+        { amountMinor: '1200', currency: 'USD' },
+        'payout-key-contend-1',
+      ),
+      (async () => {
+        const response = await handle(
+          new Request('http://api.test/v1/admin/billing/refunds', {
+            body: JSON.stringify({
+              amountMinor: '1500',
+              currency: 'USD',
+              paymentId: payment?.id ?? '',
+              reasonCode: 'not_delivered',
+            }),
+            headers: {
+              'content-type': 'application/json',
+              cookie: operator.cookie,
+              origin: testAdminOrigin,
+              'x-velora-csrf': operator.csrf,
+              'x-velora-idempotency-key': 'payout-key-contend-reverse',
+            },
+            method: 'POST',
+          }),
+        );
+        // The reversal reaches the payout book only through the published fact,
+        // which is where it meets the payout.
+        await drain();
+        return response;
+      })(),
+    ]);
+    // Neither request is answered with a failure: one of them simply finds the
+    // money gone, which is an answer rather than an error.
+    expect([201, 409, 422]).toContain(paid.status);
+    expect(reversed.status).toBe(201);
+    // Whatever the relay could not apply stays pending for a person rather than
+    // being applied halfway.
+    await drain();
+
+    // No creator position is overdrawn. A creator liability is a credit
+    // balance, so a positive debit-minus-credit is money the platform took back
+    // that it had already handed over.
+    const overdrawn = await rowsOf<{ balance: string }>(
+      database.sql`select sum(case when e.direction = 'debit' then e.amount_minor else -e.amount_minor end)::text as balance
+         from payouts_journal_entries e
+         join payouts_journal_accounts a on a.id = e.account_id
+        where a.subject_type = 'creator'
+        group by a.id
+       having sum(case when e.direction = 'debit' then e.amount_minor else -e.amount_minor end) > 0`,
+    );
+    expect(overdrawn).toHaveLength(0);
+
+    // Both books still balance, which is the invariant no interleaving may cost.
+    for (const table of [
+      'payouts_journal_entries',
+      'billing_journal_entries',
+    ]) {
+      const [imbalance] = await rowsOf<{ total: string }>(
+        database.sql.unsafe(
+          `select coalesce(sum(case when direction = 'debit' then amount_minor else -amount_minor end), 0)::text as total from ${table}`,
+        ),
+      );
+      expect(imbalance?.total, table).toBe('0');
+    }
+
+    // And nothing was disbursed beyond what a reservation covered.
+    const instructions = await rowsOf<{ amount_minor: string; state: string }>(
+      database.sql`select amount_minor::text as amount_minor, state from payouts_instructions`,
+    );
+    for (const instruction of instructions) {
+      expect(BigInt(instruction.amount_minor) <= 1200n).toBe(true);
+    }
   });
 });
 

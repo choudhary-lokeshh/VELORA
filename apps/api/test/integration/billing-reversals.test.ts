@@ -414,6 +414,24 @@ async function refundedTotal(paymentId: string): Promise<string> {
   return row?.total ?? '0';
 }
 
+/** A cardholder claim as the provider reports it, opened or resolved. */
+const claimFor = (input: {
+  readonly paymentReference: string;
+  readonly reference: string;
+  readonly status: string;
+}) => ({
+  dispute: {
+    amountMinor: '1500',
+    currency: 'USD',
+    providerDisputeReference: input.reference,
+    reason: 'fraudulent',
+    status: input.status,
+  },
+  eventId: crypto.randomUUID(),
+  eventType: input.status === 'opened' ? 'dispute.opened' : 'dispute.closed',
+  providerPaymentReference: input.paymentReference,
+});
+
 describe('who may reverse a charge', () => {
   it('offers no consumer-facing refund path at all', async () => {
     const { offerId } = await sellable(
@@ -1089,23 +1107,6 @@ describe('what a reversal does to access', () => {
 });
 
 describe('disputes', () => {
-  const claim = (input: {
-    readonly paymentReference: string;
-    readonly reference: string;
-    readonly status: string;
-  }) => ({
-    dispute: {
-      amountMinor: '1500',
-      currency: 'USD',
-      providerDisputeReference: input.reference,
-      reason: 'fraudulent',
-      status: input.status,
-    },
-    eventId: crypto.randomUUID(),
-    eventType: input.status === 'opened' ? 'dispute.opened' : 'dispute.closed',
-    providerPaymentReference: input.paymentReference,
-  });
-
   it('records the withholding when a claim opens, and leaves access alone', async () => {
     const { offerId } = await sellable('dispute@velora.test', 'disputing');
     const bought = await settledPurchase({
@@ -1114,7 +1115,7 @@ describe('disputes', () => {
       offerId,
     });
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_open_0001',
         status: 'opened',
@@ -1164,7 +1165,7 @@ describe('disputes', () => {
       offerId,
     });
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_block_0001',
         status: 'opened',
@@ -1195,7 +1196,7 @@ describe('disputes', () => {
     });
     for (let index = 0; index < 20; index += 1) {
       await providerEvent(
-        claim({
+        claimFor({
           paymentReference: bought.providerReference,
           reference: 'dp_duplicate_0001',
           status: 'opened',
@@ -1222,7 +1223,7 @@ describe('disputes', () => {
       offerId,
     });
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_lost_0001',
         status: 'opened',
@@ -1230,7 +1231,7 @@ describe('disputes', () => {
     );
     await drain();
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_lost_0001',
         status: 'lost',
@@ -1276,7 +1277,7 @@ describe('disputes', () => {
       offerId,
     });
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_won_0001',
         status: 'opened',
@@ -1284,7 +1285,7 @@ describe('disputes', () => {
     );
     await drain();
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_won_0001',
         status: 'won',
@@ -1323,7 +1324,7 @@ describe('disputes', () => {
     // The outcome first. Discarding it for want of an opening still in flight
     // would lose a movement of money that has already happened.
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_reorder_0001',
         status: 'won',
@@ -1337,7 +1338,7 @@ describe('disputes', () => {
 
     // The opening arrives afterwards and must not reopen what is settled.
     await providerEvent(
-      claim({
+      claimFor({
         paymentReference: bought.providerReference,
         reference: 'dp_reorder_0001',
         status: 'opened',
@@ -1392,6 +1393,101 @@ describe('disputes', () => {
     expect(event?.state).toBe('ignored');
     expect(await count('billing_disputes')).toBe('0');
     expect(await journalImbalance()).toBe('0');
+  });
+});
+
+/**
+ * Two ways of undoing one sale, arriving together.
+ *
+ * A refund and a lost claim both return money that has already been counted,
+ * and they travel different paths: one is an operator asking BILLING, the other
+ * is a bank telling it. The bound they share is the capture, and nothing about
+ * either path reads the other's intent — so the only thing that can hold the
+ * bound is what they both write against.
+ */
+describe('a capture claimed back by two routes at once', () => {
+  it('never returns more than was taken, however the two interleave', async () => {
+    const { offerId } = await sellable('bothways@velora.test', 'bothways');
+    const bought = await settledPurchase({
+      buyer: 'bothwaysbuyer@velora.test',
+      key: 'reversal-key-bothways',
+      offerId,
+    });
+    const operator = await adminSession();
+
+    // Ten operator reversals of a fifth of the charge each — twice what the
+    // capture holds — against a bank taking the whole of it back at the same
+    // moment.
+    const attempts = Array.from({ length: 10 }, async (_unused, index) =>
+      requestRefund(
+        operator,
+        {
+          amountMinor: '300',
+          currency: 'USD',
+          paymentId: bought.paymentId,
+          reasonCode: 'duplicate_charge',
+        },
+        `reversal-key-bothways-${String(index)}`,
+      ),
+    );
+    const claimed = (async () => {
+      await providerEvent(
+        claimFor({
+          paymentReference: bought.providerReference,
+          reference: 'dp_bothways_0001',
+          status: 'opened',
+        }),
+      );
+      await providerEvent(
+        claimFor({
+          paymentReference: bought.providerReference,
+          reference: 'dp_bothways_0001',
+          status: 'lost',
+        }),
+      );
+      await drain();
+    })();
+    await Promise.all([...attempts, claimed]);
+    await drain();
+
+    // The two claims together may well exceed the charge, and that is not a
+    // defect: a consumer can be refunded in full and their bank can still take
+    // the same money back, and the platform is genuinely out both. What must
+    // not happen is the creator being charged for it twice.
+    const [unwound] = await rowsOf<{ total: string }>(
+      database.sql`select (
+        coalesce((select sum(amount_minor) from billing_refunds
+                   where payment_id = ${bought.paymentId} and state <> 'failed'), 0)
+        + coalesce((select sum(amount_minor) from billing_disputes
+                     where payment_id = ${bought.paymentId} and state = 'lost'), 0)
+      )::text as total`,
+    );
+    expect(BigInt(unwound?.total ?? '0') > 0n).toBe(true);
+
+    // What the creator was actually charged for. The sale credited them 1200,
+    // so nothing may take more than that back out of their earnings however
+    // many claims arrive — the rest is a platform loss, absorbed against
+    // platform revenue rather than against somebody who already earned it.
+    const [clawedBack] = await rowsOf<{ total: string }>(
+      database.sql`select coalesce(sum(case when e.direction = 'debit' then e.amount_minor else -e.amount_minor end), 0)::text as total
+         from billing_journal_entries e
+         join billing_journal_accounts a on a.id = e.account_id
+        where a.category = 'creator_payable'`,
+    );
+    expect(BigInt(clawedBack?.total ?? '0') <= 0n).toBe(true);
+
+    // The book still balances, and the platform never handed a creator more
+    // than the sale put there.
+    expect(await journalImbalance()).toBe('0');
+    const owed = await rowsOf<{ balance: string }>(
+      database.sql`select sum(case when e.direction = 'debit' then e.amount_minor else -e.amount_minor end)::text as balance
+         from billing_journal_entries e
+         join billing_journal_accounts a on a.id = e.account_id
+        where a.category = 'creator_payable'
+        group by a.id
+       having sum(case when e.direction = 'debit' then e.amount_minor else -e.amount_minor end) > 0`,
+    );
+    expect(owed).toHaveLength(0);
   });
 });
 

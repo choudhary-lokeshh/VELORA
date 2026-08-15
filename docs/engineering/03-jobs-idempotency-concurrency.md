@@ -103,3 +103,19 @@ The derivation is now a SHA-256 digest of the whole identity, which is fixed-wid
 The worker composed four recurring cycles, wired all four into shutdown, ran all four once at boot, and started two. The provider-event drain was one of the two that were never started — and it is the only thing that applies verified provider events, because the webhook route records and returns and deliberately never posts money on a request thread. A settled payment arriving after boot therefore stayed unapplied until somebody restarted the worker, while the process reported itself healthy throughout. Nothing failed, which is what made it invisible: an unstarted cycle has no error to log.
 
 `startBackgroundCycles` now selects cycles by type rather than by name, so a cycle added later is started without anybody remembering to add a line, and `Poller.scheduling` makes "is this actually running" observable instead of private. `test/unit/worker-cycles.test.ts` holds both halves — every poller in a composition is scheduling afterwards, including one the test never names.
+
+## Measured: a bound that never ran, and a test that never noticed
+
+`velora_payouts_assert_not_overdrawn` is the constraint trigger that stops a creator's payout position being debited past zero. It ran its check with `EXECUTE format(...) INTO` and then branched on `IF FOUND`. PostgreSQL does not set `FOUND` for `EXECUTE` — it sets `ROW_COUNT` and leaves `FOUND` as it was, which at the top of a trigger invocation is false. The `RAISE` was unreachable. The trigger was attached, deferred, and inert for its whole life.
+
+What it was guarding is not small. A payout settling and BILLING reversing the sale it came from both debit the same position, and with the bound inert both commit: the platform records paying out money it then took back on paper only. Reproduced by a payout of a creator's whole balance racing a refund of the sale behind it, which left `creator_available` at `+1200` — a debit balance on an account that may only ever be a credit one.
+
+The reason it survived is the test. `refuses a posting that would overdraw a creator, written directly` asserted only that *something* was refused, and what it was actually getting was the journal's same-transaction rule: it posts through a single-statement CTE, which that rule rejects before the overdraw check is ever reached. A test that accepts any error cannot tell a working bound from a bound that stopped working, and this one never once exercised the thing it was named for.
+
+`0028_payouts_overdraw_enforcement` branches on the returned record instead, which is what every other trigger function in these schemas already does — they read a value out and test the value. Every migration was audited for the same shape; this was the only one. The test now posts the way the application posts, as separate statements inside one transaction, and asserts the refusal *by its message*.
+
+## Measured: a deferred constraint is a check, not a lock
+
+Four transactions write one creator's payout position — a payout being reserved, one settling, one being released, and BILLING reversing a sale whose share was already accrued — and only the first took a lock. Even with the bound above repaired, that is not enough: a deferred constraint trigger evaluates at commit, and under `READ COMMITTED` two transactions debiting the same position cannot see each other's uncommitted entries. Each computes a balance that is fine on its own and both commit, leaving the position overdrawn by exactly what the trigger exists to prevent.
+
+It is the same shape as `lockPair`: the thing being checked is a *sum over rows*, and a sum has nothing to lock. `src/payouts/creator-position-lock.ts` closes it, taken by all four writers before any row lock, so the next writer reads the balance the previous one committed.

@@ -593,6 +593,76 @@ describe('an unconfirmed payout instruction', () => {
   });
 });
 
+/**
+ * What a backlog does to a sweep.
+ *
+ * A cycle that walked the whole history rather than the unsettled part, or that
+ * tried to resolve every stale row in one pass, would be a sweep that gets
+ * slower exactly as the thing it exists to fix gets worse.
+ */
+describe('reconciliation under a backlog', () => {
+  it('reads the backlog by its own index and bounds what one cycle takes', async () => {
+    const offerId = await sellable('backlog@velora.test', 'backlogged');
+    const buyer = await consumerSession('backlogbuyer@velora.test');
+    paymentProvider.behaveAs('ambiguous');
+    await handle(
+      signed('/v1/billing/checkouts', buyer, testConsumerOrigin, {
+        body: { currency: 'USD', offerId },
+        idempotencyKey: 'backlog-seed-key',
+        method: 'POST',
+      }),
+    );
+    paymentProvider.behaveAs('normal');
+
+    // One real operation, copied into a backlog. Everything a payment must
+    // satisfy is already true of the row being copied, so this seeds volume
+    // without inventing a shape the ordinary path could not produce.
+    await execute(database.sql`
+      insert into billing_payments (
+        amount_minor, consumer_id, correlation_id, created_at, currency, id,
+        idempotency_key, offer_id, price_id, provider, provider_idempotency_key,
+        state, tax_authority, tax_minor, updated_at, version
+      )
+      select
+        seed.amount_minor, seed.consumer_id, seed.correlation_id, seed.created_at,
+        seed.currency, gen_random_uuid(),
+        'backlog-' || lpad(n::text, 8, '0'),
+        seed.offer_id, seed.price_id, seed.provider,
+        'velora-backlog-' || lpad(n::text, 8, '0'),
+        'reconciliation_pending', seed.tax_authority, seed.tax_minor,
+        now() - interval '10 minutes', 1
+      from billing_payments seed, generate_series(1, 120) as n
+      where seed.idempotency_key = 'backlog-seed-key'
+    `);
+    await age();
+
+    const [unsettled] = await rowsOf<{ count: string }>(
+      database.sql`select count(*)::text as count from billing_payments
+         where state = 'reconciliation_pending'`,
+    );
+    expect(Number(unsettled?.count ?? '0')).toBe(121);
+
+    // The backlog is found through the partial index over the unsettled states,
+    // so the read is the size of what is unresolved rather than of the history.
+    const plan = await rowsOf<{ 'QUERY PLAN': string }>(
+      database.sql`explain (format text)
+        select * from billing_payments
+         where state in ('created', 'provider_pending', 'requires_action', 'reconciliation_pending')
+           and updated_at < now()
+         order by updated_at, id
+         limit 50`,
+    );
+    const planText = plan.map((row) => row['QUERY PLAN']).join('\n');
+    expect(planText).toContain('billing_payments_unsettled_idx');
+    expect(planText).not.toContain('Seq Scan');
+
+    // And one cycle takes a bounded bite rather than the whole backlog, so a
+    // bad day cannot stall the loop that recovers from it.
+    const report = await product.billing.reconciliation.reconcileOnce();
+    expect(report.paymentsExamined).toBe(50);
+  });
+});
+
 describe('a deployed environment reconciles nothing', () => {
   it('examines no rows at all when no provider is approved', async () => {
     const offerId = await sellable('reconblocked@velora.test', 'reconblocked');

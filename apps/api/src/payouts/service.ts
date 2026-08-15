@@ -1,5 +1,6 @@
-import type { Executor, TransactionHandle } from '../database/executor.js';
+import type { TransactionHandle } from '../database/executor.js';
 import type { OutboxAppendPort } from '../events/outbox.js';
+import { lockCreatorPosition } from './creator-position-lock.js';
 import type { JournalStore } from '../money/journal.js';
 import { compareMoney, isPositiveMoney, money } from '../money/money.js';
 import { disbursementSettledEvent } from './disbursement-events.js';
@@ -173,13 +174,14 @@ export class PayoutsService {
    * here so there is one posting and one published fact.
    */
   async settle(
-    executor: Executor,
+    executor: TransactionHandle,
     input: {
       readonly instruction: PayoutInstructionRow;
       readonly providerReference: string;
     },
   ): Promise<PayoutInstructionRow | undefined> {
     const { journal, outbox, repository } = this.dependencies;
+    await lockCreatorPosition(executor, input.instruction.creatorId);
     const paid = await repository.transition(executor, {
       from: ['reserved', 'submitted'],
       instructionId: input.instruction.id,
@@ -216,7 +218,7 @@ export class PayoutsService {
     // BILLING owes the same creator the same money from the other side of the
     // seam. It learns that it no longer does by consuming this fact, never by
     // PAYOUTS writing a `billing_` row.
-    await outbox.append(executor as TransactionHandle, {
+    await outbox.append(executor, {
       ...(paid.correlationId === null
         ? {}
         : { correlationId: paid.correlationId }),
@@ -245,7 +247,7 @@ export class PayoutsService {
    * for money that never left.
    */
   async release(
-    executor: Executor,
+    executor: TransactionHandle,
     input: {
       readonly failureReason: 'declined' | 'provider_error';
       readonly instruction: PayoutInstructionRow;
@@ -253,6 +255,7 @@ export class PayoutsService {
     },
   ): Promise<PayoutInstructionRow | undefined> {
     const { journal, repository } = this.dependencies;
+    await lockCreatorPosition(executor, input.instruction.creatorId);
     const failed = await repository.transition(executor, {
       failureReason: input.failureReason,
       from: ['reserved', 'submitted'],
@@ -297,7 +300,7 @@ export class PayoutsService {
    * them can have.
    */
   private async reserve(
-    executor: Executor,
+    executor: TransactionHandle,
     input: {
       readonly amountMinor: bigint;
       readonly correlationId: string;
@@ -315,6 +318,8 @@ export class PayoutsService {
       }
   > {
     const { journal, policy, provider, repository } = this.dependencies;
+    // Before the row lock, per the ordering rule the lock itself documents.
+    await lockCreatorPosition(executor, input.creatorId);
     const recipient = await repository.lockRecipient(executor, input.creatorId);
     // A provider that has not said this recipient can be paid is the end of it.
     // Provider recipient readiness never overrides Velora's own gates, but the

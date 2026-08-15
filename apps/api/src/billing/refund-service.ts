@@ -223,6 +223,12 @@ export class RefundService {
     },
   ): Promise<RefundRow | undefined> {
     const { journal, offers, outbox, refunds } = this.dependencies;
+    // The capture, before anything is read from it. Settling allocates against
+    // everything already unwound, and that is a read-then-write over a sum:
+    // two reversals of one charge settling at once would each see the other's
+    // share missing and each debit a creator for money the other was already
+    // taking back.
+    await refunds.lockPayment(executor, input.payment.id);
     const settled = await refunds.transition(executor, {
       // Every non-terminal state, because a confirmation may arrive while the
       // instruction is in flight, while it is waiting to be sent, or after the

@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 
-import type { DatabaseHandle, Executor } from '../database/executor.js';
+import type {
+  DatabaseHandle,
+  Executor,
+  TransactionHandle,
+} from '../database/executor.js';
 import type { JournalStore } from '../money/journal.js';
 import { money, type Money } from '../money/money.js';
 import {
@@ -60,7 +64,9 @@ export class PayoutsRepository {
     return this.database;
   }
 
-  transaction<T>(work: (executor: Executor) => Promise<T>): Promise<T> {
+  transaction<T>(
+    work: (executor: TransactionHandle) => Promise<T>,
+  ): Promise<T> {
     return this.database.transaction(async (executor) => work(executor));
   }
 

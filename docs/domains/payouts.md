@@ -40,6 +40,14 @@ Nothing is released on a guess. An instruction whose outcome is still unknown â€
 
 In a deployed environment it examines nothing, because no payout provider is approved and there is nobody to ask. It does not treat that silence as failure.
 
+## Implemented: one creator's position, one writer at a time
+
+Four things move a creator's payout position and they arrive from different directions: a payout being reserved, one settling, one being released, and BILLING reversing a sale whose share was already accrued. The last does not originate here at all â€” it arrives as a published fact the relay applies.
+
+The database refuses to leave a creator overdrawn, but that refusal is a deferred constraint trigger, which is a check at commit rather than a lock. Two transactions debiting the same position cannot see each other's uncommitted entries, so each can compute a balance that is fine on its own and both commit. Every one of the four therefore takes a transaction-scoped advisory lock on the creator first, before any row lock, so the next writer reads the balance the previous one committed.
+
+Whether a creator who has already been paid may be carried negative when a reversal lands afterwards is `DECISION REQUIRED` and nothing here decides it. What the platform does today is refuse the posting rather than absorb it: the reversal is left unapplied and visible, which is the fail-closed reading of a question nobody has answered.
+
 ## Phase/events/open questions
 
 Phase 3 and only after real payout infrastructure approval. Events: earnings eligibility, hold/release, payout state. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: payout countries, KYC/tax, commission, rolling reserve, negative balance, dispute window, provider. See [Creator Private Clubs](../product/03-creator-private-clubs.md), [BILLING](billing.md), [money flow](../architecture/10-money-flow.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment security](../security/05-payments-webhooks.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), and [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md).

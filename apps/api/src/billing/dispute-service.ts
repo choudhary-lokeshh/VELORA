@@ -104,7 +104,11 @@ export class DisputeService {
       readonly provider: string;
     },
   ): Promise<boolean> {
-    const { disputes } = this.dependencies;
+    const { disputes, refunds } = this.dependencies;
+    // The same capture lock every reversal takes. A lost claim allocates
+    // against what refunds have already unwound, so it has to queue behind
+    // them rather than read a total one of them is still writing.
+    await refunds.lockPayment(executor, input.payment.id);
     const captured = money(input.payment.amountMinor, input.payment.currency);
     if (input.evidence.amount.currency !== captured.currency) return false;
     if (input.evidence.amount.amountMinor > captured.amountMinor) return false;

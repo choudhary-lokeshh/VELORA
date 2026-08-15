@@ -197,6 +197,13 @@
       "when": 1786793418230,
       "tag": "0027_commerce_eligibility_tax",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786793419230,
+      "tag": "0028_payouts_overdraw_enforcement",
+      "breakpoints": true
     }
   ]
 }
