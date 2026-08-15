@@ -96,7 +96,7 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   const clubs = testClubsRuntime({ config, creators, users });
   return {
     admin: testAdminRuntime({ caller: auth.caller, clubs, creators, safety }),
-    billing: testBillingRuntime({ clubs, config, creators }),
+    billing: testBillingRuntime({ clubs, config, creators, users }),
     clubs,
     creators,
     discovery,

@@ -12,12 +12,15 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  checkoutResponseSchema,
+  paymentIdSchema,
   commercialOfferLifecycleRequestSchema,
   commercialOfferListResponseSchema,
   commercialOfferResponseSchema,
   createCommercialOfferRequestSchema,
   publishCommercialPriceRequestSchema,
   retireCommercialPriceRequestSchema,
+  startCheckoutRequestSchema,
 } from './billing.js';
 import {
   adminCreatorListResponseSchema,
@@ -75,6 +78,7 @@ import {
 import {
   conversationIdSchema,
   cursorSchema,
+  idempotencyHeader,
   pageSizeSchema,
 } from './product.js';
 import {
@@ -182,6 +186,7 @@ export const apiRoutePaths = {
   adminCreatorSuspension: '/v1/admin/creators/suspension',
   adminCreators: '/v1/admin/creators',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
+  checkouts: '/v1/billing/checkouts',
   clubAccess: '/v1/clubs/access',
   clubContent: '/v1/clubs/content',
   clubRedemptions: '/v1/clubs/redemptions',
@@ -280,6 +285,8 @@ export const apiSchemas = {
   CreatorOnboardingStateResponse: creatorOnboardingStateResponseSchema,
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
+  CheckoutResponse: checkoutResponseSchema,
+  StartCheckoutRequest: startCheckoutRequestSchema,
   CommercialOfferLifecycleRequest: commercialOfferLifecycleRequestSchema,
   CommercialOfferListResponse: commercialOfferListResponseSchema,
   CommercialOfferResponse: commercialOfferResponseSchema,
@@ -370,6 +377,7 @@ export const apiQueryParameters = {
   contentId: contentIdSchema,
   handle: creatorHandleSchema,
   pageSize: pageSizeSchema,
+  paymentId: paymentIdSchema,
 } as const;
 export type ApiQueryParameterName = keyof typeof apiQueryParameters;
 
@@ -1476,6 +1484,52 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button.',
+  },
+  {
+    method: 'post',
+    operationId: 'startCheckout',
+    path: apiRoutePaths.checkouts,
+    requestHeaders: [idempotencyHeader],
+    requestSchemaName: 'StartCheckoutRequest',
+    responses: {
+      '201': {
+        description:
+          'The payment operation exists. It is committed before any provider is contacted, so a process that dies between the two leaves something reconciliation can resolve rather than a charge nobody has a record of. A redirect URL is present when this call created one and absent on a replay.',
+        schemaName: 'CheckoutResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '403': {
+        description: `The caller may not buy this: the account is not in good standing, the offer is not active, no live price exists in the requested currency, or the audience is Consumer Mobile. The body is an ApiError with code ${productErrorCodes.accountNotEligible} or ${productErrorCodes.actionNotPermitted}. Purchases are Consumer Web only in this milestone.`,
+        schemaName: 'ApiError',
+      },
+      '409': {
+        description: `The same idempotency key was reused for a different purchase. The body is an ApiError with code ${productErrorCodes.idempotencyMismatch}.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The request names an offer and a currency and nothing else. The amount is read from the price row inside the transaction that records the operation, so no client can propose what it pays. A client idempotency key is required, scoped by consumer and offer, so a double-click resolves to one purchase.',
+  },
+  {
+    method: 'get',
+    operationId: 'readCheckout',
+    path: apiRoutePaths.checkouts,
+    requestQuery: [{ description: 'Which payment', name: 'paymentId' }],
+    responses: {
+      '200': {
+        description:
+          "One of the caller's own payments. This is what a provider return URL reads: an ordinary authorized read of server state, with no transition on the path, so arriving at a success URL by hand tells somebody exactly what the platform already believed.",
+        schemaName: 'CheckoutResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
   },
   {
     method: 'get',

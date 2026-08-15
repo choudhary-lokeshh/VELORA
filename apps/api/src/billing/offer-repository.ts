@@ -54,6 +54,26 @@ export class OfferRepository {
   }
 
   /**
+   * An offer by identifier, with no creator in the predicate.
+   *
+   * The one read here that is not creator-scoped, because a consumer buying
+   * something is not its creator. It is safe precisely because it grants
+   * nothing: the caller still has to find a live price, and every eligibility
+   * authority is consulted before anything is written.
+   */
+  async findOfferForPurchase(
+    executor: Executor,
+    offerId: string,
+  ): Promise<OfferRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(billingOffers)
+      .where(eq(billingOffers.id, offerId))
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
    * One creator's offers, newest first.
    *
    * Keyset paged on the creation instant and identifier, which is exactly the

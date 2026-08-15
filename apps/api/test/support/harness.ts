@@ -331,9 +331,12 @@ export function testBillingRuntime(input: {
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
   readonly now?: () => Date;
+  readonly users: UsersRuntime;
 }): BillingRuntime {
   return createBillingRuntime({
     config: input.config,
+    consumerContext: input.users.consumerContext,
+    consumers: input.users.adultStanding,
     creatorContext: input.creators.creatorContext,
     creators: input.creators.directory,
     database: input.database ?? drizzle.mock(),

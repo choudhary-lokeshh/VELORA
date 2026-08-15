@@ -79,6 +79,7 @@ const truncationRoots = [
   'billing_journal_accounts',
   // Commercial records are retained rather than deleted, so nothing cascades
   // here either: both tables are listed, prices before the offers they name.
+  'billing_payments',
   'billing_prices',
   'billing_offers',
   // PRIVATE CLUBS references a creator by opaque identifier with no foreign

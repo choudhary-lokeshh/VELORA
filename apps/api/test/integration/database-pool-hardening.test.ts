@@ -178,6 +178,7 @@ function createInstance(name: string): Instance {
         config,
         creators,
         database: database.drizzle,
+        users,
       }),
       admin: testAdminRuntime({
         caller: auth.caller,

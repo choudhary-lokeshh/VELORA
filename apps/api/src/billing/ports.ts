@@ -46,3 +46,22 @@ export interface CommercialResourcePort {
     readonly resourceType: string;
   }): Promise<CommercialResourceState>;
 }
+
+/**
+ * Whether a consumer may be charged at all.
+ *
+ * The same published USERS contract PRIVATE CLUBS uses to decide admission,
+ * consumed here for a different question. BILLING does not read `users_` and
+ * does not decide what good standing means; it asks, inside the transaction
+ * that would write the operation, and refuses when the answer is no or absent.
+ */
+export interface CommercialConsumerPort {
+  standingForUser(input: {
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly userId: string;
+  }): Promise<
+    | { readonly adultAssurance: string; readonly inGoodStanding: boolean }
+    | undefined
+  >;
+}

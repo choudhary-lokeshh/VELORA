@@ -166,6 +166,86 @@ export type RetireCommercialPriceRequest = z.infer<
   typeof retireCommercialPriceRequestSchema
 >;
 
+/**
+ * The states one payment operation can hold, as a consumer surface sees them.
+ *
+ * Six answers rather than a paid flag. `reconciliation_pending` is the one that
+ * matters most: it says the provider's answer was lost, so the platform does
+ * not know yet — which is a truthful thing to show somebody and the only
+ * honest alternative to guessing.
+ */
+export const paymentStateValues = [
+  'created',
+  'provider_pending',
+  'requires_action',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'reconciliation_pending',
+] as const;
+export const paymentStateSchema = z.enum(paymentStateValues);
+export type PaymentStateValue = z.infer<typeof paymentStateSchema>;
+
+export const paymentFailureReasonValues = [
+  'declined',
+  'cancelled_by_consumer',
+  'expired',
+  'provider_error',
+] as const;
+export const paymentFailureReasonSchema = z.enum(paymentFailureReasonValues);
+
+export const paymentIdSchema = z.uuid();
+
+/**
+ * One payment, as the person making it may see it.
+ *
+ * No provider reference, no provider status string, no instrument detail, and
+ * nothing about the payment method. A consumer learns what they are buying,
+ * what it costs, and where the attempt got to.
+ */
+export const consumerPaymentSchema = z
+  .object({
+    amount: moneySchema,
+    createdAt: z.iso.datetime(),
+    failureReason: paymentFailureReasonSchema.optional(),
+    id: paymentIdSchema,
+    offerId: offerIdSchema,
+    state: paymentStateSchema,
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type ConsumerPayment = z.infer<typeof consumerPaymentSchema>;
+
+/**
+ * Starting a purchase.
+ *
+ * The currency is explicit rather than inferred, because an offer may carry
+ * more than one live price and guessing which one somebody meant to pay is the
+ * kind of convenience that shows one amount and charges another. There is no
+ * amount in this request at all: what something costs is server truth, read
+ * from the price row inside the transaction that records the operation.
+ */
+export const startCheckoutRequestSchema = z
+  .object({ currency: currencyCodeSchema, offerId: offerIdSchema })
+  .strict();
+export type StartCheckoutRequest = z.infer<typeof startCheckoutRequestSchema>;
+
+export const checkoutResponseSchema = z
+  .object({
+    payment: consumerPaymentSchema,
+    /**
+     * The provider-hosted page to complete payment on, when this call created
+     * one. Absent on a replay and absent whenever the provider produced none.
+     *
+     * Reaching it is not a purchase and returning from it is not a receipt: the
+     * return route reads server state, and nothing a browser does advances a
+     * payment.
+     */
+    redirectUrl: z.url().optional(),
+  })
+  .strict();
+export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
+
 export const commercialOfferLifecycleValues = ['active', 'retired'] as const;
 export const commercialOfferLifecycleSchema = z.enum(
   commercialOfferLifecycleValues,

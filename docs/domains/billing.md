@@ -46,6 +46,20 @@ A price is never edited. Changing what something costs means retiring one row an
 
 What any of this may cost is not decided here. `BILLING_COMMERCE_POLICY` selects the approved terms — the currencies, the cadences, and the price bounds — and its only deployable value is `unpublished`, which approves nothing. Staging and production refuse any other value. With no approved terms every commercial mutation answers `503 DEPENDENCY_UNAVAILABLE`, and the offer list still answers `200` with a readiness statement saying monetisation is not enabled: a creator is entitled to be told that plainly rather than meeting a form that cannot succeed.
 
+## Implemented: the provider port and checkout orchestration
+
+`src/billing/provider.ts` is the whole of what an eligible payment provider must be able to do, stated once in Velora's vocabulary: create a hosted checkout, retrieve a payment, refund one, and verify an inbound event. No provider status string, object shape, or SDK type crosses it. That matters more here than in most adapters, because [provider eligibility](../compliance/06-payment-provider-eligibility.md) makes a provider change likely rather than hypothetical.
+
+`BILLING_PAYMENT_PROVIDER` selects the adapter. Its only deployable value is `unavailable`, which refuses every operation; staging and production reject anything else, so the deterministic `local-test` adapter is unreachable outside local and test by configuration rather than by convention. There is no header, query parameter, or request field that selects an adapter.
+
+Checkout follows prepare, commit, call, record. One transaction establishes the operation and reserves its idempotency identity and commits; a second short transaction claims the instruction by moving `created` to `provider_pending`; only the winner of that claim calls the provider, outside every transaction, with a platform-generated key; a third records what came back. Fifty simultaneous submissions therefore produce one operation *and* one provider instruction — the idempotency key alone would have prevented a double charge, but it would have sent fifty identical instructions to do it.
+
+An ambiguous provider outcome is neither success nor failure. The operation moves to `reconciliation_pending`, no second instruction is sent under a new key, and a job resolves it from the provider's own record. A `provider_pending` row with no provider reference means an instruction was in flight when the process stopped, and it is resolvable the same way.
+
+Nothing a browser does moves a payment. The return and cancel URLs reach a read of the caller's own operation; there is no transition on that path, so arriving at a success URL by hand reports exactly what the platform already believed. Purchases are Consumer Web only — a Consumer Mobile bearer token is a valid consumer credential and is still refused, because a purchase from a mobile app is a different commercial arrangement and the boundary belongs at the API rather than in an absent screen.
+
+No instrument data exists anywhere in this domain. Not a card number, not a last four, not an expiry, not redacted or hashed — absent. Collection happens on the provider's page under the provider's own compliance scope, and the API has no field that could carry one.
+
 ## Cross-references
 
 [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md), [PAYOUTS](payouts.md).

@@ -115,6 +115,7 @@ const application = createApplication({
       config,
       creators,
       database: database.drizzle,
+      users,
     }),
     admin: testAdminRuntime({
       caller: auth.caller,

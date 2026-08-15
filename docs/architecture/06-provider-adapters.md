@@ -28,6 +28,14 @@ AI routing may select only evaluated adapters/models approved for capability, da
 
 Provider action requires owning-domain authorization and operation ID. V1 may use mocks/local implementations; no production provider connection by default. `DECISION REQUIRED`: providers, country availability, mobile/channel compatibility, data processing terms, and cost limits before production rollout.
 
+## Implemented: the payment adapter boundary
+
+The payment port in `apps/api/src/billing/provider.ts` is the reference shape for the rest. It declares every provider interaction the domain will ever need rather than growing one method at a time, because the interface is what a candidate provider is assessed against; callers arrive per phase and the unimplemented ones refuse.
+
+Two adapters exist. `unavailable` rejects every call and is the only value staging and production accept. `local-test` is deterministic, in-process, and reaches no network; it exists so the orchestration *around* a provider — idempotent retries, ambiguous outcomes, verified events — is exercisable before any provider is approved, and it is named so no passing test can be read as evidence about a real one.
+
+Selection is one configuration value read at the composition root, validated by the schema, and rejected at startup outside local and test. There is no route, header, query parameter, or request field that reaches a different adapter, which is the difference between a test double being unreachable and merely being unused.
+
 ## Cross-references
 
 [Payment lifecycle](../flows/payment-lifecycle.md), [RTC lifecycle](../flows/rtc-lifecycle.md), [AI platform](../ai/01-ai-platform-architecture.md), [AI evaluation](../ai/05-ai-observability-budgets-evals.md), [media delivery](../security/04-media-upload-delivery.md), [payment webhooks](../security/05-payments-webhooks.md), [market entry](../compliance/01-market-entry-gates.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).

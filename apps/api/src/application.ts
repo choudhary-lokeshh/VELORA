@@ -227,6 +227,8 @@ export function createApplication(
       injectedBilling ??
       createBillingRuntime({
         config,
+        consumerContext: users.consumerContext,
+        consumers: users.adultStanding,
         creatorContext: creators.creatorContext,
         creators: creators.directory,
         database: ownedDatabase.database,
@@ -727,6 +729,14 @@ export function createApplication(
     .get(
       apiRoutePaths.publicCreatorClubs,
       admitted(async (input) => clubs.clubRoutes.getPublicClubs(input)),
+    )
+    .post(
+      apiRoutePaths.checkouts,
+      admitted(async (input) => billing.checkoutRoutes.startCheckout(input)),
+    )
+    .get(
+      apiRoutePaths.checkouts,
+      admitted(async (input) => billing.checkoutRoutes.readCheckout(input)),
     )
     .get(
       apiRoutePaths.creatorOffers,

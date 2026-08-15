@@ -680,6 +680,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/billing/checkouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["readCheckout"];
+        put?: never;
+        /** The request names an offer and a currency and nothing else. The amount is read from the price row inside the transaction that records the operation, so no client can propose what it pays. A client idempotency key is required, scoped by consumer and offer, so a double-click resolves to one purchase. */
+        post: operations["startCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/creator/offers": {
         parameters: {
             query?: never;
@@ -1119,6 +1136,35 @@ export interface components {
                 key: "creator_terms" | "creator_content_policy";
                 version: string;
             }[];
+        };
+        CheckoutResponse: {
+            payment: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                failureReason?: "declined" | "cancelled_by_consumer" | "expired" | "provider_error";
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                offerId: string;
+                /** @enum {string} */
+                state: "created" | "provider_pending" | "requires_action" | "succeeded" | "failed" | "cancelled" | "reconciliation_pending";
+                /** Format: date-time */
+                updatedAt: string;
+            };
+            /** Format: uri */
+            redirectUrl?: string;
+        };
+        StartCheckoutRequest: {
+            /** @enum {string} */
+            currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            /** Format: uuid */
+            offerId: string;
         };
         CommercialOfferLifecycleRequest: {
             /** Format: uuid */
@@ -6959,6 +7005,234 @@ export interface operations {
                 };
             };
             /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    readCheckout: {
+        parameters: {
+            query?: {
+                /** @description Which payment */
+                paymentId?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One of the caller's own payments. This is what a provider return URL reads: an ordinary authorized read of server state, with no transition on the path, so arriving at a success URL by hand tells somebody exactly what the platform already believed. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    startCheckout: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+                /** @description Contract header x-velora-idempotency-key */
+                "x-velora-idempotency-key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description The payment operation exists. It is committed before any provider is contacted, so a process that dies between the two leaves something reconciliation can resolve rather than a charge nobody has a record of. A redirect URL is present when this call created one and absent on a replay. */
+            201: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The caller may not buy this: the account is not in good standing, the offer is not active, no live price exists in the requested currency, or the audience is Consumer Mobile. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE or ACTION_NOT_PERMITTED. Purchases are Consumer Web only in this milestone. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The same idempotency key was reused for a different purchase. The body is an ApiError with code IDEMPOTENCY_KEY_MISMATCH. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No approved commercial terms are published in this environment, so nothing can be made purchasable. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This is a truthful statement about the platform rather than a client error, and no payment or payout provider is approved either. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

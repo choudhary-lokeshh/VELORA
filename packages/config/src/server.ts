@@ -51,6 +51,23 @@ export const localTestBillingEntitlement = 'local-test';
  */
 export const unpublishedCommercePolicy = 'unpublished';
 export const localTestCommercePolicy = 'local-test';
+
+/**
+ * Which payment provider collects money.
+ *
+ * `unavailable` refuses every provider operation, which is the only behaviour a
+ * deployed environment may have: [provider eligibility](../../../docs/compliance/06-payment-provider-eligibility.md)
+ * records, from primary sources, that no assessed provider is eligible for
+ * Velora's business model without written approval nobody holds, and that
+ * several prohibit it outright.
+ *
+ * `local-test` is a deterministic in-process adapter for development and tests.
+ * It moves no money and reaches no network. Configuration refuses it outside
+ * local and test, so there is no route, header, request field, or environment
+ * string that reaches it in a deployed environment.
+ */
+export const unavailablePaymentProvider = 'unavailable';
+export const localTestPaymentProvider = 'local-test';
 export const unavailableAdultAssuranceVerifier = 'unavailable';
 export const localTestAdultAssuranceVerifier = 'local-test';
 
@@ -209,6 +226,9 @@ export const serverConfigSchema = z
     BILLING_COMMERCE_POLICY: z
       .enum([unpublishedCommercePolicy, localTestCommercePolicy])
       .default(unpublishedCommercePolicy),
+    BILLING_PAYMENT_PROVIDER: z
+      .enum([unavailablePaymentProvider, localTestPaymentProvider])
+      .default(unavailablePaymentProvider),
     DATABASE_URL: postgresUrlSchema,
     EPHEMERAL_REDIS_URL: redisUrlSchema,
     HOST: z.string().min(1).optional(),
@@ -262,6 +282,13 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `BILLING_COMMERCE_POLICY is not usable in ${config.APP_ENV}: platform fee, revenue share, currencies, price bounds, billing intervals, refund and cancellation terms are all undecided; see DECISIONS_REQUIRED`,
         path: ['BILLING_COMMERCE_POLICY'],
+      });
+    }
+    if (config.BILLING_PAYMENT_PROVIDER !== unavailablePaymentProvider) {
+      context.addIssue({
+        code: 'custom',
+        message: `BILLING_PAYMENT_PROVIDER is not usable in ${config.APP_ENV}: no payment provider is eligible for Velora's business model without written approval nobody holds; see the provider eligibility record and DECISIONS_REQUIRED`,
+        path: ['BILLING_PAYMENT_PROVIDER'],
       });
     }
     if (config.MESSAGING_SAFETY_ELIGIBILITY !== unavailableSafetyEligibility) {
@@ -350,6 +377,7 @@ export function redactServerConfig(config: ServerConfig) {
     adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
+    paymentProvider: config.BILLING_PAYMENT_PROVIDER,
     profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
     accessTokenSigningKeyConfigured:
       config.AUTH_ACCESS_TOKEN_SIGNING_KEY !== undefined,

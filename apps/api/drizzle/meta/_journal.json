@@ -162,6 +162,13 @@
       "when": 1786780212057,
       "tag": "0022_billing_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786781551076,
+      "tag": "0023_billing_payments",
+      "breakpoints": true
     }
   ]
 }
