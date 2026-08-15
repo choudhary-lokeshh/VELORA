@@ -79,3 +79,21 @@ The integration harness keeps its own larger pool for a different reason: fiftee
 ### For an upstream report
 
 Bun 1.3.14, `Bun.SQL` against PostgreSQL 18.4. One pool, `max: 10`, `idleTimeout: 30`. Fifty concurrent units, each running an autocommit query, then a `sql.begin()` transaction, then another autocommit query. Expected: fifty completions. Observed: units never settle, and `pg_stat_activity` shows backends `idle in transaction` that are never returned to the pool or recovered. It does not occur when concurrency stays at or below `max`, when only transactions run, or when only autocommit queries run. Measured on the same host: unmitigated, 0 of 50 settled within 15 s with a backend stranded `idle in transaction`; with the pool pre-opened and in-flight work bounded at eight, 50 of 50 settled in 30 ms with none stranded.
+
+## Measured: `on conflict` arbitrates one index, and a money table has two
+
+Every table that records a money instruction carries two unique indexes over the same fact: the caller's identity for the operation — who, what, and the key they sent — and the platform-generated provider key derived from exactly those columns. Both are wanted. The first is what a replay resolves against; the second is the invariant that Velora never sends two different instructions under one provider key.
+
+`insert … on conflict (…) do nothing` arbitrates the index it names and no other. A duplicate that is already committed is found by the arbiter's check and the insert is skipped before any other index is touched, which is the ordinary replay and is safe. Two transactions establishing the same identity *at the same moment* are the case it does not cover: both pass the arbiter's check before either has an index entry the other can see, and the loser then inserts into the unarbitrated provider-key index, where a duplicate is raised as `23505` rather than skipped. It escapes as an unhandled error, so a double submission of one purchase is answered `500`.
+
+Reproduced on a two-CPU Linux runner with the hosted pipeline's toolchain: the fifty-simultaneous-submissions suite, repeated forty times, failed twice with `duplicate key value violates unique constraint "billing_payments_provider_key_uk"`. The same suite passes on an unloaded ten-CPU machine, which is why it first appeared as one red hosted run against a green local one.
+
+`src/database/idempotency-lock.ts` closes it with a transaction-scoped advisory lock on the operation identity, taken before the insert. One caller establishes the operation and commits; the next takes the lock only after that commit and reads the operation that now exists, so the second insert never happens and neither index is ever contended. Same forty rounds on the same two CPUs afterwards: no failures. The ordering rule is `lockPair`'s — advisory lock before any row lock — so the two compose.
+
+BILLING's reversals and PAYOUTS' instructions have the same two-index shape and are *not* exposed, because both already take a row lock that serializes the contending writers before they reach the insert: `lockPayment` on the capture, and `lockRecipient` on the creator's recipient. Both call sites say so, because a later change that drops the row lock reopens the race.
+
+## Measured: a derived provider key must stay one-to-one
+
+`billing_payments.provider_idempotency_key` is bounded at 200 characters and an idempotency key may be 128, so the original derivation — the two identifiers and the key written out — reached 209 and was truncated. Truncation is what breaks it: two submissions differing only past the cut derive the same provider key, so the second collides on the index that exists to keep instructions distinct and is refused as a duplicate of a purchase it is not. This needs no concurrency at all.
+
+The derivation is now a SHA-256 digest of the whole identity, which is fixed-width and cannot overrun the bound. Stored keys are never recomputed — reconciliation re-sends the key the row already holds — so the change reaches new operations only.

@@ -174,9 +174,16 @@ export class RefundRepository {
    * Records the reversal, or returns nothing when this payment already has one
    * under this key.
    *
-   * `on conflict do nothing` rather than a preceding read, on the same rule the
-   * payment operation follows: two simultaneous submissions of one instruction
-   * both insert, PostgreSQL admits one, and the loser reads the winner's row.
+   * `on conflict do nothing` rather than a preceding read: two simultaneous
+   * submissions of one instruction both insert, PostgreSQL admits one, and the
+   * loser reads the winner's row.
+   *
+   * This is safe against the unarbitrated provider-key index only because
+   * `lockPayment` has already taken the capture under a row lock by the time
+   * this runs, so reversals of one payment are serialized before they get here
+   * and never contend on that index. A caller that reaches this without that
+   * lock reopens the race `lockIdempotentOperation` describes and must take
+   * that lock instead.
    */
   async insertRefund(
     executor: Executor,

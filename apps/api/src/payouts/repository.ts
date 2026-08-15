@@ -206,6 +206,13 @@ export class PayoutsRepository {
    * `on conflict do nothing` rather than a preceding read: two simultaneous
    * submissions both insert, PostgreSQL admits one, and the loser reads the
    * winner's row.
+   *
+   * This is safe against the unarbitrated provider-key index only because
+   * `lockRecipient` has already taken the creator's recipient under a row lock
+   * by the time this runs, so one creator's instructions are serialized before
+   * they get here and never contend on that index. A caller that reaches this
+   * without that lock reopens the race `lockIdempotentOperation` describes and
+   * must take that lock instead.
    */
   async insertInstruction(
     executor: Executor,

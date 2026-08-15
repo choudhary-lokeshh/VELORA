@@ -1,5 +1,8 @@
-import type { Executor } from '../database/executor.js';
+import { createHash } from 'node:crypto';
+
 import { isCurrencyCode } from '@velora/validation';
+
+import type { Executor, TransactionHandle } from '../database/executor.js';
 
 import { money, type Money } from '../money/money.js';
 import type { CommercePolicy } from './commerce-policy.js';
@@ -83,6 +86,41 @@ export interface CheckoutServiceDependencies {
 
 function refused(reason: CheckoutRefusal): CheckoutOutcome {
   return { kind: 'refused', reason };
+}
+
+/**
+ * The key Velora sends a provider for one purchase.
+ *
+ * Derived from the operation's own identity rather than random, so the key a
+ * retry sends is the key the first attempt sent even if this process never
+ * learned what happened to it — which is what makes a repeat safe to send.
+ *
+ * A digest rather than the identity spelled out. The column is bounded at 200
+ * characters and an idempotency key may be 128, so writing the two identifiers
+ * and the key in full overruns that bound and has to be truncated — and a
+ * truncated key is no longer one key per purchase. Two submissions differing
+ * only past the cut would derive the same provider key, collide on the index
+ * that exists to keep instructions distinct, and fail as a duplicate of a
+ * purchase they are not. A fixed-width digest of the whole identity cannot
+ * overrun, so the mapping stays one-to-one whatever the caller sends.
+ */
+function providerKeyFor(identity: {
+  readonly consumerId: string;
+  readonly idempotencyKey: string;
+  readonly offerId: string;
+}): string {
+  // A separator PostgreSQL cannot store in a text column, so no key a caller
+  // sent can contain one and no two distinct identities can join to the same
+  // string. A digest is one-to-one only if what it digests is.
+  const identityString = [
+    identity.consumerId,
+    identity.offerId,
+    identity.idempotencyKey,
+  ].join('\u0000');
+  const digest = createHash('sha256')
+    .update(identityString, 'utf8')
+    .digest('hex');
+  return `velora-${digest}`;
 }
 
 export class CheckoutService {
@@ -351,7 +389,7 @@ export class CheckoutService {
    * never lands in between.
    */
   private async prepare(
-    executor: Executor,
+    executor: TransactionHandle,
     input: {
       readonly assessment: TaxAssessment;
       readonly consumerId: string;
@@ -463,14 +501,11 @@ export class CheckoutService {
       offerId: offer.id,
       priceId: price.id,
       provider: provider.provider,
-      // Derived from the operation's own identity rather than random, so the
-      // key a retry sends is the key the first attempt sent even if this
-      // process never learned what happened to it.
-      providerIdempotencyKey:
-        `velora-${input.consumerId}-${offer.id}-${input.idempotencyKey}`.slice(
-          0,
-          200,
-        ),
+      providerIdempotencyKey: providerKeyFor({
+        consumerId: input.consumerId,
+        idempotencyKey: input.idempotencyKey,
+        offerId: offer.id,
+      }),
       taxAuthority: input.assessment.authority,
       taxMinor: input.assessment.amount.amountMinor,
     });

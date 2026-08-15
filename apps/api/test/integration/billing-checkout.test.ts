@@ -568,6 +568,119 @@ describe('checkout with no approved payment provider', () => {
   });
 });
 
+describe('establishing one purchase identity', () => {
+  /**
+   * The provider key is derived from the purchase identity, and the column that
+   * holds it is bounded. When that derivation spelled the identity out it
+   * overran the bound at the longest key a caller may send and was truncated,
+   * so two different purchases whose keys differed only past the cut derived
+   * the same provider key and the second was refused as a duplicate of a
+   * purchase it was not.
+   */
+  it('keeps two purchases apart when their keys differ only at the end', async () => {
+    const offerId = await sellableOffer(
+      live.runtime,
+      'longkey@velora.test',
+      'longkeyed',
+      'longkey',
+    );
+    const buyer = await consumer(live.runtime, 'longkeybuyer@velora.test');
+    // The old derivation kept 119 characters of the key inside its 200-
+    // character bound, so these two agree on everything it would have kept.
+    const shared = 'k'.repeat(119);
+    const first = await startCheckout(
+      buyer,
+      offerId,
+      `${shared}${'a'.repeat(9)}`,
+    );
+    const second = await startCheckout(
+      buyer,
+      offerId,
+      `${shared}${'b'.repeat(9)}`,
+    );
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const keys = await rowsOf<{ provider_idempotency_key: string }>(
+      database.sql`select provider_idempotency_key from billing_payments`,
+    );
+    // Two purchases, two operations, two distinct instructions to a provider.
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys.map((row) => row.provider_idempotency_key)).size).toBe(
+      2,
+    );
+  });
+
+  /**
+   * Establishing an operation takes an advisory lock on the purchase identity
+   * before it inserts.
+   *
+   * `on conflict` arbitrates one index, and the provider-key index is not it:
+   * two callers that both pass the arbiter's check before either is visible
+   * would collide there, where a duplicate is raised rather than skipped. The
+   * lock is what stops two callers ever being inside that window, so this
+   * asserts the lock is actually taken rather than asserting the shape of a
+   * race that only appears on a busy machine.
+   */
+  it('serializes concurrent establishment of one purchase on a lock', async () => {
+    const offerId = await sellableOffer(
+      live.runtime,
+      'locked@velora.test',
+      'lockedup',
+      'locked',
+    );
+    const buyer = await consumer(live.runtime, 'lockedbuyer@velora.test');
+    const idempotencyKey = 'checkout-key-locked';
+    // One ordinary purchase first, purely to learn this buyer's identifier from
+    // Velora's own record rather than guessing which account row is theirs.
+    expect(
+      (await startCheckout(buyer, offerId, 'checkout-key-locked-probe')).status,
+    ).toBe(201);
+    const [probe] = await rowsOf<{ consumer_id: string }>(
+      database.sql`select consumer_id from billing_payments`,
+    );
+    const consumerId = probe?.consumer_id ?? '';
+    // The same key the repository builds, so this holds the lock the checkout
+    // path is about to want.
+    const identity = ['billing_payments', consumerId, offerId, idempotencyKey]
+      .map((part) => part.toLowerCase())
+      .join(' ');
+
+    const holder = await database.sql.reserve();
+    let started: Promise<Response> | undefined;
+    try {
+      await holder`begin`;
+      await holder`select pg_advisory_xact_lock(hashtextextended(${identity}, 0))`;
+
+      started = startCheckout(buyer, offerId, idempotencyKey);
+
+      // It cannot get past the insert while the lock is held elsewhere. Polling
+      // for the wait to appear rather than sleeping for it: the condition is
+      // what is being asserted, and it either arrives or the lock was never
+      // taken and this fails.
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
+        const [row] = await rowsOf<{ count: string }>(
+          database.sql`select count(*)::text as count from pg_locks
+             where locktype = 'advisory' and not granted`,
+        );
+        waiting = Number(row?.count ?? '0');
+        if (waiting === 0) await Bun.sleep(20);
+      }
+      expect(waiting).toBeGreaterThan(0);
+      // And nothing new was written while it waited.
+      expect(await paymentCount()).toBe('1');
+    } finally {
+      await holder`commit`;
+      holder.release();
+    }
+
+    const response = await started;
+    expect(response.status).toBe(201);
+    expect(await paymentCount()).toBe('2');
+  });
+});
+
 describe('the database enforces the payment invariants', () => {
   it('freezes what a payment says and retains every row', async () => {
     const offerId = await sellableOffer(

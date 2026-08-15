@@ -1,6 +1,11 @@
 import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
 
-import type { DatabaseHandle, Executor } from '../database/executor.js';
+import type {
+  DatabaseHandle,
+  Executor,
+  TransactionHandle,
+} from '../database/executor.js';
+import { lockIdempotentOperation } from '../database/idempotency-lock.js';
 import type { OfferCursor } from './cursor.js';
 import type { PaymentFailureReason, PaymentState } from './payment-policy.js';
 import { billingPayments } from './schema.js';
@@ -24,7 +29,9 @@ export class PaymentRepository {
     return this.database;
   }
 
-  transaction<T>(work: (executor: Executor) => Promise<T>): Promise<T> {
+  transaction<T>(
+    work: (executor: TransactionHandle) => Promise<T>,
+  ): Promise<T> {
     return this.database.transaction(async (executor) => work(executor));
   }
 
@@ -32,13 +39,17 @@ export class PaymentRepository {
    * Establishes the operation, or returns nothing when this consumer already
    * has one for this offer under this key.
    *
-   * `on conflict do nothing` rather than a preceding read: fifty simultaneous
-   * submissions of one purchase all insert, PostgreSQL admits one, and the
-   * losers read the winner's row. No lock, no retry loop, and no window in
-   * which two operations exist.
+   * Fifty simultaneous submissions of one purchase converge on one row, and it
+   * takes both of the things here to get there. The advisory lock is what makes
+   * the establishment of one operation identity happen once at a time, so a
+   * loser reads the winner's committed row rather than racing it into the
+   * provider-key index — `lockIdempotentOperation` explains why arbitrating a
+   * single index is not enough on its own. `on conflict do nothing` then
+   * resolves the ordinary case, a duplicate that is already committed, without
+   * a retry loop and without a window in which two operations exist.
    */
   async insertOperation(
-    executor: Executor,
+    executor: TransactionHandle,
     input: {
       readonly amountMinor: bigint;
       readonly consumerId: string;
@@ -54,6 +65,13 @@ export class PaymentRepository {
       readonly taxMinor: bigint;
     },
   ): Promise<PaymentRow | undefined> {
+    await lockIdempotentOperation(
+      executor,
+      'billing_payments',
+      input.consumerId,
+      input.offerId,
+      input.idempotencyKey,
+    );
     const inserted = await executor
       .insert(billingPayments)
       .values({

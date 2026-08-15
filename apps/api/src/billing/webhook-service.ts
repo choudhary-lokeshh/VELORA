@@ -552,7 +552,7 @@ export class WebhookService {
       // posts the money, so a settled sale that owes a creator something and a
       // published fact saying so cannot exist without each other.
       if (isPositiveMoney(allocation.creator)) {
-        await outbox.append(executor as TransactionHandle, {
+        await outbox.append(executor, {
           ...(payment.correlationId === null
             ? {}
             : { correlationId: payment.correlationId }),
@@ -597,7 +597,7 @@ export class WebhookService {
         commercialReference = subscription.id;
       }
 
-      await outbox.append(executor as TransactionHandle, {
+      await outbox.append(executor, {
         ...(payment.correlationId === null
           ? {}
           : { correlationId: payment.correlationId }),
