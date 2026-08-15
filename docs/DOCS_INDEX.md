@@ -29,6 +29,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [AI integration boundary](architecture/08-ai-platform.md) | How isolated AI PLATFORM fits overall architecture; dedicated AI section owns AI details |
 | [Technical stack](architecture/09-technical-stack.md) | Concise locked stack, dependency map, initial topology, classifications, and replacement boundaries |
 | [Money flow](architecture/10-money-flow.md) | End-to-end map of commercial, entitlement, earnings, payout, and reversal paths and the boundaries between them |
+| [Monetization freeze report](architecture/11-monetization-freeze-report.md) | What the money architecture froze with, what still blocks live money movement, and what unfreezes it |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
