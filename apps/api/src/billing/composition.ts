@@ -6,8 +6,11 @@ import {
   type ServerConfig,
 } from '@velora/config/server';
 
+import type { SafeLogger } from '@velora/observability/server';
+
 import type { CreatorContextResolver } from '../creators/context.js';
 import type { DatabaseHandle } from '../database/executor.js';
+import { OutboxRepository } from '../events/outbox.js';
 import { JournalStore } from '../money/journal.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import { CheckoutRoutes } from './checkout-routes.js';
@@ -21,7 +24,11 @@ import { LocalTestPaymentProvider } from './local-test-provider.js';
 import { OfferRepository } from './offer-repository.js';
 import { OfferRoutes } from './offer-routes.js';
 import { OfferService } from './offer-service.js';
+import { ProviderEventRepository } from './event-repository.js';
 import { PaymentRepository } from './payment-repository.js';
+import { SubscriptionRepository } from './subscription-repository.js';
+import { WebhookRoutes } from './webhook-routes.js';
+import { WebhookService } from './webhook-service.js';
 import { billingJournalPrefix } from './policy.js';
 import type {
   CommercialConsumerPort,
@@ -32,7 +39,7 @@ import {
   UnavailablePaymentProvider,
   type PaymentProviderPort,
 } from './provider.js';
-import { billingJournalTables } from './schema.js';
+import { billingJournalTables, billingOutbox } from './schema.js';
 
 /**
  * BILLING composition root.
@@ -47,7 +54,10 @@ export interface BillingRuntime {
   readonly checkout: CheckoutService;
   readonly checkoutRoutes: CheckoutRoutes;
   readonly database: DatabaseHandle;
+  readonly eventRepository: ProviderEventRepository;
   readonly journal: JournalStore;
+  /** BILLING's transactional outbox, drained by the shared relay. */
+  readonly outbox: OutboxRepository;
   readonly offerRepository: OfferRepository;
   readonly offerRoutes: OfferRoutes;
   readonly offers: OfferService;
@@ -56,6 +66,9 @@ export interface BillingRuntime {
   readonly policy: CommercePolicy;
   /** The payment adapter. `unavailable` in every deployed environment. */
   readonly provider: PaymentProviderPort;
+  readonly subscriptionRepository: SubscriptionRepository;
+  readonly webhookRoutes: WebhookRoutes;
+  readonly webhooks: WebhookService;
 }
 
 /**
@@ -77,6 +90,9 @@ const paymentProviders: Readonly<Record<string, () => PaymentProviderPort>> = {
 
 export function createBillingRuntime(input: {
   readonly config: ServerConfig;
+  /** Identifies this process when it claims a provider event. */
+  readonly eventOwner?: string;
+  readonly logger?: SafeLogger;
   readonly consumerContext: ConsumerContextResolver;
   /** The published USERS standing contract, for charging a consumer. */
   readonly consumers: CommercialConsumerPort;
@@ -105,6 +121,34 @@ export function createBillingRuntime(input: {
   const provider = buildProvider();
   const offerRepository = new OfferRepository(input.database);
   const paymentRepository = new PaymentRepository(input.database);
+  const eventRepository = new ProviderEventRepository(input.database);
+  const subscriptionRepository = new SubscriptionRepository(input.database);
+  const outbox = new OutboxRepository(input.database, billingOutbox);
+  const journal = new JournalStore({
+    now,
+    prefix: billingJournalPrefix,
+    tables: billingJournalTables,
+  });
+  const logger: SafeLogger = input.logger ?? {
+    debug: () => undefined,
+    error: () => undefined,
+    fatal: () => undefined,
+    info: () => undefined,
+    trace: () => undefined,
+    warn: () => undefined,
+  };
+  const webhooks = new WebhookService({
+    events: eventRepository,
+    journal,
+    logger,
+    now,
+    offers: offerRepository,
+    outbox,
+    owner: input.eventOwner ?? 'billing-api',
+    payments: paymentRepository,
+    provider,
+    subscriptions: subscriptionRepository,
+  });
   const checkout = new CheckoutService({
     consumers: input.consumers,
     now,
@@ -130,21 +174,23 @@ export function createBillingRuntime(input: {
     checkoutRoutes: new CheckoutRoutes({
       consumerContext: input.consumerContext,
       service: checkout,
+      subscriptions: subscriptionRepository,
     }),
     database: input.database,
-    journal: new JournalStore({
-      now,
-      prefix: billingJournalPrefix,
-      tables: billingJournalTables,
-    }),
+    eventRepository,
+    journal,
     offerRepository,
     offerRoutes: new OfferRoutes({
       creatorContext: input.creatorContext,
       service: offers,
     }),
     offers,
+    outbox,
     paymentRepository,
     policy,
     provider,
+    subscriptionRepository,
+    webhookRoutes: new WebhookRoutes({ service: webhooks }),
+    webhooks,
   };
 }

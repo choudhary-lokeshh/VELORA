@@ -169,6 +169,13 @@
       "when": 1786781551076,
       "tag": "0023_billing_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786783697020,
+      "tag": "0024_billing_events_subscriptions",
+      "breakpoints": true
     }
   ]
 }

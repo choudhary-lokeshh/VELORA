@@ -684,7 +684,7 @@ describe('commercial offers', () => {
 });
 
 describe('the database enforces the commercial invariants', () => {
-  it('owns exactly the six billing tables and nothing else', async () => {
+  it('owns exactly the nine billing tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
         where table_schema = 'public' and table_name like 'billing_%'
@@ -695,8 +695,11 @@ describe('the database enforces the commercial invariants', () => {
       'billing_journal_entries',
       'billing_journal_transactions',
       'billing_offers',
+      'billing_outbox',
       'billing_payments',
       'billing_prices',
+      'billing_provider_events',
+      'billing_subscriptions',
     ]);
   });
 

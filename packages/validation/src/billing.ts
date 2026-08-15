@@ -246,6 +246,58 @@ export const checkoutResponseSchema = z
   .strict();
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
 
+/**
+ * What a provider webhook is told.
+ *
+ * One field, and the same answer for a first delivery and a redelivery. A
+ * provider that got a different answer for a repeat would learn which of its
+ * events Velora had already seen, and has no use for that.
+ */
+export const providerEventAcknowledgementSchema = z
+  .object({ received: z.literal(true) })
+  .strict();
+export type ProviderEventAcknowledgement = z.infer<
+  typeof providerEventAcknowledgementSchema
+>;
+
+/**
+ * A subscription, as the person holding it may see it.
+ *
+ * `past_due` appears here and grants nothing. Whether a lapsed payment keeps
+ * access, and for how long, is grace policy nobody has approved, and the
+ * fail-closed reading of an unresolved policy is no access. A surface says
+ * exactly that rather than implying a grace period exists.
+ */
+export const subscriptionStateValues = [
+  'pending',
+  'active',
+  'past_due',
+  'cancel_at_period_end',
+  'cancelled',
+  'terminated',
+] as const;
+export const subscriptionStateSchema = z.enum(subscriptionStateValues);
+export type SubscriptionStateValue = z.infer<typeof subscriptionStateSchema>;
+
+export const consumerSubscriptionSchema = z
+  .object({
+    amount: moneySchema,
+    createdAt: z.iso.datetime(),
+    currentPeriodEnd: z.iso.datetime().optional(),
+    id: z.uuid(),
+    offerId: offerIdSchema,
+    state: subscriptionStateSchema,
+  })
+  .strict();
+export type ConsumerSubscription = z.infer<typeof consumerSubscriptionSchema>;
+
+export const consumerSubscriptionListResponseSchema = z
+  .object({ subscriptions: z.array(consumerSubscriptionSchema) })
+  .strict();
+export type ConsumerSubscriptionListResponse = z.infer<
+  typeof consumerSubscriptionListResponseSchema
+>;
+
 export const commercialOfferLifecycleValues = ['active', 'retired'] as const;
 export const commercialOfferLifecycleSchema = z.enum(
   commercialOfferLifecycleValues,

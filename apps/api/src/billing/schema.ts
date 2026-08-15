@@ -12,7 +12,15 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { inList, lengthBetween, timestamptz } from '../database/columns.js';
+import {
+  digestColumn,
+  inList,
+  isHexDigest,
+  lengthBetween,
+  nullablePairing,
+  timestamptz,
+} from '../database/columns.js';
+import { outboxTable } from '../events/outbox-table.js';
 import { journalTables } from '../money/journal-table.js';
 import { currencyCodePattern } from '../money/policy.js';
 import {
@@ -35,6 +43,14 @@ import {
   type PaymentFailureReason,
   type PaymentState,
 } from './payment-policy.js';
+import {
+  maximumProviderEventIdLength,
+  maximumProviderEventTypeLength,
+  providerEventStates,
+  subscriptionStates,
+  type ProviderEventState,
+  type SubscriptionState,
+} from './subscription-policy.js';
 import {
   billingJournalCategories,
   billingJournalPrefix,
@@ -365,3 +381,210 @@ export const billingPayments = pgTable(
     check('billing_payments_version_check', sql`${table.version} >= 1`),
   ],
 );
+
+/**
+ * Every verified provider event, kept.
+ *
+ * The durable inbox `docs/security/05-payments-webhooks.md` requires: verify
+ * the signature over the raw bytes, persist the receipt, acknowledge, and
+ * process asynchronously. A request whose signature does not verify never
+ * reaches this table — it is denied and audited, and writing it here would
+ * make an attacker able to fill Velora's storage by posting nonsense.
+ *
+ * Uniqueness over provider and provider event identifier is what makes
+ * redelivery safe. A provider that sends the same event five times produces one
+ * row, and the four later attempts are acknowledged without re-effect.
+ *
+ * The body itself is not retained. What is kept is a digest of the exact bytes
+ * that were verified — enough to prove later that a given payload is the one
+ * that arrived, without holding provider data indefinitely under a retention
+ * policy nobody has approved. Normalized fields carry what processing needs.
+ */
+export const billingProviderEvents = pgTable(
+  'billing_provider_events',
+  {
+    attempts: integer('attempts').notNull().default(0),
+    /** Not claimable before this instant. Retry backoff is written here. */
+    availableAt: timestamptz('available_at').notNull(),
+    eventType: text('event_type').notNull(),
+    /** A redacted code, never a provider message or a payload fragment. */
+    failureReason: text('failure_reason'),
+    id: uuid('id').primaryKey(),
+    leaseExpiresAt: timestamptz('lease_expires_at'),
+    leaseOwner: text('lease_owner'),
+    /** When the provider says it happened, which is not when it arrived. */
+    occurredAt: timestamptz('occurred_at').notNull(),
+    /** Digest of the exact verified bytes. Never the bytes themselves. */
+    payloadDigest: digestColumn('payload_digest').notNull(),
+    processedAt: timestamptz('processed_at'),
+    provider: text('provider').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    /** Normalized reference into Velora's own record, where the event has one. */
+    providerPaymentReference: text('provider_payment_reference'),
+    receivedAt: timestamptz('received_at').notNull(),
+    state: text('state').notNull().$type<ProviderEventState>(),
+    /** Normalized provider status, in Velora's vocabulary rather than theirs. */
+    status: text('status'),
+  },
+  (table) => [
+    // Redelivery is normal, not exceptional. This index is what makes the fifth
+    // copy of an event a no-op rather than a fifth effect.
+    uniqueIndex('billing_provider_events_identity_uk').on(
+      table.provider,
+      table.providerEventId,
+    ),
+    // The drain: claimable rows, oldest first. Partial, so it stays the size of
+    // the backlog rather than of every event ever received.
+    index('billing_provider_events_claimable_idx')
+      .on(table.availableAt, table.id)
+      .where(sql`${table.state} in ('received', 'retry_wait')`),
+    index('billing_provider_events_reference_idx')
+      .on(table.providerPaymentReference)
+      .where(sql`${table.providerPaymentReference} is not null`),
+    check(
+      'billing_provider_events_state_check',
+      inList(table.state, providerEventStates),
+    ),
+    check(
+      'billing_provider_events_digest_check',
+      isHexDigest(table.payloadDigest),
+    ),
+    check(
+      'billing_provider_events_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'billing_provider_events_event_id_check',
+      lengthBetween(table.providerEventId, 1, maximumProviderEventIdLength),
+    ),
+    check(
+      'billing_provider_events_event_type_check',
+      lengthBetween(table.eventType, 1, maximumProviderEventTypeLength),
+    ),
+    check(
+      'billing_provider_events_lease_shape_check',
+      nullablePairing(table.leaseOwner, table.leaseExpiresAt),
+    ),
+    // A lease belongs to a row somebody may still be working on. A settled row
+    // holding one would be indistinguishable from a live claim.
+    check(
+      'billing_provider_events_lease_state_check',
+      sql`${table.leaseOwner} is null or ${table.state} in ('received', 'retry_wait')`,
+    ),
+    check(
+      'billing_provider_events_processed_shape_check',
+      sql`(${table.state} in ('processed', 'ignored')) = (${table.processedAt} is not null)`,
+    ),
+  ],
+);
+
+/**
+ * A consumer's recurring commercial relationship with one offer.
+ *
+ * Velora's own lifecycle, mapped from whatever the provider calls it. The
+ * mapping happens in one place, when a verified event is processed, so a
+ * provider that renames a status changes an adapter rather than an
+ * authorization rule.
+ *
+ * The amount and currency are a snapshot for the same reason a payment carries
+ * one: what somebody agreed to pay is a fact about the moment they agreed, and
+ * a later price change must not rewrite it.
+ */
+export const billingSubscriptions = pgTable(
+  'billing_subscriptions',
+  {
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
+    cancelledAt: timestamptz('cancelled_at'),
+    /** Opaque USERS reference for the subscriber. */
+    consumerId: uuid('consumer_id').notNull(),
+    createdAt: timestamptz('created_at').notNull(),
+    currency: text('currency').notNull(),
+    /** The period paid for. Access questions are asked against this, not a clock. */
+    currentPeriodEnd: timestamptz('current_period_end'),
+    currentPeriodStart: timestamptz('current_period_start'),
+    id: uuid('id').primaryKey(),
+    offerId: uuid('offer_id').notNull(),
+    /** The payment operation that established it. */
+    originPaymentId: uuid('origin_payment_id').notNull(),
+    priceId: uuid('price_id').notNull(),
+    provider: text('provider').notNull(),
+    providerReference: text('provider_reference'),
+    state: text('state').notNull().$type<SubscriptionState>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    // One live subscription per consumer per offer. Without it a redelivered
+    // activation, or a renewal racing a repair, becomes a second relationship
+    // nobody asked for and both of them grant access.
+    uniqueIndex('billing_subscriptions_live_uk')
+      .on(table.consumerId, table.offerId)
+      .where(
+        sql`${table.state} in ('pending', 'active', 'past_due', 'cancel_at_period_end')`,
+      ),
+    // One subscription per payment operation, so a duplicated success event
+    // cannot create a second relationship from the same purchase.
+    uniqueIndex('billing_subscriptions_origin_uk').on(table.originPaymentId),
+    uniqueIndex('billing_subscriptions_provider_uk')
+      .on(table.provider, table.providerReference)
+      .where(sql`${table.providerReference} is not null`),
+    index('billing_subscriptions_consumer_idx').on(
+      table.consumerId,
+      table.createdAt,
+      table.id,
+    ),
+    index('billing_subscriptions_offer_idx').on(table.offerId, table.state),
+    foreignKey({
+      columns: [table.priceId, table.currency],
+      foreignColumns: [billingPrices.id, billingPrices.currency],
+      name: 'billing_subscriptions_price_fk',
+    }),
+    foreignKey({
+      columns: [table.originPaymentId],
+      foreignColumns: [billingPayments.id],
+      name: 'billing_subscriptions_payment_fk',
+    }),
+    check(
+      'billing_subscriptions_state_check',
+      inList(table.state, subscriptionStates),
+    ),
+    check('billing_subscriptions_amount_check', sql`${table.amountMinor} > 0`),
+    check(
+      'billing_subscriptions_currency_check',
+      sql`${table.currency} ~ ${sql.raw(`'${currencyCodePattern}'`)}`,
+    ),
+    check(
+      'billing_subscriptions_period_shape_check',
+      nullablePairing(table.currentPeriodStart, table.currentPeriodEnd),
+    ),
+    check(
+      'billing_subscriptions_period_order_check',
+      sql`${table.currentPeriodEnd} is null or ${table.currentPeriodEnd} > ${table.currentPeriodStart}`,
+    ),
+    // An ended relationship records when it ended, and a live one has not.
+    check(
+      'billing_subscriptions_cancelled_shape_check',
+      sql`(${table.state} in ('cancelled', 'terminated')) = (${table.cancelledAt} is not null)`,
+    ),
+    // Access is asked of a period, so anything that grants must have one.
+    check(
+      'billing_subscriptions_entitling_period_check',
+      sql`${table.state} not in ('active', 'cancel_at_period_end') or ${table.currentPeriodEnd} is not null`,
+    ),
+    check('billing_subscriptions_version_check', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
+ * BILLING's transactional outbox.
+ *
+ * The seam [ADR-0011](../../../../docs/decisions/ADR-0011-payments-payouts.md)
+ * requires between commercial truth and product access: BILLING publishes a
+ * durable fact in the same transaction that settles the money, and PRIVATE
+ * CLUBS consumes it and applies its own grant policy. BILLING never writes
+ * `clubs_`, and PRIVATE CLUBS never reads `billing_`.
+ *
+ * The same shape MESSAGING and DISCOVERY already use, so it inherits the lease,
+ * retry, and dead-letter behaviour rather than inventing a financial variant.
+ */
+export const billingOutbox = outboxTable('billing_outbox');

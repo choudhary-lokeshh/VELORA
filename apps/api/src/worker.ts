@@ -6,6 +6,19 @@ import {
   type SafeLogger,
 } from '@velora/observability/server';
 
+import {
+  createBillingRuntime,
+  type BillingRuntime,
+} from './billing/composition.js';
+import {
+  entitlementGrantedEvent,
+  entitlementRevokedEvent,
+} from './billing/entitlement-events.js';
+import { billingOutbox } from './billing/schema.js';
+import { ClubRepository } from './clubs/club-repository.js';
+import { ClubCommercialDirectory } from './clubs/commercial.js';
+import { billingEntitlementIntakes } from './clubs/entitlement-intake.js';
+import { CreatorDirectory } from './creators/directory.js';
 import { DatabaseService } from './database/database.service.js';
 import { discoveryOutbox } from './discovery/schema.js';
 import { OutboxRepository } from './events/outbox.js';
@@ -27,7 +40,10 @@ import { deliverySweepIntervalMilliseconds } from './notifications/policy.js';
 import { SafetyDirectory } from './safety/directory.js';
 import { SafetyRepository } from './safety/repository.js';
 import { UsersRepository } from './users/repository.js';
-import { ConsumerStanding } from './users/standing.js';
+import {
+  ConsumerAdultStandingDirectory,
+  ConsumerStanding,
+} from './users/standing.js';
 
 /**
  * The background half of the platform.
@@ -49,8 +65,12 @@ import { ConsumerStanding } from './users/standing.js';
  */
 
 export interface WorkerComposition {
+  /** BILLING, composed here because this process drains its inbox and outbox. */
+  readonly billing: BillingRuntime;
   close(): Promise<void>;
   readonly deliverySweep: Poller;
+  /** Applies verified provider events. Never runs on a request thread. */
+  readonly providerEventDrain: Poller;
   readonly relay: OutboxRelay;
   readonly relayPoller: Poller;
   readonly registry: JobRegistry;
@@ -95,8 +115,39 @@ export function createWorkerComposition(input: {
     wake: createNotificationWake(input.queue),
   });
 
+  // BILLING is composed on the worker for one reason: this process drains its
+  // outbox and its provider-event inbox. It gets no request resolvers, because
+  // no route is served here — `undefined` would be wrong, so the two context
+  // resolvers the API needs are simply absent from this composition path and
+  // the runtime is used only for its repositories and its webhook processor.
+  const billing = createBillingRuntime({
+    config: input.config,
+    consumerContext: undefined as never,
+    consumers: new ConsumerAdultStandingDirectory(new UsersRepository(handle)),
+    creatorContext: undefined as never,
+    creators: new CreatorDirectory(),
+    database: handle,
+    eventOwner: owner,
+    logger: input.logger,
+    now,
+    resources: new ClubCommercialDirectory(),
+  });
+
   const relay = new OutboxRelay({
-    consumers: notifications.intakes,
+    consumers: [
+      ...notifications.intakes,
+      // The receiving half of the commercial seam. PRIVATE CLUBS decides what
+      // a settled payment means for access, from BILLING's published fact,
+      // against its own tables.
+      ...billingEntitlementIntakes({
+        clubs: new ClubRepository(handle),
+        database: handle,
+        grantedEvent: entitlementGrantedEvent,
+        logger: input.logger,
+        now,
+        revokedEvent: entitlementRevokedEvent,
+      }),
+    ],
     logger: input.logger,
     now,
     owner,
@@ -113,6 +164,10 @@ export function createWorkerComposition(input: {
         producer: 'messaging',
         repository: new OutboxRepository(handle, messagingOutbox),
       },
+      {
+        producer: 'billing',
+        repository: new OutboxRepository(handle, billingOutbox),
+      },
     ],
   });
 
@@ -125,6 +180,15 @@ export function createWorkerComposition(input: {
     logger: input.logger,
     name: 'outbox-relay',
   });
+  // Verified provider events are applied here rather than on the request that
+  // received them. A webhook endpoint that did business work would be slow, and
+  // a slow endpoint is how one provider event becomes five.
+  const providerEventDrain = new Poller({
+    cycle: async () => admit(async () => billing.webhooks.processOnce()),
+    intervalMilliseconds: outboxRelayIntervalMilliseconds,
+    logger: input.logger,
+    name: 'billing-provider-events',
+  });
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -133,14 +197,24 @@ export function createWorkerComposition(input: {
   });
 
   return {
+    billing,
     async close() {
-      await Promise.all([relayPoller.stop(), deliverySweep.stop()]);
+      await Promise.all([
+        relayPoller.stop(),
+        providerEventDrain.stop(),
+        deliverySweep.stop(),
+      ]);
     },
     deliverySweep,
     async drainOnce() {
+      // Provider events first: applying one is what writes the commercial fact
+      // the relay then publishes, so draining in this order settles a payment
+      // and its entitlement in a single pass.
+      await providerEventDrain.runOnce();
       await relayPoller.runOnce();
       await deliverySweep.runOnce();
     },
+    providerEventDrain,
     registry,
     relay,
     relayPoller,

@@ -1,5 +1,6 @@
 import {
   checkoutResponseSchema,
+  consumerSubscriptionListResponseSchema,
   idempotencyHeader,
   idempotencyKeySchema,
   paymentIdSchema,
@@ -24,6 +25,11 @@ import type {
   CheckoutService,
 } from './checkout-service.js';
 import type { PaymentRow } from './payment-repository.js';
+import { maximumPaymentPageSize } from './payment-policy.js';
+import type {
+  SubscriptionRepository,
+  SubscriptionRow,
+} from './subscription-repository.js';
 
 /**
  * The consumer purchase surface.
@@ -61,6 +67,21 @@ function paymentBody(payment: PaymentRow) {
 export interface CheckoutRoutesDependencies {
   readonly consumerContext: ConsumerContextResolver;
   readonly service: CheckoutService;
+  readonly subscriptions: SubscriptionRepository;
+}
+
+/** A subscription as the person holding it may see it. */
+function subscriptionBody(row: SubscriptionRow) {
+  return {
+    amount: { amountMinor: row.amountMinor.toString(), currency: row.currency },
+    createdAt: row.createdAt.toISOString(),
+    ...(row.currentPeriodEnd === null
+      ? {}
+      : { currentPeriodEnd: row.currentPeriodEnd.toISOString() }),
+    id: row.id,
+    offerId: row.offerId,
+    state: row.state,
+  };
 }
 
 export class CheckoutRoutes {
@@ -125,6 +146,31 @@ export class CheckoutRoutes {
     }
     return {
       body: checkoutResponseSchema.parse({ payment: paymentBody(payment) }),
+      status: 200,
+    };
+  }
+
+  /**
+   * The caller's own subscriptions.
+   *
+   * Read from BILLING's record of the commercial relationship, not from any
+   * entitlement. What somebody may read is PRIVATE CLUBS' answer, taken on
+   * every protected read; this says only what they are paying for.
+   */
+  async listSubscriptions(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await requireConsumerAccount(
+      this.dependencies.consumerContext,
+      input,
+    );
+    if ('failure' in resolved) return resolved.failure;
+    const rows = await this.dependencies.subscriptions.listOwnSubscriptions(
+      this.dependencies.subscriptions.transactionless,
+      { consumerId: resolved.context.userId, limit: maximumPaymentPageSize },
+    );
+    return {
+      body: consumerSubscriptionListResponseSchema.parse({
+        subscriptions: rows.map(subscriptionBody),
+      }),
       status: 200,
     };
   }

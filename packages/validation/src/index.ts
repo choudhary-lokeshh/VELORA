@@ -13,6 +13,8 @@ import {
 } from './creator.js';
 import {
   checkoutResponseSchema,
+  consumerSubscriptionListResponseSchema,
+  providerEventAcknowledgementSchema,
   paymentIdSchema,
   commercialOfferLifecycleRequestSchema,
   commercialOfferListResponseSchema,
@@ -187,6 +189,8 @@ export const apiRoutePaths = {
   adminCreators: '/v1/admin/creators',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
   checkouts: '/v1/billing/checkouts',
+  providerEvents: '/v1/billing/provider-events',
+  subscriptions: '/v1/billing/subscriptions',
   clubAccess: '/v1/clubs/access',
   clubContent: '/v1/clubs/content',
   clubRedemptions: '/v1/clubs/redemptions',
@@ -286,6 +290,8 @@ export const apiSchemas = {
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
   CheckoutResponse: checkoutResponseSchema,
+  ConsumerSubscriptionListResponse: consumerSubscriptionListResponseSchema,
+  ProviderEventAcknowledgement: providerEventAcknowledgementSchema,
   StartCheckoutRequest: startCheckoutRequestSchema,
   CommercialOfferLifecycleRequest: commercialOfferLifecycleRequestSchema,
   CommercialOfferListResponse: commercialOfferListResponseSchema,
@@ -1484,6 +1490,42 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button.',
+  },
+  {
+    method: 'post',
+    operationId: 'receiveProviderEvent',
+    path: apiRoutePaths.providerEvents,
+    responses: {
+      '202': {
+        description:
+          'The event was verified and a durable receipt exists. A redelivery is acknowledged identically to a first delivery, because a provider that got a different answer for a repeat would learn which of its events Velora had already seen. Nothing about the business is decided on this request: a worker drains the receipts afterwards.',
+        schemaName: 'ProviderEventAcknowledgement',
+      },
+      '401': {
+        description:
+          'The signature over the raw body did not verify. Nothing was written, nothing was decided, and the refusal is audited. This is also the answer when the payload is malformed after verification, so a caller learns nothing about how close a forged signature was.',
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      "The provider's signature over the exact bytes is the entire credential: there is no session, no audience, and no CSRF token here. Size is bounded before the body is read as data, and the signature is checked before it is parsed as anything.",
+  },
+  {
+    method: 'get',
+    operationId: 'listConsumerSubscriptions',
+    path: apiRoutePaths.subscriptions,
+    responses: {
+      '200': {
+        description:
+          "The caller's own subscriptions. `past_due` appears and grants nothing: whether a lapsed payment keeps access is grace policy nobody has approved, and the fail-closed reading of an unresolved policy is no access.",
+        schemaName: 'ConsumerSubscriptionListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
   },
   {
     method: 'post',

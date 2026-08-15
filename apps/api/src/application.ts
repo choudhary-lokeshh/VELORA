@@ -738,6 +738,18 @@ export function createApplication(
       apiRoutePaths.checkouts,
       admitted(async (input) => billing.checkoutRoutes.readCheckout(input)),
     )
+    .post(
+      apiRoutePaths.providerEvents,
+      admitted(async (input) =>
+        billing.webhookRoutes.receiveProviderEvent(input),
+      ),
+    )
+    .get(
+      apiRoutePaths.subscriptions,
+      admitted(async (input) =>
+        billing.checkoutRoutes.listSubscriptions(input),
+      ),
+    )
     .get(
       apiRoutePaths.creatorOffers,
       admitted(async (input) => billing.offerRoutes.listOffers(input)),

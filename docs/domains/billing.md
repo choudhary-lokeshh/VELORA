@@ -60,6 +60,18 @@ Nothing a browser does moves a payment. The return and cancel URLs reach a read 
 
 No instrument data exists anywhere in this domain. Not a card number, not a last four, not an expiry, not redacted or hashed — absent. Collection happens on the provider's page under the provider's own compliance scope, and the API has no field that could carry one.
 
+## Implemented: verified events, subscriptions, and the entitlement bridge
+
+An external message becomes internal state through exactly one door. The webhook endpoint has no session, no audience, and no CSRF token: the provider's signature over the raw body is the entire credential. Size is bounded before the body is read as data, the signature is checked before it is parsed as anything, and only a verified event reaches storage — writing an unverified one would let anybody fill the table by posting nonsense at an unauthenticated endpoint.
+
+The handler decides nothing. It records a receipt and acknowledges; a worker poller drains the receipts under a lease and applies each to current state. That separation is what stops a slow business transition from making a provider retry, and a provider retry is how one event becomes five.
+
+Applying a settlement is one transaction: the payment reaches `succeeded`, the journal posts its balanced capture, the subscription is established, and the entitlement fact is appended to the outbox. All four or none — a payment marked succeeded without its journal entry is money nobody can explain, and an entitlement fact without the payment behind it is access nobody paid for. Every step is separately idempotent as well, because redelivery is expected rather than exceptional.
+
+PRIVATE CLUBS consumes the fact and applies its own grant policy. BILLING never writes `clubs_` and PRIVATE CLUBS never reads `billing_`, so a commercial reversal revokes through the same door a payment granted through. A revocation only withdraws an entitlement whose source is `billing`: somebody who also holds a creator invitation keeps what the creator gave them, because the money ending is not the creator changing their mind.
+
+`past_due` grants nothing. Whether a lapsed payment keeps access, and for how long, is grace policy nobody has approved, and the fail-closed reading of an unresolved policy is no access — recorded here as a deliberate choice rather than left as a gap.
+
 ## Cross-references
 
 [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md), [PAYOUTS](payouts.md).
