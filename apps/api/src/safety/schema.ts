@@ -20,6 +20,8 @@ import {
   timestamptz,
 } from '../database/columns.js';
 import {
+  appealStates,
+  appellantKinds,
   casePriorities,
   caseQueues,
   caseStates,
@@ -37,6 +39,7 @@ import {
   evidenceStateLabelPattern,
   enforcingDecisionActions,
   matureContentClassifications,
+  maximumAppealStatementCharacters,
   maximumOperatorNoteCharacters,
   maximumReportDetailCharacters,
   referencedEvidenceKinds,
@@ -56,6 +59,9 @@ import {
   enforcementReasonCodes,
   enforcementScopes,
   objectScopedEnforcements,
+  openAppealStates,
+  type AppealState,
+  type AppellantKind,
   type CasePriority,
   type CaseQueue,
   type CaseState,
@@ -1237,5 +1243,120 @@ export const safetyTakedownClaims = pgTable(
       nullablePairing(table.leaseActorReference, table.leaseExpiresAt),
     ),
     check('safety_takedown_claims_version_check', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
+ * A complaint about a decision.
+ *
+ * Two kinds of person can be affected by one decision, and both are here: a
+ * subject who was restricted, and a notifier whose report was dismissed.
+ * Regulation (EU) 2022/2065 Article 20 covers complaints about decisions taken
+ * *and* about decisions not to act on a notice, so a model with only the first
+ * would have missed half of it. Whether that obligation binds Velora is a legal
+ * question recorded as unresolved rather than answered here.
+ *
+ * **An appeal never erases anything.** Upholding one produces a *superseding*
+ * decision that names the original, which stays byte-for-byte as written —
+ * because the original is the only evidence that the appeal was necessary.
+ *
+ * The outcome carries the reviewer who reached it. Article 20 requires
+ * complaints not to be decided solely by automated means, and a column that can
+ * only hold a human's reference is how that stops being a promise: there is no
+ * automated path that writes it, and no automation in this domain at all.
+ *
+ * At most one live complaint per person per decision. Somebody may withdraw and
+ * the record stays; what they may not do is re-litigate the same decision
+ * twice over.
+ */
+export const safetyAppeals = pgTable(
+  'safety_appeals',
+  {
+    /** Which person is complaining: the one restricted, or the one ignored. */
+    appellantKind: text('appellant_kind').notNull().$type<AppellantKind>(),
+    /**
+     * Opaque reference to the appellant. A subject's identifier is whatever the
+     * decision was about; a notifier's is the account that filed the report.
+     */
+    appellantReference: uuid('appellant_reference').notNull(),
+    /** Which published window policy produced `windowClosesAt`. */
+    appealPolicyVersion: text('appeal_policy_version'),
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => safetyCases.id),
+    decidedAt: timestamptz('decided_at'),
+    /** The decision being complained about. */
+    decisionId: uuid('decision_id')
+      .notNull()
+      .references(() => safetyDecisions.id),
+    id: uuid('id').primaryKey(),
+    /** The superseding decision an upheld appeal produced. */
+    outcomeDecisionId: uuid('outcome_decision_id').references(
+      () => safetyDecisions.id,
+    ),
+    policyVersion: text('policy_version').notNull(),
+    /** Whoever reached the outcome. Never absent on a decided appeal. */
+    reviewerActorReference: text('reviewer_actor_reference'),
+    /** The appellant's own words. Never disclosed, never logged. */
+    statement: text('statement'),
+    state: text('state').notNull().$type<AppealState>(),
+    submittedAt: timestamptz('submitted_at').notNull(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    version: integer('version').notNull().default(1),
+    /** After which a complaint would be out of time. Null while none is published. */
+    windowClosesAt: timestamptz('window_closes_at'),
+  },
+  (table) => [
+    index('safety_appeals_decision_idx').on(
+      table.decisionId,
+      table.submittedAt,
+    ),
+    index('safety_appeals_case_idx').on(table.caseId),
+    index('safety_appeals_appellant_idx').on(
+      table.appellantReference,
+      table.submittedAt,
+    ),
+    // The operator queue: complaints still owed an answer, oldest first.
+    index('safety_appeals_open_idx')
+      .on(table.state, table.submittedAt, table.id)
+      .where(sql`${table.state} in (${sql.raw(literals(openAppealStates))})`),
+    // One live complaint per person per decision. Withdrawing leaves the record
+    // and frees the person to complain again; what is refused is the same
+    // decision being contested twice at once.
+    uniqueIndex('safety_appeals_live_uk')
+      .on(table.decisionId, table.appellantReference)
+      .where(sql`${table.state} <> 'withdrawn'`),
+    check('safety_appeals_state_check', inList(table.state, appealStates)),
+    check(
+      'safety_appeals_appellant_kind_check',
+      inList(table.appellantKind, appellantKinds),
+    ),
+    // A decided complaint has a moment and a reviewer; an open one has neither.
+    // The reviewer column is the whole of "not decided solely by automated
+    // means" made structural.
+    check(
+      'safety_appeals_outcome_shape_check',
+      sql`(${table.state} in ('upheld', 'refused')) = (${table.decidedAt} is not null)
+        and (${table.state} in ('upheld', 'refused')) = (${table.reviewerActorReference} is not null)`,
+    ),
+    // Only an upheld complaint names the decision that replaced the original,
+    // and an upheld one always does.
+    check(
+      'safety_appeals_upheld_shape_check',
+      sql`(${table.state} = 'upheld') = (${table.outcomeDecisionId} is not null)`,
+    ),
+    check(
+      'safety_appeals_window_shape_check',
+      nullablePairing(table.windowClosesAt, table.appealPolicyVersion),
+    ),
+    check(
+      'safety_appeals_window_order_check',
+      sql`${table.windowClosesAt} is null or ${table.windowClosesAt} > ${table.submittedAt}`,
+    ),
+    check(
+      'safety_appeals_statement_check',
+      sql`${table.statement} is null or ${lengthBetween(table.statement, 1, maximumAppealStatementCharacters)}`,
+    ),
+    check('safety_appeals_version_check', sql`${table.version} >= 1`),
   ],
 );

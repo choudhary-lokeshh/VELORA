@@ -122,10 +122,10 @@ export const casePolicyVersion = 'v1-provisional';
 /**
  * Case lifecycle.
  *
- * Only the states this milestone can actually reach. `appealed` arrives with
- * appeals; declaring it now would put a state in the schema that no code could
- * move a row out of, which is how a value nothing is entitled to write ends up
- * being set for convenience later.
+ * There is deliberately no `appealed`. An appeal has its own record, its own
+ * lifecycle, and its own queue, so a case state that had to be kept in step
+ * with it would be two sources of truth for one fact — and the one that drifted
+ * would be the one an operator was looking at.
  *
  * `decided` and `closed` are both terminal and they are not the same fact. A
  * closed case is one nobody is going to look at any further; a decided case is
@@ -1111,3 +1111,72 @@ export const maximumTakedownPageSize = 50;
  */
 export const takedownRateLimitCount = 10;
 export const takedownRateWindowMilliseconds = 60 * 60 * 1000;
+
+/** Which appeal rule was in force. Recorded on every appeal. */
+export const appealPolicyVersion = 'v1-provisional';
+
+/**
+ * Who is appealing.
+ *
+ * Two kinds, because two different people can be affected by one decision.
+ * Regulation (EU) 2022/2065 Article 20, recorded in
+ * [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md),
+ * covers complaints about decisions taken *and* about decisions not to act on a
+ * notice — so a subject who was restricted and a person whose report was
+ * dismissed are both entitled to complain, and a model with only the first
+ * would have missed half of it.
+ *
+ * Whether that obligation binds Velora is `LEGAL REVIEW REQUIRED`. The shape is
+ * built because notice, reasons, a human decision, and a bounded window are
+ * machinery rather than copy, and building machinery late is expensive.
+ */
+export const appellantKinds = ['subject', 'notifier'] as const;
+export type AppellantKind = (typeof appellantKinds)[number];
+
+/**
+ * Appeal lifecycle.
+ *
+ * `upheld` means the appeal succeeded and the decision it names was replaced by
+ * a superseding one; `refused` means the original stands. Neither erases
+ * anything, because the original decision is the only evidence that the appeal
+ * was necessary.
+ */
+export const appealStates = [
+  'received',
+  'under_review',
+  'upheld',
+  'refused',
+  'withdrawn',
+] as const;
+export type AppealState = (typeof appealStates)[number];
+
+/** Appeals still owed an answer. */
+export const openAppealStates = ['received', 'under_review'] as const;
+
+/**
+ * Which decisions each kind of appellant may complain about.
+ *
+ * A subject complains about something that was done to them, so a decision that
+ * *lifted* a restriction is absent: nobody appeals being let back in. A notifier
+ * complains about a decision not to act, which is the one decision that leaves
+ * them affected and the subject untouched.
+ *
+ * Escalation is in neither list, because handing a case on is not a decision
+ * about anybody yet.
+ */
+const appealableByKind: Readonly<
+  Record<AppellantKind, readonly DecisionAction[]>
+> = {
+  notifier: ['no_action'],
+  subject: ['restrict_capability', 'temporary_hold', 'unpublish'],
+};
+
+export function appealableBy(kind: AppellantKind): readonly DecisionAction[] {
+  return appealableByKind[kind];
+}
+
+/** Longest appellant statement accepted. Evidence, and bounded like any input. */
+export const maximumAppealStatementCharacters = 2_000;
+
+/** Largest page of appeals one read returns. */
+export const maximumAppealPageSize = 50;

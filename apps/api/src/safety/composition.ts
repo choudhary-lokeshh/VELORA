@@ -1,9 +1,11 @@
 import {
+  localTestAppealPolicy,
   localTestConsentPolicy,
   localTestDepictedPersonVerifier,
   localTestTakedownPolicy,
   unavailableDepictedPersonVerifier,
   matureContentEnabled,
+  unpublishedAppealPolicy,
   unpublishedConsentPolicy,
   unpublishedTakedownPolicy,
   type ServerConfig,
@@ -23,6 +25,12 @@ import {
   type ConsentCopyPolicy,
   type DepictedPersonVerifier,
 } from './consent.js';
+import {
+  AppealService,
+  LocalTestAppealPolicy,
+  UnpublishedAppealPolicy,
+  type AppealWindowPolicy,
+} from './appeals.js';
 import { ContentSafetyGate } from './content-safety.js';
 import { SafetyDirectory } from './directory.js';
 import { SafetyEligibility } from './eligibility.js';
@@ -46,6 +54,8 @@ import {
 } from './targets.js';
 
 export interface SafetyRuntime {
+  /** Complaints about decisions, and what a subject may be told. */
+  readonly appeals: AppealService;
   /** The one writer of enforcement records. MODERATION and ADMIN call it. */
   readonly authority: EnforcementAuthority;
   /** The depicted-person evidence and consent answer. Fails closed. */
@@ -113,6 +123,11 @@ export function createSafetyRuntime(input: {
   });
   const eligibility = new SafetyEligibility(repository);
   return {
+    appeals: new AppealService({
+      now,
+      policy: selectAppealPolicy(input.config),
+      repository,
+    }),
     authority,
     consent,
     content: new ContentSafetyGate({
@@ -203,6 +218,21 @@ function selectTakedownPolicy(config: ServerConfig): TakedownDeadlinePolicy {
   if (build === undefined) {
     throw new Error(
       `Unsupported takedown policy: ${config.SAFETY_TAKEDOWN_POLICY}`,
+    );
+  }
+  return build();
+}
+
+const appealPolicies: Readonly<Record<string, () => AppealWindowPolicy>> = {
+  [localTestAppealPolicy]: () => new LocalTestAppealPolicy(),
+  [unpublishedAppealPolicy]: () => new UnpublishedAppealPolicy(),
+};
+
+function selectAppealPolicy(config: ServerConfig): AppealWindowPolicy {
+  const build = appealPolicies[config.SAFETY_APPEAL_POLICY];
+  if (build === undefined) {
+    throw new Error(
+      `Unsupported appeal policy: ${config.SAFETY_APPEAL_POLICY}`,
     );
   }
   return build();

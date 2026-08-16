@@ -213,6 +213,7 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'payouts_journal_transactions',
         'payouts_outbox',
         'payouts_recipients',
+        'safety_appeals',
         'safety_blocks',
         'safety_cases',
         'safety_consent_records',

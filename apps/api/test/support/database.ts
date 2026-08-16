@@ -121,6 +121,7 @@ const truncationRoots = [
   'safety_cases',
   'safety_content_classifications',
   'safety_takedown_claims',
+  'safety_appeals',
   'safety_decision_evidence',
   'safety_decisions',
   'safety_enforcements',

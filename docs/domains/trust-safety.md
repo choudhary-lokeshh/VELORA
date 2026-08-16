@@ -198,6 +198,24 @@ Urgency is derived from what is alleged rather than chosen by the claimant, so n
 
 Nothing here holds a name, an address, or a means of contact. Only an account holder has an identifier, because that is the only claimant this domain already knows, and a regression asserts no column exists that could hold the rest.
 
+### Appeals, and what a person may be told
+
+`0035_safety_appeals` builds the other half of the obligation shape recorded in [surface and distribution eligibility](../compliance/07-surface-and-distribution-eligibility.md): notice and reasons, and a route to contest them. Whether Regulation (EU) 2022/2065 binds Velora is a legal question left open there; the machinery is built because notice, reasons, a human decision, and a bounded window are structure rather than copy, and structure added late is far more expensive.
+
+**A statement of reasons discloses the category and the scope, and nothing else.** Not the review's finding, not the evidence, not the reviewer, not the report. It is derived from decisions that *imposed* something and that nothing has replaced — telling somebody they are restricted when a later decision lifted it would be worse than telling them nothing — and the reason it carries is the disclosable one derived from the scope, from a vocabulary asserted to be disjoint from both the reporter categories and the enforcement findings.
+
+**Two kinds of person can be affected by one decision, and both may complain.** A subject who was restricted, and a notifier whose report was dismissed. Article 20 covers complaints about decisions taken *and* about decisions not to act on a notice, so a model with only the first would have missed half of it. Who may complain about what is a map rather than a check at the call site, and a notifier is verified against the reports in the case, so nobody contests a dismissal of somebody else's report. Every refusal — somebody else's decision, somebody else's report, the wrong kind of decision — is the same shape, so probing the path enumerates nothing.
+
+**An appeal never erases anything.** Upholding one produces a *superseding* decision that names the original, and the original stays byte-for-byte as written, because it is the only evidence that the appeal was necessary. The outcome is checked to genuinely supersede the decision appealed: one pointing at an unrelated record would claim something was put right when nothing was.
+
+**A complaint is not decided by anything automated.** The outcome carries the reviewer who reached it, a database constraint refuses an answered complaint with no reviewer on it, and nothing in this domain is automated. That is what makes Article 20's requirement structural rather than a promise.
+
+At most one live complaint per person per decision, settled by a partial unique index. Withdrawing leaves the record and frees the person to complain again; what is refused is contesting one decision twice at once.
+
+The window comes from a published policy and is stored beside its version. `SAFETY_APPEAL_POLICY` publishes none and is rejected in staging and production, so a deployed platform accepts complaints with no closing date at all — which is the safer half of the question to leave open. The six-month figure Article 20 states is recorded as evidence about what a policy will need to say rather than compiled in.
+
+The case gains no `appealed` state, and that is deliberate: an appeal has its own record, its own lifecycle, and its own queue, so a case state kept in step with it would be two sources of truth for one fact.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).

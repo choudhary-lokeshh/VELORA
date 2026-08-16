@@ -7,6 +7,10 @@ import {
 } from '@velora/validation';
 
 import {
+  appealableBy,
+  appealPolicyVersion,
+  appealStates,
+  appellantKinds,
   blockingScopesFor,
   caseClaimLeaseMilliseconds,
   casePolicyVersion,
@@ -57,6 +61,8 @@ import {
   reportReasonCodes,
   resolvedCaseStates,
   resolvingDecisionActions,
+  maximumAppealStatementCharacters,
+  openAppealStates,
   openCaseStates,
   openTakedownStates,
   queueFor,
@@ -239,10 +245,10 @@ describe('safety vocabularies stay provisional and separate', () => {
   });
 
   it('opens a case in a state something can move it out of', () => {
-    // `appealed` arrives with the phase that can reach it. Declaring it now
-    // would put a state in the schema no code could move a row out of, which is
-    // how a value nothing is entitled to write ends up being set for
-    // convenience later.
+    // There is deliberately no `appealed`: an appeal has its own record, its
+    // own lifecycle, and its own queue, so a case state kept in step with it
+    // would be two sources of truth for one fact.
+    expect([...caseStates]).not.toContain('appealed');
     expect([...caseStates]).toEqual([
       'new',
       'triaged',
@@ -593,6 +599,40 @@ describe('safety vocabularies stay provisional and separate', () => {
     expect(takedownLeaseMilliseconds).toBeGreaterThan(0);
     expect(takedownRateLimitCount).toBeGreaterThan(0);
     expect(takedownRateWindowMilliseconds).toBeGreaterThan(0);
+  });
+
+  it('lets both people affected by one decision complain about it', () => {
+    // A subject who was restricted and a notifier whose report was dismissed
+    // are both affected, and a model with only the first would have missed half
+    // of what Article 20 covers.
+    expect([...appellantKinds]).toEqual(['subject', 'notifier']);
+    expect([...appealableBy('notifier')]).toEqual(['no_action']);
+    // A decision that lifted a restriction is absent: nobody appeals being let
+    // back in. Escalation is absent from both, because handing a case on is not
+    // a decision about anybody yet.
+    expect([...appealableBy('subject')]).not.toContain('revoke_restriction');
+    expect([...appealableBy('subject')]).not.toContain('escalate');
+    for (const kind of appellantKinds) {
+      for (const action of appealableBy(kind)) {
+        expect([...decisionActions], action).toContain(action);
+      }
+    }
+    expect(appealPolicyVersion).toBe('v1-provisional');
+  });
+
+  it('answers a complaint once, and never by erasing anything', () => {
+    expect([...appealStates]).toEqual([
+      'received',
+      'under_review',
+      'upheld',
+      'refused',
+      'withdrawn',
+    ]);
+    for (const state of openAppealStates) {
+      expect([...appealStates], state).toContain(state);
+      expect(['upheld', 'refused'], state).not.toContain(state);
+    }
+    expect(maximumAppealStatementCharacters).toBeGreaterThan(0);
   });
 
   it('names what blocks production rather than implying nothing does', () => {

@@ -22,11 +22,14 @@ import type {
 import type { CaseCursor } from './cursor.js';
 import {
   maximumConsentRecordsPerContent,
+  openAppealStates,
   maximumDepictedPersonPageSize,
   openCaseStates,
   openReportStates,
   openTakedownStates,
   resolvedCaseStates,
+  type AppealState,
+  type AppellantKind,
   type CasePriority,
   type CaseQueue,
   type CaseState,
@@ -50,6 +53,7 @@ import {
   type TakedownUrgency,
 } from './policy.js';
 import {
+  safetyAppeals,
   safetyBlocks,
   safetyCases,
   safetyConsentRecords,
@@ -77,6 +81,7 @@ export type ConsentRecordRow = typeof safetyConsentRecords.$inferSelect;
 export type ClassificationRow =
   typeof safetyContentClassifications.$inferSelect;
 export type TakedownClaimRow = typeof safetyTakedownClaims.$inferSelect;
+export type AppealRow = typeof safetyAppeals.$inferSelect;
 
 /**
  * Every TRUST & SAFETY read and write.
@@ -1428,6 +1433,139 @@ export class SafetyRepository {
         asc(safetyConsentRecords.id),
       )
       .limit(maximumConsentRecordsPerContent);
+  }
+
+  /** Whether this account filed a report that is evidence in this case. */
+  async isReporterOnCase(
+    executor: Executor,
+    input: { readonly caseId: string; readonly reporterId: string },
+  ): Promise<boolean> {
+    const rows = await executor
+      .select({ id: safetyReports.id })
+      .from(safetyReports)
+      .where(
+        and(
+          eq(safetyReports.caseId, input.caseId),
+          eq(safetyReports.reporterId, input.reporterId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /** Decisions about one subject, newest first. */
+  async listDecisionsForSubject(
+    executor: Executor,
+    input: { readonly limit: number; readonly subjectId: string },
+  ): Promise<DecisionRow[]> {
+    return executor
+      .select()
+      .from(safetyDecisions)
+      .where(eq(safetyDecisions.subjectId, input.subjectId))
+      .orderBy(desc(safetyDecisions.decidedAt), desc(safetyDecisions.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * Records a complaint, or nothing when this person already has a live one
+   * about the same decision. The partial unique index decides.
+   */
+  async insertAppeal(
+    executor: Executor,
+    input: {
+      readonly appealPolicyVersion: string | null;
+      readonly appellantKind: AppellantKind;
+      readonly appellantReference: string;
+      readonly caseId: string;
+      readonly decisionId: string;
+      readonly now: Date;
+      readonly policyVersion: string;
+      readonly statement: string | null;
+      readonly windowClosesAt: Date | null;
+    },
+  ): Promise<AppealRow | undefined> {
+    const inserted = await executor
+      .insert(safetyAppeals)
+      .values({
+        appealPolicyVersion: input.appealPolicyVersion,
+        appellantKind: input.appellantKind,
+        appellantReference: input.appellantReference,
+        caseId: input.caseId,
+        decisionId: input.decisionId,
+        id: crypto.randomUUID(),
+        policyVersion: input.policyVersion,
+        state: 'received',
+        statement: input.statement,
+        submittedAt: input.now,
+        updatedAt: input.now,
+        windowClosesAt: input.windowClosesAt,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted[0];
+  }
+
+  async findAppeal(
+    executor: Executor,
+    id: string,
+  ): Promise<AppealRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyAppeals)
+      .where(eq(safetyAppeals.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
+  /** Complaints still owed an answer, oldest first. */
+  async listOpenAppeals(
+    executor: Executor,
+    limit: number,
+  ): Promise<AppealRow[]> {
+    return executor
+      .select()
+      .from(safetyAppeals)
+      .where(inArray(safetyAppeals.state, [...openAppealStates]))
+      .orderBy(asc(safetyAppeals.submittedAt), asc(safetyAppeals.id))
+      .limit(limit);
+  }
+
+  /**
+   * Moves a complaint, against the version the caller read and only from a
+   * state the transition is defined for.
+   */
+  async transitionAppeal(
+    executor: Executor,
+    input: {
+      readonly appealId: string;
+      readonly expectedVersion: number;
+      readonly from: readonly AppealState[];
+      readonly now: Date;
+      readonly outcomeDecisionId: string | null;
+      readonly reviewerActorReference: string | null;
+      readonly state: AppealState;
+    },
+  ): Promise<AppealRow | undefined> {
+    const decided = input.state === 'upheld' || input.state === 'refused';
+    const updated = await executor
+      .update(safetyAppeals)
+      .set({
+        decidedAt: decided ? input.now : null,
+        outcomeDecisionId: input.outcomeDecisionId,
+        reviewerActorReference: decided ? input.reviewerActorReference : null,
+        state: input.state,
+        updatedAt: input.now,
+        version: sql`${safetyAppeals.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyAppeals.id, input.appealId),
+          eq(safetyAppeals.version, input.expectedVersion),
+          inArray(safetyAppeals.state, [...input.from]),
+        ),
+      )
+      .returning();
+    return updated[0];
   }
 
   /** Appends a takedown claim. */

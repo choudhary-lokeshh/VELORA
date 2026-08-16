@@ -1370,6 +1370,7 @@ describe('the database enforces the safety invariants', () => {
         order by table_name`,
     );
     expect(rows.map((row) => row.table_name)).toEqual([
+      'safety_appeals',
       'safety_blocks',
       'safety_cases',
       'safety_consent_records',

@@ -169,6 +169,24 @@ export const unpublishedTakedownPolicy = 'unpublished';
 export const localTestTakedownPolicy = 'local-test';
 
 /**
+ * How long somebody has to complain about a decision.
+ *
+ * A separate gate from the takedown deadlines, because the two are lifted by
+ * different answers: one is how fast the platform must act on a claim, the
+ * other is how long a person keeps the right to contest what was already
+ * decided. Regulation (EU) 2022/2065 Article 20 states at least six months, and
+ * whether it binds Velora is `LEGAL REVIEW REQUIRED` -- so that figure is
+ * recorded as evidence about what a policy will need to say rather than
+ * compiled in.
+ *
+ * `unpublished` publishes no window. An appeal is still accepted; what is
+ * absent is a date after which it would be refused, which is the safer half of
+ * the question to leave open.
+ */
+export const unpublishedAppealPolicy = 'unpublished';
+export const localTestAppealPolicy = 'local-test';
+
+/**
  * Profile media storage adapters. No storage vendor is approved, so
  * `unavailable` refuses every upload and every inspection, which is the only
  * behaviour a deployed environment may have. `local-test` keeps objects in
@@ -359,6 +377,9 @@ export const serverConfigSchema = z
     SAFETY_MATURE_CONTENT: z
       .enum([disabledMatureContent])
       .default(disabledMatureContent),
+    SAFETY_APPEAL_POLICY: z
+      .enum([unpublishedAppealPolicy, localTestAppealPolicy])
+      .default(unpublishedAppealPolicy),
     SAFETY_TAKEDOWN_POLICY: z
       .enum([unpublishedTakedownPolicy, localTestTakedownPolicy])
       .default(unpublishedTakedownPolicy),
@@ -402,6 +423,13 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `SAFETY_DEPICTED_PERSON_VERIFIER is not usable in ${config.APP_ENV}: no identity, age, or consent verification provider is approved, and whether Velora is the party obliged to hold depicted-person records at all is unresolved; see DECISIONS_REQUIRED`,
         path: ['SAFETY_DEPICTED_PERSON_VERIFIER'],
+      });
+    }
+    if (config.SAFETY_APPEAL_POLICY !== unpublishedAppealPolicy) {
+      context.addIssue({
+        code: 'custom',
+        message: `SAFETY_APPEAL_POLICY is not usable in ${config.APP_ENV}: how long somebody keeps the right to contest a decision is undecided, and a window invented here would carry no authority; see DECISIONS_REQUIRED`,
+        path: ['SAFETY_APPEAL_POLICY'],
       });
     }
     if (config.SAFETY_TAKEDOWN_POLICY !== unpublishedTakedownPolicy) {
@@ -571,6 +599,7 @@ export function redactServerConfig(config: ServerConfig) {
     consentPolicy: config.SAFETY_CONSENT_POLICY,
     depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
     matureContent: config.SAFETY_MATURE_CONTENT,
+    appealPolicy: config.SAFETY_APPEAL_POLICY,
     takedownPolicy: config.SAFETY_TAKEDOWN_POLICY,
     commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
