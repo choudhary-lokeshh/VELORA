@@ -169,7 +169,31 @@ Two defaults refuse. A composition with no association adapter reports `not_atta
 
 The same rule covers the gap this milestone has not closed. An asset that hangs off a content item is marked content-gated, which additionally requires classification, depicted-person consent, surface eligibility, viewer assurance, and the mature-content gate. That gate is Phase 8's to wire, and until it is, **a content-gated asset is denied**. The missing piece is represented in the type system rather than assumed away, so it cannot be mistaken for a pass — and mature-content media stays blocked by the [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) configuration gate regardless.
 
-Not built yet, and not to be inferred from the model's generality: delivery routes and credentials, takedown propagation, reconciliation, and Admin operations.
+## Authorized delivery
+
+Two paths, and confusing them is how private media ends up on a cacheable address.
+
+A **public** derivative gets a permanent immutable address and `public, max-age=31536000, immutable`. That is safe precisely because the address carries the processing version and a random component, so a derivative that changes is a different address rather than the same one behind a cache somebody has to be trusted to forget. A **restricted** one gets a credential bound to one asset and one variant, and a response marked `private, no-store` — never shareable.
+
+Which path applies is the owning domain's call, not MEDIA's: only a domain that knows what an asset is attached to can say whether that thing is a public creator page or somebody's private club. Neither path is reachable without the publication authority having said yes at the moment of issuance, and only a derivative is ever served — a test asserts the public address contains no original's key.
+
+### What revocation actually means
+
+It has two halves and both must always be stated together.
+
+**New** authorizations stop the instant any authority changes its answer, because every issuance re-derives the decision inside the caller's transaction. There is no cache to invalidate and no replica holding a stale yes.
+
+**Already-issued** credentials remain valid until they expire, for at most **300 seconds**. A signed URL is a bearer token and the platform generally cannot recall one; [media provider eligibility](../compliance/08-media-provider-eligibility.md) records that at least one major provider documents no per-URL revocation mechanism at all. That number is reported on every grant as `maximumRevocationExposureSeconds`, so no caller can describe delivery without naming it, and a test asserts a credential minted before a hold still verifies until it expires. **Any statement that media access was revoked instantly which does not name that window is false.**
+
+For a public derivative the second half is not a TTL at all but a cache purge, whose semantics belong to a provider and are recorded rather than assumed.
+
+A credential is bound to one object, and the expiry is signed along with it. Carrying one across to a different variant, a different asset, or a longer expiry all fail. Key knowledge buys nothing: a request that never went through the authority is refused at the origin, because obscurity of the key is not part of the authorization model.
+
+Credentials are verifiable across replicas, which is why the signing key is configured rather than generated per process — a test mints on one runtime and verifies on another, and shows that a different key fails.
+
+Where no provider is approved, delivery reports `unavailable` rather than a refusal. Nothing about the viewer or the asset is wrong; there is simply no approved way to serve bytes.
+
+Not built yet, and not to be inferred from the model's generality: consumer and creator delivery routes, takedown propagation and cache purge, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

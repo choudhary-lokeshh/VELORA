@@ -82,6 +82,17 @@ export type MediaDeliveryDecision =
  * nobody may fetch.
  */
 export interface MediaAssociation {
+  /**
+   * Who the owner intends this for.
+   *
+   * `public` means the open internet, and it is the owning domain's call rather
+   * than MEDIA's: only a domain that knows what an asset is attached to can say
+   * whether that thing is a public creator page or somebody's private club.
+   * The distinction decides whether delivery is a permanent immutable address
+   * or a short-lived credential, and getting it wrong in the permissive
+   * direction is how club media ends up on a cacheable URL.
+   */
+  readonly audience: 'public' | 'restricted';
   /** Whether the owner intends this visible to this viewer on this surface. */
   readonly published: boolean;
   /** Whether the viewer holds whatever access the owner requires. */

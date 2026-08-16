@@ -8,6 +8,7 @@ import {
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
+import { MediaDeliveryService } from './delivery.js';
 import { MediaInspector } from './inspection.js';
 import { SharpMediaImageProcessor } from './processing.js';
 import {
@@ -31,6 +32,12 @@ import {
 } from './storage.js';
 
 export interface MediaRuntime {
+  /**
+   * Turns an allowed decision into something a client can fetch: a permanent
+   * immutable address for a public derivative, or a short-lived credential
+   * bound to one asset and one variant for a restricted one.
+   */
+  readonly delivery: MediaDeliveryService;
   /**
    * Whether these bytes may reach this person, on this surface, right now.
    *
@@ -81,12 +88,22 @@ export function createMediaRuntime(input: {
   const repository = new MediaRepository(input.database);
   const storage = selectMediaStorage(input.config);
   const scanner = selectMediaScanner(input.config);
+  const now = input.now ?? (() => new Date());
+  const association = input.association ?? new UnattachedMediaAssociation();
+  const publication = new MediaPublicationAuthority({
+    association,
+    repository,
+    safety: input.safety ?? new DenyingMediaSafety(),
+  });
   return {
-    publication: new MediaPublicationAuthority({
-      association: input.association ?? new UnattachedMediaAssociation(),
+    delivery: new MediaDeliveryService({
+      association,
+      now,
+      publication,
       repository,
-      safety: input.safety ?? new DenyingMediaSafety(),
+      storage,
     }),
+    publication,
     repository,
     scanner,
     service: new MediaService({
@@ -97,7 +114,7 @@ export function createMediaRuntime(input: {
           }
         : {}),
       logger: input.logger,
-      now: input.now ?? (() => new Date()),
+      now,
       repository,
       storage,
     }),

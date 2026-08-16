@@ -75,6 +75,7 @@ let operation = 0;
 
 /** Controllable stand-ins for the two answers MEDIA does not own. */
 let association: MediaAssociation | undefined = {
+  audience: 'restricted',
   published: true,
   viewerEntitled: true,
 };
@@ -128,7 +129,11 @@ function decide(assetId: string) {
 
 beforeEach(async () => {
   await database.truncate();
-  association = { published: true, viewerEntitled: true };
+  association = {
+    audience: 'restricted',
+    published: true,
+    viewerEntitled: true,
+  };
   safetyAllows = true;
 });
 
@@ -168,7 +173,11 @@ describe('technical readiness never carries the decision alone', () => {
 
   it('refuses a ready, attached asset the owner has not published', async () => {
     const assetId = await readyAsset();
-    association = { published: false, viewerEntitled: true };
+    association = {
+      audience: 'restricted',
+      published: false,
+      viewerEntitled: true,
+    };
 
     const decision = await decide(assetId);
     expect(decision.allowed).toBe(false);
@@ -178,7 +187,11 @@ describe('technical readiness never carries the decision alone', () => {
 
   it('refuses a viewer the owning domain does not recognise', async () => {
     const assetId = await readyAsset();
-    association = { published: true, viewerEntitled: false };
+    association = {
+      audience: 'restricted',
+      published: true,
+      viewerEntitled: false,
+    };
 
     const decision = await decide(assetId);
     expect(decision.allowed).toBe(false);
@@ -267,7 +280,11 @@ describe('what MEDIA itself refuses', () => {
 describe('every closed gate is reported, not only the first', () => {
   it('says how many separate things would have to change', async () => {
     const assetId = await readyAsset();
-    association = { published: false, viewerEntitled: false };
+    association = {
+      audience: 'restricted',
+      published: false,
+      viewerEntitled: false,
+    };
     safetyAllows = false;
 
     const decision = await decide(assetId);

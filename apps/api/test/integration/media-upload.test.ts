@@ -355,6 +355,7 @@ describe('an ambiguous provider is not a refusal', () => {
         Promise.reject(new Error('provider timed out')),
       deleteObject: (key) => inner.deleteObject(key),
       name: 'local-test',
+      publicAddress: (key) => inner.publicAddress(key),
       purge: (key) => inner.purge(key),
       readObject: (input): Promise<MediaObjectRead> => inner.readObject(input),
       statObject: (): Promise<MediaObjectStat | undefined> =>
@@ -410,6 +411,7 @@ describe('an ambiguous provider is not a refusal', () => {
           Promise.reject(new MediaStorageUnavailableError()),
         deleteObject: () => Promise.reject(new MediaStorageUnavailableError()),
         name: 'unavailable',
+        publicAddress: () => undefined,
         purge: () => Promise.reject(new MediaStorageUnavailableError()),
         readObject: () => Promise.reject(new MediaStorageUnavailableError()),
         statObject: () => Promise.reject(new MediaStorageUnavailableError()),

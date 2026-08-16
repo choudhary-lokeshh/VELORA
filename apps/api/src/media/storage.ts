@@ -109,6 +109,15 @@ export interface MediaStoragePort {
   }): Promise<MediaUploadCapability>;
   /** Idempotent. Absent is a documented success, not a failure. */
   deleteObject(objectKey: string): Promise<MediaDeletionOutcome>;
+  /**
+   * A permanent address for an object served to everybody, or `undefined` where
+   * this provider serves no public class at all.
+   *
+   * Only ever called for a sanitized derivative. There is no arrangement under
+   * which an original acquires one of these, and the delivery authority refuses
+   * before it could ask.
+   */
+  publicAddress(objectKey: string): string | undefined;
   /** Asks the delivery layer to forget an address. Never assumed to have worked. */
   purge(objectKey: string): Promise<MediaPurgeOutcome>;
   readObject(input: {
@@ -188,6 +197,10 @@ export class UnavailableMediaStorage implements MediaStoragePort {
 
   deleteObject(): Promise<MediaDeletionOutcome> {
     return Promise.reject(new MediaStorageUnavailableError());
+  }
+
+  publicAddress(): string | undefined {
+    return undefined;
   }
 
   purge(): Promise<MediaPurgeOutcome> {
@@ -303,6 +316,15 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     const existing = await this.sizeOf(path);
     await rm(path, { force: true });
     return existing === undefined ? 'already_absent' : 'deleted';
+  }
+
+  publicAddress(objectKey: string): string | undefined {
+    // Unroutable, like every other address this adapter hands out. What it
+    // exercises is the shape of an immutable public address: the key already
+    // carries the processing version and a random component, so a derivative
+    // that changes is a different address rather than the same one behind a
+    // cache somebody has to be trusted to forget.
+    return `https://media.velora.invalid/local-test/public/${requireObjectKey(objectKey)}`;
   }
 
   purge(objectKey: string): Promise<MediaPurgeOutcome> {

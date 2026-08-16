@@ -817,6 +817,30 @@ export class MediaRepository {
       .then(([row]) => row);
   }
 
+  /** One derivative of one asset, at one processing version. */
+  findVariant(
+    executor: MediaExecutor,
+    input: {
+      readonly assetId: string;
+      readonly processingVersion: number;
+      readonly variantKind: MediaVariantKind;
+    },
+  ): Promise<MediaObjectRow | undefined> {
+    return executor
+      .select()
+      .from(mediaObjects)
+      .where(
+        and(
+          eq(mediaObjects.assetId, input.assetId),
+          eq(mediaObjects.role, 'variant'),
+          eq(mediaObjects.variantKind, input.variantKind),
+          eq(mediaObjects.processingVersion, input.processingVersion),
+        ),
+      )
+      .limit(1)
+      .then(([row]) => row);
+  }
+
   /** The asset's original object, if one has been recorded. */
   findOriginalObject(
     executor: MediaExecutor,
