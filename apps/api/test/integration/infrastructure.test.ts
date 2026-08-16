@@ -202,6 +202,7 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'discovery_passes',
         'discovery_presentations',
         'media_assets',
+        'media_drift_findings',
         'media_objects',
         'media_obligations',
         'media_upload_sessions',

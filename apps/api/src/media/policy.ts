@@ -115,6 +115,26 @@ export const transientMediaLifecycles = [
 ] as const;
 
 /**
+ * The transient states in which the platform, rather than a person, owes the
+ * next move.
+ *
+ * A subset of {@link transientMediaLifecycles} on purpose. `initiated` and
+ * `awaiting_upload` are somebody deciding whether to finish an upload, and they
+ * have their own far longer technical TTL and their own sweep; treating them as
+ * stalls would mean reporting every upload in progress as drift. What is left
+ * is work the platform took on and has not finished, which is the only kind of
+ * stall reconciliation can honestly do anything about.
+ */
+export const stalledMediaLifecycles = [
+  'uploaded',
+  'inspecting',
+  'inspected',
+  'processing',
+  'deleting',
+] as const;
+export type StalledMediaLifecycle = (typeof stalledMediaLifecycles)[number];
+
+/**
  * The image formats the platform accepts, as an allow-list of things a safe
  * decoder handles and the product actually needs.
  *
@@ -350,6 +370,73 @@ export const mediaObligationStates = [
 export type MediaObligationState = (typeof mediaObligationStates)[number];
 
 /**
+ * Which obligation carries an asset out of each state it can stall in.
+ *
+ * Written as a table because a stall is repaired by owing the ordinary duty
+ * again rather than by reconciliation doing the work itself. That is the whole
+ * shape of the correction: the pipeline that already knows how to inspect, to
+ * process, and to delete does it, under its own lease, with its own attempt
+ * bound, and reaching its own conclusions — including quarantining an asset
+ * whose bytes turn out to be gone.
+ */
+export const mediaStallRemedies: Readonly<
+  Record<StalledMediaLifecycle, MediaObligationKind>
+> = {
+  deleting: 'delete',
+  inspected: 'process',
+  inspecting: 'inspect',
+  processing: 'process',
+  uploaded: 'inspect',
+};
+
+/**
+ * Ways the record and the provider can disagree.
+ *
+ * Each is a specific, separately repairable disagreement rather than one
+ * "inconsistent" flag, because what is safe to do about one is unsafe for
+ * another. A derivative that is missing can be rendered again from the
+ * original; an *original* that is missing cannot be conjured, and the honest
+ * response is a refusal recorded by the ordinary pipeline. Originals and
+ * variants are therefore distinct kinds even where the observation is the same,
+ * so no repair can be written that treats them alike.
+ */
+export const mediaDriftKinds = [
+  /** Bytes at a closed upload window's key that no object record claims. */
+  'orphaned_object',
+  /** The record says an original is present; the provider has nothing. */
+  'original_missing',
+  /** The record says a derivative is present; the provider has nothing. */
+  'variant_missing',
+  /** The provider's size for an original is not the size that was inspected. */
+  'original_size_mismatch',
+  /** The provider's size for a derivative is not the size that was written. */
+  'variant_size_mismatch',
+  /** The record says the object is destroyed; the provider still holds it. */
+  'undeleted_object',
+  /** The platform owes this asset a move and nothing is carrying it. */
+  'stalled_lifecycle',
+  /** A purge was asked for long ago and no outcome was ever recorded. */
+  'stale_purge',
+] as const;
+export type MediaDriftKind = (typeof mediaDriftKinds)[number];
+
+/**
+ * How a finding stopped being outstanding.
+ *
+ * A finding with none of these is still outstanding, which is the point: drift
+ * the platform cannot safely correct by itself stays visible rather than being
+ * closed with a reassuring word. `no_longer_present` is separate from
+ * `repaired` because "the ordinary path fixed it before we got there" and "we
+ * fixed it" are different facts about the same row.
+ */
+export const mediaDriftResolutions = [
+  'repaired',
+  'owed',
+  'no_longer_present',
+] as const;
+export type MediaDriftResolution = (typeof mediaDriftResolutions)[number];
+
+/**
  * Why inspection refused an object.
  *
  * Internal and machine-readable. What a client is told is coarser, because the
@@ -471,6 +558,48 @@ export const mediaAbandonedUploadMilliseconds = 24 * 60 * 60_000;
 
 /** How often expired upload windows and abandoned assets are looked for. */
 export const mediaUploadSweepIntervalMilliseconds = 60_000;
+
+/** How often the record and the provider are checked against each other. */
+export const mediaReconciliationIntervalMilliseconds = 60_000;
+
+/**
+ * How many rows one reconciliation cycle examines, per kind of check.
+ *
+ * Smaller than the sweep batch because most of these rows cost a provider round
+ * trip rather than a database read. The audit is a rolling one — every object
+ * is revisited in turn — so a small batch is a pace rather than a cap, and the
+ * only thing a larger number would buy is a longer cycle.
+ */
+export const mediaReconciliationBatchSize = 25;
+
+/**
+ * How long the platform may owe an asset its next move before that is a stall.
+ *
+ * Comfortably longer than an obligation's lease plus a full run of backoffs, so
+ * an asset that is merely being retried is never reported as stuck. Anything
+ * still sitting after this had nothing carrying it.
+ */
+export const mediaStallMilliseconds = 15 * 60_000;
+
+/**
+ * How settled an object must be before its bytes are audited.
+ *
+ * A variant's row is written **before** its bytes are, deliberately, so there
+ * is a legitimate moment in which the record describes an object the provider
+ * does not have yet. Auditing inside that window would report the ordinary
+ * pipeline as drift. Long enough to cover a processing attempt and its retries;
+ * an asset still incomplete after it is genuinely incomplete.
+ */
+export const mediaVerificationGraceMilliseconds = 15 * 60_000;
+
+/**
+ * How long a requested purge may go without an outcome before it is a backlog.
+ *
+ * A purge that was asked for and never answered is exactly the failure the
+ * outcome column exists to keep visible, so it is found and owed again rather
+ * than left for somebody to notice.
+ */
+export const mediaPurgeStallMilliseconds = 15 * 60_000;
 
 /**
  * How many rows one sweep cycle touches.

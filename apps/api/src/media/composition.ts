@@ -18,6 +18,7 @@ import {
   type MediaAssociationPort,
   type MediaSafetyPort,
 } from './publication.js';
+import { MediaReconciliation } from './reconciliation.js';
 import { MediaRepository } from './repository.js';
 import {
   LocalTestMediaScanner,
@@ -46,6 +47,15 @@ export interface MediaRuntime {
    * surface may ask, and `ready` alone never satisfies it.
    */
   readonly publication: MediaPublicationAuthority;
+  /**
+   * Checking the record against the provider, and repairing what can be
+   * repaired.
+   *
+   * Present only where the process performs byte work, because restoring a
+   * derivative means decoding an original and re-encoding it — which belongs on
+   * the worker for exactly the reason processing does.
+   */
+  readonly reconciliation: MediaReconciliation | undefined;
   readonly repository: MediaRepository;
   /** Exposed so operational surfaces can report which scanner is in force. */
   readonly scanner: MediaScannerPort;
@@ -95,6 +105,10 @@ export function createMediaRuntime(input: {
     repository,
     safety: input.safety ?? new DenyingMediaSafety(),
   });
+  const processor =
+    input.performsByteWork === true
+      ? new SharpMediaImageProcessor()
+      : undefined;
   return {
     delivery: new MediaDeliveryService({
       association,
@@ -104,15 +118,25 @@ export function createMediaRuntime(input: {
       storage,
     }),
     publication,
+    reconciliation:
+      processor === undefined
+        ? undefined
+        : new MediaReconciliation({
+            logger: input.logger,
+            now,
+            processor,
+            repository,
+            storage,
+          }),
     repository,
     scanner,
     service: new MediaService({
-      ...(input.performsByteWork === true
-        ? {
+      ...(processor === undefined
+        ? {}
+        : {
             inspector: new MediaInspector({ scanner, storage }),
-            processor: new SharpMediaImageProcessor(),
-          }
-        : {}),
+            processor,
+          }),
       logger: input.logger,
       now,
       repository,

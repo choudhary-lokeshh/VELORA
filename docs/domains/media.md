@@ -257,7 +257,33 @@ A **takedown** owes a purge without deleting anything, because a takedown is not
 
 No retention duration is invented anywhere. How long a hold lasts, and how long a quarantined original or a deleted asset's evidence is kept, remain `LEGAL REVIEW REQUIRED`, and nothing in this schema expires on a timer.
 
-Not built yet: Creator Studio media management surfaces, peer delivery of consumer images, the Admin trigger that calls the takedown purge, reconciliation of provider drift, and Admin operational visibility.
+Not built yet: Creator Studio media management surfaces, peer delivery of consumer images, the Admin trigger that calls the takedown purge, and Admin operational visibility.
+
+## Reconciliation, and what a repair is allowed to decide
+
+Every other part of this domain writes the record and the bytes in a fixed order so that a crash leaves a *recoverable* shape rather than an invisible one. Until `0043_media_reconciliation` nothing went and looked. This is the component that does, and its restraint matters more than its repairs.
+
+**It is bounded and indexed rather than periodic.** Objects are audited on a rolling cursor — `verified_at`, least recently checked first, advanced by the claiming statement — so every object is revisited within a bounded period and no cycle reads the whole table. Closed upload windows carry `reconciled_at` and a partial index that holds only the windows still owing a look, so it empties as the work is done instead of growing with the table. Stalls and purge backlogs are found through partial indexes over the outstanding work, not over the history.
+
+Objects younger than a grace period are not examined at all. A variant's row is written *before* its bytes are, deliberately, so there is a legitimate window in which the record describes an object the provider does not have yet; auditing inside it would report the ordinary pipeline's own correct ordering as drift.
+
+**Provider state is evidence, never authority over product or safety state.** An object the provider has lost means the record *about the bytes* is wrong. It does not mean a takedown did not happen, it does not lift a hold, and it does not make anything deliverable. Exactly three corrections exist: destroy bytes nothing claims, restore a derivative from an original the platform still has, and owe the ordinary pipeline a duty it will discharge under its own rules. There is deliberately no correction that writes a product conclusion.
+
+That last one carries most of the weight. An original the provider has lost is not repaired here; the asset is owed an `inspect` or a `process` obligation and the pipeline that already knows to quarantine `object_missing` reaches its own verdict. A reconciler writing that verdict itself would be a second opinion about a decision it does not own.
+
+**Bytes that arrived under a lapsed capability are destroyed, not adopted.** A closed upload window is the one place bytes can exist that no object record claims. Whatever is at that key was written after the authorization expired, and a reissue deliberately gets a *fresh* key so that a late upload describes nothing — so the honest thing to do with those bytes is delete them. The record is still checked before deleting: destroying bytes something references would be the worst possible way to be wrong.
+
+**A derivative is never rebuilt for an asset that is being removed or has been refused.** Resurrecting bytes a takedown destroyed is the single worst thing this component could do, so removal is checked before the repair rather than left to the ordering of two sweeps. Nor is one rebuilt at a processing version other than the one on its row: that would quietly change what a historical output means, under an address that promised not to change. A rebuild writes to the key the record already names, so the row keeps its identity and a cache holding that address finds the right picture there.
+
+**Repairs are leased work, not best effort.** Detection records a durable finding and owes a `reconcile` obligation; the repair runs under the same lease, backoff, and attempt bound as every other duty in this domain, and dead-letters as retained evidence rather than being retried forever. The duty is owed on the *first* observation only — a repeat means the repair already ran and left the finding outstanding, and owing the same fruitless duty once per audit round would turn a fault nobody can fix into an unbounded pile of discharged obligations.
+
+`media_drift_findings` is not a duplicate of `media_obligations`. An obligation is work the platform owes; a finding is a fact about a disagreement, **including the disagreements no automatic correction is safe for**. Folding them together would mean the only drift ever written down was the drift something already knew how to fix, which is exactly backwards: the unfixable kind is the kind an operator has to hear about. A finding is outstanding until it is resolved, and resolving it says which of three things happened — repaired, owed, or already gone by the time anybody looked. Nothing closes a finding merely because it was examined, and a repeat observation bumps a count rather than filing a second row.
+
+Two exclusions keep the sweep from starving itself. An asset whose remedy is already pending is being carried and is not stalled; one already reported is not reported again until its finding is settled. And a duty already given up on is never resurrected — owing it again would reset its attempts and it would dead-letter again, one cycle at a time, forever.
+
+An asset under a legal hold sitting in `deleting` is not a stall. It is doing exactly what a hold means, and owing it another deletion would discharge against the hold and come straight back.
+
+This phase also closed a real defect in inspection, found by reading the claim path rather than by a failure. A worker that died between taking the `inspecting` state and reaching a conclusion left an obligation whose lease expired; the reclaiming worker saw an asset that was no longer `uploaded`, concluded the work no longer existed, and discharged the duty — leaving the asset in `inspecting` for ever with nothing owed against it. Inspection now accepts `inspecting` as well as `uploaded`, the way processing already accepted `processing`, and for the same reason. Reconciliation is the second net rather than the only one.
 
 ## Phase, events, and open questions
 

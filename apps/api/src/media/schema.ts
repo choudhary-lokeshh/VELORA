@@ -24,6 +24,8 @@ import {
   maximumMediaPixels,
   mediaAssetClasses,
   mediaAssetLifecycles,
+  mediaDriftKinds,
+  mediaDriftResolutions,
   mediaIdempotencyKeyPattern,
   mediaImageFormats,
   mediaObjectRoles,
@@ -38,6 +40,8 @@ import {
   transientMediaLifecycles,
   type MediaAssetClass,
   type MediaAssetLifecycle,
+  type MediaDriftKind,
+  type MediaDriftResolution,
   type MediaImageFormat,
   type MediaObjectRole,
   type MediaObjectState,
@@ -273,11 +277,28 @@ export const mediaUploadSessions = pgTable(
     provider: text('provider'),
     /** The adapter's own handle for the capability. Never sent to a client. */
     providerReference: text('provider_reference'),
+    /**
+     * When this window's key was last checked against the provider.
+     *
+     * A closed window is the one place bytes can exist that no object record
+     * claims: a capability was honoured late, or a client finished uploading
+     * and never told the platform. Null means nobody has looked yet, and the
+     * partial index below is exactly the set of windows still owing a look —
+     * so the index empties as the work is done rather than growing with the
+     * table.
+     */
+    reconciledAt: timestamptz('reconciled_at'),
     state: text('state').notNull().$type<MediaUploadSessionState>(),
     updatedAt: timestamptz('updated_at').notNull(),
   },
   (table) => [
     uniqueIndex('media_upload_sessions_object_key_uk').on(table.objectKey),
+    // Closed windows nobody has checked for orphaned bytes, oldest first.
+    index('media_upload_sessions_unreconciled_idx')
+      .on(table.createdAt, table.id)
+      .where(
+        sql`${table.state} in ('abandoned', 'expired') and ${table.reconciledAt} is null`,
+      ),
     // One open window per asset. A second initiation cannot quietly create a
     // second live capability against the same asset.
     uniqueIndex('media_upload_sessions_open_uk')
@@ -356,6 +377,17 @@ export const mediaObjects = pgTable(
     state: text('state').notNull().$type<MediaObjectState>(),
     updatedAt: timestamptz('updated_at').notNull(),
     variantKind: text('variant_kind').$type<MediaVariantKind>(),
+    /**
+     * When the provider was last asked whether this object is what the record
+     * says it is.
+     *
+     * Not nullable, and set to the instant the row was written. At that moment
+     * the platform had either just observed the object or just written it, so
+     * "never audited" and "audited at creation" are the same claim — and making
+     * them the same removes a null from the ordering the rolling audit walks,
+     * which is the difference between an index scan and a sort.
+     */
+    verifiedAt: timestamptz('verified_at').notNull(),
     width: integer('width'),
   },
   (table) => [
@@ -372,6 +404,17 @@ export const mediaObjects = pgTable(
       .where(sql`${table.role} = 'variant'`),
     // The takedown and delivery query: every object of one asset.
     index('media_objects_asset_idx').on(table.assetId, table.role),
+    // The rolling audit's cursor: least recently checked first. Every object is
+    // revisited in turn, so the walk is an ordered index scan over a bounded
+    // batch rather than a periodic pass over the whole table.
+    index('media_objects_verification_idx').on(table.verifiedAt, table.id),
+    // Purges asked for and never answered. Partial, so it holds the backlog
+    // rather than the history: an object with a recorded outcome leaves it.
+    index('media_objects_purge_pending_idx')
+      .on(table.purgeRequestedAt, table.id)
+      .where(
+        sql`${table.purgeRequestedAt} is not null and ${table.purgeOutcome} is null`,
+      ),
     check('media_objects_role_check', inList(table.role, mediaObjectRoles)),
     check('media_objects_state_check', inList(table.state, mediaObjectStates)),
     check(
@@ -519,7 +562,102 @@ export const mediaObligations = pgTable(
   ],
 );
 
+/**
+ * Where the record and the provider were found to disagree.
+ *
+ * Separate from obligations, and not a duplicate of them. An obligation is work
+ * the platform owes; a finding is a *fact about a disagreement*, including the
+ * disagreements no automatic correction is safe for. Folding the two together
+ * would mean the only drift that got written down was the drift something knew
+ * how to fix, which is precisely backwards — the unfixable kind is the kind an
+ * operator has to hear about.
+ *
+ * A finding is outstanding until it is resolved, and resolving it says which of
+ * three things happened: the platform repaired it, the platform owed the
+ * ordinary pipeline the duty that will, or it had already gone by the time
+ * anybody looked. Nothing closes a finding merely because it was examined.
+ *
+ * Rows are retained. "This asset's derivative went missing twice last month" is
+ * an answer somebody will need, and a table that tidied itself could not give
+ * it.
+ */
+export const mediaDriftFindings = pgTable(
+  'media_drift_findings',
+  {
+    assetId: uuid('asset_id')
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: 'cascade' }),
+    /** First observation. A repeat bumps the count rather than adding a row. */
+    createdAt: timestamptz('created_at').notNull(),
+    id: uuid('id').primaryKey(),
+    kind: text('kind').notNull().$type<MediaDriftKind>(),
+    lastObservedAt: timestamptz('last_observed_at').notNull(),
+    /** Absent where the disagreement is about bytes no record claims. */
+    objectId: uuid('object_id').references(() => mediaObjects.id, {
+      onDelete: 'cascade',
+    }),
+    /**
+     * Which stored object this is about.
+     *
+     * Present even where {@link objectId} is not, because the whole point of an
+     * orphan is that there is no object row to point at — and a repair that
+     * cannot name what to delete is not a repair.
+     */
+    objectKey: text('object_key'),
+    /** How many separate audits have seen it. A blip and a fault differ here. */
+    occurrences: integer('occurrences').notNull().default(1),
+    resolution: text('resolution').$type<MediaDriftResolution>(),
+    resolvedAt: timestamptz('resolved_at'),
+    updatedAt: timestamptz('updated_at').notNull(),
+  },
+  (table) => [
+    // One outstanding finding of a kind per subject. Two partial indexes for
+    // the same reason the obligations table has two: a unique index treats
+    // nulls as distinct, so one index over a nullable key would admit exactly
+    // the duplicates that matter.
+    uniqueIndex('media_drift_findings_asset_open_uk')
+      .on(table.assetId, table.kind)
+      .where(sql`${table.resolvedAt} is null and ${table.objectKey} is null`),
+    uniqueIndex('media_drift_findings_object_open_uk')
+      .on(table.objectKey, table.kind)
+      .where(
+        sql`${table.resolvedAt} is null and ${table.objectKey} is not null`,
+      ),
+    // The operator's question and the repair pass's: what is still wrong,
+    // oldest first. Partial, so a year of resolved findings stays out of it.
+    index('media_drift_findings_open_idx')
+      .on(table.createdAt, table.id)
+      .where(sql`${table.resolvedAt} is null`),
+    index('media_drift_findings_asset_idx').on(table.assetId, table.kind),
+    check(
+      'media_drift_findings_kind_check',
+      inList(table.kind, mediaDriftKinds),
+    ),
+    check(
+      'media_drift_findings_resolution_check',
+      sql`${table.resolution} is null or ${inList(table.resolution, mediaDriftResolutions)}`,
+    ),
+    // A resolution is something that happened, so it carries the instant it
+    // happened at, and an unresolved finding cannot claim one.
+    check(
+      'media_drift_findings_resolution_shape_check',
+      nullablePairing(table.resolution, table.resolvedAt),
+    ),
+    // A finding about a recorded object is a finding about its key. The reverse
+    // does not hold: an orphan has a key and no record.
+    check(
+      'media_drift_findings_object_shape_check',
+      sql`${table.objectId} is null or ${table.objectKey} is not null`,
+    ),
+    check(
+      'media_drift_findings_occurrences_check',
+      sql`${table.occurrences} >= 1`,
+    ),
+  ],
+);
+
 export type MediaAssetRow = typeof mediaAssets.$inferSelect;
+export type MediaDriftFindingRow = typeof mediaDriftFindings.$inferSelect;
 export type MediaObjectRow = typeof mediaObjects.$inferSelect;
 export type MediaObligationRow = typeof mediaObligations.$inferSelect;
 export type MediaUploadSessionRow = typeof mediaUploadSessions.$inferSelect;

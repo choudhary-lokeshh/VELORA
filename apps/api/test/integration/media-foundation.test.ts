@@ -480,7 +480,7 @@ describe('the database refuses a state that lies', () => {
       version: number | null,
     ) =>
       database.sql.unsafe(
-        `insert into media_objects (asset_id, created_at, id, object_key, processing_version, provider, role, state, updated_at, variant_kind)
+        `insert into media_objects (asset_id, created_at, id, object_key, processing_version, provider, role, state, updated_at, variant_kind, verified_at)
          values ('${assetId}', now(), '${crypto.randomUUID()}', '${mediaObjectKey(
            role === 'original'
              ? { assetId, role: 'original' }
@@ -490,7 +490,7 @@ describe('the database refuses a state that lies', () => {
                  role: 'variant',
                  variantKind: 'avatar_small',
                },
-         )}', ${version === null ? 'null' : String(version)}, 'local-test', '${role}', 'present', now(), ${kind === null ? 'null' : `'${kind}'`})`,
+         )}', ${version === null ? 'null' : String(version)}, 'local-test', '${role}', 'present', now(), ${kind === null ? 'null' : `'${kind}'`}, now())`,
       );
 
     await insertObject('original', null, null);
@@ -515,8 +515,8 @@ describe('the database refuses a state that lies', () => {
     const assetId = await seedAsset();
     const objectId = crypto.randomUUID();
     await database.sql.unsafe(
-      `insert into media_objects (asset_id, created_at, id, object_key, provider, role, state, updated_at)
-       values ('${assetId}', now(), '${objectId}', '${mediaObjectKey({ assetId, role: 'original' })}', 'local-test', 'original', 'present', now())`,
+      `insert into media_objects (asset_id, created_at, id, object_key, provider, role, state, updated_at, verified_at)
+       values ('${assetId}', now(), '${objectId}', '${mediaObjectKey({ assetId, role: 'original' })}', 'local-test', 'original', 'present', now(), now())`,
     );
 
     const obligation = (kind: string, object: string | null) =>
@@ -557,16 +557,16 @@ describe('the database refuses a state that lies', () => {
     const key = mediaObjectKey({ assetId: first, role: 'original' });
 
     await database.sql.unsafe(
-      `insert into media_objects (asset_id, created_at, id, object_key, provider, role, state, updated_at)
-       values ('${first}', now(), '${crypto.randomUUID()}', '${key}', 'local-test', 'original', 'present', now())`,
+      `insert into media_objects (asset_id, created_at, id, object_key, provider, role, state, updated_at, verified_at)
+       values ('${first}', now(), '${crypto.randomUUID()}', '${key}', 'local-test', 'original', 'present', now(), now())`,
     );
     // Two assets cannot share bytes by sharing an address, so one owner's media
     // can never be overwritten by another's.
     expect(
       await refused(() =>
         database.sql.unsafe(
-          `insert into media_objects (asset_id, created_at, id, object_key, provider, role, state, updated_at)
-           values ('${second}', now(), '${crypto.randomUUID()}', '${key}', 'local-test', 'original', 'present', now())`,
+          `insert into media_objects (asset_id, created_at, id, object_key, provider, role, state, updated_at, verified_at)
+           values ('${second}', now(), '${crypto.randomUUID()}', '${key}', 'local-test', 'original', 'present', now(), now())`,
         ),
       ),
     ).toBe(true);

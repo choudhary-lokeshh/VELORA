@@ -38,6 +38,7 @@ import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import {
   mediaInspectionIntervalMilliseconds,
   mediaProcessingIntervalMilliseconds,
+  mediaReconciliationIntervalMilliseconds,
   mediaRemovalIntervalMilliseconds,
   mediaUploadSweepIntervalMilliseconds,
 } from './media/policy.js';
@@ -140,6 +141,8 @@ export interface WorkerComposition {
   readonly mediaInspection: Poller;
   /** Renders the derivative set from decoded pixels. Strips every tag. */
   readonly mediaProcessing: Poller;
+  /** Checks the record against the provider. Repairs what can be repaired. */
+  readonly mediaReconciliation: Poller;
   /** Keeps USERS' cached readiness projection from going stale unnoticed. */
   readonly profileMediaReadiness: Poller;
   /** Destroys bytes and asks caches to forget. Never loses either duty. */
@@ -521,6 +524,37 @@ export function createWorkerComposition(input: {
     name: 'media-removal',
   });
 
+  // Checking that the provider still holds what the record says it holds, and
+  // repairing what can be repaired. Slower than every other media cycle on
+  // purpose: nothing is waiting on it, each row it examines costs a provider
+  // round trip, and the failures it finds are ones that have already happened.
+  const mediaReconciliation = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const reconciliation = media.reconciliation;
+        if (reconciliation === undefined) return;
+        const report = await reconciliation.reconcileOnce({ owner });
+        // `outstanding` is reported every time it is non-zero, even when this
+        // cycle found and repaired nothing. Drift the platform cannot correct
+        // by itself is the whole reason for the number, and a log that went
+        // quiet once the sweep stopped finding new faults would read as though
+        // the old ones had gone away.
+        if (report.found > 0 || report.outstanding > 0) {
+          input.logger.warn(
+            {
+              found: report.found,
+              outstanding: report.outstanding,
+              repaired: report.repaired,
+            },
+            'media reconciliation found provider drift',
+          );
+        }
+      }),
+    intervalMilliseconds: mediaReconciliationIntervalMilliseconds,
+    logger: input.logger,
+    name: 'media-reconciliation',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -534,6 +568,7 @@ export function createWorkerComposition(input: {
     media,
     mediaInspection,
     mediaProcessing,
+    mediaReconciliation,
     mediaRemoval,
     mediaUploadSweep,
     profileMediaReadiness,
@@ -546,6 +581,7 @@ export function createWorkerComposition(input: {
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
         mediaProcessing.stop(),
+        mediaReconciliation.stop(),
         mediaRemoval.stop(),
         mediaUploadSweep.stop(),
         profileMediaReadiness.stop(),
@@ -565,6 +601,10 @@ export function createWorkerComposition(input: {
       await mediaInspection.runOnce();
       await mediaProcessing.runOnce();
       await mediaRemoval.runOnce();
+      // Last of the media cycles: it looks for work the others left undone, so
+      // running it before them would be asking about a state they are about to
+      // change.
+      await mediaReconciliation.runOnce();
       await profileMediaReadiness.runOnce();
       await deliverySweep.runOnce();
     },

@@ -4,6 +4,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   lte,
   notInArray,
@@ -19,10 +20,12 @@ import type {
 import { lockIdempotentOperation } from '../database/idempotency-lock.js';
 import {
   mediaAssets,
+  mediaDriftFindings,
   mediaObjects,
   mediaObligations,
   mediaUploadSessions,
   type MediaAssetRow,
+  type MediaDriftFindingRow,
   type MediaObjectRow,
   type MediaObligationRow,
   type MediaUploadSessionRow,
@@ -31,6 +34,8 @@ import {
   mediaTransitionAllowed,
   type MediaAssetClass,
   type MediaAssetLifecycle,
+  type MediaDriftKind,
+  type MediaDriftResolution,
   type MediaImageFormat,
   type MediaObjectRole,
   type MediaObligationKind,
@@ -599,6 +604,11 @@ export class MediaRepository {
         state: 'present',
         updatedAt: input.now,
         variantKind: input.variantKind ?? null,
+        // The row is written either just after the provider was observed to
+        // hold the object or just before the platform writes it, so this
+        // instant is a real observation rather than a placeholder — and the
+        // audit's grace period is what keeps the second case honest.
+        verifiedAt: input.now,
         width: input.width ?? null,
       })
       .onConflictDoNothing()
@@ -958,6 +968,363 @@ export class MediaRepository {
       )
       .limit(1)
       .then(([row]) => row);
+  }
+
+  /**
+   * The next closed upload windows nobody has checked for orphaned bytes.
+   *
+   * A closed window is the one place bytes can exist that no object record
+   * claims: a capability honoured late, or a client that finished uploading and
+   * never told the platform. The claim marks them checked in the same statement
+   * that takes them, so two workers audit different windows rather than both
+   * calling the provider about the same one.
+   *
+   * Served by the partial index, which holds only windows still owing a look —
+   * so this costs the same on a platform with ten million spent windows as on
+   * one with ten.
+   */
+  claimClosedSessionsForAudit(input: {
+    readonly limit: number;
+    readonly now: Date;
+  }): Promise<readonly MediaUploadSessionRow[]> {
+    return this.database.transaction(async (executor) => {
+      const claimable = await executor
+        .select({ id: mediaUploadSessions.id })
+        .from(mediaUploadSessions)
+        .where(
+          and(
+            inArray(mediaUploadSessions.state, ['abandoned', 'expired']),
+            isNull(mediaUploadSessions.reconciledAt),
+          ),
+        )
+        .orderBy(
+          asc(mediaUploadSessions.createdAt),
+          asc(mediaUploadSessions.id),
+        )
+        .limit(input.limit)
+        .for('update', { skipLocked: true });
+      if (claimable.length === 0) return [];
+
+      return executor
+        .update(mediaUploadSessions)
+        .set({ reconciledAt: input.now, updatedAt: input.now })
+        .where(
+          and(
+            // Re-checked in the outer statement, for the same reason the expiry
+            // sweep re-checks its state: a row that was not skipped may have
+            // been claimed by somebody else while this one waited.
+            isNull(mediaUploadSessions.reconciledAt),
+            inArray(
+              mediaUploadSessions.id,
+              claimable.map((row) => row.id),
+            ),
+          ),
+        )
+        .returning();
+    });
+  }
+
+  /**
+   * Puts a claimed window back, because the provider never answered.
+   *
+   * A cursor that moved on a call that failed is a check nobody will ever make
+   * again, and the thing it would have found is bytes at a key no record
+   * claims. Releasing it costs one statement and is the difference between a
+   * transient provider failure delaying an audit and permanently skipping one.
+   */
+  async releaseSessionAudit(
+    executor: MediaExecutor,
+    sessionId: string,
+  ): Promise<void> {
+    await executor
+      .update(mediaUploadSessions)
+      .set({ reconciledAt: null })
+      .where(eq(mediaUploadSessions.id, sessionId));
+  }
+
+  /** Whether any object record claims this key. Answers "is this an orphan". */
+  async objectExistsForKey(
+    executor: MediaExecutor,
+    objectKey: string,
+  ): Promise<boolean> {
+    const [row] = await executor
+      .select({ id: mediaObjects.id })
+      .from(mediaObjects)
+      .where(eq(mediaObjects.objectKey, objectKey))
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
+   * The next objects due a check against the provider.
+   *
+   * A rolling audit rather than a periodic pass: least recently verified first,
+   * bounded, and the instant is advanced by the claiming statement so the walk
+   * moves on whatever happens next. Every object is therefore revisited within
+   * a bounded period, and no cycle reads the whole table.
+   *
+   * `before` is what keeps the ordinary pipeline out of the results. A variant
+   * row is written before its bytes are, deliberately, so an object younger
+   * than the grace period may legitimately not be at the provider yet.
+   */
+  claimObjectsForVerification(input: {
+    readonly before: Date;
+    readonly limit: number;
+    readonly now: Date;
+  }): Promise<readonly MediaObjectRow[]> {
+    return this.database.transaction(async (executor) => {
+      const claimable = await executor
+        .select({ id: mediaObjects.id })
+        .from(mediaObjects)
+        .where(lte(mediaObjects.verifiedAt, input.before))
+        .orderBy(asc(mediaObjects.verifiedAt), asc(mediaObjects.id))
+        .limit(input.limit)
+        .for('update', { skipLocked: true });
+      if (claimable.length === 0) return [];
+
+      return executor
+        .update(mediaObjects)
+        .set({ verifiedAt: input.now })
+        .where(
+          and(
+            lte(mediaObjects.verifiedAt, input.before),
+            inArray(
+              mediaObjects.id,
+              claimable.map((row) => row.id),
+            ),
+          ),
+        )
+        .returning();
+    });
+  }
+
+  /**
+   * Assets the platform owes a move and nothing is carrying.
+   *
+   * Two exclusions, and both stop the same failure — a candidate that can never
+   * leave the batch crowding out the ones behind it. An asset whose remedy is
+   * already pending is being carried, so it is not stalled. An asset that has
+   * already been reported is not reported again until its finding is settled,
+   * which is what keeps a stall nobody can repair from occupying a slot every
+   * cycle forever.
+   *
+   * Assets under a legal hold are excluded outright. One sitting in `deleting`
+   * is doing exactly what a hold means, and owing it another deletion would
+   * discharge against the hold and come straight back.
+   */
+  listStalledAssets(
+    executor: MediaExecutor,
+    input: {
+      readonly before: Date;
+      readonly lifecycles: readonly MediaAssetLifecycle[];
+      readonly limit: number;
+      readonly remedy: MediaObligationKind;
+    },
+  ): Promise<readonly MediaAssetRow[]> {
+    const carried = executor
+      .select({ assetId: mediaObligations.assetId })
+      .from(mediaObligations)
+      .where(
+        and(
+          eq(mediaObligations.kind, input.remedy),
+          eq(mediaObligations.state, 'pending'),
+        ),
+      );
+    const reported = executor
+      .select({ assetId: mediaDriftFindings.assetId })
+      .from(mediaDriftFindings)
+      .where(
+        and(
+          eq(mediaDriftFindings.kind, 'stalled_lifecycle'),
+          isNull(mediaDriftFindings.resolvedAt),
+        ),
+      );
+    return executor
+      .select()
+      .from(mediaAssets)
+      .where(
+        and(
+          inArray(mediaAssets.lifecycle, [...input.lifecycles]),
+          lte(mediaAssets.lifecycleChangedAt, input.before),
+          isNull(mediaAssets.legalHoldAt),
+          notInArray(mediaAssets.id, carried),
+          notInArray(mediaAssets.id, reported),
+        ),
+      )
+      .orderBy(asc(mediaAssets.lifecycleChangedAt), asc(mediaAssets.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * Objects whose purge was asked for and never answered.
+   *
+   * The same two exclusions as the stall query, for the same reason. A purge
+   * that is already owed is being carried; one already reported waits for its
+   * finding to be settled rather than being rediscovered every cycle.
+   */
+  listStalePurgeObjects(
+    executor: MediaExecutor,
+    input: { readonly before: Date; readonly limit: number },
+  ): Promise<readonly MediaObjectRow[]> {
+    const carried = executor
+      .select({ objectId: mediaObligations.objectId })
+      .from(mediaObligations)
+      .where(
+        and(
+          eq(mediaObligations.kind, 'purge'),
+          eq(mediaObligations.state, 'pending'),
+          isNotNull(mediaObligations.objectId),
+        ),
+      );
+    const reported = executor
+      .select({ objectId: mediaDriftFindings.objectId })
+      .from(mediaDriftFindings)
+      .where(
+        and(
+          eq(mediaDriftFindings.kind, 'stale_purge'),
+          isNull(mediaDriftFindings.resolvedAt),
+          isNotNull(mediaDriftFindings.objectId),
+        ),
+      );
+    return executor
+      .select()
+      .from(mediaObjects)
+      .where(
+        and(
+          isNotNull(mediaObjects.purgeRequestedAt),
+          isNull(mediaObjects.purgeOutcome),
+          lte(mediaObjects.purgeRequestedAt, input.before),
+          notInArray(mediaObjects.id, carried),
+          notInArray(mediaObjects.id, reported),
+        ),
+      )
+      .orderBy(asc(mediaObjects.purgeRequestedAt), asc(mediaObjects.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * Records a disagreement, or notes that an outstanding one is still there.
+   *
+   * Idempotent by subject rather than by call: a second observation of the same
+   * unresolved drift bumps the count and the instant instead of adding a row,
+   * so an operator sees one fault observed nine times rather than nine faults.
+   * The partial unique indexes settle that, not a read.
+   *
+   * A finding may be recorded already resolved. That is not a contradiction —
+   * some drift is corrected in the act of noticing it, and writing the
+   * observation and its outcome together is more honest than a row that was
+   * briefly outstanding for the length of a function call.
+   */
+  async recordDriftFinding(
+    executor: MediaExecutor,
+    input: {
+      readonly assetId: string;
+      readonly id: string;
+      readonly kind: MediaDriftKind;
+      readonly now: Date;
+      readonly objectId?: string;
+      readonly objectKey?: string;
+      readonly resolution?: MediaDriftResolution;
+    },
+  ): Promise<{
+    readonly finding: MediaDriftFindingRow;
+    readonly first: boolean;
+  }> {
+    const [inserted] = await executor
+      .insert(mediaDriftFindings)
+      .values({
+        assetId: input.assetId,
+        createdAt: input.now,
+        id: input.id,
+        kind: input.kind,
+        lastObservedAt: input.now,
+        objectId: input.objectId ?? null,
+        objectKey: input.objectKey ?? null,
+        resolution: input.resolution ?? null,
+        resolvedAt: input.resolution === undefined ? null : input.now,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted !== undefined) return { finding: inserted, first: true };
+
+    const [bumped] = await executor
+      .update(mediaDriftFindings)
+      .set({
+        lastObservedAt: input.now,
+        occurrences: sql`${mediaDriftFindings.occurrences} + 1`,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(mediaDriftFindings.assetId, input.assetId),
+          eq(mediaDriftFindings.kind, input.kind),
+          isNull(mediaDriftFindings.resolvedAt),
+          input.objectKey === undefined
+            ? isNull(mediaDriftFindings.objectKey)
+            : eq(mediaDriftFindings.objectKey, input.objectKey),
+        ),
+      )
+      .returning();
+    if (bumped === undefined) {
+      // The insert was refused and the outstanding row is not there to bump.
+      // That is not a state the indexes permit, so it is raised rather than
+      // papered over.
+      throw new Error('Media drift finding conflict resolved to no row');
+    }
+    return { finding: bumped, first: false };
+  }
+
+  /** Every outstanding finding against one asset, oldest first. */
+  listOutstandingFindings(
+    executor: MediaExecutor,
+    input: { readonly assetId: string },
+  ): Promise<readonly MediaDriftFindingRow[]> {
+    return executor
+      .select()
+      .from(mediaDriftFindings)
+      .where(
+        and(
+          eq(mediaDriftFindings.assetId, input.assetId),
+          isNull(mediaDriftFindings.resolvedAt),
+        ),
+      )
+      .orderBy(asc(mediaDriftFindings.createdAt), asc(mediaDriftFindings.id));
+  }
+
+  /** Closes a finding, saying which of the three things happened to it. */
+  resolveDriftFinding(
+    executor: MediaExecutor,
+    input: {
+      readonly findingId: string;
+      readonly now: Date;
+      readonly resolution: MediaDriftResolution;
+    },
+  ): Promise<MediaDriftFindingRow | undefined> {
+    return executor
+      .update(mediaDriftFindings)
+      .set({
+        resolution: input.resolution,
+        resolvedAt: input.now,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(mediaDriftFindings.id, input.findingId),
+          isNull(mediaDriftFindings.resolvedAt),
+        ),
+      )
+      .returning()
+      .then(([row]) => row);
+  }
+
+  /** How much drift is still outstanding. The number an operator watches. */
+  async countOutstandingFindings(executor: MediaExecutor): Promise<number> {
+    const [row] = await executor
+      .select({ total: sql<number>`count(*)::int` })
+      .from(mediaDriftFindings)
+      .where(isNull(mediaDriftFindings.resolvedAt));
+    return row?.total ?? 0;
   }
 
   listObligations(

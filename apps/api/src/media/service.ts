@@ -662,27 +662,35 @@ export class MediaService {
               repository.transactionless,
               asset.id,
             );
-      // Nothing to inspect: the asset is gone, has no recorded object, or has
-      // already moved on. Discharging rather than retrying is correct — the
-      // duty described work that no longer exists.
+      // `inspecting` as well as `uploaded`, because a previous attempt may have
+      // died between taking the state and reaching a conclusion. Without it a
+      // reclaimed lease found an asset that was no longer `uploaded`, decided
+      // the work no longer existed, and discharged the duty — leaving the asset
+      // in `inspecting` for ever with nothing owed against it. Re-inspecting is
+      // safe: it reads bytes and measures them, and the lease is what stops two
+      // workers doing it at once.
+      //
+      // Anything else — gone, no recorded object, already concluded, being
+      // deleted — is work that genuinely no longer exists, and the duty is
+      // discharged rather than retried.
       if (
         asset === undefined ||
         original === undefined ||
-        asset.lifecycle !== 'uploaded'
+        (asset.lifecycle !== 'uploaded' && asset.lifecycle !== 'inspecting')
       ) {
         await this.completeObligation(obligation.id, owner);
         return 'noop';
       }
 
-      const started = await repository.transitionAsset(
-        repository.transactionless,
-        {
-          assetId: asset.id,
-          expectedLifecycle: 'uploaded',
-          lifecycle: 'inspecting',
-          now: this.dependencies.now(),
-        },
-      );
+      const started =
+        asset.lifecycle === 'inspecting'
+          ? asset
+          : await repository.transitionAsset(repository.transactionless, {
+              assetId: asset.id,
+              expectedLifecycle: 'uploaded',
+              lifecycle: 'inspecting',
+              now: this.dependencies.now(),
+            });
       if (started === undefined) {
         // Another worker took it between the read and the write.
         await this.completeObligation(obligation.id, owner);

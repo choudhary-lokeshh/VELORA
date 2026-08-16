@@ -129,6 +129,7 @@ describe('AUTH persistence and invariants', () => {
       'discovery_passes',
       'discovery_presentations',
       'media_assets',
+      'media_drift_findings',
       'media_objects',
       'media_obligations',
       'media_upload_sessions',
