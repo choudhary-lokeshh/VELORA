@@ -1,5 +1,9 @@
 import { Elysia } from 'elysia';
-import { loadServerConfig, type ServerConfig } from '@velora/config/server';
+import {
+  loadServerConfig,
+  matureContentEnabled,
+  type ServerConfig,
+} from '@velora/config/server';
 import {
   apiErrorCodes,
   apiErrorSchema,
@@ -35,8 +39,21 @@ import {
   type DiscoveryRuntime,
 } from './discovery/composition.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
-import { SafetyBackedMediaSafety } from './media/safety-bridge.js';
+import { RoutedMediaAssociation } from './media/publication.js';
+import {
+  RoutedMediaSafetySubjects,
+  SafetyBackedMediaContentSafety,
+  SafetyBackedMediaSafety,
+} from './media/safety-bridge.js';
+import { CreatorContentMediaAssociation } from './clubs/content-media-association.js';
+import { CreatorProfileMediaAssociation } from './creators/profile-media-association.js';
 import { ConsumerProfileMediaAssociation } from './users/profile-media-association.js';
+import { ContentSafetyGate } from './safety/content-safety.js';
+import {
+  DepictedPersonConsentService,
+  UnavailableDepictedPersonVerifier,
+  UnpublishedConsentPolicy,
+} from './safety/consent.js';
 import { SafetyEligibility } from './safety/eligibility.js';
 import { SafetyRepository } from './safety/repository.js';
 import {
@@ -198,19 +215,54 @@ export function createApplication(
     // Composing it here rather than lazily is what makes an unapproved storage
     // provider a startup failure instead of a failure on the first upload
     // somebody attempts.
+    //
+    // Three owning domains, routed by the domain that reserved the asset.
+    // Each adapter is that domain's own code reading its own tables, handed to
+    // MEDIA as a port; a domain with no entry answers nothing, and nothing
+    // denies.
     const profileMediaAssociation = new ConsumerProfileMediaAssociation();
+    const creatorMediaAssociation = new CreatorProfileMediaAssociation();
+    const contentMediaAssociation = new CreatorContentMediaAssociation();
+    const mediaAssociationRoutes = {
+      clubs: contentMediaAssociation,
+      creators: creatorMediaAssociation,
+      users: profileMediaAssociation,
+    };
+    const safetyRepositoryForMedia = new SafetyRepository(
+      ownedDatabase.database,
+    );
+    const safetyEligibilityForMedia = new SafetyEligibility(
+      safetyRepositoryForMedia,
+    );
     media =
       injectedMedia ??
       createMediaRuntime({
-        association: profileMediaAssociation,
+        association: new RoutedMediaAssociation(mediaAssociationRoutes),
         config,
         database: ownedDatabase.database,
         logger,
         safety: new SafetyBackedMediaSafety({
-          eligibility: new SafetyEligibility(
-            new SafetyRepository(ownedDatabase.database),
+          // The content gate, wired. A content attachment was denied outright
+          // until this existed, which was the honest reading of a gate nobody
+          // could ask. It enables nothing that was blocked for a policy
+          // reason: mature content is refused inside the gate by a capability
+          // with one configured value in every environment.
+          content: new SafetyBackedMediaContentSafety(
+            new ContentSafetyGate({
+              consent: new DepictedPersonConsentService({
+                copy: new UnpublishedConsentPolicy(),
+                now: () => new Date(),
+                repository: safetyRepositoryForMedia,
+                verifier: new UnavailableDepictedPersonVerifier(),
+              }),
+              eligibility: safetyEligibilityForMedia,
+              matureContentEnabled: matureContentEnabled(config),
+              now: () => new Date(),
+              repository: safetyRepositoryForMedia,
+            }),
           ),
-          subjects: profileMediaAssociation,
+          eligibility: safetyEligibilityForMedia,
+          subjects: new RoutedMediaSafetySubjects(mediaAssociationRoutes),
         }),
       });
     users =

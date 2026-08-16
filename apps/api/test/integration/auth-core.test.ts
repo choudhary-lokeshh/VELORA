@@ -117,6 +117,7 @@ describe('AUTH persistence and invariants', () => {
       'billing_subscriptions',
       'clubs_clubs',
       'clubs_content',
+      'clubs_content_media',
       'clubs_invites',
       'clubs_memberships',
       'creators_accounts',

@@ -288,6 +288,13 @@
       "when": 1786889536386,
       "tag": "0040_users_profile_media_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786894947020,
+      "tag": "0041_creator_media_attachments",
+      "breakpoints": true
     }
   ]
 }

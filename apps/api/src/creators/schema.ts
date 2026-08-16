@@ -199,7 +199,19 @@ export const creatorPolicyAcknowledgements = pgTable(
 export const creatorProfiles = pgTable(
   'creators_profiles',
   {
+    /**
+     * The creator's avatar and cover, as opaque MEDIA asset references.
+     *
+     * No foreign key, by the ownership rule: what the bytes are, whether they
+     * decoded, and which derivatives exist belong to
+     * [MEDIA](../../../../docs/domains/media.md). CREATORS decides only which
+     * asset plays which part, and whether either is usable is asked at read
+     * time rather than stored — a public page renders one creator, so the
+     * answer is one batched question rather than a cached projection.
+     */
+    avatarMediaAssetId: uuid('avatar_media_asset_id'),
     bio: text('bio'),
+    coverMediaAssetId: uuid('cover_media_asset_id'),
     createdAt: timestamptz('created_at').notNull(),
     /** One profile per capability, so the capability identifier is the key. */
     creatorId: uuid('creator_id')
@@ -220,6 +232,19 @@ export const creatorProfiles = pgTable(
   },
   (table) => [
     uniqueIndex('creators_profiles_handle_uk').on(table.handle),
+    // One asset plays at most one part, for at most one creator. Both
+    // directions matter: an asset cannot be both an avatar and a cover, and one
+    // creator's asset cannot be adopted by another.
+    uniqueIndex('creators_profiles_avatar_uk')
+      .on(table.avatarMediaAssetId)
+      .where(sql`${table.avatarMediaAssetId} is not null`),
+    uniqueIndex('creators_profiles_cover_uk')
+      .on(table.coverMediaAssetId)
+      .where(sql`${table.coverMediaAssetId} is not null`),
+    check(
+      'creators_profiles_distinct_media_check',
+      sql`${table.avatarMediaAssetId} is null or ${table.avatarMediaAssetId} <> ${table.coverMediaAssetId}`,
+    ),
     check(
       'creators_profiles_handle_shape_check',
       sql`${table.handle} ~ ${sql.raw(`'${creatorHandlePattern}'`)}`,

@@ -137,10 +137,19 @@ export class MediaDeliveryService {
     // audience decides which of two very different things gets handed out and
     // a stale answer here is the difference between a five-minute credential
     // and a permanent public address.
+    const asset = await repository.findAsset(input.executor, input.assetId);
+    if (asset === undefined) {
+      return {
+        closedGates: ['not_attached'],
+        kind: 'denied',
+        reasonCode: 'not_attached',
+      };
+    }
     const attachment = await association.describe({
       assetId: input.assetId,
       executor: input.executor,
       now,
+      ownerDomain: asset.ownerDomain,
       surface: input.surface,
       viewerId: input.viewerId,
     });

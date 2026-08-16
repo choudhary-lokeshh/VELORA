@@ -668,7 +668,7 @@ describe('the public catalog', () => {
 });
 
 describe('the database enforces the catalog invariants', () => {
-  it('owns exactly the four clubs tables and nothing else', async () => {
+  it('owns exactly the five clubs tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
         where table_schema = 'public' and table_name like 'clubs_%'
@@ -677,6 +677,9 @@ describe('the database enforces the catalog invariants', () => {
     expect(rows.map((row) => row.table_name)).toEqual([
       'clubs_clubs',
       'clubs_content',
+      // The attachment, not the bytes. This domain records which image hangs
+      // off which item; MEDIA owns everything about the image itself.
+      'clubs_content_media',
       'clubs_invites',
       'clubs_memberships',
     ]);

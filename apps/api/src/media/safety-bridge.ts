@@ -1,10 +1,12 @@
 import type { Executor } from '../database/executor.js';
+import type { ContentSafetyPort } from '../safety/content-safety.js';
 import type { SafetyEligibilityPort } from '../safety/eligibility.js';
 import type {
   DistributionSurface,
   EnforcementObjectType,
   SafetyCapability,
 } from '../safety/policy.js';
+import type { MediaOwnerDomain } from './policy.js';
 import type { MediaSafetyPort } from './publication.js';
 
 /**
@@ -47,16 +49,42 @@ export interface MediaSafetySubjectResolver {
   resolve(input: {
     readonly assetId: string;
     readonly executor: Executor;
+    readonly ownerDomain: MediaOwnerDomain;
   }): Promise<MediaSafetySubject | undefined>;
 }
 
 /**
- * The content-level safety answer, supplied by the domain that owns the item.
+ * Dispatches to whichever domain reserved the asset.
  *
- * Deliberately not built here. Deciding whether a content item may be delivered
- * needs its classification, its depicted-person consent, the surface, and the
- * viewer's adult assurance, and every one of those belongs to a domain that is
- * not MEDIA. This is the seam Phase 8 fills.
+ * A domain with no entry resolves nothing, and an unresolved subject denies —
+ * so a new owning domain's assets are undeliverable until somebody says who
+ * Trust and Safety should be asked about.
+ */
+export class RoutedMediaSafetySubjects implements MediaSafetySubjectResolver {
+  constructor(
+    private readonly routes: Partial<
+      Record<MediaOwnerDomain, MediaSafetySubjectResolver>
+    >,
+  ) {}
+
+  resolve(input: {
+    readonly assetId: string;
+    readonly executor: Executor;
+    readonly ownerDomain: MediaOwnerDomain;
+  }): Promise<MediaSafetySubject | undefined> {
+    const route = this.routes[input.ownerDomain];
+    if (route === undefined) return Promise.resolve(undefined);
+    return route.resolve(input);
+  }
+}
+
+/**
+ * The content-level safety answer.
+ *
+ * Deciding whether a content item may be delivered needs its classification,
+ * its depicted-person consent, the surface, and the viewer's adult assurance,
+ * and none of those is MEDIA's to hold. The implementation below is a wire to
+ * the Trust and Safety gate and contains no rule of its own.
  */
 export interface MediaContentSafetyPort {
   mayDeliverContent(input: {
@@ -66,6 +94,45 @@ export interface MediaContentSafetyPort {
     readonly subjectId: string;
     readonly surface: DistributionSurface;
   }): Promise<boolean>;
+}
+
+/**
+ * The content gate, asked through the published contract.
+ *
+ * It calls `mayDeliver` rather than `decide`, because a delivery caller cannot
+ * honestly assert what an item is: the gate reads the creator's own declaration
+ * and applies its own rules. MEDIA learns one boolean and never sees a
+ * classification, a consent record, or a denial reason.
+ *
+ * Mature content is refused inside that gate, by a capability with exactly one
+ * configured value in every environment. Nothing here can change that, and
+ * wiring this adapter enables nothing that was previously blocked.
+ */
+export class SafetyBackedMediaContentSafety implements MediaContentSafetyPort {
+  constructor(private readonly gate: ContentSafetyPort) {}
+
+  async mayDeliverContent(input: {
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly objectId: string;
+    readonly subjectId: string;
+    readonly surface: DistributionSurface;
+  }): Promise<boolean> {
+    const decision = await this.gate.mayDeliver({
+      contentId: input.objectId,
+      creatorId: input.subjectId,
+      executor: input.executor,
+      now: input.now,
+      surface: input.surface,
+      // Deliberately absent. Adult assurance is only consulted for a mature
+      // class, and a mature class is refused before the question is reached —
+      // so supplying a value here could only ever weaken a gate, never satisfy
+      // one. When mature content is a real product decision, the viewer's
+      // assurance arrives from AUTH with the request rather than from here.
+      viewerAdultAssurance: undefined,
+    });
+    return decision.allowed;
+  }
 }
 
 export interface SafetyBackedMediaSafetyDependencies {
@@ -98,6 +165,7 @@ export class SafetyBackedMediaSafety implements MediaSafetyPort {
     readonly assetId: string;
     readonly executor: Executor;
     readonly now: Date;
+    readonly ownerDomain: MediaOwnerDomain;
     readonly surface: DistributionSurface;
   }): Promise<boolean> {
     const { content, eligibility, subjects } = this.dependencies;
@@ -105,6 +173,7 @@ export class SafetyBackedMediaSafety implements MediaSafetyPort {
     const subject = await subjects.resolve({
       assetId: input.assetId,
       executor: input.executor,
+      ownerDomain: input.ownerDomain,
     });
     // Nobody claims this asset, so nobody can vouch for it.
     if (subject === undefined) return false;

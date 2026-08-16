@@ -217,7 +217,27 @@ Completion no longer makes an image ready and does not pretend to. It tells the 
 
 Delivery of a consumer profile image is restricted rather than public — a profile is never a public internet page — and for now the only entitled viewer is the owner. Whether a *peer* may see somebody's profile image is a question about the relationship between two accounts, which DISCOVERY owns; answering it in USERS would mean inventing the rule, so it is left until a surface needs it.
 
-Not built yet, and not to be inferred from the model's generality: creator media, peer delivery of consumer images, takedown propagation and cache purge, reconciliation, and Admin operations.
+## Creator media, and the content gate
+
+Three domains now hold assets, and the association port routes on the owner domain MEDIA already records. A domain with no adapter answers nothing, and nothing denies — so adding an owning domain to the vocabulary without wiring one makes its assets undeliverable rather than accidentally public.
+
+**CREATORS** owns an avatar and a cover, as opaque references on `creators_profiles`. They are public exactly when the profile is published, which is the one place in this milestone where media genuinely reaches the open internet: `/c/{handle}` is answered without a session, so an image on it has no viewer to entitle. A draft page has neither — an avatar on an unpublished page is a file its owner has not decided to show, not published media awaiting a viewer.
+
+**PRIVATE CLUBS** owns content attachments in `clubs_content_media`. An image on a published public item is public; on a members-only item it is restricted to people holding a live membership of that club; on a draft or archived item it is neither, whatever it was yesterday. An item with no club has nobody to admit, so its members-only images stay unreachable — the same rule the catalog already applies to the item itself.
+
+Uniqueness is about not spending one asset twice: at most one avatar slot and one cover slot platform-wide, never both for the same creator, and at most one content item. Detaching and reattaching elsewhere is an explicit act rather than a second silent reference to the same bytes.
+
+### The gate that was denying
+
+Phase 5 left a content-gated asset **denied**, because nothing could ask the content safety gate. That wiring now exists, and it enables nothing that was blocked for a policy reason.
+
+A content attachment declares itself content-gated, which tells the bridge the enforcement answer alone is not enough: classification, depicted-person consent, surface eligibility, and the mature-content capability all have to be asked. Trust and Safety answers them through a delivery-shaped entry point that reads the creator's own declaration rather than making the caller assert one — because a delivery caller cannot honestly say what an item is, and forcing it to guess would mean either trusting the guess or refusing every mature item for the misleading reason that the guess was wrong.
+
+Mature content stays refused inside that gate by a capability with exactly one configured value in every environment. A test declares an item `mature_actual` and watches delivery refuse it. Declaring an item mature enables nothing; it makes the item refusable for a reason rather than for a missing declaration.
+
+The adapter deliberately passes no viewer adult assurance. Assurance is consulted only for a mature class, and a mature class is refused before the question is reached — so supplying a value there could only ever weaken a gate, never satisfy one.
+
+Not built yet, and not to be inferred from the model's generality: Creator Studio media management surfaces, peer delivery of consumer images, takedown propagation and cache purge, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

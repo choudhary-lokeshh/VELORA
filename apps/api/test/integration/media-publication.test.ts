@@ -360,6 +360,7 @@ describe('the safety bridge asks rather than decides', () => {
       assetId: '66666666-6666-4666-8666-666666666666',
       executor: pipeline.repository.transactionless,
       now: new Date(),
+      ownerDomain: 'users',
       surface: 'web',
     });
 

@@ -1,6 +1,10 @@
 import type { Executor } from '../database/executor.js';
 import type { DistributionSurface } from '../safety/policy.js';
-import { requiredMediaVariants, type MediaVariantKind } from './policy.js';
+import {
+  requiredMediaVariants,
+  type MediaOwnerDomain,
+  type MediaVariantKind,
+} from './policy.js';
 import type { MediaRepository } from './repository.js';
 import type { MediaAssetRow } from './schema.js';
 
@@ -104,10 +108,47 @@ export interface MediaAssociationPort {
     readonly assetId: string;
     readonly executor: Executor;
     readonly now: Date;
+    /**
+     * Which domain reserved the asset.
+     *
+     * Passed in rather than probed for. MEDIA already knows it, and handing it
+     * over means a router dispatches to one owning domain instead of asking
+     * every domain whether it recognises an identifier — which would be both
+     * slower and a way for one domain to learn about another's assets.
+     */
+    readonly ownerDomain: MediaOwnerDomain;
     readonly surface: DistributionSurface;
     /** Absent for an unauthenticated public read. */
     readonly viewerId: string | undefined;
   }): Promise<MediaAssociation | undefined>;
+}
+
+/**
+ * Dispatches to whichever domain reserved the asset.
+ *
+ * A domain with no entry answers nothing, which denies. Adding an owning domain
+ * to the vocabulary without wiring an adapter therefore makes its assets
+ * undeliverable rather than accidentally public.
+ */
+export class RoutedMediaAssociation implements MediaAssociationPort {
+  constructor(
+    private readonly routes: Partial<
+      Record<MediaOwnerDomain, MediaAssociationPort>
+    >,
+  ) {}
+
+  describe(input: {
+    readonly assetId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly ownerDomain: MediaOwnerDomain;
+    readonly surface: DistributionSurface;
+    readonly viewerId: string | undefined;
+  }): Promise<MediaAssociation | undefined> {
+    const route = this.routes[input.ownerDomain];
+    if (route === undefined) return Promise.resolve(undefined);
+    return route.describe(input);
+  }
 }
 
 /**
@@ -125,6 +166,7 @@ export interface MediaSafetyPort {
     readonly assetId: string;
     readonly executor: Executor;
     readonly now: Date;
+    readonly ownerDomain: MediaOwnerDomain;
     readonly surface: DistributionSurface;
   }): Promise<boolean>;
 }
@@ -197,6 +239,7 @@ export class MediaPublicationAuthority {
       assetId: input.assetId,
       executor: input.executor,
       now: input.now,
+      ownerDomain: asset.ownerDomain,
       surface: input.surface,
       viewerId: input.viewerId,
     });
@@ -211,6 +254,7 @@ export class MediaPublicationAuthority {
       assetId: input.assetId,
       executor: input.executor,
       now: input.now,
+      ownerDomain: asset.ownerDomain,
       surface: input.surface,
     });
     if (!safeToDeliver) closed.push('safety_restricted');

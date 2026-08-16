@@ -24,6 +24,16 @@ export const maximumCreatorContentSummaryLength = 300;
 export const maximumCreatorContentBodyLength = 20_000;
 
 /**
+ * How many images one content item may carry.
+ *
+ * Bounded because every attachment is a derivative set to render, an address
+ * to authorise, and a purge obligation on takedown. Six is the same bound a
+ * consumer profile already has, and neither number is a product ceiling
+ * anybody has asked to raise.
+ */
+export const maximumContentMedia = 6;
+
+/**
  * Content lifecycle.
  *
  * `draft` is where everything starts and nothing about it is visible to anybody

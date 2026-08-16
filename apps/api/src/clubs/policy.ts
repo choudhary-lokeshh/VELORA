@@ -30,6 +30,16 @@ export const defaultCatalogPageSize = 20;
 
 export const minimumClubNameLength = 2;
 export const maximumClubNameLength = 80;
+
+/**
+ * How many images one content item may carry.
+ *
+ * Restated here because `drizzle-kit` cannot import the ESM-only contract
+ * package while generating migrations, and asserted identical to the published
+ * bound by a unit test — the same arrangement every other restated constant in
+ * this schema already uses.
+ */
+export const maximumContentMedia = 6;
 export const maximumClubDescriptionLength = 600;
 export const minimumClubSlugLength = 3;
 export const maximumClubSlugLength = 40;

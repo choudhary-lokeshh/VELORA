@@ -90,6 +90,28 @@ export type ClassificationOutcome =
  */
 export interface ContentSafetyPort {
   decide(request: ContentSafetyRequest): Promise<ContentSafetyDecision>;
+  /**
+   * The delivery answer, for a caller that cannot assert what an item is.
+   *
+   * {@link decide} makes the caller name the classification and cross-checks
+   * it, which is right for publishing: a creator declaring an item is the act
+   * being authorised. It is wrong for delivery. The media platform asking
+   * whether some bytes may be served has no business asserting what the item
+   * is, and making it guess would mean either trusting the guess or refusing
+   * every mature item for the misleading reason that the guess was wrong.
+   *
+   * So this reads the declaration itself and applies the same gates. An
+   * undeclared item is treated as general, which is the same stance the
+   * publish path already takes.
+   */
+  mayDeliver(request: {
+    readonly contentId: string;
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly surface: DistributionSurface;
+    readonly viewerAdultAssurance?: AdultAssuranceLevel | undefined;
+  }): Promise<ContentSafetyDecision>;
 }
 
 export interface ContentSafetyDependencies {
@@ -196,6 +218,30 @@ export class ContentSafetyGate implements ContentSafetyPort {
    * stays removed. The rest apply to the mature classes only, and while the
    * capability is off they are all closed together.
    */
+  async mayDeliver(request: {
+    readonly contentId: string;
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly surface: DistributionSurface;
+    readonly viewerAdultAssurance?: AdultAssuranceLevel | undefined;
+  }): Promise<ContentSafetyDecision> {
+    const declared = await this.dependencies.repository.findClassification(
+      request.executor,
+      request.contentId,
+    );
+    return this.decide({
+      capability: 'deliver',
+      classification: declared?.classification ?? 'general',
+      contentId: request.contentId,
+      creatorId: request.creatorId,
+      executor: request.executor,
+      now: request.now,
+      surface: request.surface,
+      viewerAdultAssurance: request.viewerAdultAssurance,
+    });
+  }
+
   async decide(request: ContentSafetyRequest): Promise<ContentSafetyDecision> {
     const mature = matureContentClassifications.includes(
       request.classification,

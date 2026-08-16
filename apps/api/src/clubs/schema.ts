@@ -27,6 +27,7 @@ import {
   maximumCreatorContentTitleLength,
   maximumClubDescriptionLength,
   maximumClubNameLength,
+  maximumContentMedia,
   membershipSources,
   membershipStates,
   minimumClubNameLength,
@@ -128,6 +129,46 @@ export const creatorContent = pgTable(
       sql`(${table.lifecycle} = 'archived') = (${table.archivedAt} is not null)`,
     ),
     check('clubs_content_version_check', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
+ * Images attached to a content item.
+ *
+ * PRIVATE CLUBS owns the attachment and the ordering; MEDIA owns the bytes.
+ * The asset reference is opaque and carries no foreign key, on the same rule
+ * every other cross-domain reference here follows.
+ *
+ * Whether an attachment may actually be shown is never answered here. It
+ * depends on the item's lifecycle and visibility, on the viewer's entitlement
+ * to the club, on the creator's standing, and on the content safety gate — and
+ * a row in this table means only that a creator put an image on an item.
+ */
+export const creatorContentMedia = pgTable(
+  'clubs_content_media',
+  {
+    contentId: uuid('content_id')
+      .notNull()
+      .references(() => creatorContent.id, { onDelete: 'cascade' }),
+    createdAt: timestamptz('created_at').notNull(),
+    id: uuid('id').primaryKey(),
+    mediaAssetId: uuid('media_asset_id').notNull(),
+    /** Dense zero-based order within the item. */
+    position: integer('position').notNull(),
+    updatedAt: timestamptz('updated_at').notNull(),
+  },
+  (table) => [
+    // One asset belongs to one item, so detaching and reattaching elsewhere is
+    // an explicit act rather than a silent second reference to the same bytes.
+    uniqueIndex('clubs_content_media_asset_uk').on(table.mediaAssetId),
+    uniqueIndex('clubs_content_media_position_uk').on(
+      table.contentId,
+      table.position,
+    ),
+    check(
+      'clubs_content_media_position_check',
+      sql`${table.position} between 0 and ${sql.raw(String(maximumContentMedia - 1))}`,
+    ),
   ],
 );
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   creatorContentLifecycleValues,
   creatorContentVisibilityValues,
+  maximumContentMedia,
   maximumCreatorContentBodyLength,
   maximumCreatorContentSummaryLength,
   maximumCreatorContentTitleLength,
@@ -30,6 +31,7 @@ describe('catalog policy is stated once', () => {
     expect(schemaPolicy.maximumCreatorContentSummaryLength).toBe(
       maximumCreatorContentSummaryLength,
     );
+    expect(schemaPolicy.maximumContentMedia).toBe(maximumContentMedia);
     expect(schemaPolicy.maximumCreatorContentBodyLength).toBe(
       maximumCreatorContentBodyLength,
     );
