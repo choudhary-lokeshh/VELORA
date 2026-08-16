@@ -289,6 +289,8 @@ export function createApplication(
         // can make. There is no path from an operator to a financial row that
         // does not go through the domain that owns it.
         refunds: billing.refunds,
+        appeals: safety.appeals,
+        moderation: safety.moderation,
         safety: safety.authority,
       });
     discovery =
@@ -862,6 +864,38 @@ export function createApplication(
     .post(
       apiRoutePaths.adminMembershipRevocation,
       admitted(async (input) => admin.routes.revokeMembership(input)),
+    )
+    .get(
+      apiRoutePaths.adminSafetyCases,
+      admitted(async (input) => admin.moderationRoutes.listCases(input)),
+    )
+    .get(
+      apiRoutePaths.adminSafetyCase,
+      admitted(async (input) => admin.moderationRoutes.getCase(input)),
+    )
+    .post(
+      apiRoutePaths.adminSafetyCaseClaim,
+      admitted(async (input) => admin.moderationRoutes.claimCase(input)),
+    )
+    .post(
+      apiRoutePaths.adminSafetyCaseTriage,
+      admitted(async (input) => admin.moderationRoutes.triageCase(input)),
+    )
+    .post(
+      apiRoutePaths.adminSafetyCaseNotes,
+      admitted(async (input) => admin.moderationRoutes.addNote(input)),
+    )
+    .post(
+      apiRoutePaths.adminSafetyCaseDecisions,
+      admitted(async (input) => admin.moderationRoutes.decideCase(input)),
+    )
+    .get(
+      apiRoutePaths.adminSafetyAppeals,
+      admitted(async (input) => admin.moderationRoutes.listAppeals(input)),
+    )
+    .post(
+      apiRoutePaths.adminSafetyAppealOutcome,
+      admitted(async (input) => admin.moderationRoutes.answerAppeal(input)),
     )
     .post(
       apiRoutePaths.adminBillingRefunds,

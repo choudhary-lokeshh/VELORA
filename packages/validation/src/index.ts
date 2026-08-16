@@ -42,6 +42,18 @@ import {
   adminRemoveObjectRequestSchema,
   adminRevokeMembershipRequestSchema,
   adminSuspendCreatorRequestSchema,
+  moderationAppealListResponseSchema,
+  moderationAppealOutcomeRequestSchema,
+  moderationAppealResponseSchema,
+  moderationCaseDetailResponseSchema,
+  moderationCaseListResponseSchema,
+  moderationCaseRequestSchema,
+  moderationCaseResponseSchema,
+  moderationDecisionRequestSchema,
+  moderationDecisionResponseSchema,
+  moderationNoteRequestSchema,
+  moderationQueueSchema,
+  moderationTriageRequestSchema,
 } from './admin.js';
 import {
   clubAccessListResponseSchema,
@@ -206,6 +218,14 @@ export const apiRoutePaths = {
   adminCreatorSuspension: '/v1/admin/creators/suspension',
   adminCreators: '/v1/admin/creators',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
+  adminSafetyAppealOutcome: '/v1/admin/safety/appeals/outcome',
+  adminSafetyAppeals: '/v1/admin/safety/appeals',
+  adminSafetyCase: '/v1/admin/safety/case',
+  adminSafetyCaseClaim: '/v1/admin/safety/cases/claim',
+  adminSafetyCaseDecisions: '/v1/admin/safety/cases/decisions',
+  adminSafetyCaseNotes: '/v1/admin/safety/cases/notes',
+  adminSafetyCaseTriage: '/v1/admin/safety/cases/triage',
+  adminSafetyCases: '/v1/admin/safety/cases',
   checkouts: '/v1/billing/checkouts',
   providerEvents: '/v1/billing/provider-events',
   subscriptions: '/v1/billing/subscriptions',
@@ -333,6 +353,17 @@ export const apiSchemas = {
   AdminRemoveObjectRequest: adminRemoveObjectRequestSchema,
   AdminRevokeMembershipRequest: adminRevokeMembershipRequestSchema,
   AdminSuspendCreatorRequest: adminSuspendCreatorRequestSchema,
+  ModerationAppealListResponse: moderationAppealListResponseSchema,
+  ModerationAppealOutcomeRequest: moderationAppealOutcomeRequestSchema,
+  ModerationAppealResponse: moderationAppealResponseSchema,
+  ModerationCaseDetailResponse: moderationCaseDetailResponseSchema,
+  ModerationCaseListResponse: moderationCaseListResponseSchema,
+  ModerationCaseRequest: moderationCaseRequestSchema,
+  ModerationCaseResponse: moderationCaseResponseSchema,
+  ModerationDecisionRequest: moderationDecisionRequestSchema,
+  ModerationDecisionResponse: moderationDecisionResponseSchema,
+  ModerationNoteRequest: moderationNoteRequestSchema,
+  ModerationTriageRequest: moderationTriageRequestSchema,
   ClubAccessListResponse: clubAccessListResponseSchema,
   ClubInviteIssuedResponse: clubInviteIssuedResponseSchema,
   ClubInviteListResponse: clubInviteListResponseSchema,
@@ -407,6 +438,8 @@ export const apiQueryParameters = {
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
   adminSearch: adminCreatorSearchSchema,
+  caseId: z.uuid(),
+  moderationQueue: moderationQueueSchema,
   clubId: clubIdSchema,
   contentId: contentIdSchema,
   currency: currencyCodeSchema,
@@ -1932,6 +1965,167 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Withdraws one entitlement as a platform action. It takes effect on the next protected read, because every read asks whether the entitlement is live rather than trusting anything computed earlier.',
+  },
+  {
+    method: 'get',
+    operationId: 'listModerationCases',
+    path: apiRoutePaths.adminSafetyCases,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this queue',
+        name: 'cursor',
+      },
+      { description: 'Maximum cases to return', name: 'pageSize' },
+      { description: 'Operator queue to read', name: 'moderationQueue' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Open cases, oldest first, bounded and keyset paged. Ordered by when a case was opened rather than by how many reports it carries, because a queue sorted by complaint count is a queue anybody with several accounts can steer.',
+        schemaName: 'ModerationCaseListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A case is about a target and never about who reported it. There is no reporter field in this response and no report count, so no operator view can group people by who they complained about or act on how many people did.',
+  },
+  {
+    method: 'get',
+    operationId: 'getModerationCase',
+    path: apiRoutePaths.adminSafetyCase,
+    requestQuery: [{ description: 'Case to read', name: 'caseId' }],
+    responses: {
+      '200': {
+        description:
+          'One case with the reports that are evidence in it, everything recorded as evidence, and every decision taken on it in order.',
+        schemaName: 'ModerationCaseDetailResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The reporter narrative is here because a reviewer cannot judge an allegation without it. The reporter is not: there is no field for one, so no response this contract can produce carries a reporter identity even to an operator.',
+  },
+  {
+    method: 'post',
+    operationId: 'claimModerationCase',
+    path: apiRoutePaths.adminSafetyCaseClaim,
+    requestSchemaName: 'ModerationCaseRequest',
+    responses: {
+      '200': {
+        description: 'The case is held by the caller and the lease is running.',
+        schemaName: 'ModerationCaseResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A lease rather than an assignment: a reviewer whose session ends mid-review releases the case when the lease lapses instead of holding it out of the queue for ever. Claiming a case somebody else currently holds is refused, so a claim is not a way to take a review out from under whoever is doing it.',
+  },
+  {
+    method: 'post',
+    operationId: 'triageModerationCase',
+    path: apiRoutePaths.adminSafetyCaseTriage,
+    requestSchemaName: 'ModerationTriageRequest',
+    responses: {
+      '200': {
+        description: "The reviewer's judgement is recorded and the case moved.",
+        schemaName: 'ModerationCaseResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Priority is an input here and nowhere else. Nothing computes it and nothing raises it because a second report arrived, because making report volume an input to urgency would let twenty coordinated accounts escalate anybody.',
+  },
+  {
+    method: 'post',
+    operationId: 'addModerationNote',
+    path: apiRoutePaths.adminSafetyCaseNotes,
+    requestSchemaName: 'ModerationNoteRequest',
+    responses: {
+      '200': {
+        description: 'The note is recorded as evidence in the case.',
+        schemaName: 'ModerationCaseResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      "A reviewer's own words, recorded as evidence and readable only through the case. Evidence is appended and never edited or removed, so a note is a fact about what somebody thought at a moment rather than a field somebody keeps current.",
+  },
+  {
+    method: 'post',
+    operationId: 'decideModerationCase',
+    path: apiRoutePaths.adminSafetyCaseDecisions,
+    requestSchemaName: 'ModerationDecisionRequest',
+    responses: {
+      '200': {
+        description:
+          'The decision is recorded, any enforcement it produced is applied through the domain that owns what changed, and every still-open report in the case is resolved.',
+        schemaName: 'ModerationDecisionResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'An explicit command with a closed action vocabulary, and the only way a decision is ever recorded. There is no endpoint anywhere in this API that edits one: a correction is a superseding decision that names the original, and the original stays exactly as written.',
+  },
+  {
+    method: 'get',
+    operationId: 'listModerationAppeals',
+    path: apiRoutePaths.adminSafetyAppeals,
+    requestQuery: [
+      { description: 'Maximum appeals to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description: 'Complaints still owed an answer, oldest first.',
+        schemaName: 'ModerationAppealListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      "The appellant's own words are absent from this queue. An operator reads a complaint through the case it belongs to; a list shape carrying prose is a shape a log line or a metric label eventually carries too.",
+  },
+  {
+    method: 'post',
+    operationId: 'answerModerationAppeal',
+    path: apiRoutePaths.adminSafetyAppealOutcome,
+    requestSchemaName: 'ModerationAppealOutcomeRequest',
+    responses: {
+      '200': {
+        description: 'The complaint is answered and the record says by whom.',
+        schemaName: 'ModerationAppealResponse',
+      },
+      ...adminAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Upholding a complaint names the superseding decision that replaced the original, and the server refuses one that does not genuinely replace it. Every outcome records the operator who reached it, because a complaint may not be decided solely by automated means and a column only a person fills is how that stops being a promise.',
   },
   {
     method: 'get',

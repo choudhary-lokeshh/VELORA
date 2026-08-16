@@ -607,13 +607,42 @@ describe('a reviewer claims, judges, and closes', () => {
     ).toBe('invalid_cursor');
   });
 
-  it('never exposes a case through a consumer or admin route', () => {
-    const paths = application.app.routes.map((route) => route.path);
-    for (const path of paths) {
-      expect(path).not.toMatch(/case/iu);
+  it('exposes a case only under the operator prefix', () => {
+    const cases = application.app.routes
+      .map((route) => route.path)
+      .filter((path) => /case/iu.test(path));
+
+    expect(cases.length).toBeGreaterThan(0);
+    // Every one of them is an operator route. A consumer or Creator Studio
+    // path that mentioned a case would be a path somebody eventually reaches
+    // with a consumer credential.
+    for (const path of cases) {
+      expect(path, path).toStartWith('/v1/admin/safety/');
     }
-    // And the operator origin reaches nothing here either, because there is no
-    // route to reach.
     expect(testAdminOrigin.length).toBeGreaterThan(0);
+  });
+
+  it('refuses every operator case route to a consumer session', async () => {
+    const reporter = await consumer('operator-probe@velora.test');
+
+    const responses = await Promise.all([
+      handle(request('/v1/admin/safety/cases', reporter, testConsumerOrigin)),
+      handle(
+        request('/v1/admin/safety/case?caseId=x', reporter, testConsumerOrigin),
+      ),
+      handle(
+        request('/v1/admin/safety/cases/claim', reporter, testConsumerOrigin, {
+          body: { caseId: crypto.randomUUID() },
+          method: 'POST',
+        }),
+      ),
+    ]);
+
+    // The audience is checked before anything is looked up on the caller's
+    // behalf, so route visibility is not permission and a probe learns nothing
+    // about what exists.
+    expect(responses.map((response) => response.status)).toEqual([
+      403, 403, 403,
+    ]);
   });
 });

@@ -7,11 +7,14 @@ import type {
   CreatorsDatabase,
   CreatorsRepository,
 } from '../creators/repository.js';
+import type { AppealService } from '../safety/appeals.js';
 import type { EnforcementAuthority } from '../safety/enforcement.js';
+import type { ModerationService } from '../safety/moderation.js';
 import { AdminBillingRoutes } from './billing-routes.js';
 import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
+import { AdminModerationRoutes } from './moderation-routes.js';
 import { AdminRoutes } from './routes.js';
 import { AdminCreatorService } from './service.js';
 
@@ -20,6 +23,8 @@ export interface AdminRuntime {
   /** Operator financial surface. Nothing here owns a financial row. */
   readonly billingRoutes: AdminBillingRoutes;
   readonly directory: AdminCreatorDirectory;
+  /** Operator moderation surface. Every route is an explicit command. */
+  readonly moderationRoutes: AdminModerationRoutes;
   readonly routes: AdminRoutes;
   readonly service: AdminCreatorService;
 }
@@ -51,6 +56,10 @@ export function createAdminRuntime(input: {
   };
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
+  /** TRUST & SAFETY's complaint seam. */
+  readonly appeals: AppealService;
+  /** TRUST & SAFETY's review seam. ADMIN calls it; it owns no queue of its own. */
+  readonly moderation: ModerationService;
   /** TRUST & SAFETY's one writer of enforcement records. */
   readonly safety: EnforcementAuthority;
 }): AdminRuntime {
@@ -75,6 +84,11 @@ export function createAdminRuntime(input: {
       refunds: input.refunds,
     }),
     directory,
+    moderationRoutes: new AdminModerationRoutes({
+      adminContext,
+      appeals: input.appeals,
+      moderation: input.moderation,
+    }),
     routes: new AdminRoutes({ adminContext, directory, service }),
     service,
   };

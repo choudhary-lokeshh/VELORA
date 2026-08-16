@@ -76,7 +76,19 @@ Creator-scoped decisions are refused as not applicable. This seam holds no contr
 
 ### Who may read any of it
 
-Operator-only, and the only thing that makes that true today is that no Admin authority can be minted at all: the configured privileged authenticator verifier refuses every assertion. There is no published route matching evidence, a decision, or a note, and a regression asserts it. Nothing in this domain logs a report narrative, an operator note, a message body, or identity evidence.
+Operator-only. The moderation surface is published under `/v1/admin/safety/`, and every route on it requires the Platform Admin audience *and* a fresh phishing-resistant assurance. No approved verifier can produce that assurance, so every one of them fails closed rather than degrading to something weaker, and the local identity contract refuses the Platform Admin audience outright in any case. Regressions assert that a consumer session, a Creator Studio session, and no session at all are refused on every one, and that no route mentioning a case, evidence, a decision, or a note lives outside the operator prefix.
+
+Nothing in this domain logs a report narrative, an operator note, a message body, or identity evidence.
+
+## Implemented operator surface
+
+Eight explicit commands and no ninth. There is **no generic patch endpoint for a safety record anywhere in this API** — no `PATCH`, no `PUT`, no `DELETE`, asserted across every published route — because a shape that could set an arbitrary field on a case, an evidence row, or a decision is a shape that can rewrite an audit.
+
+An operator reads the queue, opens a case with its reports and evidence and decisions, claims it under a lease, records their judgement of how urgent it is, adds a note, decides it, reads the complaints still owed an answer, and answers one. Each is a command with its own contract, its own refusal codes, and its own summary saying what it does and why it is shaped that way.
+
+**Two things are absent from every operator shape and their absence is the design.** There is no reporter field, so no operator view can group people by who they complained about; and there is no report count, so "how many people complained" is not a number an operator can work from. The reporter narrative *is* present, because a reviewer cannot judge an allegation without it. A regression reads the published contract rather than a response, because a field that does not exist cannot be filled in by a later change.
+
+A decision refused because somebody else already made it and one refused because the platform cannot carry it out are one status code on purpose: both mean re-read and decide again, and telling them apart would describe state the caller was not shown. Upholding a complaint without naming the superseding decision that replaced the original is refused outright, because it would be an assertion that something was put right.
 
 ## Cross-references
 

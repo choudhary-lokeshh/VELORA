@@ -330,6 +330,8 @@ export function testAdminRuntime(input: {
     ...(input.now === undefined ? {} : { now: input.now }),
     profiles: input.creators.profileRepository,
     refunds: input.billing.refunds,
+    appeals: input.safety.appeals,
+    moderation: input.safety.moderation,
     safety: input.safety.authority,
   });
 }

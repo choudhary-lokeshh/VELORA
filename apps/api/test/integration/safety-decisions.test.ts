@@ -1056,10 +1056,38 @@ describe('the database keeps the record', () => {
 });
 
 describe('none of it is reachable from outside', () => {
-  it('publishes no route that mentions evidence, a decision, or a note', () => {
-    for (const route of application.app.routes) {
-      expect(route.path).not.toMatch(/evidence|decision|note/iu);
+  it('publishes evidence, decisions, and notes only to an operator', () => {
+    const operatorOnly = application.app.routes
+      .map((route) => route.path)
+      .filter((path) => /evidence|decision|note/iu.test(path));
+
+    expect(operatorOnly.length).toBeGreaterThan(0);
+    for (const path of operatorOnly) {
+      expect(path, path).toStartWith('/v1/admin/');
     }
+  });
+
+  it('refuses an operator decision route to a consumer session', async () => {
+    const opened = await reportedCase('probe');
+    const reporter = await consumer('decision-probe@velora.test');
+
+    const response = await handle(
+      request('/v1/admin/safety/cases/decisions', reporter, {
+        body: {
+          action: 'no_action',
+          caseId: opened.id,
+          evidenceIds: [],
+          expectedVersion: opened.version,
+          reasonCode: 'no_violation_found',
+        },
+        method: 'POST',
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    // Nothing was decided, and nothing about the case moved.
+    expect(await countOf('safety_decisions')).toBe(0);
+    expect(await countOf('safety_cases', "state = 'new'")).toBe(1);
   });
 
   it('keeps privileged authentication refused, so no Admin authority exists', () => {
