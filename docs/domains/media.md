@@ -117,7 +117,31 @@ That TTL is a resource policy about uploads nobody finished. It is deliberately 
 
 Reclamation goes through the ordinary deletion path rather than deleting rows, so whatever bytes did reach the provider become a recorded obligation. Whether an object actually exists under a window nobody completed is a question about provider state, and answering it belongs to reconciliation rather than to a sweep.
 
-Not built yet, and not to be inferred from the model's generality: the inspection and processing workers, the scanner port, delivery routes, takedown propagation, reconciliation, and Admin operations.
+## Inspection and quarantine
+
+Uploaded bytes are untrusted, and inspection is where the platform stops guessing. It runs on the worker, never on a request thread — the API composes no inspector at all, so decoding hostile input is not something a route could be talked into.
+
+The order of the checks is the cheap-first rule applied to an adversary rather than to a happy path: size before format, format before decoder, header before pixels. Every step that can refuse without invoking a parser does so, because the parser is the component being fed hostile input.
+
+**Format admission runs before the decoder, and that ordering is the control.** libvips reads an SVG document and reports a perfectly sensible 64×64 image; it decodes GIF too. Both are measured in the test suite rather than assumed. An allow-list meaning "whatever the decoder accepts" would therefore accept an XML dialect with script capability on a social platform, so admission is a platform decision taken on sniffed bytes and the decoder is only ever asked about formats already admitted. Accepted: JPEG, PNG, and still WebP. Everything else — SVG, GIF, TIFF, BMP, HEIC, AVIF, PDF, archives, arbitrary bytes — is simply not on the list, and the list has no deny-list beside it that a case could be added to by mistake.
+
+Disagreement between the header and the decoder is the polyglot signal: a file that is a JPEG by its first three bytes and something else to libvips is refused.
+
+The header is read with the decoder's pixel limit **off**, deliberately. With the limit on, a pixel bomb makes libvips throw and every bomb is recorded as merely `undecodable`; with it off, the claimed dimensions come back and the platform applies its own ceilings and says exactly why — `dimensions_exceeded` or `pixel_limit_exceeded`. Reading a header allocates nothing whatever the header claims, so a precise refusal costs nothing. The decode probe that follows keeps the limit on.
+
+Decodability is proven by decoding, bounded to a thumbnail. A header that parses is a weaker claim than the one processing depends on, so the pipeline pays for that here rather than discovering the truth during variant generation.
+
+Metadata is capped at 32 KiB across every block the decoder exposes. That is comfortably above what a camera writes, and none of it survives anyway — processing renders from decoded pixels and strips every block — so metadata size has no downstream value to trade against the parser work it costs.
+
+**Scanning is a separate claim from decoding**, and the two are never conflated. `MEDIA_MALWARE_SCANNER` defaults to `unavailable`, which refuses, and a refusal quarantines rather than passing: an environment with no scanning position accepts no media at all. An unavailable scanner reporting `clean` would be the single most dangerous line in this domain, and there is no configuration under which it can. The development scanner refuses a Velora marker string; that exercises the refusal path and is never evidence that anything was scanned.
+
+Quarantine is terminal for delivery. A quarantined asset is never processed, never owes a `process` obligation, and cannot reach any state a surface would act on. Its reason is machine-readable and internal; what a client is eventually told is coarser, because the difference between "your file is not a JPEG" and "your file claimed to be a JPEG and its bytes are a PNG" is useful to an attacker and to nobody else.
+
+Inspection is claimed under a database lease, so several workers take different rows, a worker that dies mid-decode loses its lease rather than the duty, and a completion from a worker whose row another has since taken is refused. A failed attempt backs off and is dead-lettered after five, retained as evidence rather than dropped.
+
+Test fixtures are generated rather than committed, so a hostile input is a description in code instead of an opaque file. None of them is real malware.
+
+Not built yet, and not to be inferred from the model's generality: the processing worker and variant generation, delivery routes, takedown propagation, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

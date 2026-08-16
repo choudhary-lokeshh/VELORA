@@ -16,6 +16,14 @@ import {
   type MediaAssetLifecycle,
 } from '../../src/media/policy.js';
 import {
+  LocalTestMediaScanner,
+  localTestInfectedMarker,
+  MediaScannerUnavailableError,
+  UnavailableMediaScanner,
+} from '../../src/media/scanner.js';
+import type { MediaScannerPort } from '../../src/media/scanner.js';
+import { sniffMediaFormat } from '../../src/media/sniff.js';
+import {
   InvalidMediaObjectKeyError,
   isMediaObjectKey,
   LocalTestMediaStorage,
@@ -323,5 +331,84 @@ describe('the development storage adapter', () => {
     expect(
       await storage.purge(mediaObjectKey({ assetId, role: 'original' })),
     ).toEqual({ kind: 'unsupported' });
+  });
+});
+
+describe('format admission', () => {
+  it('accepts exactly the three formats on the list', () => {
+    expect(sniffMediaFormat(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(
+      'jpeg',
+    );
+    expect(
+      sniffMediaFormat(
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      ),
+    ).toBe('png');
+    expect(
+      sniffMediaFormat(
+        new Uint8Array([
+          0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42,
+          0x50,
+        ]),
+      ),
+    ).toBe('webp');
+  });
+
+  it('refuses everything else, including things a decoder would take', () => {
+    const cases: readonly (readonly [string, readonly number[]])[] = [
+      ['svg', [0x3c, 0x73, 0x76, 0x67]],
+      ['gif', [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]],
+      ['tiff', [0x49, 0x49, 0x2a, 0x00]],
+      ['bmp', [0x42, 0x4d]],
+      ['pdf', [0x25, 0x50, 0x44, 0x46]],
+      ['zip', [0x50, 0x4b, 0x03, 0x04]],
+      ['html', [0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e]],
+      ['empty', []],
+      [
+        'riff-not-webp',
+        [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x41, 0x56, 0x49, 0x20],
+      ],
+      ['truncated-png', [0x89, 0x50, 0x4e, 0x47]],
+    ];
+    for (const [name, bytes] of cases) {
+      expect(sniffMediaFormat(new Uint8Array(bytes)), name).toBeUndefined();
+    }
+  });
+});
+
+describe('the scanner that refuses', () => {
+  it('never reports a verdict, because it has none to report', async () => {
+    // Called through the port, because the port is what inspection holds.
+    const scanner: MediaScannerPort = new UnavailableMediaScanner();
+    expect(
+      await rejection(() =>
+        scanner.scan({ bytes: new Uint8Array([1]), objectKey: 'unused' }),
+      ),
+    ).toBeInstanceOf(MediaScannerUnavailableError);
+  });
+
+  it('recognises the development marker and nothing else', async () => {
+    const scanner: MediaScannerPort = new LocalTestMediaScanner();
+    expect(
+      await scanner.scan({
+        bytes: new TextEncoder().encode('an ordinary file'),
+        objectKey: 'unused',
+      }),
+    ).toBe('clean');
+    expect(
+      await scanner.scan({
+        bytes: new TextEncoder().encode(
+          `before${localTestInfectedMarker}after`,
+        ),
+        objectKey: 'unused',
+      }),
+    ).toBe('infected');
+    // A marker split across the boundary is not a marker.
+    expect(
+      await scanner.scan({
+        bytes: new TextEncoder().encode(localTestInfectedMarker.slice(0, -1)),
+        objectKey: 'unused',
+      }),
+    ).toBe('clean');
   });
 });

@@ -3,14 +3,19 @@ import type { SafeLogger } from '@velora/observability/server';
 import type {
   MediaAssetRow,
   MediaObjectRow,
+  MediaObligationRow,
   MediaUploadSessionRow,
 } from './schema.js';
+import type { MediaInspector } from './inspection.js';
 import type { MediaInspectionFacts, MediaRepository } from './repository.js';
 import {
   isMediaIdempotencyKey,
   maximumMediaObjectBytes,
+  maximumMediaObligationAttempts,
   mediaAbandonedUploadMilliseconds,
   mediaObjectKey,
+  mediaObligationBackoffMilliseconds,
+  mediaObligationLeaseMilliseconds,
   mediaSweepBatchSize,
   mediaUploadWindowMilliseconds,
   requiredMediaVariants,
@@ -71,6 +76,13 @@ export interface MediaUploadHandoff {
 }
 
 export interface MediaServiceDependencies {
+  /**
+   * Absent where the process does no byte work. The API composes no inspector:
+   * decoding hostile input on a request thread is exactly what the worker
+   * boundary exists to prevent, and a service that cannot inspect cannot be
+   * talked into inspecting.
+   */
+  readonly inspector?: MediaInspector;
   readonly logger: SafeLogger;
   readonly now: () => Date;
   readonly repository: MediaRepository;
@@ -522,6 +534,166 @@ export class MediaService {
     return row === undefined
       ? { kind: 'conflict' }
       : { asset: row, kind: 'asset' };
+  }
+
+  /**
+   * Claims inspection obligations and discharges them.
+   *
+   * One cycle, bounded, and safe to run from several workers at once: the claim
+   * is a database lease, so two cycles take different rows and a worker that
+   * dies mid-inspection loses its lease rather than the duty.
+   *
+   * Every step is idempotent against a repeat. An obligation whose asset has
+   * already moved past `uploaded` is discharged without touching the asset,
+   * because the work it describes is already done — which is what makes a
+   * reclaimed lease safe rather than a second inspection of the same bytes.
+   */
+  async runInspections(input: {
+    readonly limit?: number;
+    readonly owner: string;
+  }): Promise<{ readonly inspected: number; readonly quarantined: number }> {
+    const { inspector, repository } = this.dependencies;
+    if (inspector === undefined) return { inspected: 0, quarantined: 0 };
+
+    const claimed = await repository.claimObligations({
+      kind: 'inspect',
+      leaseMilliseconds: mediaObligationLeaseMilliseconds,
+      limit: input.limit ?? mediaSweepBatchSize,
+      now: this.dependencies.now(),
+      owner: input.owner,
+    });
+
+    let inspected = 0;
+    let quarantined = 0;
+    for (const obligation of claimed) {
+      const outcome = await this.discharge(obligation, input.owner, inspector);
+      if (outcome === 'inspected') inspected += 1;
+      if (outcome === 'quarantined') quarantined += 1;
+    }
+    return { inspected, quarantined };
+  }
+
+  private async discharge(
+    obligation: MediaObligationRow,
+    owner: string,
+    inspector: MediaInspector,
+  ): Promise<'inspected' | 'noop' | 'quarantined'> {
+    const { repository } = this.dependencies;
+    try {
+      const asset = await repository.findAsset(
+        repository.transactionless,
+        obligation.assetId,
+      );
+      const original =
+        asset === undefined
+          ? undefined
+          : await repository.findOriginalObject(
+              repository.transactionless,
+              asset.id,
+            );
+      // Nothing to inspect: the asset is gone, has no recorded object, or has
+      // already moved on. Discharging rather than retrying is correct — the
+      // duty described work that no longer exists.
+      if (
+        asset === undefined ||
+        original === undefined ||
+        asset.lifecycle !== 'uploaded'
+      ) {
+        await this.completeObligation(obligation.id, owner);
+        return 'noop';
+      }
+
+      const started = await repository.transitionAsset(
+        repository.transactionless,
+        {
+          assetId: asset.id,
+          expectedLifecycle: 'uploaded',
+          lifecycle: 'inspecting',
+          now: this.dependencies.now(),
+        },
+      );
+      if (started === undefined) {
+        // Another worker took it between the read and the write.
+        await this.completeObligation(obligation.id, owner);
+        return 'noop';
+      }
+
+      const outcome = await inspector.inspect(original.objectKey);
+      const now = this.dependencies.now();
+      await repository.transaction(async (executor) => {
+        if (outcome.kind === 'inspected') {
+          await repository.transitionAsset(executor, {
+            assetId: asset.id,
+            expectedLifecycle: 'inspecting',
+            facts: outcome.facts,
+            lifecycle: 'inspected',
+            now,
+          });
+          await repository.recordObjectFacts(executor, {
+            byteSize: outcome.facts.byteSize,
+            digest: outcome.facts.digest,
+            format: outcome.facts.detectedFormat,
+            height: outcome.facts.height,
+            now,
+            objectId: original.id,
+            width: outcome.facts.width,
+          });
+          // The next duty is written by the transaction that recorded the
+          // facts justifying it, so a process dying here loses a queue message
+          // and not the obligation to process these bytes.
+          await repository.appendObligation(executor, {
+            assetId: asset.id,
+            id: crypto.randomUUID(),
+            kind: 'process',
+            now,
+          });
+        } else {
+          await repository.transitionAsset(executor, {
+            assetId: asset.id,
+            expectedLifecycle: 'inspecting',
+            lifecycle: 'quarantined',
+            now,
+            rejectionReason: outcome.reason,
+          });
+        }
+        await repository.completeObligation(executor, {
+          now,
+          obligationId: obligation.id,
+          owner,
+        });
+      });
+      return outcome.kind === 'inspected' ? 'inspected' : 'quarantined';
+    } catch (error) {
+      // A short code, never the underlying message: a decoder's text names
+      // internals and a provider's may echo content. The asset stays in
+      // `inspecting` and the lease expiry brings it back.
+      await this.dependencies.repository.failObligation(
+        this.dependencies.repository.transactionless,
+        {
+          backoffMilliseconds: mediaObligationBackoffMilliseconds,
+          failureReason: 'inspection_failed',
+          maximumAttempts: maximumMediaObligationAttempts,
+          now: this.dependencies.now(),
+          obligationId: obligation.id,
+          owner,
+        },
+      );
+      this.dependencies.logger.error(
+        { error, obligation: obligation.kind },
+        'media obligation attempt failed',
+      );
+      return 'noop';
+    }
+  }
+
+  private async completeObligation(
+    obligationId: string,
+    owner: string,
+  ): Promise<void> {
+    await this.dependencies.repository.completeObligation(
+      this.dependencies.repository.transactionless,
+      { now: this.dependencies.now(), obligationId, owner },
+    );
   }
 
   /**

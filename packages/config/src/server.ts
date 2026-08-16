@@ -216,6 +216,24 @@ export const unavailableMediaStorage = 'unavailable';
 export const localTestMediaStorage = 'local-test';
 
 /**
+ * MEDIA malware scanners.
+ *
+ * No scanner is approved, and the scanning *position* is itself undecided:
+ * whether stored media must be scanned before it may ever be delivered, and
+ * whether submitting user content to a third party is a disclosure under the
+ * privacy authority, are both recorded in
+ * `docs/decisions/DECISIONS_REQUIRED.md`.
+ *
+ * `unavailable` refuses, and inspection treats a refusal as a quarantine rather
+ * than as a pass. That is the fail-closed reading of an undecided question: an
+ * environment with no scanning position accepts no media at all. An unavailable
+ * scanner reporting `clean` would be the single most dangerous line in this
+ * domain, so there is no configuration under which it can.
+ */
+export const unavailableMediaScanner = 'unavailable';
+export const localTestMediaScanner = 'local-test';
+
+/**
  * Where messaging takes its "may these two people still interact" answer from.
  *
  * `trust-and-safety` is the real block store TRUST & SAFETY owns. It is refused
@@ -434,6 +452,9 @@ export const serverConfigSchema = z
     MEDIA_STORAGE_PROVIDER: z
       .enum([unavailableMediaStorage, localTestMediaStorage])
       .default(unavailableMediaStorage),
+    MEDIA_MALWARE_SCANNER: z
+      .enum([unavailableMediaScanner, localTestMediaScanner])
+      .default(unavailableMediaScanner),
     /** Where the `local-test` adapter keeps objects. Required when it is used. */
     MEDIA_LOCAL_STORAGE_DIRECTORY: optionalTextSchema,
     /**
@@ -572,6 +593,13 @@ export const serverConfigSchema = z
         path: ['MEDIA_STORAGE_PROVIDER'],
       });
     }
+    if (config.MEDIA_MALWARE_SCANNER !== unavailableMediaScanner) {
+      context.addIssue({
+        code: 'custom',
+        message: `MEDIA_MALWARE_SCANNER is not usable in ${config.APP_ENV}: no scanner is approved and the scanning position is undecided, so a refusal is the only honest answer; see DECISIONS_REQUIRED`,
+        path: ['MEDIA_MALWARE_SCANNER'],
+      });
+    }
     for (const [path, message] of [
       [
         'AUTH_IDENTITY_PROVIDER',
@@ -684,6 +712,7 @@ export function redactServerConfig(config: ServerConfig) {
     payoutPolicy: config.PAYOUTS_POLICY,
     payoutProvider: config.PAYOUTS_PROVIDER,
     profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
+    mediaMalwareScanner: config.MEDIA_MALWARE_SCANNER,
     mediaStorageProvider: config.MEDIA_STORAGE_PROVIDER,
     mediaDeliverySigningKeyConfigured:
       config.MEDIA_DELIVERY_SIGNING_KEY !== undefined,

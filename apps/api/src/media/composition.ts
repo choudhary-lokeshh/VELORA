@@ -1,12 +1,20 @@
 import {
+  localTestMediaScanner,
   localTestMediaStorage,
+  unavailableMediaScanner,
   unavailableMediaStorage,
   type ServerConfig,
 } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
+import { MediaInspector } from './inspection.js';
 import { MediaRepository } from './repository.js';
+import {
+  LocalTestMediaScanner,
+  UnavailableMediaScanner,
+  type MediaScannerPort,
+} from './scanner.js';
 import { MediaService } from './service.js';
 import {
   LocalTestMediaStorage,
@@ -16,6 +24,8 @@ import {
 
 export interface MediaRuntime {
   readonly repository: MediaRepository;
+  /** Exposed so operational surfaces can report which scanner is in force. */
+  readonly scanner: MediaScannerPort;
   readonly service: MediaService;
   /** Exposed so operational surfaces can report which adapter is in force. */
   readonly storage: MediaStoragePort;
@@ -31,14 +41,27 @@ export interface MediaRuntime {
 export function createMediaRuntime(input: {
   readonly config: ServerConfig;
   readonly database: DatabaseHandle;
+  /**
+   * Whether this process performs byte work.
+   *
+   * Only the worker does. The API composes no inspector, so decoding hostile
+   * input cannot happen on a request thread — not because a route declines to
+   * ask, but because the object that could do it was never constructed.
+   */
+  readonly inspects?: boolean;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
 }): MediaRuntime {
   const repository = new MediaRepository(input.database);
   const storage = selectMediaStorage(input.config);
+  const scanner = selectMediaScanner(input.config);
   return {
     repository,
+    scanner,
     service: new MediaService({
+      ...(input.inspects === true
+        ? { inspector: new MediaInspector({ scanner, storage }) }
+        : {}),
       logger: input.logger,
       now: input.now ?? (() => new Date()),
       repository,
@@ -46,6 +69,26 @@ export function createMediaRuntime(input: {
     }),
     storage,
   };
+}
+
+/**
+ * The scanner registry. Same shape and same reasoning as the storage one: a
+ * table so the selectable set is visible in one place, and configuration alone
+ * decides, so nothing in a request can reach it.
+ */
+const mediaScannerAdapters: Readonly<Record<string, () => MediaScannerPort>> = {
+  [localTestMediaScanner]: () => new LocalTestMediaScanner(),
+  [unavailableMediaScanner]: () => new UnavailableMediaScanner(),
+};
+
+function selectMediaScanner(config: ServerConfig): MediaScannerPort {
+  const build = mediaScannerAdapters[config.MEDIA_MALWARE_SCANNER];
+  if (build === undefined) {
+    throw new Error(
+      `Unsupported media malware scanner: ${config.MEDIA_MALWARE_SCANNER}`,
+    );
+  }
+  return build();
 }
 
 /**

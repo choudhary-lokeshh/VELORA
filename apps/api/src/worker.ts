@@ -35,7 +35,10 @@ import { Poller } from './jobs/poller.js';
 import { JobRegistry } from './jobs/registry.js';
 import { createQueue, createWorkerRuntime } from './jobs/runtime.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
-import { mediaUploadSweepIntervalMilliseconds } from './media/policy.js';
+import {
+  mediaInspectionIntervalMilliseconds,
+  mediaUploadSweepIntervalMilliseconds,
+} from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
 import { createNotificationsRuntime } from './notifications/composition.js';
 import {
@@ -126,6 +129,8 @@ export interface WorkerComposition {
   readonly billing: BillingRuntime;
   /** MEDIA, composed here because this process owns its durable byte work. */
   readonly media: MediaRuntime;
+  /** Derives what uploaded bytes actually are. Quarantines what fails. */
+  readonly mediaInspection: Poller;
   /** Closes spent upload windows, recovers stranded ones, reclaims the dead. */
   readonly mediaUploadSweep: Poller;
   /** PAYOUTS, composed here because this process applies both sides of the seam. */
@@ -365,6 +370,9 @@ export function createWorkerComposition(input: {
   const media = createMediaRuntime({
     config: input.config,
     database: handle,
+    // Only here. Decoding hostile input belongs on the worker boundary, and the
+    // API composes no inspector at all, so it cannot be talked into one.
+    inspects: true,
     logger: input.logger,
     now,
   });
@@ -388,6 +396,31 @@ export function createWorkerComposition(input: {
     name: 'media-upload-sweep',
   });
 
+  // Inspection runs on its own cadence, faster than the housekeeping sweep,
+  // because somebody is waiting on it: an upload is not usable until the
+  // platform knows what it is. The claim is a database lease, so several
+  // workers take different rows and one that dies mid-decode loses its lease
+  // rather than the duty.
+  const mediaInspection = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const { inspected, quarantined } = await media.service.runInspections({
+          owner,
+        });
+        // Counts only. An asset identifier, an object key, or a rejection
+        // reason here would put one person's upload in a log line.
+        if (inspected > 0 || quarantined > 0) {
+          input.logger.info(
+            { inspected, quarantined },
+            'media objects inspected',
+          );
+        }
+      }),
+    intervalMilliseconds: mediaInspectionIntervalMilliseconds,
+    logger: input.logger,
+    name: 'media-inspection',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -399,6 +432,7 @@ export function createWorkerComposition(input: {
     billing,
     financialReconciliation,
     media,
+    mediaInspection,
     mediaUploadSweep,
     payouts,
     async close() {
@@ -407,6 +441,7 @@ export function createWorkerComposition(input: {
         providerEventDrain.stop(),
         financialReconciliation.stop(),
         safetyDeadlineSweep.stop(),
+        mediaInspection.stop(),
         mediaUploadSweep.stop(),
         deliverySweep.stop(),
       ]);
@@ -421,6 +456,7 @@ export function createWorkerComposition(input: {
       await financialReconciliation.runOnce();
       await safetyDeadlineSweep.runOnce();
       await mediaUploadSweep.runOnce();
+      await mediaInspection.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,

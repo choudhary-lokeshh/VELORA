@@ -243,8 +243,47 @@ export const maximumMediaPixels = 50_000_000;
  */
 export const maximumMediaFrames = 1;
 
+/**
+ * The most embedded metadata an accepted object may carry.
+ *
+ * A metadata flood is a cheap way to make a parser work hard and a cheap way to
+ * carry a payload past somebody looking at pixels. Thirty-two kibibytes because
+ * that is comfortably above what a camera writes — EXIF with a full thumbnail
+ * is typically well under it — and because none of this data survives anyway:
+ * processing renders from decoded pixels and strips every block, so metadata
+ * size has no downstream value to trade against the parser work it costs.
+ */
+export const maximumMediaMetadataBytes = 32 * 1024;
+
+/**
+ * How large a decode probe is allowed to be.
+ *
+ * Inspection proves an object decodes by actually decoding it, bounded to a
+ * thumbnail. Reading a header proves a header parses, which is a weaker claim
+ * than the one the pipeline needs before it hands bytes to processing.
+ */
+export const mediaDecodeProbePixels = 32;
+
+/** How long an inspection worker holds a claim before another may take it. */
+export const mediaObligationLeaseMilliseconds = 2 * 60_000;
+
+/** How long a failed obligation waits before it is claimable again. */
+export const mediaObligationBackoffMilliseconds = 30_000;
+
+/**
+ * How many times an obligation is attempted before it is dead-lettered.
+ *
+ * Dead-lettered rather than dropped: a duty the platform could not discharge is
+ * evidence, and it stays visible as an operational obligation instead of
+ * disappearing into a log.
+ */
+export const maximumMediaObligationAttempts = 5;
+
 /** How long an upload capability stays usable. */
 export const mediaUploadWindowMilliseconds = 15 * 60_000;
+
+/** How often inspection obligations are claimed. */
+export const mediaInspectionIntervalMilliseconds = 5_000;
 
 /**
  * How long an asset that never received bytes is kept before the platform

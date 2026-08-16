@@ -57,6 +57,14 @@ const approvedBackendRuntimeDependencies = new Map([
       'elysia',
       'ioredis',
       'pino',
+      // The platform's image decoder and encoder, in-process behind
+      // `MediaImageProcessor`. A library rather than a provider: no bytes leave
+      // the machine, there is no account, and no terms of service apply. It is
+      // here because every assessed hosted image processor prohibits content
+      // Velora does not author — see ADR-0023 and the media provider
+      // eligibility register — so the transformation has to be something the
+      // platform performs itself.
+      'sharp',
     ]),
   ],
   ['@velora/domain', new Set(['@velora/types'])],

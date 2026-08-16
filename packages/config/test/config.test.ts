@@ -154,6 +154,25 @@ describe('server configuration', () => {
     }
   });
 
+  it('refuses every media scanner in a deployed environment', () => {
+    // The scanning position is undecided, not merely unimplemented, so a
+    // refusal is the only honest value. Inspection turns that refusal into a
+    // quarantine rather than a pass.
+    expect(loadServerConfig(validEnvironment).MEDIA_MALWARE_SCANNER).toBe(
+      'unavailable',
+    );
+    for (const environment of ['staging', 'production'] as const) {
+      expect(
+        loadServerConfigResult({
+          ...validEnvironment,
+          APP_ENV: environment,
+          MEDIA_MALWARE_SCANNER: 'local-test',
+        }),
+        `media scanner in ${environment}`,
+      ).toContain('MEDIA_MALWARE_SCANNER');
+    }
+  });
+
   it('will not run the development media adapter half-configured', () => {
     // A directory and a signing key or nothing. An adapter that fell back to a
     // temporary directory or a per-process key would work on one replica and
@@ -334,6 +353,7 @@ describe('server configuration', () => {
     expect(JSON.stringify(redacted)).not.toContain('development-only-key');
     expect(redacted.mediaDeliverySigningKeyConfigured).toBe(true);
     expect(redacted.mediaStorageProvider).toBe('local-test');
+    expect(redacted.mediaMalwareScanner).toBe('unavailable');
   });
 });
 

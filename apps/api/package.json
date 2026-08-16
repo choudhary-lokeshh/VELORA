@@ -24,7 +24,8 @@
     "drizzle-orm": "catalog:",
     "elysia": "catalog:",
     "ioredis": "catalog:",
-    "pino": "catalog:"
+    "pino": "catalog:",
+    "sharp": "catalog:"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "catalog:",

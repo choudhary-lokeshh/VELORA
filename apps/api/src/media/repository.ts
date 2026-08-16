@@ -7,6 +7,7 @@ import {
   isNull,
   lte,
   notInArray,
+  or,
   sql,
 } from 'drizzle-orm';
 
@@ -641,6 +642,196 @@ export class MediaRepository {
       })
       .onConflictDoNothing()
       .returning()
+      .then(([row]) => row);
+  }
+
+  /**
+   * Takes the next obligations of one kind under a lease.
+   *
+   * The same claim the outbox relay uses, for the same reasons. `for update
+   * skip locked` means a second worker takes different rows instead of waiting
+   * for the first; the state and lease predicates appear in the outer statement
+   * as well, so a row somebody else already claimed cannot be claimed again
+   * even where it was not skipped.
+   *
+   * A lease is a database fact rather than a memory one, which is the whole
+   * reason a worker can die mid-effect without the duty dying with it: the
+   * lease expires and the next cycle picks the row up.
+   */
+  claimObligations(input: {
+    readonly kind: MediaObligationKind;
+    readonly leaseMilliseconds: number;
+    readonly limit: number;
+    readonly now: Date;
+    readonly owner: string;
+  }): Promise<readonly MediaObligationRow[]> {
+    const leaseExpiresAt = new Date(
+      input.now.getTime() + input.leaseMilliseconds,
+    );
+    return this.database.transaction(async (executor) => {
+      const claimable = await executor
+        .select({ id: mediaObligations.id })
+        .from(mediaObligations)
+        .where(
+          and(
+            eq(mediaObligations.kind, input.kind),
+            eq(mediaObligations.state, 'pending'),
+            lte(mediaObligations.availableAt, input.now),
+            or(
+              isNull(mediaObligations.leaseExpiresAt),
+              lte(mediaObligations.leaseExpiresAt, input.now),
+            ),
+          ),
+        )
+        .orderBy(asc(mediaObligations.sequence))
+        .limit(input.limit)
+        .for('update', { skipLocked: true });
+      if (claimable.length === 0) return [];
+
+      return executor
+        .update(mediaObligations)
+        .set({
+          leaseExpiresAt,
+          leaseOwner: input.owner,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(mediaObligations.state, 'pending'),
+            or(
+              isNull(mediaObligations.leaseExpiresAt),
+              lte(mediaObligations.leaseExpiresAt, input.now),
+            ),
+            inArray(
+              mediaObligations.id,
+              claimable.map((row) => row.id),
+            ),
+          ),
+        )
+        .returning();
+    });
+  }
+
+  /**
+   * Discharges an obligation.
+   *
+   * The lease owner is part of the predicate, so a worker whose lease expired
+   * while it was working — and whose row another worker has since taken —
+   * cannot report completion on top of the new owner's claim.
+   */
+  completeObligation(
+    executor: MediaExecutor,
+    input: {
+      readonly now: Date;
+      readonly obligationId: string;
+      readonly owner: string;
+    },
+  ): Promise<MediaObligationRow | undefined> {
+    return executor
+      .update(mediaObligations)
+      .set({
+        completedAt: input.now,
+        leaseExpiresAt: null,
+        leaseOwner: null,
+        state: 'completed',
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(mediaObligations.id, input.obligationId),
+          eq(mediaObligations.leaseOwner, input.owner),
+          eq(mediaObligations.state, 'pending'),
+        ),
+      )
+      .returning()
+      .then(([row]) => row);
+  }
+
+  /**
+   * Records a failed attempt and either defers it or gives up on it.
+   *
+   * Giving up is `dead_letter`, retained rather than deleted: a duty the
+   * platform could not discharge is evidence and stays a visible operational
+   * obligation. `failureReason` is a short code the caller chose, never a
+   * provider message and never a fragment of content.
+   */
+  failObligation(
+    executor: MediaExecutor,
+    input: {
+      readonly backoffMilliseconds: number;
+      readonly failureReason: string;
+      readonly maximumAttempts: number;
+      readonly now: Date;
+      readonly obligationId: string;
+      readonly owner: string;
+    },
+  ): Promise<MediaObligationRow | undefined> {
+    const exhausted = sql`${mediaObligations.attempts} + 1 >= ${input.maximumAttempts}`;
+    return executor
+      .update(mediaObligations)
+      .set({
+        attempts: sql`${mediaObligations.attempts} + 1`,
+        availableAt: sql`case when ${exhausted} then ${mediaObligations.availableAt} else ${new Date(input.now.getTime() + input.backoffMilliseconds)} end`,
+        failureReason: input.failureReason,
+        leaseExpiresAt: null,
+        leaseOwner: null,
+        state: sql`case when ${exhausted} then 'dead_letter' else 'pending' end`,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(mediaObligations.id, input.obligationId),
+          eq(mediaObligations.leaseOwner, input.owner),
+          eq(mediaObligations.state, 'pending'),
+        ),
+      )
+      .returning()
+      .then(([row]) => row);
+  }
+
+  /** Records what inspection measured about the stored object itself. */
+  recordObjectFacts(
+    executor: MediaExecutor,
+    input: {
+      readonly byteSize: number;
+      readonly digest: string;
+      readonly format: MediaImageFormat;
+      readonly height: number;
+      readonly now: Date;
+      readonly objectId: string;
+      readonly width: number;
+    },
+  ): Promise<MediaObjectRow | undefined> {
+    return executor
+      .update(mediaObjects)
+      .set({
+        byteSize: input.byteSize,
+        digest: input.digest,
+        format: input.format,
+        height: input.height,
+        updatedAt: input.now,
+        width: input.width,
+      })
+      .where(eq(mediaObjects.id, input.objectId))
+      .returning()
+      .then(([row]) => row);
+  }
+
+  /** The asset's original object, if one has been recorded. */
+  findOriginalObject(
+    executor: MediaExecutor,
+    assetId: string,
+  ): Promise<MediaObjectRow | undefined> {
+    return executor
+      .select()
+      .from(mediaObjects)
+      .where(
+        and(
+          eq(mediaObjects.assetId, assetId),
+          eq(mediaObjects.role, 'original'),
+        ),
+      )
+      .limit(1)
       .then(([row]) => row);
   }
 
