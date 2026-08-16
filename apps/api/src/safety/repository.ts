@@ -1650,7 +1650,7 @@ export class SafetyRepository {
     return updated[0];
   }
 
-  /** Appends a takedown claim. */ /** Appends a takedown claim. */
+  /** Appends a takedown claim. */
   async insertTakedownClaim(
     executor: Executor,
     input: {

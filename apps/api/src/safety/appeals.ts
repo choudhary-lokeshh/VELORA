@@ -315,7 +315,7 @@ export class AppealService {
     return rows.map(appealView);
   }
 
-  /** Complaints still owed an answer, oldest first. */ /** Complaints still owed an answer, oldest first. */
+  /** Complaints still owed an answer, oldest first. */
   async openAppeals(
     limit = maximumAppealPageSize,
   ): Promise<readonly AppealView[]> {

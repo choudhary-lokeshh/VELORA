@@ -15,7 +15,10 @@ import { CreatorDirectory } from '../../src/creators/directory.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
 import { ConversationParticipation } from '../../src/messaging/participation.js';
 import { createNotificationsApiRuntime } from '../../src/notifications/composition.js';
-import { createSafetyRuntime } from '../../src/safety/composition.js';
+import {
+  createSafetyRuntime,
+  type SafetyRuntime,
+} from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
@@ -99,6 +102,8 @@ interface Credentials {
 interface Instance {
   close(): Promise<void>;
   handle(request: Request): Promise<Response>;
+  /** The review seam, which has no HTTP surface to drive load through. */
+  readonly safety: SafetyRuntime;
   readonly service: DatabaseService;
   readonly storage: LocalTestProfileMediaStorage;
 }
@@ -233,6 +238,7 @@ function createInstance(name: string): Instance {
       await service.close();
     },
     handle: (request) => application.app.handle(request),
+    safety,
     service,
     storage,
   };
@@ -397,7 +403,6 @@ async function countOf(query: unknown): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
-/** Backends this database currently has, whoever opened them. */
 /** Backends belonging to the pools under test, and to nothing else. */
 async function backendCount(): Promise<number> {
   return countOf(
@@ -890,5 +895,96 @@ describe('the bound is per process and PostgreSQL is still the authority', () =>
     } finally {
       await replica.close();
     }
+  });
+});
+
+/**
+ * The review seam holds a subject advisory lock for the whole of a decision.
+ *
+ * That is the same shape as the pair lock the driver defect used to lose
+ * connections to: a lock taken inside a transaction, held across several
+ * statements, released only by the commit. It is proven not to deadlock in
+ * `safety-decisions.test.ts`, but that suite runs on the harness connection
+ * rather than on a pool, so nothing until now showed what contention on it
+ * costs the pool a deployed process would actually have.
+ */
+describe('moderation load runs on the same pool as everything else', () => {
+  it('settles concurrent contended decisions without costing a connection', async () => {
+    const caseCount = 4;
+    const reporter = await consumer(primary, 'pool-reporter@velora.test');
+    const subjects: Credentials[] = [];
+    for (let index = 0; index < caseCount; index += 1) {
+      subjects.push(
+        // Sequentially: onboarding is several dependent writes per account and
+        // what is under test is the decision wave, not account creation.
+        await consumer(primary, `pool-subject-${String(index)}@velora.test`),
+      );
+    }
+    for (const [index, subject] of subjects.entries()) {
+      const filed = await primary.handle(
+        post('/v1/safety/reports', reporter, {
+          clientReportId: `pool-decide-${String(index).padStart(4, '0')}`,
+          reasonCode: 'harassment',
+          target: { accountId: subject.id, type: 'consumer_account' },
+        }),
+      );
+      expect(filed.status).toBe(200);
+    }
+
+    const cases = await Promise.all(
+      subjects.map(async (subject) => {
+        const [row] = await rowsOf<{ id: string; version: number }>(
+          database.sql`select id, version from safety_cases
+            where target_id = ${subject.id}`,
+        );
+        if (row === undefined) throw new Error('no case opened');
+        const evidence = await primary.safety.moderation.caseEvidence(row.id);
+        return {
+          evidenceIds: evidence.map((entry) => entry.id),
+          id: row.id,
+          subjectId: subject.id,
+          version: row.version,
+        };
+      }),
+    );
+
+    const backendsBefore = await backendCount();
+    const deadlocksBefore = await deadlockCount();
+
+    // Every case decided three times at once, and all four waves at once: the
+    // subject lock is contended within each case and uncontended between them,
+    // which is the arrangement a lock-ordering defect shows up under.
+    const outcomes = await Promise.all(
+      cases.flatMap((open) =>
+        Array.from({ length: 3 }, async (_, attemptIndex) =>
+          primary.safety.moderation.decideCase({
+            action: 'restrict_capability',
+            actorReference: `session:pool-reviewer-${String(attemptIndex)}`,
+            caseId: open.id,
+            evidenceIds: open.evidenceIds,
+            expectedVersion: open.version,
+            reasonCode: 'harassment',
+            scope: 'account_restriction',
+          }),
+        ),
+      ),
+    );
+
+    // One reviewer settles each case however many were looking at it.
+    expect(
+      outcomes.filter((outcome) => outcome.kind === 'recorded'),
+    ).toHaveLength(caseCount);
+    expect(
+      await countOf(
+        database.sql`select count(*)::int as count from safety_decisions`,
+      ),
+    ).toBe(caseCount);
+    expect(
+      await countOf(
+        database.sql`select count(*)::int as count from users_accounts
+          where status = 'restricted'`,
+      ),
+    ).toBe(caseCount);
+    await expectPoolIntact(primary, backendsBefore, deadlocksBefore);
   });
 });
