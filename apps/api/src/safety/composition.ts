@@ -2,6 +2,7 @@ import {
   localTestConsentPolicy,
   localTestDepictedPersonVerifier,
   unavailableDepictedPersonVerifier,
+  matureContentEnabled,
   unpublishedConsentPolicy,
   type ServerConfig,
 } from '@velora/config/server';
@@ -20,6 +21,7 @@ import {
   type ConsentCopyPolicy,
   type DepictedPersonVerifier,
 } from './consent.js';
+import { ContentSafetyGate } from './content-safety.js';
 import { SafetyDirectory } from './directory.js';
 import { SafetyEligibility } from './eligibility.js';
 import { EnforcementAuthority } from './enforcement.js';
@@ -40,6 +42,8 @@ export interface SafetyRuntime {
   readonly authority: EnforcementAuthority;
   /** The depicted-person evidence and consent answer. Fails closed. */
   readonly consent: DepictedPersonConsentService;
+  /** The composed content answer: publish, stay public, deliver, monetise. */
+  readonly content: ContentSafetyGate;
   /** The pair answer this domain publishes to DISCOVERY and MESSAGING. */
   readonly directory: SafetyDirectory;
   /** The capability answer this domain publishes to every other one. */
@@ -91,16 +95,27 @@ export function createSafetyRuntime(input: {
     users: input.users,
   });
   const authority = new EnforcementAuthority({ now, repository });
+  const consent = new DepictedPersonConsentService({
+    copy: selectConsentPolicy(input.config),
+    now,
+    repository,
+    verifier: selectDepictedPersonVerifier(input.config),
+  });
+  const eligibility = new SafetyEligibility(repository);
   return {
     authority,
-    consent: new DepictedPersonConsentService({
-      copy: selectConsentPolicy(input.config),
+    consent,
+    content: new ContentSafetyGate({
+      consent,
+      eligibility,
+      // Read rather than written as a constant, so the gate reports what the
+      // deployment says. The set of values that would enable it is empty.
+      matureContentEnabled: matureContentEnabled(input.config),
       now,
       repository,
-      verifier: selectDepictedPersonVerifier(input.config),
     }),
     directory: new SafetyDirectory(repository),
-    eligibility: new SafetyEligibility(repository),
+    eligibility,
     moderation: new ModerationService({
       accounts: input.accounts,
       authority,

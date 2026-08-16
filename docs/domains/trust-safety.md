@@ -164,6 +164,24 @@ Two people on one item are distinguished only once a verifier has issued a subje
 
 The declaration is the one mutable record here and the evidence is not. A creator who adds a person to a shoot has changed the answer rather than falsified the old one; who is depicted and what they agreed to is append-only under the same trigger the evidence and decision records use.
 
+### The content gate, and the surfaces it decides for
+
+`0033_safety_content_classification` and the content gate answer one question in one place: may this item be published, stay public, be delivered to this surface, or be monetised.
+
+**Surface is a first-class vocabulary and a separate predicate.** `web`, `mobile_ios`, `mobile_android`, `creator_studio`, and `platform_admin` are closed values, and a content decision that names no surface is incomplete. It is deliberately *not* the vocabulary a report's source surface uses: that one is derived from a credential's audience and the AUTH audience cannot tell iOS from Android, which is exactly the distinction that decides mature eligibility. A content decision may therefore never be derived from where a report was filed, and a unit assertion keeps the two from converging.
+
+`mobile_ios` and `mobile_android` may never carry mature content, and that is a property of the surface rather than a configuration value. Both stores prohibit the class outright with no published approval path — a materially different finding from the payment providers, several of which publish a written-approval route — so no environment variable, country row, creator setting, or client field can change it.
+
+**Three content classes rather than one `mature` boolean.** `general`, `mature_simulated`, and `mature_actual`. The split is not cosmetic: 18 U.S.C. § 2257 attaches to depictions of *actual* sexually explicit conduct and not to simulated conduct, so a taxonomy that could not tell them apart would either over-collect evidence for one or under-collect it for the other. The classes are provisional and versioned; the approved taxonomy remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`.
+
+A missing classification is not `general`. It is an item nobody has classified, and a mature capability on one is refused rather than inferred from silence. A caller cannot decide at the call site what an item is either: an item declared `mature_actual` cannot be published as `general` by asking a different question.
+
+**The gate evaluates every applicable predicate and reports all of them.** It does not stop at the first refusal. A caller told only the first would reasonably conclude that fixing it is enough, and for a mature class that is never true — so the answer carries the full set of closed gates, strongest first, alongside the headline reason. Enforcement is the pair that applies to *any* class, because a suspension is not about maturity: a restricted creator publishes nothing and a removed item stays removed. Consent, viewer assurance, and surface eligibility apply to the mature classes.
+
+Each capability asks the consent scope it actually needs, so publication consent does not authorise delivery and neither authorises monetisation. Delivery of a mature class requires `verified_adult` and accepts nothing weaker — Ofcom names self-declaration, and payment without an age check, as not highly effective, and both are refused by name in test.
+
+**Mature content cannot be turned on.** `SAFETY_MATURE_CONTENT` has exactly one value the schema admits, in every environment including local and test. That is not a feature flag: there is no state to flip, which is what [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) requires and what Apple Guideline 2.3.1(a) makes necessary, since a dormant remotely-enabled feature is a violation in its own right. The surrounding gates are each exercisable on their own, and a regression asserts that an item satisfying every one of them — classified, consented, on an eligible surface, by an unrestricted creator, to a verified adult — is still refused, with the capability being the only gate left closed.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).

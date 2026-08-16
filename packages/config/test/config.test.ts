@@ -190,6 +190,26 @@ describe('server configuration', () => {
     }
   });
 
+  it('gives mature content one value, which is off, everywhere', () => {
+    // Not a feature flag. A flag that could be flipped is enablement waiting
+    // for an accident, and Apple treats a dormant remotely-enabled feature as a
+    // violation in its own right, so the schema admits no other value at all —
+    // in local and test as much as in production.
+    expect(loadServerConfig(validEnvironment).SAFETY_MATURE_CONTENT).toBe(
+      'disabled',
+    );
+    for (const appEnvironment of ['local', 'test', 'staging', 'production']) {
+      expect(
+        loadServerConfigResult({
+          ...validEnvironment,
+          APP_ENV: appEnvironment,
+          SAFETY_MATURE_CONTENT: 'enabled',
+        }),
+        appEnvironment,
+      ).toContain('SAFETY_MATURE_CONTENT');
+    }
+  });
+
   it('defaults notification delivery to the channel that sends nothing', () => {
     // No email, push, or SMS provider is approved. `unavailable` does not
     // discard a notice: it reports that no attempt was made, so the notice

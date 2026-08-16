@@ -232,6 +232,13 @@
       "when": 1786850804089,
       "tag": "0032_safety_depicted_person_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786853183113,
+      "tag": "0033_safety_content_classification",
+      "breakpoints": true
     }
   ]
 }

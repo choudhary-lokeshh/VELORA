@@ -130,6 +130,23 @@ export const unpublishedConsentPolicy = 'unpublished';
 export const localTestConsentPolicy = 'local-test';
 
 /**
+ * The mature-content capability, and the one value it has.
+ *
+ * Every other provider gate here offers a development adapter so the path stays
+ * exercisable. This one deliberately does not. [ADR-0022](../../../docs/decisions/ADR-0022-trust-safety-policy-enforcement-authority.md)
+ * rejects shipping a mature-content workflow behind a feature flag outright: a
+ * flag that could be flipped is enablement waiting for an accident, and Apple
+ * Guideline 2.3.1(a) treats a dormant remotely-enabled feature as a violation
+ * in its own right. So the schema admits exactly one value, in every
+ * environment, and any other is a configuration error rather than a switch.
+ *
+ * The gates around it are individually exercisable — surface eligibility,
+ * classification, depicted-person consent, viewer assurance, and enforcement
+ * are each tested on their own — and the composition is tested to refuse.
+ */
+export const disabledMatureContent = 'disabled';
+
+/**
  * Profile media storage adapters. No storage vendor is approved, so
  * `unavailable` refuses every upload and every inspection, which is the only
  * behaviour a deployed environment may have. `local-test` keeps objects in
@@ -317,6 +334,9 @@ export const serverConfigSchema = z
     SAFETY_CONSENT_POLICY: z
       .enum([unpublishedConsentPolicy, localTestConsentPolicy])
       .default(unpublishedConsentPolicy),
+    SAFETY_MATURE_CONTENT: z
+      .enum([disabledMatureContent])
+      .default(disabledMatureContent),
     SAFETY_DEPICTED_PERSON_VERIFIER: z
       .enum([
         unavailableDepictedPersonVerifier,
@@ -476,6 +496,20 @@ export const serverConfigSchema = z
   .readonly();
 
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
+/**
+ * The configured values that would enable mature content. There are none.
+ *
+ * Written as an empty set rather than as a comparison, because a comparison
+ * against a one-value union is a condition the compiler can prove and a reader
+ * cannot act on. This says the thing directly: nothing enables it, and adding
+ * something here would be a deliberate, reviewable act rather than a typo in an
+ * environment file.
+ */
+const enablingMatureContentValues: readonly string[] = [];
+
+export function matureContentEnabled(config: ServerConfig): boolean {
+  return enablingMatureContentValues.includes(config.SAFETY_MATURE_CONTENT);
+}
 
 export function loadServerConfig(
   environment: Readonly<Record<string, string | undefined>>,
@@ -504,6 +538,7 @@ export function redactServerConfig(config: ServerConfig) {
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     consentPolicy: config.SAFETY_CONSENT_POLICY,
     depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
+    matureContent: config.SAFETY_MATURE_CONTENT,
     commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
     taxAuthority: config.BILLING_TAX_AUTHORITY,

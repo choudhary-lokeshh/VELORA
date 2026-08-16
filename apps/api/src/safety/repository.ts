@@ -31,6 +31,7 @@ import {
   type CaseState,
   type ConsentDisposition,
   type ConsentScope,
+  type ContentClassification,
   type DecisionAction,
   type DecisionSubjectState,
   type DepictedPersonEvidenceState,
@@ -47,6 +48,7 @@ import {
   safetyBlocks,
   safetyCases,
   safetyConsentRecords,
+  safetyContentClassifications,
   safetyContentDepictions,
   safetyDecisionEvidence,
   safetyDecisions,
@@ -66,6 +68,8 @@ export type DepictionRow = typeof safetyContentDepictions.$inferSelect;
 export type DepictedParticipantRow =
   typeof safetyDepictedParticipants.$inferSelect;
 export type ConsentRecordRow = typeof safetyConsentRecords.$inferSelect;
+export type ClassificationRow =
+  typeof safetyContentClassifications.$inferSelect;
 
 /**
  * Every TRUST & SAFETY read and write.
@@ -1086,6 +1090,78 @@ export class SafetyRepository {
       .from(safetyEnforcements)
       .where(eq(safetyEnforcements.subjectId, subjectId))
       .orderBy(desc(safetyEnforcements.effectiveAt));
+  }
+
+  /**
+   * What a content item was declared to be, if anybody declared it.
+   *
+   * A missing row is not `general`. It is an item nobody has classified, and
+   * the gate refuses a mature capability on one rather than inferring a class
+   * from silence.
+   */
+  async findClassification(
+    executor: Executor,
+    contentId: string,
+  ): Promise<ClassificationRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyContentClassifications)
+      .where(eq(safetyContentClassifications.contentId, contentId))
+      .limit(1);
+    return rows[0];
+  }
+
+  /** Records a first classification, or nothing when somebody declared first. */
+  async insertClassification(
+    executor: Executor,
+    input: {
+      readonly classification: ContentClassification;
+      readonly contentId: string;
+      readonly creatorId: string;
+      readonly now: Date;
+      readonly policyVersion: string;
+    },
+  ): Promise<ClassificationRow | undefined> {
+    const inserted = await executor
+      .insert(safetyContentClassifications)
+      .values({
+        classification: input.classification,
+        contentId: input.contentId,
+        creatorId: input.creatorId,
+        declaredAt: input.now,
+        policyVersion: input.policyVersion,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted[0];
+  }
+
+  /** Reclassifies, against the version the caller read. */
+  async updateClassification(
+    executor: Executor,
+    input: {
+      readonly classification: ContentClassification;
+      readonly contentId: string;
+      readonly expectedVersion: number;
+      readonly now: Date;
+    },
+  ): Promise<ClassificationRow | undefined> {
+    const updated = await executor
+      .update(safetyContentClassifications)
+      .set({
+        classification: input.classification,
+        updatedAt: input.now,
+        version: sql`${safetyContentClassifications.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyContentClassifications.contentId, input.contentId),
+          eq(safetyContentClassifications.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    return updated[0];
   }
 
   /**

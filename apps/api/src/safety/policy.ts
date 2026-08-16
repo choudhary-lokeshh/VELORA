@@ -859,3 +859,142 @@ export const productionBlockers = [
 
 /** Largest page of blocks or reports one read returns. */
 export const maximumSafetyPageSize = 50;
+
+/**
+ * Which content-safety rule was in force. Recorded on every classification and
+ * carried by every gate answer.
+ */
+export const contentSafetyPolicyVersion = 'v1-provisional';
+
+/**
+ * Where content can be delivered.
+ *
+ * A first-class closed vocabulary, because [ADR-0022](../../../../docs/decisions/ADR-0022-trust-safety-policy-enforcement-authority.md)
+ * makes surface a separate predicate from content: an item can be entirely
+ * lawful, fully consented, fully moderated, and still be forbidden on two of
+ * these five. A content decision that names no surface is incomplete.
+ *
+ * **Deliberately not the same vocabulary as `reportSourceSurfaces`.** That one
+ * is derived from a credential's audience, and the AUTH audience cannot tell
+ * iOS from Android, so it is coarser by necessity. The distinction between the
+ * two mobile stores is exactly what decides mature eligibility, which is why a
+ * content decision may never be derived from where a report was filed. A unit
+ * assertion keeps the two sets from converging.
+ */
+export const distributionSurfaces = [
+  'web',
+  'mobile_ios',
+  'mobile_android',
+  'creator_studio',
+  'platform_admin',
+] as const;
+export type DistributionSurface = (typeof distributionSurfaces)[number];
+
+/**
+ * Surfaces that may never carry mature content.
+ *
+ * A property of the surface rather than a configuration value. Both stores
+ * prohibit the content class outright with no published approval path —
+ * recorded with sources and retrieval dates in
+ * [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * — so this is a prohibition rather than a restriction pending approval. No
+ * environment variable, country row, creator setting, or client field can
+ * change it, and a test asserts that.
+ */
+export const matureIneligibleSurfaces: readonly DistributionSurface[] = [
+  'mobile_ios',
+  'mobile_android',
+];
+
+/**
+ * What a content item is, as its creator declares it.
+ *
+ * Three values rather than one `mature` boolean, because the classes carry
+ * different evidence obligations. 18 U.S.C. § 2257 attaches to depictions of
+ * **actual** sexually explicit conduct and not to simulated conduct, so a
+ * taxonomy that could not tell them apart would either over-collect evidence
+ * for one or under-collect it for the other.
+ *
+ * **Provisional.** The approved content taxonomy is `DECISION REQUIRED / LEGAL
+ * REVIEW REQUIRED`, recorded in [DECISIONS_REQUIRED](../../../../docs/decisions/DECISIONS_REQUIRED.md).
+ * These are versioned so a later change is visible in the record.
+ */
+export const contentClassifications = [
+  'general',
+  'mature_simulated',
+  'mature_actual',
+] as const;
+export type ContentClassification = (typeof contentClassifications)[number];
+
+/** The classes the mature-content gates apply to. */
+export const matureContentClassifications: readonly ContentClassification[] = [
+  'mature_actual',
+  'mature_simulated',
+];
+
+/**
+ * What a caller is about to do with a content item.
+ *
+ * Separate values even where the answer happens to be the same today, for the
+ * same reason the safety capabilities are separate: the moment a rule applies
+ * to delivery and not to publication, that must be one row of a map rather than
+ * a change at every call site.
+ */
+export const contentCapabilities = [
+  'publish',
+  'remain_public',
+  'deliver',
+  'monetise',
+] as const;
+export type ContentCapability = (typeof contentCapabilities)[number];
+
+/** Which consent scope each capability needs from every depicted person. */
+const consentScopeByCapability: Readonly<
+  Record<ContentCapability, ConsentScope>
+> = {
+  deliver: 'distribution',
+  monetise: 'commercial_use',
+  publish: 'publication',
+  remain_public: 'publication',
+};
+
+export function consentScopeFor(capability: ContentCapability): ConsentScope {
+  return consentScopeByCapability[capability];
+}
+
+/**
+ * Why a content capability was refused.
+ *
+ * Coarse and disclosable to the creator whose item it is. It names which gate
+ * closed, never the reasoning behind it, and never anything about a depicted
+ * person or a reporter.
+ */
+export const contentDenialReasons = [
+  /** The whole capability is off, in every environment. */
+  'mature_content_disabled',
+  /** This surface may never carry this class, whatever else is true. */
+  'surface_ineligible',
+  /** Nobody declared this item as the class the caller is asking about. */
+  'classification_undeclared',
+  /** The creator's own standing denies it. */
+  'creator_restricted',
+  /** This item is held out of view by an enforcement decision. */
+  'object_restricted',
+  /** Depicted-person evidence does not cover what is being asked. */
+  'consent_incomplete',
+  /** The viewer does not hold the assurance this class requires. */
+  'adult_assurance_insufficient',
+] as const;
+export type ContentDenialReason = (typeof contentDenialReasons)[number];
+
+/**
+ * The assurance a viewer must hold before a mature class may be delivered.
+ *
+ * `verified_adult` and nothing weaker. Ofcom's published guidance names
+ * self-declaration, and payment without an age check, as *not* highly
+ * effective; both are recorded by name in
+ * [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md).
+ * No approved verifier can produce `verified_adult`, so this fails closed —
+ * which is the correct behaviour rather than a gap.
+ */
+export const matureViewerAssurance = 'verified_adult';

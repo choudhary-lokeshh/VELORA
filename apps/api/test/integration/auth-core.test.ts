@@ -143,6 +143,7 @@ describe('AUTH persistence and invariants', () => {
       'safety_blocks',
       'safety_cases',
       'safety_consent_records',
+      'safety_content_classifications',
       'safety_content_depictions',
       'safety_decision_evidence',
       'safety_decisions',

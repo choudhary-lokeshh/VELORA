@@ -16,7 +16,12 @@ import {
   consentDenialReasons,
   consentDispositions,
   consentPolicyVersion,
+  consentScopeFor,
   consentScopes,
+  contentCapabilities,
+  contentClassifications,
+  contentDenialReasons,
+  contentSafetyPolicyVersion,
   decisionActions,
   decisionPolicyVersion,
   decisionReasonCodes,
@@ -24,8 +29,12 @@ import {
   denialReasonFor,
   depictedPersonEvidenceStates,
   depictionDeclarations,
+  distributionSurfaces,
   eligibilityPolicyVersion,
   enforcingDecisionActions,
+  matureContentClassifications,
+  matureIneligibleSurfaces,
+  matureViewerAssurance,
   maximumConsentRecordsPerContent,
   maximumDepictedPersonPageSize,
   verifierReferencePattern,
@@ -446,6 +455,89 @@ describe('safety vocabularies stay provisional and separate', () => {
     expect(maximumConsentRecordsPerContent).toBeGreaterThan(
       maximumDepictedPersonPageSize,
     );
+  });
+
+  it('keeps the delivery surfaces separate from where a report was filed', () => {
+    // The report surface is derived from a credential's audience, and the AUTH
+    // audience cannot tell iOS from Android. That distinction is exactly what
+    // decides mature eligibility, so a content decision may never be derived
+    // from where a report came from — and the two sets must not converge.
+    expect([...distributionSurfaces]).toEqual([
+      'web',
+      'mobile_ios',
+      'mobile_android',
+      'creator_studio',
+      'platform_admin',
+    ]);
+    // `creator_studio` is genuinely the same surface in both and is named the
+    // same. The consumer surfaces are not: one vocabulary splits the two mobile
+    // stores and the other cannot, which is the whole distinction.
+    expect([...reportSourceSurfaces]).toContain('consumer_mobile');
+    expect([...distributionSurfaces]).not.toContain('consumer_mobile');
+    expect([...distributionSurfaces]).toContain('mobile_ios');
+    expect([...reportSourceSurfaces]).not.toContain('mobile_ios');
+    expect(contentSafetyPolicyVersion).toBe('v1-provisional');
+  });
+
+  it('holds the mobile surfaces ineligible as a property of the surface', () => {
+    // Both stores prohibit the class outright with no published approval path,
+    // which is a different answer from the payment providers' written-approval
+    // route. It is therefore a fact about the surface rather than a value.
+    expect([...matureIneligibleSurfaces]).toEqual([
+      'mobile_ios',
+      'mobile_android',
+    ]);
+    for (const surface of matureIneligibleSurfaces) {
+      expect([...distributionSurfaces], surface).toContain(surface);
+    }
+    expect([...matureIneligibleSurfaces]).not.toContain('web');
+  });
+
+  it('distinguishes the classes that carry different evidence duties', () => {
+    // 18 U.S.C. 2257 attaches to actual sexually explicit conduct and not to
+    // simulated conduct, so one `mature` boolean would either over-collect
+    // evidence for one class or under-collect it for the other.
+    expect([...contentClassifications]).toEqual([
+      'general',
+      'mature_simulated',
+      'mature_actual',
+    ]);
+    expect([...matureContentClassifications]).not.toContain('general');
+    for (const classification of matureContentClassifications) {
+      expect([...contentClassifications], classification).toContain(
+        classification,
+      );
+    }
+  });
+
+  it('gives every content capability a consent scope and a safety capability', () => {
+    for (const capability of contentCapabilities) {
+      expect([...consentScopes], capability).toContain(
+        consentScopeFor(capability),
+      );
+    }
+    // Delivering needs distribution consent and monetising needs commercial
+    // consent, because permission to publish is neither.
+    expect(consentScopeFor('publish')).toBe('publication');
+    expect(consentScopeFor('deliver')).toBe('distribution');
+    expect(consentScopeFor('monetise')).toBe('commercial_use');
+  });
+
+  it('requires verified adult assurance of a mature viewer and nothing weaker', () => {
+    // Ofcom names self-declaration, and payment without an age check, as not
+    // highly effective. Neither may stand in for the class this requires.
+    expect(matureViewerAssurance).toBe('verified_adult');
+    expect(matureViewerAssurance).not.toBe('self_declared');
+  });
+
+  it('names which gate closed without naming what a review found', () => {
+    // Disclosable to the creator whose item it is: it says which gate, never
+    // the reasoning, and never anything about a depicted person or a reporter.
+    expect(contentDenialReasons[0]).toBe('mature_content_disabled');
+    for (const reason of contentDenialReasons) {
+      expect([...enforcementReasonCodes], reason).not.toContain(reason);
+      expect([...reportReasonCodes], reason).not.toContain(reason);
+    }
   });
 
   it('names what blocks production rather than implying nothing does', () => {

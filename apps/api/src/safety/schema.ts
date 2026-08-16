@@ -25,6 +25,7 @@ import {
   caseStates,
   consentDispositions,
   consentScopes,
+  contentClassifications,
   decisionActions,
   decisionReasonCodes,
   decisionSubjectStates,
@@ -35,6 +36,7 @@ import {
   evidenceReferenceTypes,
   evidenceStateLabelPattern,
   enforcingDecisionActions,
+  matureContentClassifications,
   maximumOperatorNoteCharacters,
   maximumReportDetailCharacters,
   referencedEvidenceKinds,
@@ -55,6 +57,7 @@ import {
   type CaseState,
   type ConsentDisposition,
   type ConsentScope,
+  type ContentClassification,
   type DecisionAction,
   type DecisionSubjectState,
   type DepictedPersonEvidenceState,
@@ -1028,6 +1031,63 @@ export const safetyConsentRecords = pgTable(
     check(
       'safety_consent_records_supersedes_self_check',
       sql`${table.supersedesId} is null or ${table.supersedesId} <> ${table.id}`,
+    ),
+  ],
+);
+
+/**
+ * What a content item is, as its creator declares it.
+ *
+ * Three classes rather than one `mature` boolean, because the classes carry
+ * different evidence obligations: 18 U.S.C. § 2257 attaches to depictions of
+ * *actual* sexually explicit conduct and not to simulated conduct, so a
+ * taxonomy that could not tell them apart would either over-collect evidence
+ * for one or under-collect it for the other.
+ *
+ * Mutable for the same reason the depiction declaration is: it states what is
+ * currently true about an item rather than recording evidence. A missing row is
+ * not `general` — it is an item nobody has classified, and the gate refuses a
+ * mature capability on one rather than inferring a class from silence.
+ *
+ * A row here enables nothing. Declaring an item `mature_actual` makes it
+ * refusable for a reason, not publishable: the capability itself is off in
+ * every environment.
+ */
+export const safetyContentClassifications = pgTable(
+  'safety_content_classifications',
+  {
+    classification: text('classification')
+      .notNull()
+      .$type<ContentClassification>(),
+    /** Opaque PRIVATE CLUBS reference. No foreign key, by ownership rule. */
+    contentId: uuid('content_id').primaryKey(),
+    /** Opaque CREATORS reference to whoever declared it. */
+    creatorId: uuid('creator_id').notNull(),
+    declaredAt: timestamptz('declared_at').notNull(),
+    policyVersion: text('policy_version').notNull(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('safety_content_classifications_creator_idx').on(
+      table.creatorId,
+      table.declaredAt,
+    ),
+    // The operator question: what has been declared mature, if anything. A
+    // partial index, because in a platform where the capability is off the
+    // answer is expected to be nothing at all.
+    index('safety_content_classifications_mature_idx')
+      .on(table.classification, table.declaredAt)
+      .where(
+        sql`${table.classification} in (${sql.raw(literals(matureContentClassifications))})`,
+      ),
+    check(
+      'safety_content_classifications_classification_check',
+      inList(table.classification, contentClassifications),
+    ),
+    check(
+      'safety_content_classifications_version_check',
+      sql`${table.version} >= 1`,
     ),
   ],
 );

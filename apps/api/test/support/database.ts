@@ -119,6 +119,7 @@ const truncationRoots = [
   // implicit. `truncate` fires no row triggers, so the append-only triggers on
   // these tables do not stand in the way of resetting a test database.
   'safety_cases',
+  'safety_content_classifications',
   'safety_decision_evidence',
   'safety_decisions',
   'safety_enforcements',
