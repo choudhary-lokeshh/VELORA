@@ -183,6 +183,7 @@ export function testDiscoveryRuntime(input: {
  * published contract into another domain's tables.
  */
 export function testSafetyRuntime(input: {
+  readonly config: ServerConfig;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
   readonly now?: () => Date;
@@ -192,6 +193,7 @@ export function testSafetyRuntime(input: {
   return createSafetyRuntime({
     accounts: input.users.enforcement,
     catalog: new ClubSafetyDirectory(),
+    config: input.config,
     consumerContext: input.users.consumerContext,
     consumers: input.users.existence,
     conversations: new ConversationEnforcement(database),

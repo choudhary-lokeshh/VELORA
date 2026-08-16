@@ -988,6 +988,23 @@ export class ModerationService {
           stateLabel: evidence.stateLabel,
         };
       }
+      case 'consent_evidence_reference': {
+        // Citable only when it exists, and it can only exist if an approved
+        // verifier captured it under approved wording. No flag guards this:
+        // in a deployed environment there is simply nothing to name.
+        if (found.targetType !== 'creator_content') return undefined;
+        const record = await repository.findConsentRecord(
+          executor,
+          evidence.consentRecordId,
+        );
+        if (record?.contentId !== found.targetId) return undefined;
+        return {
+          ...blank,
+          kind: 'consent_evidence_reference',
+          referenceId: record.id,
+          referenceType: 'consent_record',
+        };
+      }
       default: {
         // Consent and external verification are refused above, before a case is
         // even read. Reaching here would mean the unavailable set and this

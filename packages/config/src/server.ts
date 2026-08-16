@@ -104,6 +104,32 @@ export const unavailableAdultAssuranceVerifier = 'unavailable';
 export const localTestAdultAssuranceVerifier = 'local-test';
 
 /**
+ * Depicted-person evidence and consent, which are two gates rather than one.
+ *
+ * The **verifier** produces the references Velora holds about a depicted adult:
+ * that somebody examined an identification document, that the person is an
+ * adult, and that they consented. Velora holds no document, image, or biometric
+ * template — [surface and distribution eligibility](../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * records why a table of identity documents is the highest-value breach target
+ * the platform could build in exchange for evidence Velora is probably not the
+ * right party to hold. No provider is approved, so `unavailable` refuses every
+ * request.
+ *
+ * The **policy** carries the approved consent wording and its version. A
+ * recorded grant is a claim that a person agreed to specific words, so
+ * recording one under wording nobody approved would be manufacturing consent.
+ * `unpublished` publishes no wording and refuses every grant.
+ *
+ * They are separate because they fail for different reasons and are lifted by
+ * different people: one is a vendor assessment, the other is legal copy.
+ * Satisfying either alone enables nothing.
+ */
+export const unavailableDepictedPersonVerifier = 'unavailable';
+export const localTestDepictedPersonVerifier = 'local-test';
+export const unpublishedConsentPolicy = 'unpublished';
+export const localTestConsentPolicy = 'local-test';
+
+/**
  * Profile media storage adapters. No storage vendor is approved, so
  * `unavailable` refuses every upload and every inspection, which is the only
  * behaviour a deployed environment may have. `local-test` keeps objects in
@@ -288,6 +314,15 @@ export const serverConfigSchema = z
       .default(unavailablePayoutProvider),
     PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
     QUEUE_REDIS_URL: redisUrlSchema,
+    SAFETY_CONSENT_POLICY: z
+      .enum([unpublishedConsentPolicy, localTestConsentPolicy])
+      .default(unpublishedConsentPolicy),
+    SAFETY_DEPICTED_PERSON_VERIFIER: z
+      .enum([
+        unavailableDepictedPersonVerifier,
+        localTestDepictedPersonVerifier,
+      ])
+      .default(unavailableDepictedPersonVerifier),
     USERS_ADULT_ASSURANCE_VERIFIER: z
       .enum([
         unavailableAdultAssuranceVerifier,
@@ -312,6 +347,23 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `USERS_ADULT_ASSURANCE_VERIFIER is not usable in ${config.APP_ENV}: no age or identity verification provider is approved; see DECISIONS_REQUIRED`,
         path: ['USERS_ADULT_ASSURANCE_VERIFIER'],
+      });
+    }
+    if (
+      config.SAFETY_DEPICTED_PERSON_VERIFIER !==
+      unavailableDepictedPersonVerifier
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `SAFETY_DEPICTED_PERSON_VERIFIER is not usable in ${config.APP_ENV}: no identity, age, or consent verification provider is approved, and whether Velora is the party obliged to hold depicted-person records at all is unresolved; see DECISIONS_REQUIRED`,
+        path: ['SAFETY_DEPICTED_PERSON_VERIFIER'],
+      });
+    }
+    if (config.SAFETY_CONSENT_POLICY !== unpublishedConsentPolicy) {
+      context.addIssue({
+        code: 'custom',
+        message: `SAFETY_CONSENT_POLICY is not usable in ${config.APP_ENV}: the wording a depicted adult would agree to, the scopes it covers, and what a revocation withdraws are all undecided; see DECISIONS_REQUIRED`,
+        path: ['SAFETY_CONSENT_POLICY'],
       });
     }
     if (config.CLUBS_BILLING_ENTITLEMENT !== unavailableBillingEntitlement) {
@@ -450,6 +502,8 @@ export function redactServerConfig(config: ServerConfig) {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
     adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
+    consentPolicy: config.SAFETY_CONSENT_POLICY,
+    depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
     commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
     taxAuthority: config.BILLING_TAX_AUTHORITY,

@@ -13,14 +13,22 @@ import {
   casePriorities,
   caseQueues,
   caseStates,
+  consentDenialReasons,
+  consentDispositions,
+  consentPolicyVersion,
+  consentScopes,
   decisionActions,
   decisionPolicyVersion,
   decisionReasonCodes,
   decisionSubjectStates,
   denialReasonFor,
+  depictedPersonEvidenceStates,
+  depictionDeclarations,
   eligibilityPolicyVersion,
   enforcingDecisionActions,
-  evidenceExternalReferencePattern,
+  maximumConsentRecordsPerContent,
+  maximumDepictedPersonPageSize,
+  verifierReferencePattern,
   evidenceKinds,
   evidencePolicyVersion,
   evidenceStateLabelPattern,
@@ -52,6 +60,7 @@ import {
   subjectKindForCapability,
   subjectKindOf,
   unavailableEvidenceKinds,
+  unpublishedConsentCopyVersion,
 } from '../../src/safety/policy.js';
 
 /**
@@ -314,12 +323,13 @@ describe('safety vocabularies stay provisional and separate', () => {
   });
 
   it('refuses the evidence no approved authority can produce', () => {
-    // Velora has no approved verifier, so a consent or verification reference
-    // would be an assertion dressed as evidence. The vocabulary exists so the
-    // model is whole; the capability fails closed, which is correct rather than
-    // a gap.
+    // An external verification reference is refused by name: Velora has no
+    // approved verifier of that kind at all. Depicted-person consent is
+    // deliberately absent from this list — it fails closed through the data,
+    // because a consent record can only exist if an approved verifier captured
+    // it under approved wording, and a gate enforced by what can exist is
+    // stronger than one enforced by a check somebody could forget.
     expect([...unavailableEvidenceKinds]).toEqual([
-      'consent_evidence_reference',
       'external_verification_reference',
     ]);
     for (const kind of unavailableEvidenceKinds) {
@@ -335,7 +345,7 @@ describe('safety vocabularies stay provisional and separate', () => {
     expect(label.test('the reporter said they were sixteen')).toBe(false);
     expect(label.test('Published')).toBe(false);
     expect(label.test('a'.repeat(65))).toBe(false);
-    const external = new RegExp(evidenceExternalReferencePattern, 'u');
+    const external = new RegExp(verifierReferencePattern, 'u');
     expect(external.test('verifier:outcome-0001')).toBe(true);
     expect(external.test('passport number 123 456')).toBe(false);
   });
@@ -386,6 +396,56 @@ describe('safety vocabularies stay provisional and separate', () => {
     // about another domain's column: an account's status is USERS' truth and
     // SAFETY may not read it.
     expect([...decisionSubjectStates]).toEqual(['unrestricted', 'restricted']);
+  });
+
+  it('keeps a creator assertion and a verification as separate answers', () => {
+    // The same separation `self_declared` and `verified_adult` have, for the
+    // same reason: 18 U.S.C. 2257 requires identity and age to be ascertained
+    // by examining an identification document, so a creator's word cannot
+    // satisfy it and must never be recorded as though it had.
+    expect([...depictedPersonEvidenceStates]).toEqual(['asserted', 'verified']);
+    expect([...depictionDeclarations]).toEqual([
+      'no_depicted_persons',
+      'depicted_persons',
+    ]);
+    expect(consentPolicyVersion).toBe('v1-provisional');
+  });
+
+  it('scopes consent rather than treating it as a flag', () => {
+    // "This person once consented to something" is not permission for anything
+    // else, so each scope is granted and withdrawn on its own.
+    expect([...consentScopes]).toEqual([
+      'publication',
+      'distribution',
+      'commercial_use',
+    ]);
+    expect([...consentDispositions]).toEqual(['grant', 'revoke']);
+    // Nothing is approved, so the wording version is the honest placeholder the
+    // consumer and creator policy documents already use.
+    expect(unpublishedConsentCopyVersion).toBe('0-unpublished');
+  });
+
+  it('says why a gate is closed without saying who is depicted', () => {
+    // Every reason is about the state of the evidence. There is no value here
+    // that could carry a name, and none that overlaps the enforcement findings
+    // or the reporter categories.
+    for (const reason of consentDenialReasons) {
+      expect([...enforcementReasonCodes], reason).not.toContain(reason);
+      expect([...reportReasonCodes], reason).not.toContain(reason);
+    }
+    expect([...consentDenialReasons]).toContain('undeclared');
+    expect([...consentDenialReasons]).toContain('assertion_only');
+    expect([...consentDenialReasons]).toContain('authority_unavailable');
+  });
+
+  it('bounds what one item may carry so the gate query stays complete', () => {
+    // A read that stopped at a page boundary could report an item as consented
+    // while somebody's withdrawal sat on the next page, so both bounds are
+    // enforced on the way in.
+    expect(maximumDepictedPersonPageSize).toBeGreaterThan(0);
+    expect(maximumConsentRecordsPerContent).toBeGreaterThan(
+      maximumDepictedPersonPageSize,
+    );
   });
 
   it('names what blocks production rather than implying nothing does', () => {

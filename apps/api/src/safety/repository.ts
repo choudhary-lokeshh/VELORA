@@ -21,14 +21,20 @@ import type {
 } from '../database/executor.js';
 import type { CaseCursor } from './cursor.js';
 import {
+  maximumConsentRecordsPerContent,
+  maximumDepictedPersonPageSize,
   openCaseStates,
   openReportStates,
   resolvedCaseStates,
   type CasePriority,
   type CaseQueue,
   type CaseState,
+  type ConsentDisposition,
+  type ConsentScope,
   type DecisionAction,
   type DecisionSubjectState,
+  type DepictedPersonEvidenceState,
+  type DepictionDeclaration,
   type EnforcementDisposition,
   type EnforcementObjectType,
   type EnforcementScope,
@@ -40,8 +46,11 @@ import {
 import {
   safetyBlocks,
   safetyCases,
+  safetyConsentRecords,
+  safetyContentDepictions,
   safetyDecisionEvidence,
   safetyDecisions,
+  safetyDepictedParticipants,
   safetyEnforcements,
   safetyEvidence,
   safetyReports,
@@ -53,6 +62,10 @@ export type ReportRow = typeof safetyReports.$inferSelect;
 export type EnforcementRow = typeof safetyEnforcements.$inferSelect;
 export type EvidenceRow = typeof safetyEvidence.$inferSelect;
 export type DecisionRow = typeof safetyDecisions.$inferSelect;
+export type DepictionRow = typeof safetyContentDepictions.$inferSelect;
+export type DepictedParticipantRow =
+  typeof safetyDepictedParticipants.$inferSelect;
+export type ConsentRecordRow = typeof safetyConsentRecords.$inferSelect;
 
 /**
  * Every TRUST & SAFETY read and write.
@@ -1073,6 +1086,265 @@ export class SafetyRepository {
       .from(safetyEnforcements)
       .where(eq(safetyEnforcements.subjectId, subjectId))
       .orderBy(desc(safetyEnforcements.effectiveAt));
+  }
+
+  /**
+   * The creator's answer about who appears in a content item.
+   *
+   * There is no default. A missing row means nobody has been asked or nobody
+   * has replied, and the gate treats that as an unanswered question rather than
+   * as "nobody is depicted here".
+   */
+  async findDepiction(
+    executor: Executor,
+    contentId: string,
+  ): Promise<DepictionRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyContentDepictions)
+      .where(eq(safetyContentDepictions.contentId, contentId))
+      .limit(1);
+    return rows[0];
+  }
+
+  /** Records a first answer, or nothing when somebody answered first. */
+  async insertDepiction(
+    executor: Executor,
+    input: {
+      readonly contentId: string;
+      readonly creatorId: string;
+      readonly declaration: DepictionDeclaration;
+      readonly now: Date;
+      readonly policyVersion: string;
+    },
+  ): Promise<DepictionRow | undefined> {
+    const inserted = await executor
+      .insert(safetyContentDepictions)
+      .values({
+        contentId: input.contentId,
+        creatorId: input.creatorId,
+        declaration: input.declaration,
+        declaredAt: input.now,
+        policyVersion: input.policyVersion,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted[0];
+  }
+
+  /** Changes the answer, against the version the caller read. */
+  async updateDepiction(
+    executor: Executor,
+    input: {
+      readonly contentId: string;
+      readonly declaration: DepictionDeclaration;
+      readonly expectedVersion: number;
+      readonly now: Date;
+    },
+  ): Promise<DepictionRow | undefined> {
+    const updated = await executor
+      .update(safetyContentDepictions)
+      .set({
+        declaration: input.declaration,
+        updatedAt: input.now,
+        version: sql`${safetyContentDepictions.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyContentDepictions.contentId, input.contentId),
+          eq(safetyContentDepictions.version, input.expectedVersion),
+        ),
+      )
+      .returning();
+    return updated[0];
+  }
+
+  /** Appends a depicted-person record. Nothing here is ever updated. */
+  async insertParticipant(
+    executor: Executor,
+    input: {
+      readonly adultAssuranceEvidenceReference: string | null;
+      readonly contentId: string;
+      readonly creatorId: string;
+      readonly evidenceState: DepictedPersonEvidenceState;
+      readonly expiresAt: Date | null;
+      readonly identityEvidenceReference: string | null;
+      readonly now: Date;
+      readonly policyVersion: string;
+      readonly supersedesId: string | null;
+      readonly verifiedAt: Date | null;
+      readonly verifier: string | null;
+      readonly verifierSubjectReference: string | null;
+    },
+  ): Promise<DepictedParticipantRow> {
+    const rows = await executor
+      .insert(safetyDepictedParticipants)
+      .values({
+        adultAssuranceEvidenceReference: input.adultAssuranceEvidenceReference,
+        contentId: input.contentId,
+        creatorId: input.creatorId,
+        declaredAt: input.now,
+        evidenceState: input.evidenceState,
+        expiresAt: input.expiresAt,
+        id: crypto.randomUUID(),
+        identityEvidenceReference: input.identityEvidenceReference,
+        policyVersion: input.policyVersion,
+        supersedesId: input.supersedesId,
+        verifiedAt: input.verifiedAt,
+        verifier: input.verifier,
+        verifierSubjectReference: input.verifierSubjectReference,
+      })
+      .returning();
+    const row = rows[0];
+    if (row === undefined) {
+      throw new Error('Depicted participant insert returned no row');
+    }
+    return row;
+  }
+
+  async findParticipant(
+    executor: Executor,
+    id: string,
+  ): Promise<DepictedParticipantRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyDepictedParticipants)
+      .where(eq(safetyDepictedParticipants.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Every participant record for an item, including superseded ones.
+   *
+   * The whole chain rather than only its tail, because the caller derives which
+   * record describes a person now by seeing what nothing else replaces — a
+   * property of the set, not of a row.
+   */
+  async listParticipants(
+    executor: Executor,
+    contentId: string,
+  ): Promise<DepictedParticipantRow[]> {
+    return executor
+      .select()
+      .from(safetyDepictedParticipants)
+      .where(eq(safetyDepictedParticipants.contentId, contentId))
+      .orderBy(
+        asc(safetyDepictedParticipants.declaredAt),
+        asc(safetyDepictedParticipants.id),
+      )
+      .limit(maximumDepictedPersonPageSize);
+  }
+
+  /**
+   * How many participant records an item carries, superseded ones included.
+   *
+   * The cap is on what the read has to fetch rather than on how many people are
+   * currently declared, because it exists to keep the gate query complete.
+   */
+  async countParticipants(
+    executor: Executor,
+    contentId: string,
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: count() })
+      .from(safetyDepictedParticipants)
+      .where(eq(safetyDepictedParticipants.contentId, contentId));
+    return rows[0]?.total ?? 0;
+  }
+
+  async countConsentRecords(
+    executor: Executor,
+    contentId: string,
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: count() })
+      .from(safetyConsentRecords)
+      .where(eq(safetyConsentRecords.contentId, contentId));
+    return rows[0]?.total ?? 0;
+  }
+
+  /** Appends a consent record. Nothing here is ever updated or removed. */
+  async insertConsentRecord(
+    executor: Executor,
+    input: {
+      readonly actorReference: string;
+      readonly consentEvidenceReference: string | null;
+      readonly contentId: string;
+      readonly copyVersion: string;
+      readonly disposition: ConsentDisposition;
+      readonly expiresAt: Date | null;
+      readonly now: Date;
+      readonly participantId: string;
+      readonly policyVersion: string;
+      readonly scope: ConsentScope;
+      readonly supersedesId: string | null;
+    },
+  ): Promise<ConsentRecordRow> {
+    const rows = await executor
+      .insert(safetyConsentRecords)
+      .values({
+        actorReference: input.actorReference,
+        consentEvidenceReference: input.consentEvidenceReference,
+        contentId: input.contentId,
+        copyVersion: input.copyVersion,
+        disposition: input.disposition,
+        expiresAt: input.expiresAt,
+        id: crypto.randomUUID(),
+        participantId: input.participantId,
+        policyVersion: input.policyVersion,
+        recordedAt: input.now,
+        scope: input.scope,
+        supersedesId: input.supersedesId,
+      })
+      .returning();
+    const row = rows[0];
+    if (row === undefined) {
+      throw new Error('Consent record insert returned no row');
+    }
+    return row;
+  }
+
+  async findConsentRecord(
+    executor: Executor,
+    id: string,
+  ): Promise<ConsentRecordRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyConsentRecords)
+      .where(eq(safetyConsentRecords.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Consent records for an item, optionally narrowed to one scope.
+   *
+   * Grants and withdrawals together, because which is live is decided by what
+   * supersedes what and a query that returned only grants would report a
+   * withdrawn permission as standing.
+   */
+  async listConsentRecords(
+    executor: Executor,
+    input: { readonly contentId: string; readonly scope?: ConsentScope },
+  ): Promise<ConsentRecordRow[]> {
+    return executor
+      .select()
+      .from(safetyConsentRecords)
+      .where(
+        and(
+          eq(safetyConsentRecords.contentId, input.contentId),
+          input.scope === undefined
+            ? undefined
+            : eq(safetyConsentRecords.scope, input.scope),
+        ),
+      )
+      .orderBy(
+        asc(safetyConsentRecords.recordedAt),
+        asc(safetyConsentRecords.id),
+      )
+      .limit(maximumConsentRecordsPerContent);
   }
 
   /**

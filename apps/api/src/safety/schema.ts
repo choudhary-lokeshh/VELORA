@@ -23,10 +23,14 @@ import {
   casePriorities,
   caseQueues,
   caseStates,
+  consentDispositions,
+  consentScopes,
   decisionActions,
   decisionReasonCodes,
   decisionSubjectStates,
-  evidenceExternalReferencePattern,
+  depictedPersonEvidenceStates,
+  depictionDeclarations,
+  verifierReferencePattern,
   evidenceKinds,
   evidenceReferenceTypes,
   evidenceStateLabelPattern,
@@ -49,8 +53,12 @@ import {
   type CasePriority,
   type CaseQueue,
   type CaseState,
+  type ConsentDisposition,
+  type ConsentScope,
   type DecisionAction,
   type DecisionSubjectState,
+  type DepictedPersonEvidenceState,
+  type DepictionDeclaration,
   type EnforcementDisposition,
   type EnforcementObjectType,
   type EnforcementScope,
@@ -589,7 +597,7 @@ export const safetyEvidence = pgTable(
     ),
     check(
       'safety_evidence_external_reference_check',
-      sql`${table.externalReference} is null or ${table.externalReference} ~ ${sql.raw(`'${evidenceExternalReferencePattern}'`)}`,
+      sql`${table.externalReference} is null or ${table.externalReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)}`,
     ),
   ],
 );
@@ -759,5 +767,267 @@ export const safetyDecisionEvidence = pgTable(
       foreignColumns: [safetyEvidence.id, safetyEvidence.caseId],
       name: 'safety_decision_evidence_evidence_fk',
     }),
+  ],
+);
+
+/**
+ * Whether a content item depicts anybody, as its creator states it.
+ *
+ * A row is the creator's answer, and the absence of one is not an answer. No
+ * row means nobody has been asked or nobody has replied, which is a different
+ * fact from "nobody is depicted here"; treating the two as the same would make
+ * every unasked item silently compliant.
+ *
+ * This is the one mutable table in the depicted-person model, and deliberately
+ * so: a declaration is a statement of what is currently true about an item, and
+ * a creator who adds a person to a shoot has changed the answer rather than
+ * falsified the old one. The *evidence* — who is depicted and what they agreed
+ * to — is append-only below, because that is the part an audit reads.
+ */
+export const safetyContentDepictions = pgTable(
+  'safety_content_depictions',
+  {
+    /** Opaque PRIVATE CLUBS reference. No foreign key, by ownership rule. */
+    contentId: uuid('content_id').primaryKey(),
+    /** Opaque CREATORS reference to whoever answered. */
+    creatorId: uuid('creator_id').notNull(),
+    declaration: text('declaration').notNull().$type<DepictionDeclaration>(),
+    declaredAt: timestamptz('declared_at').notNull(),
+    policyVersion: text('policy_version').notNull(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    /** Optimistic concurrency, so two Studio tabs produce one answer. */
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('safety_content_depictions_creator_idx').on(
+      table.creatorId,
+      table.declaredAt,
+    ),
+    check(
+      'safety_content_depictions_declaration_check',
+      inList(table.declaration, depictionDeclarations),
+    ),
+    check(
+      'safety_content_depictions_version_check',
+      sql`${table.version} >= 1`,
+    ),
+  ],
+);
+
+/**
+ * One person depicted in one content item, append-only.
+ *
+ * **Velora holds no identity document, no image, and no biometric template**,
+ * and there is no column here one could be put in. What it holds is a reference
+ * to an approved verifier's outcome: that somebody examined an identification
+ * document, that the person is an adult, and which provider says so. The
+ * reasoning is recorded in [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * — a table of government identity documents is the highest-value breach target
+ * the platform could build, in exchange for evidence Velora is probably not the
+ * right party to hold.
+ *
+ * A creator's word is stored as a creator's word. `asserted` carries no
+ * evidence reference at all and a constraint refuses one, so an assertion
+ * cannot be dressed as verification by a caller filling in a field. Nothing in
+ * the request shape a creator uses carries an evidence reference either: those
+ * columns are written only from a verifier's result.
+ *
+ * Two people are distinguished only when a verifier has issued a subject
+ * reference for each, which is the only identifier Velora legitimately holds
+ * for a depicted person. Before that they are simply two declarations, and the
+ * platform does not invent a name, a handle, or a hash to tell them apart.
+ */
+export const safetyDepictedParticipants = pgTable(
+  'safety_depicted_participants',
+  {
+    /** Opaque verifier reference to the adult-assurance outcome. */
+    adultAssuranceEvidenceReference: text('adult_assurance_evidence_reference'),
+    contentId: uuid('content_id')
+      .notNull()
+      .references(() => safetyContentDepictions.contentId),
+    creatorId: uuid('creator_id').notNull(),
+    declaredAt: timestamptz('declared_at').notNull(),
+    evidenceState: text('evidence_state')
+      .notNull()
+      .$type<DepictedPersonEvidenceState>(),
+    /** When the verification lapses and must be taken again. */
+    expiresAt: timestamptz('expires_at'),
+    id: uuid('id').primaryKey(),
+    /** Opaque verifier reference to the identity-examination outcome. */
+    identityEvidenceReference: text('identity_evidence_reference'),
+    policyVersion: text('policy_version').notNull(),
+    /** The record this one replaces, when an assertion becomes verified. */
+    supersedesId: uuid('supersedes_id').references(
+      (): AnyPgColumn => safetyDepictedParticipants.id,
+    ),
+    /** Which approved adapter produced the evidence. */
+    verifier: text('verifier'),
+    verifiedAt: timestamptz('verified_at'),
+    /** The verifier's own opaque handle for this person. Never a name. */
+    verifierSubjectReference: text('verifier_subject_reference'),
+  },
+  (table) => [
+    index('safety_depicted_participants_content_idx').on(
+      table.contentId,
+      table.declaredAt,
+      table.id,
+    ),
+    // The target of the composite foreign key from `safety_consent_records`,
+    // so a consent record and the participant it names always agree on which
+    // item they are about.
+    uniqueIndex('safety_depicted_participants_identity_uk').on(
+      table.id,
+      table.contentId,
+    ),
+    // One verified person appears once on one item. Before verification there
+    // is no identifier to deduplicate on, and inventing one would mean deriving
+    // a stable handle for a person from something the platform must not hold.
+    uniqueIndex('safety_depicted_participants_subject_uk')
+      .on(table.contentId, table.verifierSubjectReference)
+      .where(sql`${table.verifierSubjectReference} is not null`),
+    uniqueIndex('safety_depicted_participants_supersedes_uk')
+      .on(table.supersedesId)
+      .where(sql`${table.supersedesId} is not null`),
+    check(
+      'safety_depicted_participants_state_check',
+      inList(table.evidenceState, depictedPersonEvidenceStates),
+    ),
+    // Verified means all four references and a moment; asserted means none of
+    // them. There is no half-verified participant, because a record carrying
+    // some evidence and not the rest is one a reader would have to interpret.
+    check(
+      'safety_depicted_participants_evidence_shape_check',
+      sql`(${table.evidenceState} = 'verified') = (${table.verifier} is not null)
+        and (${table.evidenceState} = 'verified') = (${table.verifierSubjectReference} is not null)
+        and (${table.evidenceState} = 'verified') = (${table.identityEvidenceReference} is not null)
+        and (${table.evidenceState} = 'verified') = (${table.adultAssuranceEvidenceReference} is not null)
+        and (${table.evidenceState} = 'verified') = (${table.verifiedAt} is not null)`,
+    ),
+    // An assertion cannot expire, because there is nothing to renew.
+    check(
+      'safety_depicted_participants_expiry_check',
+      sql`${table.expiresAt} is null
+        or (${table.verifiedAt} is not null and ${table.expiresAt} > ${table.verifiedAt})`,
+    ),
+    check(
+      'safety_depicted_participants_reference_shape_check',
+      sql`(${table.identityEvidenceReference} is null or ${table.identityEvidenceReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)})
+        and (${table.adultAssuranceEvidenceReference} is null or ${table.adultAssuranceEvidenceReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)})
+        and (${table.verifierSubjectReference} is null or ${table.verifierSubjectReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)})`,
+    ),
+    check(
+      'safety_depicted_participants_supersedes_self_check',
+      sql`${table.supersedesId} is null or ${table.supersedesId} <> ${table.id}`,
+    ),
+  ],
+);
+
+/**
+ * What a depicted person agreed to, append-only.
+ *
+ * One record per scope, because consent is scoped rather than universal: "this
+ * person once consented to something" is not permission for anything else. A
+ * withdrawal is a second record naming the one it revokes, so the original
+ * stays exactly as written and a reader can see both that permission was given
+ * and that it was taken back — which is the whole point of a consent record a
+ * depicted person may later rely on.
+ *
+ * Every record carries the version of the wording that was agreed to. No
+ * wording is approved, so the consent authority records nothing at all rather
+ * than storing a grant against a placeholder version: a claim that somebody
+ * agreed to words that do not exist is worse than no claim.
+ */
+export const safetyConsentRecords = pgTable(
+  'safety_consent_records',
+  {
+    /** Opaque reference to whoever recorded it. Never the depicted person. */
+    actorReference: text('actor_reference').notNull(),
+    /** The verifier's reference to the consent it captured. */
+    consentEvidenceReference: text('consent_evidence_reference'),
+    contentId: uuid('content_id').notNull(),
+    /** Which approved wording the person agreed to. */
+    copyVersion: text('copy_version').notNull(),
+    disposition: text('disposition').notNull().$type<ConsentDisposition>(),
+    /** When a time-bounded permission lapses. Grants only. */
+    expiresAt: timestamptz('expires_at'),
+    id: uuid('id').primaryKey(),
+    participantId: uuid('participant_id').notNull(),
+    policyVersion: text('policy_version').notNull(),
+    recordedAt: timestamptz('recorded_at').notNull(),
+    scope: text('scope').notNull().$type<ConsentScope>(),
+    supersedesId: uuid('supersedes_id').references(
+      (): AnyPgColumn => safetyConsentRecords.id,
+    ),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.participantId, table.contentId],
+      foreignColumns: [
+        safetyDepictedParticipants.id,
+        safetyDepictedParticipants.contentId,
+      ],
+      name: 'safety_consent_records_participant_fk',
+    }),
+    index('safety_consent_records_participant_idx').on(
+      table.participantId,
+      table.recordedAt,
+      table.id,
+    ),
+    // The gate query: what is currently granted for this item in this scope.
+    index('safety_consent_records_content_idx').on(
+      table.contentId,
+      table.scope,
+      table.recordedAt,
+    ),
+    // A withdrawal cannot fork: two records revoking the same grant would be
+    // two equally valid histories of one person's decision.
+    uniqueIndex('safety_consent_records_supersedes_uk')
+      .on(table.supersedesId)
+      .where(sql`${table.supersedesId} is not null`),
+    check(
+      'safety_consent_records_disposition_check',
+      inList(table.disposition, consentDispositions),
+    ),
+    check(
+      'safety_consent_records_scope_check',
+      inList(table.scope, consentScopes),
+    ),
+    // A withdrawal names what it withdraws. One that named nothing would be an
+    // assertion that permission ended, with no way to say which permission.
+    check(
+      'safety_consent_records_revocation_shape_check',
+      sql`${table.disposition} = 'grant' or ${table.supersedesId} is not null`,
+    ),
+    // And it does not expire: a withdrawal that stopped applying would silently
+    // restore a permission nobody gave again.
+    check(
+      'safety_consent_records_revocation_expiry_check',
+      sql`${table.disposition} = 'grant' or ${table.expiresAt} is null`,
+    ),
+    check(
+      'safety_consent_records_expiry_check',
+      sql`${table.expiresAt} is null or ${table.expiresAt} > ${table.recordedAt}`,
+    ),
+    check(
+      'safety_consent_records_copy_version_check',
+      lengthBetween(table.copyVersion, 1, 64),
+    ),
+    // A grant is the verifier's capture of what somebody agreed to, so it names
+    // that capture. A grant with no evidence behind it would be the creator
+    // asserting consent on another person's behalf, which is the one thing this
+    // whole model exists to make impossible.
+    check(
+      'safety_consent_records_grant_evidence_check',
+      sql`(${table.disposition} = 'grant') = (${table.consentEvidenceReference} is not null)`,
+    ),
+    check(
+      'safety_consent_records_evidence_reference_check',
+      sql`${table.consentEvidenceReference} is null
+        or ${table.consentEvidenceReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)}`,
+    ),
+    check(
+      'safety_consent_records_supersedes_self_check',
+      sql`${table.supersedesId} is null or ${table.supersedesId} <> ${table.id}`,
+    ),
   ],
 );

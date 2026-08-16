@@ -79,6 +79,7 @@ const users = createUsersRuntime({
 const safety = createSafetyRuntime({
   accounts: users.enforcement,
   catalog: new ClubSafetyDirectory(),
+  config,
   consumerContext: users.consumerContext,
   consumers: users.existence,
   conversationTargets: new ConversationParticipation(),
@@ -1371,8 +1372,11 @@ describe('the database enforces the safety invariants', () => {
     expect(rows.map((row) => row.table_name)).toEqual([
       'safety_blocks',
       'safety_cases',
+      'safety_consent_records',
+      'safety_content_depictions',
       'safety_decision_evidence',
       'safety_decisions',
+      'safety_depicted_participants',
       'safety_enforcements',
       'safety_evidence',
       'safety_reports',

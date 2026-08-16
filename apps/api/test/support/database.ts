@@ -124,6 +124,11 @@ const truncationRoots = [
   'safety_enforcements',
   'safety_evidence',
   'safety_reports',
+  // Depicted-person evidence hangs off the declaration, so truncating that
+  // cascades. All three are listed for the same reason the rest are.
+  'safety_content_depictions',
+  'safety_depicted_participants',
+  'safety_consent_records',
   'users_accounts',
 ];
 

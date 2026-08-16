@@ -41,6 +41,12 @@ The classes are separate values that no code widens into each other, and a datab
 
 The provider is an adapter selected by configuration, and the default refuses every request. Staging and production reject any other selection, so no deployed environment can grant verified adult status while the decisions below are open. A development and test adapter exists so the path is exercisable and is named so that no test using it reads as evidence about a real provider.
 
+## Implemented depicted-person seam
+
+The same shape, applied to the other person a content item can be about. A depicted adult's identity and age evidence are references to an approved verifier's outcome, held by TRUST & SAFETY alongside scoped consent records; no document, image, biometric template, name, or birth date has a column, and a constraint refuses a creator's assertion that carries an evidence reference. A creator's word is recorded as `asserted` and never widened into `verified` by any code path.
+
+Two independent configuration values gate it and both refuse in staging and production: one selects the verifier, the other publishes the wording a depicted person would be agreeing to. A verifier with no approved wording records identity and age and records no consent at all, because a grant under unpublished wording would be a claim that somebody agreed to words that do not exist. The details are in [TRUST & SAFETY](../domains/trust-safety.md); the primary-source findings behind them are in [surface and distribution eligibility](07-surface-and-distribution-eligibility.md).
+
 ## Open decisions and cross-references
 
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: age per country, assurance tiers, accepted methods, provider/manual route, biometric use, evidence retention, parental/minor handling, retry/appeal, re-verification, false-match response, and accessibility fallback.

@@ -298,17 +298,22 @@ export const snapshotEvidenceKinds: readonly EvidenceKind[] = [
 ];
 
 /**
- * Kinds no approved authority can produce yet.
+ * Kinds no approved authority can produce.
  *
- * Depicted-person consent and external verification are references to an
- * approved verifier's outcome, and Velora has no approved verifier: the
- * configuration that would name one refuses in every deployed environment. The
- * vocabulary exists so the evidence model is whole; recording one of these is
- * refused rather than accepted as an unbacked assertion, which is the same
- * fail-closed shape the adult-assurance gate already has.
+ * An external verification reference is an approved verifier's outcome handle
+ * about something other than a depicted person, and Velora has no approved
+ * verifier of that kind at all. The vocabulary exists so the evidence model is
+ * whole; recording one is refused rather than accepted as an unbacked
+ * assertion, which is the same fail-closed shape the adult-assurance gate has.
+ *
+ * Depicted-person consent is *not* in this set, and deliberately so. It fails
+ * closed through the data rather than through a list: a consent record can only
+ * exist if an approved verifier captured it under approved wording, and neither
+ * exists in a deployed environment, so there is nothing for a citation to name.
+ * A gate enforced by what can exist is stronger than one enforced by a check
+ * somebody could forget.
  */
 export const unavailableEvidenceKinds: readonly EvidenceKind[] = [
-  'consent_evidence_reference',
   'external_verification_reference',
 ];
 
@@ -321,7 +326,7 @@ export const unavailableEvidenceKinds: readonly EvidenceKind[] = [
  * can hold a space.
  */
 export const evidenceStateLabelPattern = '^[a-z][a-z0-9_]{0,63}$';
-export const evidenceExternalReferencePattern = '^[A-Za-z0-9._:-]{1,200}$';
+export const verifierReferencePattern = '^[A-Za-z0-9._:-]{1,200}$';
 
 /** Longest reviewer note accepted. Prose, and bounded like any input. */
 export const maximumOperatorNoteCharacters = 2_000;
@@ -593,6 +598,130 @@ export function scopesForDecision(
  */
 export const decisionSubjectStates = ['unrestricted', 'restricted'] as const;
 export type DecisionSubjectState = (typeof decisionSubjectStates)[number];
+
+/**
+ * Which depicted-person rule was in force. Recorded on every declaration,
+ * participant, and consent record.
+ */
+export const consentPolicyVersion = 'v1-provisional';
+
+/**
+ * Whether a content item depicts anybody, as its creator states it.
+ *
+ * A declaration is required because *absence is not an answer*. No row means
+ * the creator has never been asked or has never replied, which is a different
+ * fact from "nobody is depicted here" — and treating the two as the same would
+ * make every unasked item silently compliant.
+ *
+ * [Surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * records why this matters: the record-keeping duty attaches to depictions of
+ * actual people, and whether Velora is the party it attaches to is a legal
+ * question nobody here may answer. What is answerable is whether the creator
+ * was asked and what they said.
+ */
+export const depictionDeclarations = [
+  'no_depicted_persons',
+  'depicted_persons',
+] as const;
+export type DepictionDeclaration = (typeof depictionDeclarations)[number];
+
+/**
+ * How much is actually known about a depicted person.
+ *
+ * `asserted` is the creator's word and nothing more. `verified` means an
+ * approved verifier examined an identification document and returned a
+ * normalized outcome, and the platform holds a reference to that outcome rather
+ * than the document.
+ *
+ * The two are separate values that no code widens into each other, for the same
+ * reason `self_declared` and `verified_adult` are separate adult-assurance
+ * classes: 18 U.S.C. § 2257 requires identity and date of birth to be
+ * ascertained *by examination of an identification document*, so an
+ * architecture in which a creator merely asserts that a depicted person is an
+ * adult cannot satisfy it, and recording an assertion as verification would be
+ * the platform stating something nobody checked.
+ */
+export const depictedPersonEvidenceStates = ['asserted', 'verified'] as const;
+export type DepictedPersonEvidenceState =
+  (typeof depictedPersonEvidenceStates)[number];
+
+/**
+ * What a depicted person's consent covers.
+ *
+ * Scoped rather than universal, because "this person once consented to
+ * something" is not permission for anything else. Each scope is granted and
+ * revoked on its own, so a person who withdraws permission to monetise a
+ * depiction has not necessarily withdrawn permission to publish it, and the
+ * platform never has to guess which they meant.
+ *
+ * **Provisional.** The approved scope list, the wording each scope carries, and
+ * what a revocation withdraws are `DECISION REQUIRED / LEGAL REVIEW REQUIRED`
+ * and recorded in [DECISIONS_REQUIRED](../../../../docs/decisions/DECISIONS_REQUIRED.md).
+ * They are values here so that a later approved scope is a migration and a
+ * version bump rather than a rewrite.
+ */
+export const consentScopes = [
+  /** May the depiction be published at all. */
+  'publication',
+  /** May it be delivered beyond the creator's own view. */
+  'distribution',
+  /** May it be monetised. */
+  'commercial_use',
+] as const;
+export type ConsentScope = (typeof consentScopes)[number];
+
+/** Whether a consent record grants permission or takes it away. */
+export const consentDispositions = ['grant', 'revoke'] as const;
+export type ConsentDisposition = (typeof consentDispositions)[number];
+
+/**
+ * The version of the wording a depicted person agreed to.
+ *
+ * `0-unpublished` is the honest value while no wording is approved, and it is
+ * the same idiom the consumer and creator policy documents already use. A grant
+ * recorded under unpublished wording would be a claim that somebody agreed to
+ * words that do not exist, so the consent authority refuses to record one at
+ * all rather than storing it against a placeholder.
+ */
+export const unpublishedConsentCopyVersion = '0-unpublished';
+
+/**
+ * Why a content item's consent evidence does not satisfy a scope.
+ *
+ * Internal and coarse. It explains a gate to the operator or the creator who
+ * has to close it, and it says nothing about who the depicted person is —
+ * there is no field here that could.
+ */
+export const consentDenialReasons = [
+  /** Nobody has stated whether this item depicts anybody. */
+  'undeclared',
+  /** The creator said people are depicted and named none of them. */
+  'participants_missing',
+  /** Declared, and nobody verified. A creator's word is not evidence. */
+  'assertion_only',
+  /** The verification itself lapsed and has not been renewed. */
+  'evidence_expired',
+  /** No consent covering this scope was ever recorded. */
+  'consent_missing',
+  'consent_expired',
+  'consent_revoked',
+  /** No approved verifier or no approved wording, so nothing can be relied on. */
+  'authority_unavailable',
+] as const;
+export type ConsentDenialReason = (typeof consentDenialReasons)[number];
+
+/**
+ * Most people one content item may declare, and most consent records one item
+ * may accumulate.
+ *
+ * Both are enforced on the write path rather than only on the read, because the
+ * gate query has to be *complete* to be correct: a read that silently stopped
+ * at a page boundary could report an item as consented while somebody's
+ * withdrawal sat on the next page. Bounding what can be written is what makes
+ * bounding what is read safe.
+ */
+export const maximumDepictedPersonPageSize = 100;
+export const maximumConsentRecordsPerContent = 1_000;
 
 /**
  * Version of the rule that composes live enforcements into an answer.

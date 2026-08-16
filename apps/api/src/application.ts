@@ -228,6 +228,7 @@ export function createApplication(
       createSafetyRuntime({
         accounts: users.enforcement,
         catalog: new ClubSafetyDirectory(),
+        config,
         consumerContext: users.consumerContext,
         consumers: users.existence,
         conversations: new ConversationEnforcement(ownedDatabase.database),

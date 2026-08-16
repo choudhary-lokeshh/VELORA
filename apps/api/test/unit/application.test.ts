@@ -95,7 +95,7 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   // narrow answers from them about what a report may name.
   const creators = testCreatorsRuntime({ caller: auth.caller, users });
   const clubs = testClubsRuntime({ config, creators, users });
-  const safety = testSafetyRuntime({ creators, users });
+  const safety = testSafetyRuntime({ config, creators, users });
   const discovery = testDiscoveryRuntime({ safety, users });
   // BILLING before ADMIN, exactly as the application composes them: an operator
   // reversal is BILLING's decision taken with an operator's authority.

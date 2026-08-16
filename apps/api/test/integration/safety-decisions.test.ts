@@ -426,10 +426,13 @@ describe('evidence is a reference, never a copy', () => {
       },
     });
 
-    // Fail closed rather than accept an assertion dressed as evidence: Velora
-    // has no approved verifier, so there is no outcome to reference.
+    // Fail closed rather than accept an assertion dressed as evidence. The
+    // external reference is refused by name: Velora has no approved verifier of
+    // that kind. The consent reference is refused because there is nothing to
+    // name — a consent record only exists if an approved verifier captured it
+    // under approved wording, and this environment has neither.
     expect([consent.kind, verification.kind]).toEqual([
-      'unavailable',
+      'invalid_reference',
       'unavailable',
     ]);
     expect(await evidenceIds(opened.id)).toHaveLength(1);

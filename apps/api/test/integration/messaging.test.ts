@@ -76,6 +76,7 @@ const users = createUsersRuntime({
 const safety = createSafetyRuntime({
   accounts: users.enforcement,
   catalog: new ClubSafetyDirectory(),
+  config,
   consumerContext: users.consumerContext,
   consumers: users.existence,
   conversationTargets: new ConversationParticipation(),

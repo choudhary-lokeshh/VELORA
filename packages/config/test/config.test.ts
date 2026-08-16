@@ -162,6 +162,34 @@ describe('server configuration', () => {
     }
   });
 
+  it('holds depicted-person evidence and consent wording as two gates', () => {
+    // They fail for different reasons and are lifted by different people: one
+    // is a vendor assessment, the other is legal copy. Satisfying either alone
+    // must enable nothing, which is why they are separate values rather than
+    // one "mature content ready" switch.
+    const config = loadServerConfig(validEnvironment);
+    expect(config.SAFETY_DEPICTED_PERSON_VERIFIER).toBe('unavailable');
+    expect(config.SAFETY_CONSENT_POLICY).toBe('unpublished');
+
+    for (const appEnvironment of ['staging', 'production']) {
+      const verifier = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        SAFETY_DEPICTED_PERSON_VERIFIER: 'local-test',
+      });
+      expect(verifier).toContain('SAFETY_DEPICTED_PERSON_VERIFIER');
+      expect(verifier).toContain('DECISIONS_REQUIRED');
+
+      const policy = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        SAFETY_CONSENT_POLICY: 'local-test',
+      });
+      expect(policy).toContain('SAFETY_CONSENT_POLICY');
+      expect(policy).toContain('revocation withdraws');
+    }
+  });
+
   it('defaults notification delivery to the channel that sends nothing', () => {
     // No email, push, or SMS provider is approved. `unavailable` does not
     // discard a notice: it reports that no attempt was made, so the notice

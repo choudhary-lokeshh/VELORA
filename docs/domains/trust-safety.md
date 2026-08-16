@@ -146,13 +146,31 @@ The decision, the case transition, the enforcement, the owning domain's state ch
 
 A case that has been decided is distinguishable from one that was closed without a decision. Both are out of the queue and they are not the same fact: one was judged and one was dropped.
 
+### Depicted-person evidence and consent
+
+`0032_safety_depicted_person_consent` adds the records that answer two different questions about a piece of creator content, and they are not the same question. *Who is depicted, and did anybody check?* is identity and age evidence. *What did that person agree to?* is consent.
+
+**Velora holds no identification document, no image, and no biometric template, and there is no column one could be put in.** What it holds is a reference to an approved verifier's outcome. [Surface and distribution eligibility](../compliance/07-surface-and-distribution-eligibility.md) records the reasoning from primary sources: 18 U.S.C. § 2257 requires identity and date of birth to be ascertained by *examining an identification document*, and a table of those documents would be the highest-value breach target the platform could build in exchange for evidence Velora is probably not the right party to hold. Whether Velora is that party at all is a legal question recorded as unresolved rather than answered in code.
+
+**A creator's word is stored as a creator's word.** An `asserted` participant carries no evidence reference and a constraint refuses one; a `verified` participant carries all four references and a moment, and a constraint refuses any partial combination, so there is no half-verified record for a reader to interpret. Verification supersedes the assertion rather than editing it, so what the creator originally said stays exactly as they said it.
+
+Two people on one item are distinguished only once a verifier has issued a subject handle for each, because that is the only identifier Velora legitimately holds for a depicted person. Before that they are two declarations, and the platform invents no name, handle, or hash to tell them apart.
+
+**Consent is scoped and each scope is withdrawn on its own.** Publishing a depiction is not permission to monetise it, and somebody who withdraws one has not withdrawn the other. A withdrawal is a second record naming the grant it replaces — both facts survive, which is what a depicted person relying on having withdrawn permission needs — and a partial unique index stops two withdrawals forking one person's decision into two histories.
+
+**Absence is not permission.** A content item with no declaration means nobody has been asked or nobody has replied, which is a different fact from "nobody is depicted here"; the gate reports `undeclared` rather than treating silence as compliance. An item declared to depict nobody is the one satisfied answer that needs no verifier at all.
+
+**Two independent gates, and neither is enough alone.** `SAFETY_DEPICTED_PERSON_VERIFIER` selects who produces evidence and `SAFETY_CONSENT_POLICY` publishes the wording a person would be agreeing to. Both default to the value that refuses and configuration rejects anything else in staging and production, so no depicted person can be recorded as verified and no grant can be recorded at all. They are separate because they fail for different reasons and are lifted by different people: one is a vendor assessment, the other is legal copy. A verifier with no approved wording records identity and age and grants nothing, which is exactly the behaviour a half-satisfied gate should have.
+
+The declaration is the one mutable record here and the evidence is not. A creator who adds a person to a shoot has changed the answer rather than falsified the old one; who is depicted and what they agreed to is append-only under the same trigger the evidence and decision records use.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
 ## Where this domain is going
 
-[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, the published capability answer, and reports, cases, evidence, and decisions as separate append-oriented records are built and described above. Still to come: appeals, surface as a first-class closed vocabulary, depicted-person consent held as scoped references to an approved verifier rather than as documents, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
+[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, the published capability answer, reports and cases and evidence and decisions as separate append-oriented records, and depicted-person consent held as scoped references to an approved verifier rather than as documents are built and described above. Still to come: appeals, surface as a first-class closed vocabulary, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
 
 ## Phase/open questions
 
