@@ -13,6 +13,7 @@ This document assigns durable domain ownership. Owning module validates state, w
 | REALTIME | presence, room/call orchestration, RTC lifecycle | long-term message/content records |
 | CREATORS | creator identity/business profile | club membership, payments/payout ledger |
 | PRIVATE CLUBS | club membership, content catalog, entitlement | provider charge truth, creator identity proof |
+| MEDIA | binary/object lifecycle, upload sessions, byte-derived technical facts, derivatives and processing versions, provider deletion and cache-purge state | which image a product surface uses, publication intent, entitlement, safety decisions, evidence retention |
 | BILLING | payment intents, charges, refunds, platform subscription state | payout disbursement, content access decision rules |
 | PAYOUTS | payable balance, payout lifecycle, disbursement records | charging customers |
 | TRUST & SAFETY | reports, blocks, enforcement policy execution | moderator work queues/tooling implementation |
@@ -29,6 +30,8 @@ Command only through service contract when caller needs validated synchronous re
 ## Important separation
 
 Blocks/enforcement from Trust & Safety constrain Discovery, Messaging, Realtime, Clubs, and Notifications through published eligibility/authorization contracts. Private Clubs decides content entitlement; Billing reports financial status; neither makes Discovery candidates. Admin invokes domain operations with a privileged actor and audit reason; no direct table mutation.
+
+MEDIA owns bytes and nothing a binary means. Users, Creators, and Private Clubs hold opaque media asset references and keep their own association, ordering, and publication intent; Trust & Safety keeps every safety and takedown decision. MEDIA answers what an object is, whether it is technically processable, which derivatives exist, and whether the provider still holds it — and that answer is never publication. A takedown reaches bytes because Safety records a decision and MEDIA carries a durable purge obligation, not because either domain writes the other's rows. See [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md).
 
 AI PLATFORM is never source of truth for AUTH, USERS, DISCOVERY, MESSAGING, REALTIME, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, TRUST & SAFETY, MODERATION, NOTIFICATIONS, ADMIN, or ANALYTICS. It accesses domain capabilities only through published, registered contracts/tools and never directly mutates private domain persistence. Model output is a proposal or derived artifact; owning domain re-authorizes and validates every effect. High-impact operations retain deterministic authorization and human approval/workflow rules.
 

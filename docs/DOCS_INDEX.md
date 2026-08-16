@@ -59,6 +59,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | REALTIME | [REALTIME](domains/realtime.md) | RTC flow, provider adapters, Trust & Safety |
 | CREATORS | [CREATORS](domains/creators.md) | creator lifecycle, Creator Studio, creator compliance |
 | PRIVATE CLUBS | [PRIVATE CLUBS](domains/private-clubs.md) | creator product, entitlement, media, content gates |
+| MEDIA | [MEDIA](domains/media.md) | media upload/delivery security, media threat model, media provider eligibility, ADR-0010, ADR-0023 |
 | BILLING | [BILLING](domains/billing.md) | monetisation, payment flow/security, finance operations |
 | PAYOUTS | [PAYOUTS](domains/payouts.md) | payout compliance, finance operations, BILLING/CREATORS |
 | TRUST & SAFETY | [TRUST & SAFETY](domains/trust-safety.md) | report/enforcement, MODERATION, safety operations |
@@ -109,6 +110,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | [AI security integration](security/07-ai-safety-privacy.md) | Integration pointer binding dedicated AI controls to security baseline |
 | [Dependency risk acceptance](security/08-dependency-risk-acceptance.md) | Temporarily accepted supply-chain advisories, their bounds, and the CI gate contract |
 | [Dependency age blockers](security/09-dependency-age-blockers.md) | Upgrades a gate requires that the minimum release age forbids, when each becomes installable, and any owner-authorized exact-version override that cleared one early |
+| [Media threat model](security/10-media-threat-model.md) | The adversary the media platform is built against: upload, storage, inspection, processing, delivery, takedown, and reconciliation threats and their controls |
 
 ## Design and Figma authority
 
@@ -134,6 +136,7 @@ These are architecture/product gates, not legal advice:
 | [Data residency/retention](compliance/05-data-residency-retention.md) | Data mapping, region/provider routing, retention/deletion gates |
 | [Provider eligibility](compliance/06-payment-provider-eligibility.md) | Dated primary-source findings on payment/payout provider and card-network eligibility for Velora's business model |
 | [Surface and distribution eligibility](compliance/07-surface-and-distribution-eligibility.md) | Dated primary-source findings on app-store, age-assurance, depicted-person, and notice/appeal requirements deciding which surfaces may carry which content |
+| [Media provider eligibility](compliance/08-media-provider-eligibility.md) | Dated primary-source findings on object-storage, CDN, image-processing, and scanning provider eligibility, and the delivery-capability facts that bound what revocation may claim |
 
 ## Operations authority
 
@@ -178,6 +181,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0020](decisions/ADR-0020-creator-capability-activation.md) | Creator capability lifecycle, its activation gates, and identity verification as a separate predicate |
 | [ADR-0021](decisions/ADR-0021-monetization-money-architecture.md) | How ADR-0011's locked money decisions become code: money value type, two owner journals, orchestration ordering, webhook inbox, entitlement bridge, fail-closed capability configuration |
 | [ADR-0022](decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) | One safety policy and eligibility authority, scoped append-only enforcement with supersession, report/case/evidence/decision/appeal separation, surface as a first-class closed vocabulary, depicted-person consent by reference, versioned deadline policy, and fail-closed mature-content enablement |
+| [ADR-0023](decisions/ADR-0023-media-platform-architecture.md) | MEDIA as a domain owning bytes only, a technical lifecycle disjoint from publication, opaque server-generated keys, capability-bound direct upload, byte-derived inspection ahead of the decoder, in-process image processing, the bounded private-delivery revocation window, four distinct removal concepts, and fail-closed media configuration |
 
 ## Technical implementation reading paths
 
@@ -191,7 +195,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Database and migrations: data ownership, data/migrations, jobs/concurrency, ADR-0016, ADR-0019, unaffected portions of ADR-0006 and ADR-0007, affected domain/flow.
 - Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0016, ADR-0019, unaffected portions of ADR-0007, observability/testing, affected domain/flow.
 - Realtime and RTC: REALTIME, RTC flow, provider adapters, Trust & Safety, ADR-0007, ADR-0008, ADR-0009, ADR-0013, ADR-0014.
-- Media/storage: media security, content owner/flow, outbound networking, ADR-0007, ADR-0010, ADR-0014.
+- Media/storage: MEDIA, media upload/delivery security, media threat model, media provider eligibility, content owner/flow, outbound networking, jobs/idempotency, data ownership, provider adapters, ADR-0007, ADR-0010, ADR-0014, ADR-0019, ADR-0022, ADR-0023.
 - Billing and payouts: monetisation, BILLING/PAYOUTS, money flow, payment flow/security/compliance/operations, provider eligibility, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0019, ADR-0021.
 - AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
 - Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, dependency risk acceptance, ADR-0016, ADR-0019, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
@@ -208,10 +212,11 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - RTC: phases, REALTIME, RTC flow, surfaces, provider adapters, Trust & Safety, media/privacy, Design/Figma.
 - Billing: phases, monetisation, BILLING, payment lifecycle/security, jobs/concurrency, compliance, finance operations, Admin approval.
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
+- Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, ADR-0010, ADR-0022, ADR-0023.
 - Moderation/Trust & Safety: phase, both domains, report flow, moderation operations, evidence/privacy, Admin/RBAC, ADR-0022, creator gates and surface/distribution eligibility where applicable.
 - Security/privacy: security baseline and every relevant specialized security/compliance/incident authority plus owning domain/flow.
 - Design/Figma: relevant product/surface/flow/security/phase, then all six Design/Figma documents and exact approved Figma handoff.
 - Provider integration: provider adapters, owner domain/flow/security, compliance gates, jobs/idempotency, observability/operations, open decisions, then provider-specific ADR. Start with local/mock/test adapter.
-- Compliance/market entry: all seven compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
+- Compliance/market entry: all eight compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
 - Operations: relevant operations document, Admin surface/domain/RBAC/flow, affected domain/flow, observability, security/privacy/compliance.
 - AI: every document in AI authority, AI action flow/integration docs, product phases/surface, provider/outbound/jobs/RBAC/privacy/testing/operations, and every domain/tool contract involved.

@@ -4,6 +4,8 @@
 
 Define safe generic media boundary for profile/attachment/future creator content. Owner domain controls business visibility; storage adapter holds bytes. This does not approve any mature/explicit content category.
 
+This document states the boundary. [The media threat model](10-media-threat-model.md) states the adversary it is built against, [MEDIA](../domains/media.md) owns binary lifecycle, and [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md) locks the architecture that implements both. Where this document and those disagree, they are wrong together and all of them are corrected; nothing here may be read as permitting something the threat model refuses.
+
 ## Upload flow
 
 Authorized user requests constrained upload session for specific owner/object. Server validates intent, content category policy, size/type/count/quota and generates scoped short-lived upload target. Object enters quarantine; scanner/processor verifies magic bytes, malware, metadata, dimensions/transcoding and moderation signal as policy requires. Only owner transitions object to usable/published state. Client-supplied MIME/filename/URL is never trusted.
@@ -28,4 +30,4 @@ This approves no mature or explicit content category. Consumer V1 profile media 
 
 ## Phase/cross-references
 
-V1 profile/allowed attachment baseline if media is introduced; creator private media Phase 2. Mature creator media Conditional / Compliance-Gated. See [PRIVATE CLUBS](../domains/private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [creator entitlement](../flows/creator-entitlement.md), [creator/content gates](../compliance/03-creator-content-gates.md), [abuse/SSRF](06-abuse-outbound-networking.md).
+V1 profile/allowed attachment baseline if media is introduced; creator private media Phase 2. Mature creator media Conditional / Compliance-Gated. See [MEDIA](../domains/media.md), [media threat model](10-media-threat-model.md), [media provider eligibility](../compliance/08-media-provider-eligibility.md), [PRIVATE CLUBS](../domains/private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [creator entitlement](../flows/creator-entitlement.md), [creator/content gates](../compliance/03-creator-content-gates.md), [abuse/SSRF](06-abuse-outbound-networking.md), [ADR-0010](../decisions/ADR-0010-media-storage-delivery.md), [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md).
