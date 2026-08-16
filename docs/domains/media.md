@@ -101,7 +101,23 @@ The lifecycle order lives in code as a transition map and the shape of each stat
 
 `MEDIA_STORAGE_PROVIDER` defaults to `unavailable`, which refuses every operation, and staging and production reject any other value. The `local-test` adapter is filesystem-backed rather than in-process, because inspection runs in the worker and the API issues capabilities, and an in-memory adapter would let two processes disagree about whether an object exists. It requires an explicit directory and an explicit delivery signing key in every environment: a per-process fallback key would work on one replica and fail across two, which is the multi-instance bug hardest to find later. It performs no malware scanning and no content moderation, so nothing it accepts is evidence about real content.
 
-Not built yet, and not to be inferred from the model's generality: upload HTTP surfaces, the inspection and processing workers, the scanner port, delivery routes, takedown propagation, reconciliation, and Admin operations.
+## Upload orchestration
+
+**MEDIA publishes no HTTP route, and that is a design decision rather than an omission.** An upload endpoint that did not belong to a product domain would be a purpose-free upload endpoint: somebody could reserve storage with no product reason at all. The owning domain authorizes the purpose and then calls this service, so CSRF, origin, and audience behaviour is a property of the Consumer and Creator routes and is tested where those routes live. A test asserts the route registry contains no media path, so a future route cannot appear here quietly.
+
+The operation identity an upload is keyed by is bounded to the published client idempotency contract, in the service and again by `0039_media_upload_orchestration` as a check constraint, so a caller reaching the table another way cannot widen an index key.
+
+A window can be **replaced but never reused**. A reissue always allocates a new object key. An expired capability is expired at the provider too, but reusing the key would mean that if one were ever honoured late its bytes would land exactly where the next completion looks — and the platform would accept an object written under an authorization that had already lapsed. A fresh key makes that sequence describe nothing, and a test writes bytes under a lapsed capability to prove completion refuses them. Only an asset still waiting for its first bytes may be reissued; an asset that is uploaded, inspecting, quarantined, ready, or being deleted has moved past the point where a second window means anything.
+
+Reissue takes the advisory lock in [`idempotency-lock.ts`](../../apps/api/src/database/idempotency-lock.ts) before touching a row. `media_upload_sessions` carries two unique indexes, and `on conflict do nothing` arbitrates one: two writers that pass the arbiter's check in the same instant would collide on the other as a raised error rather than a skipped insert, which surfaces as a failed request for what is only a double submission.
+
+Three housekeeping cycles run on the worker as one poller, because they are one story about windows nobody finished. **Expiry** closes spent windows in bounded batches under `for update skip locked` — without it two sweeps take the same identifiers, the second waits on the first's locks, and both then report having closed the same rows; that was measured at three rows each before the fix, and the state predicate now appears in the outer statement as well so the guarantee does not rest on skipping alone. **Recovery** re-obtains capabilities for sessions that committed before the provider call could be made, which is the crash window made visible and is exactly why the capability is a second write. **Reclamation** deletes assets that never received bytes and have gone quiet past an explicit technical TTL of twenty-four hours, measured from the last lifecycle change so a reissue restarts the clock.
+
+That TTL is a resource policy about uploads nobody finished. It is deliberately **not** a retention policy about accepted media, and it may not be cited as a precedent for one: durations for accepted media, quarantined originals, and evidence under hold are `LEGAL REVIEW REQUIRED` and no code invents one.
+
+Reclamation goes through the ordinary deletion path rather than deleting rows, so whatever bytes did reach the provider become a recorded obligation. Whether an object actually exists under a window nobody completed is a question about provider state, and answering it belongs to reconciliation rather than to a sweep.
+
+Not built yet, and not to be inferred from the model's generality: the inspection and processing workers, the scanner port, delivery routes, takedown propagation, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

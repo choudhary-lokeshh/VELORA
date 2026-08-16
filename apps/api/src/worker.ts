@@ -34,6 +34,8 @@ import {
 import { Poller } from './jobs/poller.js';
 import { JobRegistry } from './jobs/registry.js';
 import { createQueue, createWorkerRuntime } from './jobs/runtime.js';
+import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
+import { mediaUploadSweepIntervalMilliseconds } from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
 import { createNotificationsRuntime } from './notifications/composition.js';
 import {
@@ -122,6 +124,10 @@ export function startBackgroundCycles(composition: WorkerComposition): void {
 export interface WorkerComposition {
   /** BILLING, composed here because this process drains its inbox and outbox. */
   readonly billing: BillingRuntime;
+  /** MEDIA, composed here because this process owns its durable byte work. */
+  readonly media: MediaRuntime;
+  /** Closes spent upload windows, recovers stranded ones, reclaims the dead. */
+  readonly mediaUploadSweep: Poller;
   /** PAYOUTS, composed here because this process applies both sides of the seam. */
   readonly payouts: PayoutsRuntime;
   close(): Promise<void>;
@@ -351,6 +357,37 @@ export function createWorkerComposition(input: {
     name: 'safety-deadline-sweep',
   });
 
+  // MEDIA's upload housekeeping, in one cycle because the three steps are one
+  // story about windows nobody finished: close what expired, re-obtain a
+  // capability for anything the crash window stranded, and reclaim what has
+  // gone quiet past the technical TTL. Each is bounded and each is idempotent,
+  // so two workers running this at once do the work once between them.
+  const media = createMediaRuntime({
+    config: input.config,
+    database: handle,
+    logger: input.logger,
+    now,
+  });
+  const mediaUploadSweep = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const expired = await media.service.sweepExpiredUploads();
+        const recovered = await media.service.recoverUploadCapabilities();
+        const reclaimed = await media.service.sweepAbandonedUploads();
+        // Counts only. An asset identifier here would put one person's upload
+        // in a log line, and nothing in this domain writes one.
+        if (expired > 0 || recovered > 0 || reclaimed > 0) {
+          input.logger.info(
+            { expired, reclaimed, recovered },
+            'media upload windows swept',
+          );
+        }
+      }),
+    intervalMilliseconds: mediaUploadSweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'media-upload-sweep',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -361,6 +398,8 @@ export function createWorkerComposition(input: {
   return {
     billing,
     financialReconciliation,
+    media,
+    mediaUploadSweep,
     payouts,
     async close() {
       await Promise.all([
@@ -368,6 +407,7 @@ export function createWorkerComposition(input: {
         providerEventDrain.stop(),
         financialReconciliation.stop(),
         safetyDeadlineSweep.stop(),
+        mediaUploadSweep.stop(),
         deliverySweep.stop(),
       ]);
     },
@@ -380,6 +420,7 @@ export function createWorkerComposition(input: {
       await relayPoller.runOnce();
       await financialReconciliation.runOnce();
       await safetyDeadlineSweep.runOnce();
+      await mediaUploadSweep.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,

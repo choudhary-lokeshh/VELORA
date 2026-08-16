@@ -1,10 +1,17 @@
 import type { SafeLogger } from '@velora/observability/server';
 
-import type { MediaAssetRow, MediaObjectRow } from './schema.js';
+import type {
+  MediaAssetRow,
+  MediaObjectRow,
+  MediaUploadSessionRow,
+} from './schema.js';
 import type { MediaInspectionFacts, MediaRepository } from './repository.js';
 import {
+  isMediaIdempotencyKey,
   maximumMediaObjectBytes,
+  mediaAbandonedUploadMilliseconds,
   mediaObjectKey,
+  mediaSweepBatchSize,
   mediaUploadWindowMilliseconds,
   requiredMediaVariants,
   type MediaAssetClass,
@@ -39,6 +46,8 @@ export type MediaOutcome =
     }
   /** The operation identity was reused with a materially different request. */
   | { readonly kind: 'idempotency_conflict' }
+  /** The owning domain supplied an operation identity outside the contract. */
+  | { readonly kind: 'invalid_idempotency_key' }
   | { readonly kind: 'not_found' }
   /** A concurrent writer moved the asset out from under this attempt. */
   | { readonly kind: 'conflict' }
@@ -98,7 +107,10 @@ export class MediaService {
     readonly ownerDomain: MediaOwnerDomain;
     readonly ownerReference: string;
   }): Promise<MediaOutcome> {
-    const { repository, storage } = this.dependencies;
+    const { repository } = this.dependencies;
+    if (!isMediaIdempotencyKey(input.idempotencyKey)) {
+      return { kind: 'invalid_idempotency_key' };
+    }
     const now = this.dependencies.now();
     const assetId = crypto.randomUUID();
     const objectKey = mediaObjectKey({ assetId, role: 'original' });
@@ -115,6 +127,7 @@ export class MediaService {
       if (outcome.asset.assetClass !== input.assetClass) return 'conflict';
       if (!outcome.created) return outcome.asset;
 
+      await repository.lockAssetUpload(executor, outcome.asset.id);
       const session = await repository.insertUploadSession(executor, {
         assetId: outcome.asset.id,
         attempt: 1,
@@ -139,11 +152,111 @@ export class MediaService {
       repository.transactionless,
       created.id,
     );
-    // A repeat whose window already closed is not a failure of this call: the
-    // asset exists and its state is the answer. Reissuing is Phase 2's job and
-    // belongs to the caller that knows whether the person is still waiting.
-    if (session === undefined) return { asset: created, kind: 'asset' };
+    // A repeat whose window already closed gets a new one. The caller asked to
+    // upload; telling it the asset exists and leaving it with no way to send
+    // bytes would be technically true and useless.
+    if (session === undefined) {
+      return this.reissueUpload({
+        assetId: created.id,
+        ownerDomain: input.ownerDomain,
+        ownerReference: input.ownerReference,
+      });
+    }
 
+    return this.issueCapability(created, session);
+  }
+
+  /**
+   * Opens a new upload window on an asset that never received bytes.
+   *
+   * The new window gets a **new object key**, never the old one. An expired
+   * capability is expired at the provider too, but reusing the key would mean
+   * that if one ever were honoured late, its bytes would land exactly where the
+   * next completion looks — and the platform would accept an object written
+   * under an authorization that had already lapsed. A fresh key makes that
+   * sequence describe nothing.
+   *
+   * Only an asset still waiting for its first bytes may be reissued. An asset
+   * that is uploaded, inspecting, quarantined, ready, or being deleted has
+   * moved past the point where a second window means anything, and handing one
+   * out would invite a client to overwrite a decision.
+   */
+  async reissueUpload(input: {
+    readonly assetId: string;
+    readonly ownerDomain: MediaOwnerDomain;
+    readonly ownerReference: string;
+  }): Promise<MediaOutcome> {
+    const { repository } = this.dependencies;
+    const asset = await repository.findOwnedAsset(
+      repository.transactionless,
+      input,
+    );
+    if (asset === undefined) return { kind: 'not_found' };
+    if (
+      asset.lifecycle !== 'awaiting_upload' &&
+      asset.lifecycle !== 'initiated'
+    ) {
+      return { kind: 'conflict' };
+    }
+
+    const now = this.dependencies.now();
+    const opened = await repository.transaction(async (executor) => {
+      // Before any row is touched, so two replicas reissuing the same asset
+      // serialize instead of colliding on the second unique index.
+      await repository.lockAssetUpload(executor, asset.id);
+
+      const existing = await repository.findOpenUploadSession(
+        executor,
+        asset.id,
+      );
+      // Attempts count every window this asset ever had, so the number comes
+      // from the latest row rather than from the open one — which, by the time
+      // a reissue runs, has usually already been closed by the sweep.
+      const latest = await repository.findLatestUploadSession(
+        executor,
+        asset.id,
+      );
+      if (existing !== undefined) {
+        // Somebody else opened one while this call was waiting for the lock, or
+        // the window was never actually closed. Either way there is a live
+        // capability and a second one is not wanted.
+        if (existing.expiresAt.getTime() > now.getTime()) return existing;
+        await repository.closeUploadSession(executor, {
+          now,
+          sessionId: existing.id,
+          state: 'expired',
+        });
+      }
+
+      return repository.insertUploadSession(executor, {
+        assetId: asset.id,
+        attempt: (latest?.attempt ?? 0) + 1,
+        expiresAt: new Date(now.getTime() + mediaUploadWindowMilliseconds),
+        id: crypto.randomUUID(),
+        maximumBytes: maximumMediaObjectBytes,
+        now,
+        objectKey: mediaObjectKey({ assetId: asset.id, role: 'original' }),
+      });
+    });
+    if (opened === undefined) return { kind: 'conflict' };
+
+    return this.issueCapability(asset, opened);
+  }
+
+  /**
+   * Obtains a provider capability for an open window and records it.
+   *
+   * Split out because three paths need it: a first upload, a reissue, and the
+   * recovery of a session that committed before the provider call could be
+   * made. All three are the same two steps in the same order, and the order is
+   * the point — the row exists first, so nothing here can leave a capability
+   * for an object no row describes.
+   */
+  private async issueCapability(
+    asset: MediaAssetRow,
+    session: MediaUploadSessionRow,
+  ): Promise<MediaOutcome> {
+    const { repository, storage } = this.dependencies;
     let capability;
     try {
       capability = await storage.createUploadCapability({
@@ -155,6 +268,9 @@ export class MediaService {
       if (error instanceof MediaStorageUnavailableError) {
         return { kind: 'storage_unavailable' };
       }
+      // Any other provider failure is ambiguous, not a refusal. The session
+      // stays open with no capability recorded, which is a shape recovery can
+      // see, and the caller is told nothing succeeded.
       throw error;
     }
 
@@ -166,9 +282,9 @@ export class MediaService {
     });
 
     return {
-      asset: created,
+      asset,
       capability: {
-        assetId: created.id,
+        assetId: asset.id,
         expiresAt: capability.expiresAt,
         headers: capability.headers,
         maximumBytes: capability.maximumBytes,
@@ -177,6 +293,89 @@ export class MediaService {
       },
       kind: 'upload_ready',
     };
+  }
+
+  /**
+   * Closes upload windows whose instant has passed.
+   *
+   * Closing is all this does. Whether bytes reached the provider under a window
+   * nobody completed is a question about provider state, and answering it is
+   * reconciliation's job rather than a sweep's; what a sweep owes is that a
+   * spent window stops being claimable and stops holding the one-open-window
+   * slot against a reissue.
+   */
+  async sweepExpiredUploads(input?: {
+    readonly limit?: number;
+  }): Promise<number> {
+    const { repository } = this.dependencies;
+    const closed = await repository.claimExpiredUploadSessions({
+      limit: input?.limit ?? mediaSweepBatchSize,
+      now: this.dependencies.now(),
+    });
+    return closed.length;
+  }
+
+  /**
+   * Reclaims assets that were reserved and never received bytes.
+   *
+   * This is a resource policy about uploads nobody finished, under the explicit
+   * technical TTL in `policy.ts`, and it is deliberately not a retention policy
+   * about accepted media — no duration for that is invented anywhere, and this
+   * one may not be cited as a precedent for one.
+   *
+   * Reclaiming goes through the ordinary deletion path rather than deleting
+   * rows, so whatever bytes did reach the provider become a recorded obligation
+   * instead of an orphan nobody is looking for.
+   */
+  async sweepAbandonedUploads(input?: {
+    readonly limit?: number;
+  }): Promise<number> {
+    const { repository } = this.dependencies;
+    const now = this.dependencies.now();
+    const abandoned = await repository.findAbandonedAssets(
+      repository.transactionless,
+      {
+        before: new Date(now.getTime() - mediaAbandonedUploadMilliseconds),
+        limit: input?.limit ?? mediaSweepBatchSize,
+      },
+    );
+
+    let reclaimed = 0;
+    for (const asset of abandoned) {
+      const outcome = await this.requestDeletion({ assetId: asset.id });
+      if (outcome.kind === 'asset') reclaimed += 1;
+    }
+    return reclaimed;
+  }
+
+  /**
+   * Re-obtains capabilities for sessions that committed and never got one.
+   *
+   * The crash window between the commit and the provider call, closed. It is
+   * bounded and idempotent: a session that already has a capability is not in
+   * the query, and re-obtaining one for a session that does not have it cannot
+   * produce a second live window because the window is the row.
+   */
+  async recoverUploadCapabilities(input?: {
+    readonly limit?: number;
+  }): Promise<number> {
+    const { repository } = this.dependencies;
+    const stranded = await repository.findUncapabilitiedSessions(
+      repository.transactionless,
+      { limit: input?.limit ?? mediaSweepBatchSize },
+    );
+
+    let recovered = 0;
+    for (const session of stranded) {
+      const asset = await repository.findAsset(
+        repository.transactionless,
+        session.assetId,
+      );
+      if (asset === undefined) continue;
+      const outcome = await this.issueCapability(asset, session);
+      if (outcome.kind === 'upload_ready') recovered += 1;
+    }
+    return recovered;
   }
 
   /** An asset, but only for the domain and owner that created it. */

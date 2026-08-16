@@ -24,6 +24,7 @@ import {
   maximumMediaPixels,
   mediaAssetClasses,
   mediaAssetLifecycles,
+  mediaIdempotencyKeyPattern,
   mediaImageFormats,
   mediaObjectRoles,
   mediaObjectStates,
@@ -208,6 +209,14 @@ export const mediaAssets = pgTable(
       sql`${table.lifecycle} not in ('deleting', 'deleted') or ${table.deletionRequestedAt} is not null`,
     ),
     check('media_assets_version_check', sql`${table.version} >= 1`),
+    // The operation identity is an index key that in practice carries a value a
+    // client supplied. Bounding its shape in the database as well as in the
+    // service means a future caller that reaches the table another way cannot
+    // widen it.
+    check(
+      'media_assets_idempotency_key_check',
+      sql`${table.idempotencyKey} ~ ${sql.raw(`'${mediaIdempotencyKeyPattern}'`)}`,
+    ),
   ],
 );
 

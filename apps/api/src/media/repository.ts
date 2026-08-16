@@ -1,10 +1,21 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lte,
+  notInArray,
+  sql,
+} from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
   Executor,
   TransactionHandle,
 } from '../database/executor.js';
+import { lockIdempotentOperation } from '../database/idempotency-lock.js';
 import {
   mediaAssets,
   mediaObjects,
@@ -254,6 +265,24 @@ export class MediaRepository {
     return row;
   }
 
+  /**
+   * Serializes work on one asset's upload window.
+   *
+   * `insertUploadSession` writes a row carrying two unique indexes — the global
+   * object key and the partial one-open-window-per-asset — and
+   * `lockIdempotentOperation` explains why that is a hazard: `on conflict do
+   * nothing` arbitrates one index, and two writers that pass the arbiter's
+   * check in the same instant collide on the *other* one as a raised `23505`
+   * rather than a skipped insert. That would surface as a failed request for
+   * what is only a double submission, and precisely when the machine is busy.
+   *
+   * **Ordering rule: take this before any row lock**, matching the rule that
+   * file states, so the two compose and the wait graph stays acyclic.
+   */
+  lockAssetUpload(executor: TransactionHandle, assetId: string): Promise<void> {
+    return lockIdempotentOperation(executor, 'media_upload_sessions', assetId);
+  }
+
   insertUploadSession(
     executor: MediaExecutor,
     input: {
@@ -364,6 +393,137 @@ export class MediaRepository {
       )
       .returning()
       .then(([row]) => row);
+  }
+
+  /**
+   * The next batch of upload windows whose instant has passed.
+   *
+   * Bounded and served by the partial expiry index, so a backlog drains over
+   * several cycles instead of one statement holding a transaction open across
+   * every session the platform ever issued. The closing update re-checks the
+   * state, so two replicas sweeping at once close each row once between them
+   * rather than fighting over it.
+   */
+  claimExpiredUploadSessions(input: {
+    readonly limit: number;
+    readonly now: Date;
+  }): Promise<readonly MediaUploadSessionRow[]> {
+    return this.database.transaction(async (executor) => {
+      // `for update skip locked` rather than a bare subselect. Without it two
+      // sweeps take the same identifiers, the second blocks on the first's row
+      // locks, and then updates rows the first has already closed — so both
+      // report having closed them. Measured: two concurrent sweeps over three
+      // expired windows returned three rows each.
+      const claimable = await executor
+        .select({ id: mediaUploadSessions.id })
+        .from(mediaUploadSessions)
+        .where(
+          and(
+            eq(mediaUploadSessions.state, 'issued'),
+            lte(mediaUploadSessions.expiresAt, input.now),
+          ),
+        )
+        .orderBy(
+          asc(mediaUploadSessions.expiresAt),
+          asc(mediaUploadSessions.id),
+        )
+        .limit(input.limit)
+        .for('update', { skipLocked: true });
+      if (claimable.length === 0) return [];
+
+      return executor
+        .update(mediaUploadSessions)
+        .set({ state: 'expired', updatedAt: input.now })
+        .where(
+          and(
+            // The state predicate belongs in the outer statement too, not only
+            // in the selection. It is what makes this correct even where a row
+            // was not skipped: PostgreSQL re-evaluates it against the updated
+            // row after waiting, and a window somebody else already closed no
+            // longer matches.
+            eq(mediaUploadSessions.state, 'issued'),
+            inArray(
+              mediaUploadSessions.id,
+              claimable.map((row) => row.id),
+            ),
+          ),
+        )
+        .returning();
+    });
+  }
+
+  /**
+   * The most recent window on an asset, open or not.
+   *
+   * Attempt numbering counts every window an asset ever had, so it has to look
+   * past the open one — which, by the time a reissue runs, is usually closed.
+   */
+  findLatestUploadSession(
+    executor: MediaExecutor,
+    assetId: string,
+  ): Promise<MediaUploadSessionRow | undefined> {
+    return executor
+      .select()
+      .from(mediaUploadSessions)
+      .where(eq(mediaUploadSessions.assetId, assetId))
+      .orderBy(desc(mediaUploadSessions.attempt))
+      .limit(1)
+      .then(([row]) => row);
+  }
+
+  /**
+   * Assets that were reserved, never received bytes, and have gone quiet.
+   *
+   * "Quiet" is deliberately measured from the last lifecycle change rather than
+   * from creation, so an asset whose window was reissued an hour ago is not
+   * swept while somebody is still trying. Rows with an open window are excluded
+   * outright: a live capability is somebody's upload in progress.
+   */
+  findAbandonedAssets(
+    executor: MediaExecutor,
+    input: { readonly before: Date; readonly limit: number },
+  ): Promise<readonly MediaAssetRow[]> {
+    const openSessions = executor
+      .select({ assetId: mediaUploadSessions.assetId })
+      .from(mediaUploadSessions)
+      .where(eq(mediaUploadSessions.state, 'issued'));
+    return executor
+      .select()
+      .from(mediaAssets)
+      .where(
+        and(
+          inArray(mediaAssets.lifecycle, ['initiated', 'awaiting_upload']),
+          lte(mediaAssets.lifecycleChangedAt, input.before),
+          notInArray(mediaAssets.id, openSessions),
+        ),
+      )
+      .orderBy(asc(mediaAssets.lifecycleChangedAt), asc(mediaAssets.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * Upload sessions the platform committed and never got a capability for.
+   *
+   * This is the crash window made visible: the rows commit, then the provider
+   * is called outside the transaction, and a process that dies between the two
+   * leaves exactly this shape. It is recoverable rather than orphaned, which is
+   * the whole reason the capability is a second write.
+   */
+  findUncapabilitiedSessions(
+    executor: MediaExecutor,
+    input: { readonly limit: number },
+  ): Promise<readonly MediaUploadSessionRow[]> {
+    return executor
+      .select()
+      .from(mediaUploadSessions)
+      .where(
+        and(
+          eq(mediaUploadSessions.state, 'issued'),
+          isNull(mediaUploadSessions.providerReference),
+        ),
+      )
+      .orderBy(asc(mediaUploadSessions.createdAt), asc(mediaUploadSessions.id))
+      .limit(input.limit);
   }
 
   /**

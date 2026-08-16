@@ -247,6 +247,49 @@ export const maximumMediaFrames = 1;
 export const mediaUploadWindowMilliseconds = 15 * 60_000;
 
 /**
+ * How long an asset that never received bytes is kept before the platform
+ * reclaims it.
+ *
+ * Twenty-four hours: long enough that somebody who closed a laptop mid-upload
+ * can come back the same day and retry against the same asset, short enough
+ * that abandoned rows and whatever orphaned bytes reached the provider do not
+ * accumulate indefinitely.
+ *
+ * This is a **resource policy about uploads nobody finished**, and it is
+ * deliberately not a retention policy about accepted media. No duration for
+ * accepted media, quarantined originals, or evidence under hold is invented
+ * anywhere in this codebase; those are `LEGAL REVIEW REQUIRED` in
+ * `docs/decisions/DECISIONS_REQUIRED.md`. Nothing here may be cited as a
+ * precedent for them.
+ */
+export const mediaAbandonedUploadMilliseconds = 24 * 60 * 60_000;
+
+/** How often expired upload windows and abandoned assets are looked for. */
+export const mediaUploadSweepIntervalMilliseconds = 60_000;
+
+/**
+ * How many rows one sweep cycle touches.
+ *
+ * Bounded so a backlog drains over several cycles rather than in one statement
+ * that holds a transaction open across a hundred thousand rows.
+ */
+export const mediaSweepBatchSize = 100;
+
+/**
+ * The shape an owning domain's operation identity must have.
+ *
+ * It matches the published client idempotency contract, because in practice it
+ * carries a value a client supplied. Bounding it here keeps arbitrary text out
+ * of an index key, and the database enforces the same rule so a future caller
+ * that skips the service cannot widen it.
+ */
+export const mediaIdempotencyKeyPattern = '^[A-Za-z0-9._-]{8,128}$';
+
+export function isMediaIdempotencyKey(value: string): boolean {
+  return new RegExp(mediaIdempotencyKeyPattern, 'u').test(value);
+}
+
+/**
  * How long a private delivery credential lives, and therefore the maximum time
  * an already-issued one outlives the authorization that produced it.
  *

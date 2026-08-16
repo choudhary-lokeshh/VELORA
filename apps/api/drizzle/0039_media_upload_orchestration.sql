@@ -1,0 +1,12 @@
+-- MEDIA: bounding the operation identity an upload is keyed by.
+--
+-- `idempotency_key` is an index key that in practice carries a value a client
+-- supplied and an owning domain passed through. It had no shape, so a caller
+-- could put arbitrary text of arbitrary length into a unique index.
+--
+-- The bound matches the published client idempotency contract in
+-- `packages/validation/src/product.ts`, and it is enforced here as well as in
+-- the service so a future caller that reaches the table another way cannot
+-- widen it. No existing row can violate it: no deployed environment has ever
+-- accepted media, and every key the service writes already matches.
+ALTER TABLE "media_assets" ADD CONSTRAINT "media_assets_idempotency_key_check" CHECK ("media_assets"."idempotency_key" ~ '^[A-Za-z0-9._-]{8,128}$');
