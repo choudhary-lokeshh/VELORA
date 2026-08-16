@@ -43,3 +43,15 @@ export const maximumProfileMediaBytes = 8 * 1024 * 1024;
  * needs the duration itself, and it appears in no DDL.
  */
 export const profileMediaUploadWindowMilliseconds = 15 * 60 * 1000;
+
+/**
+ * How many media readiness projections one sweep cycle refreshes.
+ *
+ * Bounded so a platform with a large number of attached images revisits them
+ * over several cycles rather than in one statement, and ordered by staleness so
+ * every slot is reached within a predictable period.
+ */
+export const profileMediaReadinessBatchSize = 200;
+
+/** How often the readiness projection sweep runs. */
+export const profileMediaReadinessIntervalMilliseconds = 15_000;

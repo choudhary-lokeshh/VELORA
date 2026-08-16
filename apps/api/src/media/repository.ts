@@ -173,6 +173,35 @@ export class MediaRepository {
       .then(([row]) => row);
   }
 
+  /** Several assets by identifier, for the batched readiness projection. */
+  listAssets(
+    executor: MediaExecutor,
+    assetIds: readonly string[],
+  ): Promise<readonly MediaAssetRow[]> {
+    if (assetIds.length === 0) return Promise.resolve([]);
+    return executor
+      .select()
+      .from(mediaAssets)
+      .where(inArray(mediaAssets.id, [...assetIds]));
+  }
+
+  /** The open upload window of each named asset, where one is still open. */
+  listOpenUploadSessions(
+    executor: MediaExecutor,
+    assetIds: readonly string[],
+  ): Promise<readonly MediaUploadSessionRow[]> {
+    if (assetIds.length === 0) return Promise.resolve([]);
+    return executor
+      .select()
+      .from(mediaUploadSessions)
+      .where(
+        and(
+          inArray(mediaUploadSessions.assetId, [...assetIds]),
+          eq(mediaUploadSessions.state, 'issued'),
+        ),
+      );
+  }
+
   findAssetByIdempotency(
     executor: MediaExecutor,
     input: {

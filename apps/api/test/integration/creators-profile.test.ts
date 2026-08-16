@@ -18,6 +18,7 @@ import {
   testDatabaseAdmission,
   testProductRuntimes,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 /**
@@ -49,11 +50,18 @@ const auth = createAuthRuntime({
       request.headers.get('x-velora-device') ?? 'creator-profile-test',
   },
 });
+const mediaRuntime = testMediaRuntime({
+  config,
+  database: database.drizzle,
+  logger,
+});
+
 const users = createUsersRuntime({
   caller: auth.caller,
   config,
   database: database.drizzle,
   logger,
+  media: mediaRuntime.service,
 });
 const application = createApplication({
   config,

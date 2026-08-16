@@ -193,7 +193,31 @@ Credentials are verifiable across replicas, which is why the signing key is conf
 
 Where no provider is approved, delivery reports `unavailable` rather than a refusal. Nothing about the viewer or the asset is wrong; there is simply no approved way to serve bytes.
 
-Not built yet, and not to be inferred from the model's generality: consumer and creator delivery routes, takedown propagation and cache purge, reconciliation, and Admin operations.
+## Consumer profile media
+
+USERS is the first domain to hold a MEDIA asset, and `0040_users_profile_media_assets` is where the ownership split became real. `users_profile_media` keeps which asset occupies which slot, in what order, and whether the slot is attached or removed. Everything else it used to carry — the object key, the digest, the measured size, the sniffed content type, the upload expiry, the refusal reason — moved here, because holding one fact in two domains means the copy that goes stale is the one somebody is watching a spinner against.
+
+`state` narrowed from four values to two. `pending_upload`, `ready`, and `rejected` were never USERS' answers; what a client sees is now derived from the readiness contract at read time. That contract is coarse on purpose — `pending_upload`, `checking`, `preparing`, `ready`, `rejected`, `removed` — because whether a worker is decoding or encoding is not a product fact and publishing it would make every pipeline change a breaking contract change.
+
+The published contract lost its `contentType`, and that is the point rather than an omission: what format some bytes turned out to be is MEDIA's answer, no surface renders it, and restating it from USERS would be one domain publishing a fact it no longer holds.
+
+### The cached projection, and what it costs
+
+Discovery's candidate query must stay a single indexed read; asking MEDIA per candidate would be an N+1 across the whole feed. So `users_profile_media.media_ready` caches MEDIA's answer, which is the [non-authoritative projection](../architecture/03-domain-boundaries.md) the boundary rules already permit.
+
+Two properties make that safe. It defaults to false and is only ever set true by MEDIA saying so, so staleness delays somebody's discoverability rather than exposing an image. And **delivery never reads it** — every issuance re-derives readiness, safety, and entitlement — so a stale value cannot cause a byte to be served. The exposure is bounded to discoverability.
+
+It is refreshed on two paths. The owner reading their own profile refreshes their own slots, because that person is the one waiting. A worker sweep refreshes the stalest slots platform-wide, oldest first, so a profile nobody has opened since its asset was taken down does not keep a stale `true` indefinitely.
+
+Both paths reconcile admission, and that is a behaviour that would otherwise have regressed. An image becoming ready is what completes somebody's minimum profile, and completion is what activates their account. That used to happen on the write that made the image ready; readiness is asynchronous now, so without reconciling here an account would sit at `pending_profile` until its owner happened to save something else.
+
+### What a surface shows
+
+Completion no longer makes an image ready and does not pretend to. It tells the platform to go and look; the looking happens on the worker. A client posting a completion is told `checking`, then `preparing`, then `ready` — and the profile continues to report `ready_media` as outstanding until it genuinely is. There is no state in which a surface says an upload succeeded while the platform still says quarantined.
+
+Delivery of a consumer profile image is restricted rather than public — a profile is never a public internet page — and for now the only entitled viewer is the owner. Whether a *peer* may see somebody's profile image is a question about the relationship between two accounts, which DISCOVERY owns; answering it in USERS would mean inventing the rule, so it is left until a surface needs it.
+
+Not built yet, and not to be inferred from the model's generality: creator media, peer delivery of consumer images, takedown propagation and cache purge, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

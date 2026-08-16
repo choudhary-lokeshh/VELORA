@@ -68,24 +68,45 @@ export function journeyStage(
  * the image was scanned or moderated: no such capability exists, and the
  * rejection reasons the server publishes are structural.
  */
-export type ProfileMediaState = 'none' | 'pending' | 'rejected' | 'ready';
+export type ProfileMediaState =
+  'none' | 'pending' | 'checking' | 'preparing' | 'rejected' | 'ready';
 
+/**
+ * The strongest thing true of any of somebody's images.
+ *
+ * Ordered by how far along it is rather than by how recent, because a person
+ * with one ready image and one still being checked has a usable profile and
+ * should be told so. A rejection outranks work in progress for the opposite
+ * reason: it is the only state that needs them to do something.
+ */
 export function profileMediaState(
   profile: ConsumerProfile | undefined,
 ): ProfileMediaState {
   if (profile === undefined || profile.media.length === 0) return 'none';
-  if (profile.media.some((item) => item.state === 'ready')) return 'ready';
-  if (profile.media.some((item) => item.state === 'rejected'))
-    return 'rejected';
-  if (profile.media.some((item) => item.state === 'pending_upload')) {
-    return 'pending';
-  }
+  const has = (state: string) =>
+    profile.media.some((item) => item.state === state);
+  if (has('ready')) return 'ready';
+  if (has('rejected')) return 'rejected';
+  if (has('preparing')) return 'preparing';
+  if (has('checking')) return 'checking';
+  if (has('pending_upload')) return 'pending';
   return 'none';
 }
 
+/**
+ * What each state says, in words that are true.
+ *
+ * `checking` and `preparing` are separate because they take separate amounts of
+ * time and because "still working" for the whole of both would tell somebody
+ * nothing for the entire period anything is happening. Neither claims the image
+ * was moderated: no such capability exists, and the refusals the server
+ * publishes are structural.
+ */
 export const profileMediaLabels: Readonly<Record<ProfileMediaState, string>> = {
+  checking: 'Checking the photo…',
   none: 'No image yet',
   pending: 'Upload started, not yet confirmed',
+  preparing: 'Preparing the photo…',
   ready: 'Image ready',
   rejected: 'Image was not accepted. Upload another.',
 };

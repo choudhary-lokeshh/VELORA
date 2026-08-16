@@ -1,8 +1,6 @@
 import {
   localTestAdultAssuranceVerifier,
-  localTestProfileMediaStorage,
   unavailableAdultAssuranceVerifier,
-  unavailableProfileMediaStorage,
   type ServerConfig,
 } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
@@ -22,15 +20,10 @@ import {
 import { ConsumerContextResolver } from './context.js';
 import { ConsumerDirectory } from './directory.js';
 import { ConsumerEnforcement } from './enforcement.js';
-import {
-  LocalTestProfileMediaStorage,
-  UnavailableProfileMediaStorage,
-  type ProfileMediaStoragePort,
-} from './media.js';
 import { OnboardingService } from './onboarding.js';
 import { ProfileRepository } from './profile-repository.js';
 import { ProfileRoutes } from './profile-routes.js';
-import { ProfileService } from './profile-service.js';
+import { ProfileService, type ProfileMediaPort } from './profile-service.js';
 import { UsersRepository, type UsersDatabase } from './repository.js';
 import { UsersRoutes } from './routes.js';
 import { UsersService } from './service.js';
@@ -53,7 +46,6 @@ export interface UsersRuntime {
   /** The account-standing change this domain publishes for enforcement. */
   readonly enforcement: ConsumerEnforcement;
   readonly onboarding: OnboardingService;
-  readonly profileMediaStorage: ProfileMediaStoragePort;
   readonly profileRepository: ProfileRepository;
   readonly profileRoutes: ProfileRoutes;
   readonly profiles: ProfileService;
@@ -83,24 +75,8 @@ const adultAssuranceVerifiers: Readonly<
  * Profile media adapter registry, on the same rule as the verifier above: a
  * configured name with no entry is an error rather than a silent default.
  */
-const profileMediaStorages: Readonly<
-  Record<string, () => ProfileMediaStoragePort>
-> = {
-  [localTestProfileMediaStorage]: () => new LocalTestProfileMediaStorage(),
-  [unavailableProfileMediaStorage]: () => new UnavailableProfileMediaStorage(),
-};
 
-function selectProfileMediaStorage(
-  config: ServerConfig,
-): ProfileMediaStoragePort {
-  const build = profileMediaStorages[config.USERS_PROFILE_MEDIA_STORAGE];
-  if (build === undefined) {
-    throw new Error('No approved profile media storage is configured');
-  }
-  return build();
-}
-
-function selectAdultAssuranceVerifier(
+export function selectAdultAssuranceVerifier(
   config: ServerConfig,
 ): AdultAssuranceVerifier {
   const build = adultAssuranceVerifiers[config.USERS_ADULT_ASSURANCE_VERIFIER];
@@ -120,6 +96,15 @@ export function createUsersRuntime(input: {
   readonly config: ServerConfig;
   readonly database: UsersDatabase;
   readonly logger: SafeLogger;
+  /**
+   * The media platform, reached only through its published contracts.
+   *
+   * USERS no longer holds a storage adapter of its own. It asks MEDIA for an
+   * upload capability and for readiness, and holds an opaque asset identifier;
+   * object keys, digests, measured sizes, and lifecycle values are MEDIA's and
+   * stay there.
+   */
+  readonly media: ProfileMediaPort;
   readonly now?: () => Date;
 }): UsersRuntime {
   const now = input.now ?? (() => new Date());
@@ -137,13 +122,13 @@ export function createUsersRuntime(input: {
     profiles: profileRepository,
     repository,
   });
-  const profileMediaStorage = selectProfileMediaStorage(input.config);
   const profiles = new ProfileService({
     logger: input.logger,
     now,
     onboarding,
     repository: profileRepository,
-    storage: profileMediaStorage,
+    media: input.media,
+    users: repository,
   });
   const availability = new AvailabilityService({
     now,
@@ -163,7 +148,6 @@ export function createUsersRuntime(input: {
     directory: new ConsumerDirectory(input.database),
     enforcement: new ConsumerEnforcement(repository),
     onboarding,
-    profileMediaStorage,
     profileRepository,
     profileRoutes: new ProfileRoutes({ consumerContext, profiles }),
     profiles,

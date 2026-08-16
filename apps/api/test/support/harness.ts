@@ -146,15 +146,23 @@ export function testUsersRuntime(input: {
   readonly config: ServerConfig;
   readonly database?: UsersDatabase;
   readonly logger?: SafeLogger;
+  /** Substitutable so a test can drive readiness without a worker. */
+  readonly media?: MediaRuntime;
   readonly now?: () => Date;
 }): UsersRuntime {
+  const database = input.database ?? drizzle.mock();
+  // USERS holds no storage adapter of its own any more: it asks the media
+  // platform. Composing one here keeps every existing suite working against
+  // the same database rather than a second view of it.
+  const media = input.media ?? testMediaRuntime({ ...input, database });
   return createUsersRuntime({
     caller: input.auth.caller,
     config: input.config,
     // As above: a mock database throws on any query, so only tests that stop
     // before storage use the default.
-    database: input.database ?? drizzle.mock(),
+    database,
     logger: input.logger ?? silentLogger(),
+    media: media.service,
     ...(input.now === undefined ? {} : { now: input.now }),
   });
 }
@@ -401,11 +409,22 @@ export function testMediaRuntime(input: {
   readonly database?: UsersDatabase;
   readonly logger?: SafeLogger;
   readonly now?: () => Date;
+  /**
+   * Defaults to true, unlike the API.
+   *
+   * A test harness stands in for the whole platform rather than for one
+   * process, so a suite driving an upload to `ready` needs the byte work
+   * available in the same object. The production API composes neither an
+   * inspector nor a processor, and a test asserts that separately — this
+   * default is about what a harness is for, not a relaxation of it.
+   */
+  readonly performsByteWork?: boolean;
 }): MediaRuntime {
   return createMediaRuntime({
     config: input.config,
     database: input.database ?? drizzle.mock(),
     logger: input.logger ?? silentLogger(),
+    performsByteWork: input.performsByteWork ?? true,
     ...(input.now === undefined ? {} : { now: input.now }),
   });
 }

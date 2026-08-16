@@ -49,7 +49,9 @@ import { silentLogger, testServerConfig } from '../support/harness.js';
  */
 
 const databaseUrl = await provisionDatabase('velora_media_upload');
-const database: TestDatabase = connectDatabase(databaseUrl);
+// Above this suite's own peak concurrency: it fires fifty simultaneous
+// initiations, and a pool that has to queue them can strand a connection.
+const database: TestDatabase = connectDatabase(databaseUrl, { max: 60 });
 const directory = await mkdtemp(join(tmpdir(), 'velora-media-upload-'));
 
 const config = testServerConfig({

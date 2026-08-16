@@ -1,6 +1,5 @@
 import {
   maximumProfileMedia,
-  type ProfileMediaContentType,
   type ProfileRequirement,
 } from '@velora/validation';
 import { and, asc, eq, ne, notInArray, sql } from 'drizzle-orm';
@@ -11,7 +10,6 @@ import {
   userProfileLanguages,
   userProfileMedia,
   userProfiles,
-  type ProfileMediaRejectionReason,
   type ProfileMediaState,
 } from './schema.js';
 
@@ -116,7 +114,12 @@ export class ProfileRepository implements ProfileCompletenessReader {
       .where(
         and(
           eq(userProfileMedia.userId, account.id),
-          eq(userProfileMedia.state, 'ready'),
+          eq(userProfileMedia.state, 'attached'),
+          // MEDIA's cached answer, on the same projection discovery reads. A
+          // slot whose asset is still being inspected does not satisfy the
+          // minimum profile, which is the behaviour this domain already had
+          // when it decided readiness itself.
+          eq(userProfileMedia.mediaReady, true),
         ),
       )
       .limit(1);
@@ -381,9 +384,8 @@ export class ProfileRepository implements ProfileCompletenessReader {
     executor: AnyExecutor,
     input: {
       readonly id: string;
+      readonly mediaAssetId: string;
       readonly now: Date;
-      readonly storageKey: string;
-      readonly uploadExpiresAt: Date;
       readonly userId: string;
     },
   ): Promise<UserProfileMediaRow | undefined> {
@@ -405,12 +407,11 @@ export class ProfileRepository implements ProfileCompletenessReader {
         .values({
           createdAt: input.now,
           id: input.id,
+          mediaAssetId: input.mediaAssetId,
           position,
-          state: 'pending_upload',
+          state: 'attached',
           stateChangedAt: input.now,
-          storageKey: input.storageKey,
           updatedAt: input.now,
-          uploadExpiresAt: input.uploadExpiresAt,
           userId: input.userId,
         })
         .onConflictDoNothing()
@@ -428,13 +429,9 @@ export class ProfileRepository implements ProfileCompletenessReader {
   async transitionMedia(
     executor: AnyExecutor,
     input: {
-      readonly byteSize?: number | undefined;
-      readonly checksum?: string | undefined;
-      readonly contentType?: ProfileMediaContentType | undefined;
       readonly expectedState: ProfileMediaState;
       readonly mediaId: string;
       readonly now: Date;
-      readonly rejectionReason?: ProfileMediaRejectionReason | undefined;
       readonly state: ProfileMediaState;
       readonly userId: string;
     },
@@ -442,16 +439,13 @@ export class ProfileRepository implements ProfileCompletenessReader {
     const updated = await executor
       .update(userProfileMedia)
       .set({
-        ...(input.byteSize === undefined ? {} : { byteSize: input.byteSize }),
-        ...(input.checksum === undefined ? {} : { checksum: input.checksum }),
-        ...(input.contentType === undefined
-          ? {}
-          : { contentType: input.contentType }),
-        ...(input.state === 'ready' ? { readyAt: input.now } : {}),
-        rejectionReason: input.rejectionReason ?? null,
         state: input.state,
         stateChangedAt: input.now,
         updatedAt: input.now,
+        // A detached slot is not ready for anything. Clearing the projection
+        // with the state keeps the two from disagreeing even for the instant
+        // before the next sweep.
+        ...(input.state === 'removed' ? { mediaReady: false } : {}),
       })
       .where(
         and(
@@ -462,5 +456,56 @@ export class ProfileRepository implements ProfileCompletenessReader {
       )
       .returning();
     return updated[0];
+  }
+
+  /**
+   * Records what MEDIA currently says about a slot's asset.
+   *
+   * The projection and the instant it was taken move together, so the sweep can
+   * order by staleness and a value can never look fresher than it is.
+   */
+  async recordMediaReadiness(
+    executor: AnyExecutor,
+    input: {
+      readonly mediaId: string;
+      readonly now: Date;
+      readonly ready: boolean;
+    },
+  ): Promise<void> {
+    await executor
+      .update(userProfileMedia)
+      .set({
+        mediaReady: input.ready,
+        readinessCheckedAt: input.now,
+        updatedAt: input.now,
+      })
+      .where(eq(userProfileMedia.id, input.mediaId));
+  }
+
+  /**
+   * Attached slots whose projection is stalest, oldest first.
+   *
+   * Never-checked rows sort first, so a freshly attached asset is picked up on
+   * the next cycle rather than waiting behind everything else. Bounded, and
+   * served by the partial readiness index.
+   */
+  async listStaleReadiness(
+    executor: AnyExecutor,
+    input: { readonly limit: number },
+  ): Promise<UserProfileMediaRow[]> {
+    return (
+      executor
+        .select()
+        .from(userProfileMedia)
+        .where(eq(userProfileMedia.state, 'attached'))
+        // `asc nulls first` in that order: PostgreSQL takes the direction before
+        // the null placement, and drizzle's `asc()` helper wrapped around a raw
+        // fragment emits them the other way round.
+        .orderBy(
+          sql`${userProfileMedia.readinessCheckedAt} asc nulls first`,
+          asc(userProfileMedia.id),
+        )
+        .limit(input.limit)
+    );
   }
 }

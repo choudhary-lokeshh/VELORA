@@ -78,8 +78,22 @@ export const profileLanguagesSchema = z
     'Languages must not repeat',
   );
 
+/**
+ * How far an image has got, as its owner sees it.
+ *
+ * Richer than it was, because the platform now genuinely does more than accept
+ * bytes: it works out what they are and then makes the sizes it needs, and a
+ * surface that showed "pending" throughout would be telling somebody nothing
+ * for the whole time anything is happening.
+ *
+ * Coarser than the media platform's own lifecycle, deliberately. Whether a
+ * worker is decoding or encoding is not a product fact, and publishing it would
+ * make every pipeline change a breaking contract change.
+ */
 export const profileMediaStateSchema = z.enum([
   'pending_upload',
+  'checking',
+  'preparing',
   'ready',
   'rejected',
   'removed',
@@ -98,10 +112,17 @@ export const profileMediaRejectionReasonSchema = z.enum([
  * There is no URL. Consumer media has no durable public address: delivery is
  * authorized and signed per request, so a link that outlives the authorization
  * decision cannot exist.
+ *
+ * There is no detected content type either, and its removal is the point rather
+ * than an omission. What format some bytes turned out to be is a technical fact
+ * the media platform owns, no surface renders it, and publishing it from here
+ * would be this domain restating an answer it no longer holds.
+ *
+ * `uploadExpiresAt` is present only while a window is actually open. Once bytes
+ * have arrived there is no deadline left to show.
  */
 export const profileMediaSchema = z
   .object({
-    contentType: z.enum(acceptedProfileMediaTypes).optional(),
     id: z.uuid(),
     position: z
       .number()
@@ -110,7 +131,7 @@ export const profileMediaSchema = z
       .max(maximumProfileMedia - 1),
     rejectionReason: profileMediaRejectionReasonSchema.optional(),
     state: profileMediaStateSchema,
-    uploadExpiresAt: z.iso.datetime(),
+    uploadExpiresAt: z.iso.datetime().optional(),
   })
   .strict();
 

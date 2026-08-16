@@ -33,6 +33,7 @@ import {
   testCreatorOrigin,
   testDatabaseAdmission,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 /**
@@ -76,11 +77,17 @@ function harness() {
         request.headers.get('x-velora-device') ?? 'red-team',
     },
   });
+  const mediaRuntime = testMediaRuntime({
+    config,
+    database: database.drizzle,
+    logger,
+  });
   const users = createUsersRuntime({
     caller: auth.caller,
     config,
     database: database.drizzle,
     logger,
+    media: mediaRuntime.service,
   });
   const application = createApplication({
     config,

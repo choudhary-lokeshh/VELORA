@@ -205,6 +205,83 @@ export const mediaVariantQuality = 82;
 /** How often processing obligations are claimed. */
 export const mediaProcessingIntervalMilliseconds = 5_000;
 
+/**
+ * What an owning domain may be told about an asset's progress.
+ *
+ * A **product** vocabulary rather than the technical lifecycle, and coarser on
+ * purpose. An owning domain needs to render honest progress and decide whether
+ * a requirement is satisfied; it does not need to know whether a worker is
+ * decoding or encoding, and publishing the internal lifecycle would make every
+ * future pipeline change a breaking change for four surfaces.
+ */
+export const mediaReadinessStates = [
+  /** A capability exists. No bytes have been verified. */
+  'pending_upload',
+  /** Bytes arrived and the platform is working out what they are. */
+  'checking',
+  /** The platform knows what they are and is making the sizes it needs. */
+  'preparing',
+  /** Every derivative the class owes exists. Still not permission to show it. */
+  'ready',
+  /** Refused. It will never become ready. */
+  'rejected',
+  /** Being removed, or gone. */
+  'removed',
+] as const;
+export type MediaReadinessState = (typeof mediaReadinessStates)[number];
+
+/**
+ * Why an object was refused, as its uploader may be told.
+ *
+ * Deliberately coarser than {@link mediaRejectionReasons}. The internal set
+ * distinguishes an undecodable file from an unsupported one from a pixel bomb,
+ * which is useful to an operator and useful to an attacker probing what the
+ * platform will accept. What its owner needs is enough to fix the file.
+ */
+export const mediaPublicRejectionReasons = [
+  'unsupported_type',
+  'too_large',
+  'not_uploaded',
+  'content_rejected',
+] as const;
+export type MediaPublicRejectionReason =
+  (typeof mediaPublicRejectionReasons)[number];
+
+/** How an internal refusal is coarsened before anybody outside MEDIA sees it. */
+export const publicRejectionFor: Readonly<
+  Record<MediaRejectionReason, MediaPublicRejectionReason>
+> = {
+  dimensions_exceeded: 'too_large',
+  empty_object: 'not_uploaded',
+  // Animation is not a size problem and not a corruption problem; from the
+  // uploader's side it is a format this platform does not take.
+  frame_limit_exceeded: 'unsupported_type',
+  metadata_limit_exceeded: 'content_rejected',
+  object_missing: 'not_uploaded',
+  pixel_limit_exceeded: 'too_large',
+  processing_failed: 'content_rejected',
+  scan_refused: 'content_rejected',
+  too_large: 'too_large',
+  undecodable: 'unsupported_type',
+  unsupported_format: 'unsupported_type',
+};
+
+/** How the technical lifecycle is projected for an owning domain. */
+export const readinessFor: Readonly<
+  Record<MediaAssetLifecycle, MediaReadinessState>
+> = {
+  awaiting_upload: 'pending_upload',
+  deleted: 'removed',
+  deleting: 'removed',
+  initiated: 'pending_upload',
+  inspected: 'preparing',
+  inspecting: 'checking',
+  processing: 'preparing',
+  quarantined: 'rejected',
+  ready: 'ready',
+  uploaded: 'checking',
+};
+
 /** An object is either what was uploaded or something the platform made. */
 export const mediaObjectRoles = ['original', 'variant'] as const;
 export type MediaObjectRole = (typeof mediaObjectRoles)[number];
@@ -284,6 +361,25 @@ export type MediaRejectionReason = (typeof mediaRejectionReasons)[number];
  * out is exactly the attack.
  */
 export const maximumMediaObjectBytes = 15 * 1024 * 1024;
+
+/**
+ * The largest object each class accepts.
+ *
+ * Per class rather than one platform number, because the ceiling is a product
+ * decision about what a surface asks people to upload rather than a technical
+ * one about what a decoder can survive. Consumer profile media keeps the eight
+ * mebibytes its published contract already promises;
+ * {@link maximumMediaObjectBytes} remains the hard technical bound that no
+ * class may exceed.
+ */
+export const maximumMediaBytesByClass: Readonly<
+  Record<MediaAssetClass, number>
+> = {
+  consumer_profile_image: 8 * 1024 * 1024,
+  creator_avatar_image: 8 * 1024 * 1024,
+  creator_content_image: maximumMediaObjectBytes,
+  creator_cover_image: maximumMediaObjectBytes,
+};
 export const maximumMediaDimension = 12_000;
 export const maximumMediaPixels = 50_000_000;
 /**

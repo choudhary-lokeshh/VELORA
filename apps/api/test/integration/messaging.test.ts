@@ -11,7 +11,6 @@ import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
 import { ConversationParticipation } from '../../src/messaging/participation.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
-import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
 import {
   connectDatabase,
@@ -34,6 +33,10 @@ import {
   testPayoutsRuntime,
   testMediaRuntime,
 } from '../support/harness.js';
+import {
+  mediaEnvironment,
+  readyProfileImage,
+} from '../support/profile-media.js';
 
 const databaseUrl = await provisionDatabase('velora_messaging');
 const database: TestDatabase = connectDatabase(databaseUrl);
@@ -45,7 +48,7 @@ const healthy = {
 
 const config = testServerConfig({
   MESSAGING_SAFETY_ELIGIBILITY: 'trust-and-safety',
-  USERS_PROFILE_MEDIA_STORAGE: 'local-test',
+  ...mediaEnvironment,
 });
 
 let clockOffsetMilliseconds = 0;
@@ -67,12 +70,20 @@ const auth = createAuthRuntime({
     },
   },
 });
+const mediaRuntime = testMediaRuntime({
+  config,
+  database: database.drizzle,
+  logger,
+  now,
+});
+
 const users = createUsersRuntime({
   caller: auth.caller,
   config,
   database: database.drizzle,
   logger,
   now,
+  media: mediaRuntime.service,
 });
 const safety = createSafetyRuntime({
   accounts: users.enforcement,
@@ -169,12 +180,6 @@ const application = createApplication({
 });
 const handle = (request: Request) => application.app.handle(request);
 
-const configuredStorage = users.profileMediaStorage;
-if (!(configuredStorage instanceof LocalTestProfileMediaStorage)) {
-  throw new Error('Messaging tests expect the development storage adapter');
-}
-const storage: LocalTestProfileMediaStorage = configuredStorage;
-
 afterAll(async () => {
   await application.close();
   await database.close();
@@ -185,8 +190,6 @@ beforeEach(async () => {
   logs.length = 0;
   await database.truncate();
 });
-
-const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 
 interface Credentials {
   readonly cookie: string;
@@ -271,15 +274,12 @@ async function consumer(subject: string): Promise<Credentials> {
   );
   const upload = await handle(post('/v1/users/me/profile/media', caller, {}));
   const media = (await upload.json()) as { mediaId: string };
-  const rows = await rowsOf<{ storage_key: string }>(
-    database.sql`select storage_key from users_profile_media where id = ${media.mediaId}`,
-  );
-  storage.put(rows[0]?.storage_key ?? '', jpegBytes);
-  await handle(
-    post('/v1/users/me/profile/media/completion', caller, {
-      mediaId: media.mediaId,
-    }),
-  );
+  await readyProfileImage({
+    database,
+    media: mediaRuntime,
+    slotId: media.mediaId,
+    users,
+  });
   await handle(
     post('/v1/users/me/preferences', caller, { discoverable: true }),
   );

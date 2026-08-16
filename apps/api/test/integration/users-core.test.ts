@@ -21,6 +21,7 @@ import {
   testCreatorOrigin,
   testDatabaseAdmission,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_users_core');
@@ -53,11 +54,17 @@ function harness(): Harness {
         request.headers.get('x-velora-device') ?? 'users-test',
     },
   });
+  const mediaRuntime = testMediaRuntime({
+    config,
+    database: database.drizzle,
+    logger,
+  });
   const users = createUsersRuntime({
     caller: auth.caller,
     config,
     database: database.drizzle,
     logger,
+    media: mediaRuntime.service,
   });
   const application = createApplication({
     config,

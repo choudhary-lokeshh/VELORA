@@ -88,10 +88,32 @@ describe('profile media', () => {
       'rejected',
     );
     expect(profileMediaState(profile([{ state: 'ready' }]))).toBe('ready');
+    // The platform now genuinely does two things after the bytes arrive, and
+    // they take different amounts of time. Reporting one "pending" throughout
+    // would tell somebody nothing for the whole period anything is happening.
+    expect(profileMediaState(profile([{ state: 'checking' }]))).toBe(
+      'checking',
+    );
+    expect(profileMediaState(profile([{ state: 'preparing' }]))).toBe(
+      'preparing',
+    );
     // One ready image is enough to be seen, whatever else is in flight.
     expect(
       profileMediaState(profile([{ state: 'rejected' }, { state: 'ready' }])),
     ).toBe('ready');
+    // A refusal outranks work in progress: it is the only state that needs the
+    // person to do something.
+    expect(
+      profileMediaState(
+        profile([{ state: 'checking' }, { state: 'rejected' }]),
+      ),
+    ).toBe('rejected');
+    // And progress outranks a window nobody has filled yet.
+    expect(
+      profileMediaState(
+        profile([{ state: 'pending_upload' }, { state: 'preparing' }]),
+      ),
+    ).toBe('preparing');
   });
 });
 

@@ -150,7 +150,10 @@ const truncationRoots = [
  */
 export const testHarnessApplicationName = 'velora-test-harness';
 
-export function connectDatabase(url: string): TestDatabase {
+export function connectDatabase(
+  url: string,
+  options: { readonly max?: number } = {},
+): TestDatabase {
   // Sized above the peak concurrency these suites exercise, deliberately.
   //
   // A Bun.SQL pool that has to queue a caller for a connection while it is also
@@ -167,7 +170,13 @@ export function connectDatabase(url: string): TestDatabase {
   // default hundred, where the same exhaustion appeared as an intermittent hang.
   const tagged = new URL(url);
   tagged.searchParams.set('application_name', testHarnessApplicationName);
-  const sql = new Bun.SQL(tagged.toString(), { max: 20 });
+  // Twenty by default, and raisable per suite. A suite that fires more
+  // simultaneous transactions than the pool can serve does not fail: it queues,
+  // and a queued caller competing with in-flight transactions is exactly the
+  // shape that can strand a connection `idle in transaction` and stall. A media
+  // suite driving fifty concurrent initiations needs headroom above its own
+  // peak rather than a smaller test.
+  const sql = new Bun.SQL(tagged.toString(), { max: options.max ?? 20 });
   return {
     async close() {
       await sql.close();
@@ -175,9 +184,27 @@ export function connectDatabase(url: string): TestDatabase {
     drizzle: drizzle(sql),
     sql,
     async truncate() {
-      await sql.unsafe(
-        `truncate table ${truncationRoots.join(', ')} restart identity cascade`,
-      );
+      // Retried once on a deadlock, which PostgreSQL's own contract expects a
+      // client to do rather than treat as a failure. `TRUNCATE` takes an
+      // ACCESS EXCLUSIVE lock on every table in the list; a read still in
+      // flight from the previous test holds a share lock on one of them and
+      // wants another, and the two abort each other. Retrying resolves it
+      // because the loser's statement is gone by the time the retry runs.
+      //
+      // Deliberately not a sleep, and deliberately bounded to one attempt: a
+      // second deadlock would mean something genuinely concurrent is running
+      // against a database a test believes it owns, and that should fail.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await sql.unsafe(
+            `truncate table ${truncationRoots.join(', ')} restart identity cascade`,
+          );
+          return;
+        } catch (error) {
+          const code = (error as { errno?: string }).errno;
+          if (attempt >= 1 || code !== '40P01') throw error;
+        }
+      }
     },
     url,
   };

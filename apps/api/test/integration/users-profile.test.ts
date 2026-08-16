@@ -4,9 +4,8 @@ import { createApplication } from '../../src/application.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
-import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
-import { profileMediaUploadWindowMilliseconds } from '../../src/users/profile-policy.js';
+import { mediaUploadWindowMilliseconds } from '../../src/media/policy.js';
 import {
   connectDatabase,
   execute,
@@ -22,7 +21,11 @@ import {
   testCreatorOrigin,
   testDatabaseAdmission,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
+import { mediaEnvironment } from '../support/profile-media.js';
+import type { LocalTestMediaStorage } from '../../src/media/storage.js';
+import { image } from '../support/media-fixtures.js';
 
 const databaseUrl = await provisionDatabase('velora_users_profile');
 const database: TestDatabase = connectDatabase(databaseUrl);
@@ -41,12 +44,13 @@ const healthy = {
  */
 const mediaConfig = testServerConfig({
   USERS_ADULT_ASSURANCE_VERIFIER: 'unavailable',
-  USERS_PROFILE_MEDIA_STORAGE: 'local-test',
+  ...mediaEnvironment,
 });
 const defaultConfig = testServerConfig();
 
 /** Test-controlled clock, so upload expiry is proven rather than waited for. */
 let clockOffsetMilliseconds = 0;
+let requesterSequence = 0;
 const now = () => new Date(Date.now() + clockOffsetMilliseconds);
 
 function buildHarness(config: typeof mediaConfig) {
@@ -58,9 +62,24 @@ function buildHarness(config: typeof mediaConfig) {
     logger,
     options: {
       rateLimiter: new InMemoryRateLimiter(),
-      requesterReference: (request) =>
-        request.headers.get('x-velora-device') ?? 'profile-test',
+      // Distinct per request, because this suite is not testing rate limits and
+      // a shared bucket makes adding a test somebody else's failure: the
+      // sign-in quietly 429s, `signIn` returns an empty cookie, and the
+      // symptom surfaces three tests later as an unexplained AUTH_REQUIRED.
+      requesterReference: (request) => {
+        requesterSequence += 1;
+        return (
+          request.headers.get('x-velora-device') ??
+          `profile-test-${String(requesterSequence)}`
+        );
+      },
     },
+  });
+  const mediaRuntime = testMediaRuntime({
+    config,
+    database: database.drizzle,
+    logger,
+    now,
   });
   const users = createUsersRuntime({
     caller: auth.caller,
@@ -68,6 +87,7 @@ function buildHarness(config: typeof mediaConfig) {
     database: database.drizzle,
     logger,
     now,
+    media: mediaRuntime.service,
   });
   const application = createApplication({
     config,
@@ -93,18 +113,13 @@ function buildHarness(config: typeof mediaConfig) {
     close: () => application.close(),
     handle: (request: Request) => application.app.handle(request),
     logs,
+    media: mediaRuntime,
     users,
   };
 }
 
 const api = buildHarness(mediaConfig);
 const withoutStorage = buildHarness(defaultConfig);
-
-const configuredStorage = api.users.profileMediaStorage;
-if (!(configuredStorage instanceof LocalTestProfileMediaStorage)) {
-  throw new Error('Profile tests expect the development storage adapter');
-}
-const storage: LocalTestProfileMediaStorage = configuredStorage;
 
 afterAll(async () => {
   await api.close();
@@ -117,7 +132,10 @@ beforeEach(async () => {
   await database.truncate();
 });
 
-const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a]);
+// A real encoded image, because inspection genuinely decodes now. Seven bytes
+// with a JPEG header used to pass a magic-byte check and would today be
+// quarantined as undecodable — correctly, and a fixture that never noticed
+// would have been asserting against a pipeline that no longer exists.
 const notAnImage = new TextEncoder().encode('this is not an image at all');
 
 interface Credentials {
@@ -138,6 +156,7 @@ async function signIn(
       method: 'POST',
     }),
   );
+  expect(response.status, `sign-in for ${subject}`).toBe(201);
   const session = (await response.json()) as { csrfToken: string };
   const cookie = response.headers
     .getSetCookie()
@@ -223,31 +242,57 @@ async function accountStatus(credentials: Credentials): Promise<string> {
   return ((await response.json()) as { status: string }).status;
 }
 
-/** Uploads bytes the way a real client would, then asks for inspection. */
+/**
+ * Uploads bytes the way a real client would, and lets the platform finish.
+ *
+ * Completion no longer makes an image ready and is not supposed to: it tells
+ * the platform to go and look, and the looking happens on the worker. So this
+ * posts the completion, runs the byte work, and then re-reads — which is
+ * exactly the sequence a client experiences, with the polling collapsed.
+ */
 async function attachImage(
   credentials: Credentials,
-  bytes: Uint8Array = jpegBytes,
+  bytes?: Uint8Array,
 ): Promise<{ mediaId: string; profile: ProfileBody }> {
   const created = await api.handle(
     post('/v1/users/me/profile/media', credentials),
   );
   expect(created.status).toBe(201);
   const upload = (await created.json()) as { mediaId: string };
-  const rows = await rowsOf<{ storage_key: string }>(
-    database.sql`select storage_key from users_profile_media where id = ${upload.mediaId}`,
-  );
-  storage.put(rows[0]?.storage_key ?? '', bytes);
+  await placeBytes(upload.mediaId, bytes ?? (await realImage()));
   const completed = await api.handle(
     post('/v1/users/me/profile/media/completion', credentials, {
       mediaId: upload.mediaId,
     }),
   );
   expect(completed.status).toBe(200);
+  await settleMedia();
   return {
     mediaId: upload.mediaId,
-    profile: (await completed.json()) as ProfileBody,
+    profile: await readProfile(credentials),
   };
 }
+
+/** Writes bytes to wherever the media platform issued a capability for. */
+async function placeBytes(slotId: string, bytes: Uint8Array): Promise<void> {
+  const [slot] = await rowsOf<{ media_asset_id: string }>(
+    database.sql`select media_asset_id from users_profile_media where id = ${slotId}`,
+  );
+  const [session] = await rowsOf<{ object_key: string }>(
+    database.sql`select object_key from media_upload_sessions
+                 where asset_id = ${slot?.media_asset_id ?? ''} and state = 'issued'`,
+  );
+  const storage = api.media.storage as LocalTestMediaStorage;
+  await storage.putObject(session?.object_key ?? '', bytes);
+}
+
+/** Runs the byte work a worker would, so a test does not have to wait. */
+async function settleMedia(): Promise<void> {
+  await api.media.service.runInspections({ owner: 'profile-test' });
+  await api.media.service.runProcessing({ owner: 'profile-test' });
+}
+
+const realImage = () => image({ format: 'jpeg' });
 
 describe('profile editing and optimistic concurrency', () => {
   it('refuses profile edits before the adult gate and the notices are passed', async () => {
@@ -405,10 +450,7 @@ describe('profile media lifecycle', () => {
     // Nothing is discoverable-ready until the platform has seen the bytes.
     expect(pending.outstandingRequirements).toContain('ready_media');
 
-    const rows = await rowsOf<{ storage_key: string }>(
-      database.sql`select storage_key from users_profile_media where id = ${upload.mediaId}`,
-    );
-    storage.put(rows[0]?.storage_key ?? '', jpegBytes);
+    await placeBytes(upload.mediaId, await realImage());
 
     const completed = await api.handle(
       post('/v1/users/me/profile/media/completion', caller, {
@@ -416,9 +458,16 @@ describe('profile media lifecycle', () => {
       }),
     );
     expect(completed.status).toBe(200);
-    const ready = (await completed.json()) as ProfileBody;
+    // Completion is a signal, not a promotion. The platform has the bytes and
+    // is working out what they are, and saying "ready" here would be the fake
+    // success this whole pipeline exists to avoid.
+    const checking = (await completed.json()) as ProfileBody;
+    expect(checking.media[0]?.state).toBe('checking');
+    expect(checking.outstandingRequirements).toContain('ready_media');
+
+    await settleMedia();
+    const ready = await readProfile(caller);
     expect(ready.media[0]?.state).toBe('ready');
-    expect(ready.media[0]?.contentType).toBe('image/jpeg');
     expect(ready.outstandingRequirements).not.toContain('ready_media');
   });
 
@@ -428,11 +477,8 @@ describe('profile media lifecycle', () => {
       post('/v1/users/me/profile/media', caller),
     );
     const upload = (await created.json()) as { mediaId: string };
-    const rows = await rowsOf<{ storage_key: string }>(
-      database.sql`select storage_key from users_profile_media where id = ${upload.mediaId}`,
-    );
     // A text file, whatever a client might have called it.
-    storage.put(rows[0]?.storage_key ?? '', notAnImage);
+    await placeBytes(upload.mediaId, notAnImage);
 
     const completed = await api.handle(
       post('/v1/users/me/profile/media/completion', caller, {
@@ -440,47 +486,60 @@ describe('profile media lifecycle', () => {
       }),
     );
     expect(completed.status).toBe(200);
-    const profile = (await completed.json()) as ProfileBody;
+    await settleMedia();
+
+    const profile = await readProfile(caller);
     expect(profile.media[0]?.state).toBe('rejected');
+    // Coarse on purpose: what the uploader needs is enough to fix the file,
+    // and the internal distinction between undecodable and unsupported is
+    // useful to somebody probing what the platform accepts.
     expect(profile.media[0]?.rejectionReason).toBe('unsupported_type');
-    expect(profile.media[0]?.contentType).toBeUndefined();
     expect(profile.complete).toBe(false);
   });
 
-  it('rejects an object whose bytes never arrived, and one whose window has closed', async () => {
+  it('does not accept a completion for bytes that never arrived', async () => {
     const caller = await admittedConsumer('media-missing@velora.test');
 
     const first = await api.handle(post('/v1/users/me/profile/media', caller));
     const missing = (await first.json()) as { mediaId: string };
-    const completedMissing = await api.handle(
+    const completed = await api.handle(
       post('/v1/users/me/profile/media/completion', caller, {
         mediaId: missing.mediaId,
       }),
     );
-    const afterMissing = (await completedMissing.json()) as ProfileBody;
-    expect(afterMissing.media[0]?.rejectionReason).toBe('not_uploaded');
+    expect(completed.status).toBe(200);
 
-    const second = await api.handle(post('/v1/users/me/profile/media', caller));
-    const expiring = (await second.json()) as { mediaId: string };
-    const rows = await rowsOf<{ storage_key: string }>(
-      database.sql`select storage_key from users_profile_media where id = ${expiring.mediaId}`,
+    // Still waiting, because the platform asked the provider and there was
+    // nothing there. A client saying it uploaded does not make it so.
+    const profile = (await completed.json()) as ProfileBody;
+    expect(profile.media[0]?.state).toBe('pending_upload');
+    expect(profile.outstandingRequirements).toContain('ready_media');
+  });
+
+  it('will not accept bytes written after the window closed', async () => {
+    const caller = await admittedConsumer('media-expired@velora.test');
+    const created = await api.handle(
+      post('/v1/users/me/profile/media', caller),
     );
-    storage.put(rows[0]?.storage_key ?? '', jpegBytes);
-    clockOffsetMilliseconds = profileMediaUploadWindowMilliseconds + 1_000;
+    const expiring = (await created.json()) as { mediaId: string };
+    await placeBytes(expiring.mediaId, await realImage());
 
-    const completedExpired = await api.handle(
+    clockOffsetMilliseconds = mediaUploadWindowMilliseconds + 1_000;
+    // The sweep closes the spent window, exactly as the worker would.
+    await api.media.service.sweepExpiredUploads();
+
+    const completed = await api.handle(
       post('/v1/users/me/profile/media/completion', caller, {
         mediaId: expiring.mediaId,
       }),
     );
-    expect(completedExpired.status).toBe(200);
-    const afterExpiry = (await completedExpired.json()) as ProfileBody;
-    const expired = afterExpiry.media.find(
-      (media) => media.id === expiring.mediaId,
-    );
+    expect(completed.status).toBe(200);
+    await settleMedia();
+
     // The bytes were there; the capability to use them was not.
-    expect(expired?.state).toBe('rejected');
-    expect(expired?.rejectionReason).toBe('not_uploaded');
+    const profile = await readProfile(caller);
+    expect(profile.media[0]?.state).toBe('pending_upload');
+    expect(profile.complete).toBe(false);
   });
 
   it('treats a repeated completion as the same success', async () => {
@@ -498,7 +557,8 @@ describe('profile media lifecycle', () => {
     expect(profile.media[0]?.state).toBe('ready');
 
     const rows = await rowsOf<{ count: string }>(
-      database.sql`select count(*)::text as count from users_profile_media where state = 'ready'`,
+      database.sql`select count(*)::text as count from users_profile_media
+                   where state = 'attached'`,
     );
     expect(rows[0]?.count).toBe('1');
   });
@@ -566,17 +626,23 @@ describe('profile media lifecycle', () => {
     const attached = await attachImage(caller);
     const serialized = JSON.stringify(attached.profile);
 
-    expect(serialized).not.toContain('profile-media/');
     expect(serialized).not.toContain('local-test');
     expect(serialized).not.toContain('storageKey');
     expect(serialized).not.toContain('checksum');
+    // No content type any more, and that is the point rather than an
+    // omission: what format some bytes turned out to be is the media
+    // platform's answer, no surface renders it, and restating it here would be
+    // this domain publishing a fact it no longer holds. No upload expiry
+    // either, because the window has closed.
     expect(Object.keys(attached.profile.media[0] ?? {}).sort()).toEqual([
-      'contentType',
       'id',
       'position',
       'state',
-      'uploadExpiresAt',
     ]);
+    // Nothing about the media platform's internals reaches a client.
+    expect(serialized).not.toContain('media/');
+    expect(serialized).not.toContain('objectKey');
+    expect(serialized).not.toContain('digest');
   });
 
   it('fails closed where no storage provider is approved', async () => {
@@ -630,10 +696,15 @@ describe('media ownership', () => {
       );
     }
 
+    // The owner's slot is untouched. `attached` is USERS' answer about the
+    // association, which is the only state this table holds now; whether the
+    // bytes are usable is the media platform's, and the profile read below is
+    // what asks it.
     const rows = await rowsOf<{ state: string }>(
       database.sql`select state from users_profile_media where id = ${attached.mediaId}`,
     );
-    expect(rows[0]?.state).toBe('ready');
+    expect(rows[0]?.state).toBe('attached');
+    expect((await readProfile(owner)).media[0]?.state).toBe('ready');
   });
 
   it('refuses every profile operation to a caller with no consumer credential', async () => {
@@ -785,6 +856,7 @@ describe('discoverability and activation', () => {
       readonly outstandingProfile: readonly string[];
       readonly step: string;
     };
+    expect(response.status, JSON.stringify(body)).toBe(200);
     expect(body.step).toBe('profile');
     // The region was set by the adult declaration, so it is not outstanding.
     expect(body.outstandingProfile).toEqual([
@@ -877,42 +949,40 @@ describe('database constraints protect profile invariants', () => {
 
   it('refuses two live images in the same slot but allows a removed one to share it', async () => {
     const userId = await seedAccount();
-    await execute(
-      database.sql`insert into users_profile_media (id, position, state, state_changed_at, storage_key, upload_expires_at, user_id)
-        values (${crypto.randomUUID()}, 0, 'pending_upload', now(), 'key-d', now(), ${userId})`,
-    );
-    expect(
-      await refused(() =>
-        execute(
-          database.sql`insert into users_profile_media (id, position, state, state_changed_at, storage_key, upload_expires_at, user_id)
-          values (${crypto.randomUUID()}, 0, 'pending_upload', now(), 'key-e', now(), ${userId})`,
-        ),
-      ),
-    ).toBe(true);
-    await execute(
-      database.sql`insert into users_profile_media (id, position, state, state_changed_at, storage_key, upload_expires_at, user_id)
-        values (${crypto.randomUUID()}, 0, 'removed', now(), 'key-f', now(), ${userId})`,
-    );
+    const slot = (position: number, state: string) =>
+      database.sql`insert into users_profile_media (id, media_asset_id, position, state, state_changed_at, user_id)
+        values (${crypto.randomUUID()}, ${crypto.randomUUID()}, ${position}, ${state}, now(), ${userId})`;
+
+    await execute(slot(0, 'attached'));
+    expect(await refused(() => execute(slot(0, 'attached')))).toBe(true);
+    // Removing an image frees its slot without renumbering anything and
+    // without losing the record that it was there.
+    await execute(slot(0, 'removed'));
   });
 
-  it('refuses a slot outside the published maximum and an oversized object', async () => {
+  it('refuses a slot outside the published maximum and a state it does not own', async () => {
     const userId = await seedAccount();
-    expect(
-      await refused(() =>
-        execute(
-          database.sql`insert into users_profile_media (id, position, state, state_changed_at, storage_key, upload_expires_at, user_id)
-          values (${crypto.randomUUID()}, 6, 'pending_upload', now(), 'key-g', now(), ${userId})`,
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      await refused(() =>
-        execute(
-          database.sql`insert into users_profile_media (byte_size, checksum, content_type, id, position, ready_at, state, state_changed_at, storage_key, upload_expires_at, user_id)
-          values (8388609, repeat('a', 64), 'image/jpeg', ${crypto.randomUUID()}, 1, now(), 'ready', now(), 'key-h', now(), ${userId})`,
-        ),
-      ),
-    ).toBe(true);
+    const slot = (position: number, state: string) =>
+      database.sql`insert into users_profile_media (id, media_asset_id, position, state, state_changed_at, user_id)
+        values (${crypto.randomUUID()}, ${crypto.randomUUID()}, ${position}, ${state}, now(), ${userId})`;
+
+    expect(await refused(() => execute(slot(6, 'attached')))).toBe(true);
+    // `ready` was never this domain's answer and is no longer a value it can
+    // hold. What the platform worked out about some bytes lives in MEDIA.
+    expect(await refused(() => execute(slot(1, 'ready')))).toBe(true);
+  });
+
+  it('gives one asset to at most one slot', async () => {
+    const userId = await seedAccount();
+    const assetId = crypto.randomUUID();
+    const slot = (position: number) =>
+      database.sql`insert into users_profile_media (id, media_asset_id, position, state, state_changed_at, user_id)
+        values (${crypto.randomUUID()}, ${assetId}, ${position}, 'attached', now(), ${userId})`;
+
+    await execute(slot(0));
+    // One asset cannot be spent twice across a profile, however many slots are
+    // free.
+    expect(await refused(() => execute(slot(1)))).toBe(true);
   });
 
   it('refuses a preference or profile version below one', async () => {

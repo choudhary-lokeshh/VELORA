@@ -21,6 +21,7 @@ import {
   testProductRuntimes,
   testDatabaseAdmission,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_users_availability');
@@ -48,12 +49,20 @@ const auth = createAuthRuntime({
     requesterReference: () => 'availability-test',
   },
 });
+const mediaRuntime = testMediaRuntime({
+  config,
+  database: database.drizzle,
+  logger,
+  now,
+});
+
 const users = createUsersRuntime({
   caller: auth.caller,
   config,
   database: database.drizzle,
   logger,
   now,
+  media: mediaRuntime.service,
 });
 const application = createApplication({
   config,

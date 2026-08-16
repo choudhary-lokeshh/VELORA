@@ -2792,17 +2792,15 @@ export interface components {
             displayName?: string;
             languages: string[];
             media: {
-                /** @enum {string} */
-                contentType?: "image/jpeg" | "image/png" | "image/webp";
                 /** Format: uuid */
                 id: string;
                 position: number;
                 /** @enum {string} */
                 rejectionReason?: "unsupported_type" | "too_large" | "not_uploaded" | "content_rejected";
                 /** @enum {string} */
-                state: "pending_upload" | "ready" | "rejected" | "removed";
+                state: "pending_upload" | "checking" | "preparing" | "ready" | "rejected" | "removed";
                 /** Format: date-time */
-                uploadExpiresAt: string;
+                uploadExpiresAt?: string;
             }[];
             outstandingRequirements: ("display_name" | "language" | "ready_media" | "region")[];
             preferencesVersion?: number;

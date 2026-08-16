@@ -248,7 +248,12 @@ export class ConsumerDirectory {
               .where(
                 and(
                   eq(userProfileMedia.userId, userAccounts.id),
-                  eq(userProfileMedia.state, 'ready'),
+                  eq(userProfileMedia.state, 'attached'),
+                  // MEDIA's cached answer. Discovery stays one indexed query
+                  // rather than a per-candidate call into another domain, and
+                  // a stale projection delays discoverability rather than
+                  // granting it.
+                  eq(userProfileMedia.mediaReady, true),
                 ),
               ),
           ),
@@ -369,7 +374,8 @@ export class ConsumerDirectory {
       .where(
         and(
           inArray(userProfileMedia.userId, [...candidateIds]),
-          eq(userProfileMedia.state, 'ready'),
+          eq(userProfileMedia.state, 'attached'),
+          eq(userProfileMedia.mediaReady, true),
         ),
       )
       .orderBy(asc(userProfileMedia.userId), asc(userProfileMedia.position));

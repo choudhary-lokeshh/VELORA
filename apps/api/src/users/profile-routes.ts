@@ -1,5 +1,4 @@
 import {
-  maximumProfileMediaBytes,
   productErrorCodes,
   profileMediaReferenceRequestSchema,
   profileMediaUploadResponseSchema,
@@ -165,9 +164,9 @@ export class ProfileRoutes {
       case 'upload_created': {
         return {
           body: profileMediaUploadResponseSchema.parse({
-            expiresAt: outcome.media.uploadExpiresAt.toISOString(),
-            maximumBytes: maximumProfileMediaBytes,
-            mediaId: outcome.media.id,
+            expiresAt: outcome.upload.expiresAt.toISOString(),
+            maximumBytes: outcome.upload.maximumBytes,
+            mediaId: outcome.mediaId,
             method: outcome.upload.method,
             uploadHeaders: outcome.upload.headers,
             uploadUrl: outcome.upload.url,
@@ -227,14 +226,17 @@ export function profileBody(
       : { displayName: view.profile.displayName }),
     languages: [...view.languages],
     media: view.media.map((media) => ({
-      ...(media.contentType === null ? {} : { contentType: media.contentType }),
       id: media.id,
       position: media.position,
-      ...(media.rejectionReason === null
+      ...(media.rejectionReason === undefined
         ? {}
         : { rejectionReason: media.rejectionReason }),
       state: media.state,
-      uploadExpiresAt: media.uploadExpiresAt.toISOString(),
+      // Present only while a window is open. Once bytes have arrived there is
+      // no deadline left to show.
+      ...(media.uploadExpiresAt === undefined
+        ? {}
+        : { uploadExpiresAt: media.uploadExpiresAt.toISOString() }),
     })),
     outstandingRequirements: [
       ...outstandingProfileRequirements(view.completeness),

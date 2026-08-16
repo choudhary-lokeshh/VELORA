@@ -19,6 +19,7 @@ import {
   testDatabaseAdmission,
   testProductRuntimes,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 /**
@@ -59,11 +60,17 @@ function applicationFor(commercePolicy: string) {
         request.headers.get('x-velora-device') ?? 'offers-test',
     },
   });
+  const mediaRuntime = testMediaRuntime({
+    config,
+    database: database.drizzle,
+    logger,
+  });
   const users = createUsersRuntime({
     caller: auth.caller,
     config,
     database: database.drizzle,
     logger,
+    media: mediaRuntime.service,
   });
   return createApplication({
     config,

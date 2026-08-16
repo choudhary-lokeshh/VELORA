@@ -35,6 +35,10 @@ import {
   type DiscoveryRuntime,
 } from './discovery/composition.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
+import { SafetyBackedMediaSafety } from './media/safety-bridge.js';
+import { ConsumerProfileMediaAssociation } from './users/profile-media-association.js';
+import { SafetyEligibility } from './safety/eligibility.js';
+import { SafetyRepository } from './safety/repository.js';
 import {
   createMessagingRuntime,
   type MessagingRuntime,
@@ -186,6 +190,29 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
+    // MEDIA before USERS, because USERS asks it for upload capabilities and
+    // readiness. It asks nothing of USERS in return: the association answer it
+    // needs is USERS code reading USERS tables, handed over as a port, so the
+    // two compose in one direction with no late setter.
+    //
+    // Composing it here rather than lazily is what makes an unapproved storage
+    // provider a startup failure instead of a failure on the first upload
+    // somebody attempts.
+    const profileMediaAssociation = new ConsumerProfileMediaAssociation();
+    media =
+      injectedMedia ??
+      createMediaRuntime({
+        association: profileMediaAssociation,
+        config,
+        database: ownedDatabase.database,
+        logger,
+        safety: new SafetyBackedMediaSafety({
+          eligibility: new SafetyEligibility(
+            new SafetyRepository(ownedDatabase.database),
+          ),
+          subjects: profileMediaAssociation,
+        }),
+      });
     users =
       injectedUsers ??
       createUsersRuntime({
@@ -193,6 +220,7 @@ export function createApplication(
         config,
         database: ownedDatabase.database,
         logger,
+        media: media.service,
       });
     // Composition order follows the contracts, not the domain list.
     //
@@ -297,18 +325,6 @@ export function createApplication(
         appeals: safety.appeals,
         moderation: safety.moderation,
         safety: safety.authority,
-      });
-    // MEDIA depends on nothing. An owning domain authorizes a purpose and then
-    // calls it; it never calls back, reads no other domain's tables, and asks
-    // no other domain a question. Composing it here rather than lazily is what
-    // makes an unapproved storage provider a startup failure instead of a
-    // failure on the first upload somebody attempts.
-    media =
-      injectedMedia ??
-      createMediaRuntime({
-        config,
-        database: ownedDatabase.database,
-        logger,
       });
     discovery =
       injectedDiscovery ??

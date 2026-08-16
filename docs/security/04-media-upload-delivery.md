@@ -20,11 +20,17 @@ Scan/processing failure remains unavailable and cleans/quarantines safely. Dedup
 
 ## Implemented consumer profile media
 
-The consumer profile media path implements this boundary for images only. An authorized owner requests a slot; the platform issues a short-lived, object-bound upload capability through a provider-neutral port and records the object as `pending_upload`. Nothing about the object is believed until its bytes are inspected: the content type is identified from the object's own header, the size is measured, and only then may the owner's image become `ready`. An object whose bytes never arrived, whose window closed, whose type is unsupported, or whose size exceeds the limit is recorded as `rejected` with a coarse reason its uploader can act on.
+The consumer profile media path implements this boundary for images only. An authorized owner requests a slot; MEDIA issues a short-lived, object-bound upload capability and the slot records nothing about the bytes at all.
+
+Nothing about the object is believed until it is inspected, and inspection is real work on a worker rather than a header check on the request thread: the format is decided from sniffed bytes before any decoder runs, the object is decoded under explicit dimension, pixel, frame, and metadata ceilings, and a scanning position is required. Only then are derivatives rendered from decoded pixels, and only when every one the class owes exists does the image become `ready`.
+
+Because that is asynchronous, a client is told the truth as it changes — `checking`, then `preparing`, then `ready` — and the profile keeps reporting its image requirement as outstanding until it genuinely is not. There is no state in which a surface reports success while the platform still says quarantined. A refusal is coarse by design: what an uploader needs is enough to fix the file, and the internal distinction between undecodable and unsupported is useful mainly to somebody probing what the platform accepts.
 
 There is no URL column and no durable public address, so a link cannot outlive the authorization decision that produced it. Storage keys, checksums, byte sizes, and the adapter's name are never rendered to any client.
 
-No storage vendor is approved. `USERS_PROFILE_MEDIA_STORAGE` defaults to `unavailable`, which refuses every upload and inspection, and staging and production reject any other value. The `local-test` adapter keeps objects in process memory for development and tests and performs magic-byte and size verification only; it performs no malware scanning and no content moderation, so its acceptance is never evidence about real user content. Byte deletion after a removal is best effort against the adapter and is recorded when it fails: the platform record is authoritative, and orphaned objects are a retention concern for the approved provider rather than a reason to leave a removed image visible.
+USERS no longer holds a storage adapter at all. It asks [MEDIA](../domains/media.md) for an upload capability and for readiness, and holds an opaque asset identifier; object keys, digests, measured sizes, detected formats, and lifecycle values are MEDIA's and stay there. `MEDIA_STORAGE_PROVIDER` and `MEDIA_MALWARE_SCANNER` both default to `unavailable`, which refuses everything, and staging and production reject any other value.
+
+Removal detaches the association first and then asks MEDIA to remove the bytes, which MEDIA records as a durable obligation. A failure to reach it does not leave the image on the profile: the association is what a surface reads, and an orphaned asset is a reconciliation concern rather than a reason to keep showing something somebody deleted.
 
 This approves no mature or explicit content category. Consumer V1 profile media is ordinary profile media; creator private and mature content remains out of scope and default-denied here.
 

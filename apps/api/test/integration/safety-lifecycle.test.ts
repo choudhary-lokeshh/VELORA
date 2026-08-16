@@ -4,7 +4,6 @@ import { createApplication } from '../../src/application.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
-import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
 import {
   connectDatabase,
@@ -18,7 +17,12 @@ import {
   testDatabaseAdmission,
   testProductRuntimes,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
+import {
+  mediaEnvironment,
+  readyProfileImage,
+} from '../support/profile-media.js';
 
 /**
  * One safety story, from the report to the reversal.
@@ -45,7 +49,7 @@ const healthy = {
 };
 
 const logger = silentLogger();
-const config = testServerConfig({ USERS_PROFILE_MEDIA_STORAGE: 'local-test' });
+const config = testServerConfig(mediaEnvironment);
 const now = () => new Date();
 
 const auth = createAuthRuntime({
@@ -58,12 +62,20 @@ const auth = createAuthRuntime({
       request.headers.get('x-velora-device') ?? 'lifecycle-test',
   },
 });
+const mediaRuntime = testMediaRuntime({
+  config,
+  database: database.drizzle,
+  logger,
+  now,
+});
+
 const users = createUsersRuntime({
   caller: auth.caller,
   config,
   database: database.drizzle,
   logger,
   now,
+  media: mediaRuntime.service,
 });
 const runtimes = testProductRuntimes({
   caller: auth.caller,
@@ -88,13 +100,6 @@ const application = createApplication({
 });
 const handle = (request: Request) => application.app.handle(request);
 const { safety } = runtimes;
-
-const configuredStorage = users.profileMediaStorage;
-if (!(configuredStorage instanceof LocalTestProfileMediaStorage)) {
-  throw new Error('Lifecycle tests expect the development storage adapter');
-}
-const storage: LocalTestProfileMediaStorage = configuredStorage;
-const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 
 interface Session {
   readonly cookie: string;
@@ -173,11 +178,12 @@ async function consumer(subject: string): Promise<Session> {
   });
   const upload = await post('/v1/users/me/profile/media');
   const { mediaId } = (await upload.json()) as { mediaId: string };
-  const [media] = await rowsOf<{ storage_key: string }>(
-    database.sql`select storage_key from users_profile_media where id = ${mediaId}`,
-  );
-  storage.put(media?.storage_key ?? '', jpegBytes);
-  await post('/v1/users/me/profile/media/completion', { mediaId });
+  await readyProfileImage({
+    database,
+    media: mediaRuntime,
+    slotId: mediaId,
+    users,
+  });
   return { ...session, id };
 }
 

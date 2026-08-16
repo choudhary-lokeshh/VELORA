@@ -18,7 +18,9 @@ import {
   testDatabaseAdmission,
   testProductRuntimes,
   testServerConfig,
+  testMediaRuntime,
 } from '../support/harness.js';
+import { mediaEnvironment } from '../support/profile-media.js';
 
 /**
  * Report intake and case management against real PostgreSQL.
@@ -44,7 +46,7 @@ const healthy = {
 };
 
 const logger = silentLogger();
-const config = testServerConfig({ USERS_PROFILE_MEDIA_STORAGE: 'local-test' });
+const config = testServerConfig(mediaEnvironment);
 const now = () => new Date();
 
 const auth = createAuthRuntime({
@@ -57,12 +59,20 @@ const auth = createAuthRuntime({
       request.headers.get('x-velora-device') ?? 'cases-test',
   },
 });
+const mediaRuntime = testMediaRuntime({
+  config,
+  database: database.drizzle,
+  logger,
+  now,
+});
+
 const users = createUsersRuntime({
   caller: auth.caller,
   config,
   database: database.drizzle,
   logger,
   now,
+  media: mediaRuntime.service,
 });
 const runtimes = testProductRuntimes({
   caller: auth.caller,

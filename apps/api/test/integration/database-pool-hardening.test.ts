@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
 import { createApplication } from '../../src/application.js';
+import type { MediaRuntime } from '../../src/media/composition.js';
+import type { UsersRuntime } from '../../src/users/composition.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import {
@@ -20,7 +22,6 @@ import {
   type SafetyRuntime,
 } from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
-import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
 import {
   connectDatabase,
@@ -41,6 +42,10 @@ import {
   testPayoutsRuntime,
   testMediaRuntime,
 } from '../support/harness.js';
+import {
+  mediaEnvironment,
+  readyProfileImage,
+} from '../support/profile-media.js';
 
 /**
  * The connection pool under the load that used to break it.
@@ -92,8 +97,6 @@ const healthy = {
   isReady: () => Promise.resolve(true),
 };
 
-const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
-
 interface Credentials {
   readonly cookie: string;
   readonly csrf: string;
@@ -105,8 +108,10 @@ interface Instance {
   handle(request: Request): Promise<Response>;
   /** The review seam, which has no HTTP surface to drive load through. */
   readonly safety: SafetyRuntime;
+  /** The media platform this instance composed, for driving byte work. */
+  readonly media: MediaRuntime;
   readonly service: DatabaseService;
-  readonly storage: LocalTestProfileMediaStorage;
+  readonly users: UsersRuntime;
 }
 
 let requesterSequence = 0;
@@ -122,7 +127,7 @@ function createInstance(name: string): Instance {
   const config = testServerConfig({
     DATABASE_URL: instanceDatabaseUrl,
     MESSAGING_SAFETY_ELIGIBILITY: 'trust-and-safety',
-    USERS_PROFILE_MEDIA_STORAGE: 'local-test',
+    ...mediaEnvironment,
   });
   const logger = silentLogger();
   const service = new DatabaseService(config);
@@ -138,11 +143,17 @@ function createInstance(name: string): Instance {
       },
     },
   });
+  const mediaRuntime = testMediaRuntime({
+    config,
+    database: service.database,
+    logger,
+  });
   const users = createUsersRuntime({
     caller: auth.caller,
     config,
     database: service.database,
     logger,
+    media: mediaRuntime.service,
   });
   const safety = createSafetyRuntime({
     accounts: users.enforcement,
@@ -230,10 +241,6 @@ function createInstance(name: string): Instance {
       users,
     },
   });
-  const storage = users.profileMediaStorage;
-  if (!(storage instanceof LocalTestProfileMediaStorage)) {
-    throw new Error('Pool hardening tests expect the development storage');
-  }
   return {
     async close() {
       await application.close();
@@ -242,7 +249,8 @@ function createInstance(name: string): Instance {
     handle: (request) => application.app.handle(request),
     safety,
     service,
-    storage,
+    media: mediaRuntime,
+    users,
   };
 }
 
@@ -335,15 +343,12 @@ async function consumer(
     post('/v1/users/me/profile/media', caller, {}),
   );
   const media = (await upload.json()) as { mediaId: string };
-  const rows = await rowsOf<{ storage_key: string }>(
-    database.sql`select storage_key from users_profile_media where id = ${media.mediaId}`,
-  );
-  instance.storage.put(rows[0]?.storage_key ?? '', jpegBytes);
-  await instance.handle(
-    post('/v1/users/me/profile/media/completion', caller, {
-      mediaId: media.mediaId,
-    }),
-  );
+  await readyProfileImage({
+    database,
+    media: instance.media,
+    slotId: media.mediaId,
+    users: instance.users,
+  });
   await instance.handle(
     post('/v1/users/me/preferences', caller, { discoverable: true }),
   );

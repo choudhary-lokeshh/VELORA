@@ -8,10 +8,16 @@ import type {
 } from './schema.js';
 import type { MediaInspector } from './inspection.js';
 import type { MediaImageProcessorPort } from './processing.js';
-import type { MediaInspectionFacts, MediaRepository } from './repository.js';
+import type {
+  MediaExecutor,
+  MediaInspectionFacts,
+  MediaRepository,
+} from './repository.js';
 import {
   isMediaIdempotencyKey,
-  maximumMediaObjectBytes,
+  maximumMediaBytesByClass,
+  publicRejectionFor,
+  readinessFor,
   maximumMediaObligationAttempts,
   maximumMediaReadBytes,
   mediaAbandonedUploadMilliseconds,
@@ -23,6 +29,8 @@ import {
   requiredMediaVariants,
   type MediaAssetClass,
   type MediaOwnerDomain,
+  type MediaPublicRejectionReason,
+  type MediaReadinessState,
   type MediaRejectionReason,
 } from './policy.js';
 import {
@@ -78,6 +86,17 @@ export interface MediaUploadHandoff {
   readonly url: string;
 }
 
+/**
+ * What an owning domain sees. No lifecycle value, no key, no digest, no size.
+ */
+export interface MediaReadiness {
+  readonly assetId: string;
+  readonly rejection: MediaPublicRejectionReason | undefined;
+  readonly state: MediaReadinessState;
+  /** Present only while a window is open, so a client can show a deadline. */
+  readonly uploadExpiresAt: Date | undefined;
+}
+
 export interface MediaServiceDependencies {
   /**
    * Absent where the process does no byte work. The API composes no inspector:
@@ -106,6 +125,47 @@ export class MediaService {
   /** Which derivatives a class owes before it may ever be `ready`. */
   requiredVariants(assetClass: MediaAssetClass) {
     return requiredMediaVariants[assetClass];
+  }
+
+  /**
+   * What an owning domain may be told about the assets it holds.
+   *
+   * The published readiness contract, and the only way another domain learns
+   * anything about a `media_` row. It carries a coarse product state, a coarse
+   * refusal reason, and an upload expiry — never a lifecycle value, an object
+   * key, a digest, a byte size, an adapter name, or an internal rejection code.
+   *
+   * Batched because the caller is almost always rendering a list, and a
+   * per-asset round trip would make a profile page's cost a function of how
+   * many images somebody uploaded.
+   */
+  async describeReadiness(input: {
+    readonly assetIds: readonly string[];
+    readonly executor?: MediaExecutor;
+  }): Promise<readonly MediaReadiness[]> {
+    if (input.assetIds.length === 0) return [];
+    const { repository } = this.dependencies;
+    const assets = await repository.listAssets(
+      input.executor ?? repository.transactionless,
+      input.assetIds,
+    );
+    const sessions = await repository.listOpenUploadSessions(
+      input.executor ?? repository.transactionless,
+      assets.map((asset) => asset.id),
+    );
+    const expiryByAsset = new Map(
+      sessions.map((session) => [session.assetId, session.expiresAt]),
+    );
+
+    return assets.map((asset) => ({
+      assetId: asset.id,
+      rejection:
+        asset.rejectionReason === null
+          ? undefined
+          : publicRejectionFor[asset.rejectionReason],
+      state: readinessFor[asset.lifecycle],
+      uploadExpiresAt: expiryByAsset.get(asset.id),
+    }));
   }
 
   /**
@@ -156,7 +216,7 @@ export class MediaService {
         attempt: 1,
         expiresAt: new Date(now.getTime() + mediaUploadWindowMilliseconds),
         id: crypto.randomUUID(),
-        maximumBytes: maximumMediaObjectBytes,
+        maximumBytes: maximumMediaBytesByClass[input.assetClass],
         now,
         objectKey,
       });
@@ -256,7 +316,7 @@ export class MediaService {
         attempt: (latest?.attempt ?? 0) + 1,
         expiresAt: new Date(now.getTime() + mediaUploadWindowMilliseconds),
         id: crypto.randomUUID(),
-        maximumBytes: maximumMediaObjectBytes,
+        maximumBytes: maximumMediaBytesByClass[asset.assetClass],
         now,
         objectKey: mediaObjectKey({ assetId: asset.id, role: 'original' }),
       });

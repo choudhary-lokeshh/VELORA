@@ -62,6 +62,11 @@ import {
   TakedownService,
   UnpublishedTakedownPolicy,
 } from './safety/takedown.js';
+import { ProfileRepository } from './users/profile-repository.js';
+import { profileMediaReadinessIntervalMilliseconds } from './users/profile-policy.js';
+import { ProfileMediaReadinessSweep } from './users/profile-service.js';
+import { OnboardingService } from './users/onboarding.js';
+import { selectAdultAssuranceVerifier } from './users/composition.js';
 import { UsersRepository } from './users/repository.js';
 import {
   ConsumerAdultStandingDirectory,
@@ -134,6 +139,8 @@ export interface WorkerComposition {
   readonly mediaInspection: Poller;
   /** Renders the derivative set from decoded pixels. Strips every tag. */
   readonly mediaProcessing: Poller;
+  /** Keeps USERS' cached readiness projection from going stale unnoticed. */
+  readonly profileMediaReadiness: Poller;
   /** Closes spent upload windows, recovers stranded ones, reclaims the dead. */
   readonly mediaUploadSweep: Poller;
   /** PAYOUTS, composed here because this process applies both sides of the seam. */
@@ -441,6 +448,43 @@ export function createWorkerComposition(input: {
     name: 'media-processing',
   });
 
+  // USERS caches the media platform's readiness answer so discovery stays one
+  // indexed query. The interactive path refreshes an account somebody is
+  // looking at; this reaches the ones nobody has opened, oldest first, so a
+  // profile whose asset was taken down does not keep a stale `true`.
+  // The sweep reconciles admission for accounts whose readiness moved, so it
+  // needs the same onboarding authority the API uses rather than a second
+  // opinion about what a complete profile is.
+  const profileRepository = new ProfileRepository(handle);
+  const usersRepository = new UsersRepository(handle);
+  const profileMediaSweep = new ProfileMediaReadinessSweep({
+    media: media.service,
+    now,
+    onboarding: new OnboardingService({
+      adultAssuranceVerifier: selectAdultAssuranceVerifier(input.config),
+      now,
+      profiles: profileRepository,
+      repository: usersRepository,
+    }),
+    repository: profileRepository,
+    users: usersRepository,
+  });
+  const profileMediaReadiness = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const refreshed = await profileMediaSweep.run();
+        if (refreshed > 0) {
+          input.logger.debug(
+            { refreshed },
+            'profile media readiness refreshed',
+          );
+        }
+      }),
+    intervalMilliseconds: profileMediaReadinessIntervalMilliseconds,
+    logger: input.logger,
+    name: 'profile-media-readiness',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -455,6 +499,7 @@ export function createWorkerComposition(input: {
     mediaInspection,
     mediaProcessing,
     mediaUploadSweep,
+    profileMediaReadiness,
     payouts,
     async close() {
       await Promise.all([
@@ -465,6 +510,7 @@ export function createWorkerComposition(input: {
         mediaInspection.stop(),
         mediaProcessing.stop(),
         mediaUploadSweep.stop(),
+        profileMediaReadiness.stop(),
         deliverySweep.stop(),
       ]);
     },
@@ -480,6 +526,7 @@ export function createWorkerComposition(input: {
       await mediaUploadSweep.runOnce();
       await mediaInspection.runOnce();
       await mediaProcessing.runOnce();
+      await profileMediaReadiness.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,

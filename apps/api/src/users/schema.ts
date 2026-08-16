@@ -20,14 +20,11 @@ import {
   timestamptz,
 } from '../database/columns.js';
 import {
-  acceptedProfileMediaTypes,
   languagePattern,
   maximumBioLength,
   maximumDisplayNameLength,
   maximumProfileMedia,
-  maximumProfileMediaBytes,
   minimumDisplayNameLength,
-  type ProfileMediaContentType,
 } from './profile-policy.js';
 
 /**
@@ -371,70 +368,90 @@ export const userProfileLanguages = pgTable(
  * stored bytes have been inspected, never something a client asserts, which is
  * what `docs/security/04-media-upload-delivery.md` requires.
  */
-export const profileMediaStates = [
-  'pending_upload',
-  'ready',
-  'rejected',
-  'removed',
-] as const;
+/**
+ * What USERS decides about a slot, which is only whether it holds something.
+ *
+ * Two values, not four. `pending_upload`, `ready`, and `rejected` were never
+ * USERS' answers — they described what MEDIA had worked out about some bytes,
+ * and storing them here meant two domains holding the same fact and drifting.
+ * What a client is shown is derived from MEDIA's readiness contract at read
+ * time, so it cannot go stale.
+ */
+export const profileMediaStates = ['attached', 'removed'] as const;
 export type ProfileMediaState = (typeof profileMediaStates)[number];
 
 /**
- * Why an object was refused. Coarse and closed: it is shown to the object's own
- * uploader so a person can fix a bad file, and it never carries adapter or
- * scanner internals.
- */
-export const profileMediaRejectionReasons = [
-  'unsupported_type',
-  'too_large',
-  'not_uploaded',
-  'content_rejected',
-] as const;
-export type ProfileMediaRejectionReason =
-  (typeof profileMediaRejectionReasons)[number];
-
-/**
- * Profile media objects.
+ * A consumer's profile images: which asset occupies which slot.
  *
- * The row is the platform's record; the bytes live behind a storage adapter and
- * are addressed only by `storage_key`. There is no public URL column, because a
- * durable public address for consumer media is exactly what the media security
- * policy forbids: delivery is authorized per request and signed per request.
+ * USERS owns the **association** and nothing else. What the bytes are, whether
+ * they decoded, what derivatives exist, and whether a provider still holds them
+ * all belong to [MEDIA](../../../../docs/domains/media.md), and this table
+ * carries an opaque asset identifier with no foreign key, on the ownership rule
+ * every other cross-domain reference here already follows.
+ *
+ * It used to carry both. `0040_users_profile_media_assets` moved the provider
+ * state out — the object key, the digest, the measured size, the sniffed
+ * content type, the upload expiry, and the refusal reason are MEDIA's answers
+ * to MEDIA's questions — and narrowed `state` to the two values USERS actually
+ * decides between: this slot holds something, or it does not.
+ *
+ * There is no URL column and never was. A durable public address for consumer
+ * media is exactly what the media security policy forbids.
  */
 export const userProfileMedia = pgTable(
   'users_profile_media',
   {
-    /** Byte length of the stored object, measured by the platform. */
-    byteSize: integer('byte_size'),
-    checksum: digestColumn('checksum'),
-    /** Sniffed from the object's own bytes. A client's claim is never stored. */
-    contentType: text('content_type').$type<ProfileMediaContentType>(),
     createdAt: timestamptz('created_at').notNull().defaultNow(),
     id: uuid('id').primaryKey(),
+    /**
+     * The MEDIA asset this slot points at. Opaque here: USERS never interprets
+     * it, never joins on it, and learns about it only through MEDIA's published
+     * readiness contract.
+     */
+    mediaAssetId: uuid('media_asset_id').notNull(),
+    /**
+     * MEDIA's readiness answer, cached so discovery stays one indexed query.
+     *
+     * A **non-authoritative projection**, which is what
+     * `docs/architecture/03-domain-boundaries.md` permits and what stops the
+     * candidate query becoming a per-candidate call into another domain. It
+     * defaults to false and is only ever set true by MEDIA saying so, so the
+     * failure direction is a person waiting slightly longer to be discoverable
+     * rather than an image being shown that should not be.
+     *
+     * Delivery never consults it. Every issuance re-derives readiness, safety,
+     * and entitlement live, so a stale value here cannot cause a byte to be
+     * served.
+     */
+    mediaReady: boolean('media_ready').notNull().default(false),
     /** Dense zero-based slot, unique per account while the object is not removed. */
     position: integer('position').notNull(),
-    readyAt: timestamptz('ready_at'),
-    rejectionReason:
-      text('rejection_reason').$type<ProfileMediaRejectionReason>(),
+    /** When the projection above was last refreshed. Drives the sweep order. */
+    readinessCheckedAt: timestamptz('readiness_checked_at'),
     state: text('state').notNull().$type<ProfileMediaState>(),
     stateChangedAt: timestamptz('state_changed_at').notNull(),
-    /** Opaque adapter-scoped object key. Never rendered to any client. */
-    storageKey: text('storage_key').notNull(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
-    /** After this instant the upload capability is spent, used or not. */
-    uploadExpiresAt: timestamptz('upload_expires_at').notNull(),
     userId: uuid('user_id')
       .notNull()
       .references(() => userAccounts.id, { onDelete: 'cascade' }),
   },
   (table) => [
-    uniqueIndex('users_profile_media_storage_key_uk').on(table.storageKey),
+    // One slot may point at one asset, and one asset may fill one slot. Both
+    // directions matter: the first stops a duplicate attachment, the second
+    // stops one asset being spent twice across a profile.
+    uniqueIndex('users_profile_media_asset_uk').on(table.mediaAssetId),
     // Only live objects occupy a slot, so removing an image frees its position
     // without renumbering anything and without losing the removed record.
     uniqueIndex('users_profile_media_position_uk')
       .on(table.userId, table.position)
       .where(sql`${table.state} <> 'removed'`),
     index('users_profile_media_user_state_idx').on(table.userId, table.state),
+    // The refresh sweep: attached slots, least recently checked first, so every
+    // projection is revisited within a bounded period rather than whichever
+    // ones happen to be read.
+    index('users_profile_media_readiness_idx')
+      .on(table.readinessCheckedAt, table.id)
+      .where(sql`${table.state} = 'attached'`),
     check(
       'users_profile_media_state_check',
       inList(table.state, profileMediaStates),
@@ -442,32 +459,6 @@ export const userProfileMedia = pgTable(
     check(
       'users_profile_media_position_check',
       sql`${table.position} between 0 and ${sql.raw(String(maximumProfileMedia - 1))}`,
-    ),
-    check(
-      'users_profile_media_content_type_check',
-      sql`${table.contentType} is null or ${inList(table.contentType, acceptedProfileMediaTypes)}`,
-    ),
-    check(
-      'users_profile_media_byte_size_check',
-      sql`${table.byteSize} is null or (${table.byteSize} > 0 and ${table.byteSize} <= ${sql.raw(String(maximumProfileMediaBytes))})`,
-    ),
-    check(
-      'users_profile_media_checksum_check',
-      sql`${table.checksum} is null or ${isHexDigest(table.checksum)}`,
-    ),
-    // A usable image is one the platform has actually measured. The database
-    // refuses a `ready` row that never passed inspection.
-    check(
-      'users_profile_media_ready_shape_check',
-      sql`${table.state} <> 'ready' or (${table.byteSize} is not null and ${table.contentType} is not null and ${table.checksum} is not null and ${table.readyAt} is not null)`,
-    ),
-    check(
-      'users_profile_media_rejection_shape_check',
-      sql`(${table.state} = 'rejected') = (${table.rejectionReason} is not null)`,
-    ),
-    check(
-      'users_profile_media_rejection_reason_check',
-      sql`${table.rejectionReason} is null or ${inList(table.rejectionReason, profileMediaRejectionReasons)}`,
     ),
   ],
 );

@@ -187,16 +187,6 @@ export const unpublishedAppealPolicy = 'unpublished';
 export const localTestAppealPolicy = 'local-test';
 
 /**
- * Profile media storage adapters. No storage vendor is approved, so
- * `unavailable` refuses every upload and every inspection, which is the only
- * behaviour a deployed environment may have. `local-test` keeps objects in
- * process memory for development and tests and is refused everywhere else by
- * the environment guard below.
- */
-export const unavailableProfileMediaStorage = 'unavailable';
-export const localTestProfileMediaStorage = 'local-test';
-
-/**
  * MEDIA platform storage adapters.
  *
  * No object-storage, CDN, or media provider is approved. The eligibility
@@ -446,9 +436,6 @@ export const serverConfigSchema = z
         localTestAdultAssuranceVerifier,
       ])
       .default(unavailableAdultAssuranceVerifier),
-    USERS_PROFILE_MEDIA_STORAGE: z
-      .enum([unavailableProfileMediaStorage, localTestProfileMediaStorage])
-      .default(unavailableProfileMediaStorage),
     MEDIA_STORAGE_PROVIDER: z
       .enum([unavailableMediaStorage, localTestMediaStorage])
       .default(unavailableMediaStorage),
@@ -579,13 +566,6 @@ export const serverConfigSchema = z
         path: ['NOTIFICATIONS_DELIVERY_CHANNEL'],
       });
     }
-    if (config.USERS_PROFILE_MEDIA_STORAGE !== unavailableProfileMediaStorage) {
-      context.addIssue({
-        code: 'custom',
-        message: `USERS_PROFILE_MEDIA_STORAGE is not usable in ${config.APP_ENV}: no media storage provider is approved; see DECISIONS_REQUIRED`,
-        path: ['USERS_PROFILE_MEDIA_STORAGE'],
-      });
-    }
     if (config.MEDIA_STORAGE_PROVIDER !== unavailableMediaStorage) {
       context.addIssue({
         code: 'custom',
@@ -711,7 +691,6 @@ export function redactServerConfig(config: ServerConfig) {
     paymentProvider: config.BILLING_PAYMENT_PROVIDER,
     payoutPolicy: config.PAYOUTS_POLICY,
     payoutProvider: config.PAYOUTS_PROVIDER,
-    profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
     mediaMalwareScanner: config.MEDIA_MALWARE_SCANNER,
     mediaStorageProvider: config.MEDIA_STORAGE_PROVIDER,
     mediaDeliverySigningKeyConfigured:

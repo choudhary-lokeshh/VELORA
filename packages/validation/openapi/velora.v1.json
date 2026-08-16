@@ -26303,14 +26303,6 @@
             "items": {
               "type": "object",
               "properties": {
-                "contentType": {
-                  "type": "string",
-                  "enum": [
-                    "image/jpeg",
-                    "image/png",
-                    "image/webp"
-                  ]
-                },
                 "id": {
                   "type": "string",
                   "format": "uuid",
@@ -26334,6 +26326,8 @@
                   "type": "string",
                   "enum": [
                     "pending_upload",
+                    "checking",
+                    "preparing",
                     "ready",
                     "rejected",
                     "removed"
@@ -26348,8 +26342,7 @@
               "required": [
                 "id",
                 "position",
-                "state",
-                "uploadExpiresAt"
+                "state"
               ],
               "additionalProperties": false
             }
