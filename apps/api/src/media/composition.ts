@@ -9,6 +9,7 @@ import type { SafeLogger } from '@velora/observability/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
 import { MediaInspector } from './inspection.js';
+import { SharpMediaImageProcessor } from './processing.js';
 import { MediaRepository } from './repository.js';
 import {
   LocalTestMediaScanner,
@@ -44,11 +45,12 @@ export function createMediaRuntime(input: {
   /**
    * Whether this process performs byte work.
    *
-   * Only the worker does. The API composes no inspector, so decoding hostile
-   * input cannot happen on a request thread — not because a route declines to
-   * ask, but because the object that could do it was never constructed.
+   * Only the worker does. The API composes neither an inspector nor a
+   * processor, so decoding hostile input cannot happen on a request thread —
+   * not because a route declines to ask, but because the objects that could do
+   * it were never constructed.
    */
-  readonly inspects?: boolean;
+  readonly performsByteWork?: boolean;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
 }): MediaRuntime {
@@ -59,8 +61,11 @@ export function createMediaRuntime(input: {
     repository,
     scanner,
     service: new MediaService({
-      ...(input.inspects === true
-        ? { inspector: new MediaInspector({ scanner, storage }) }
+      ...(input.performsByteWork === true
+        ? {
+            inspector: new MediaInspector({ scanner, storage }),
+            processor: new SharpMediaImageProcessor(),
+          }
         : {}),
       logger: input.logger,
       now: input.now ?? (() => new Date()),

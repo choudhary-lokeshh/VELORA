@@ -165,6 +165,46 @@ export function gif(): Uint8Array {
   ]);
 }
 
+/**
+ * A JPEG carrying GPS, device identity, and an orientation tag.
+ *
+ * The orientation matters as much as the GPS. A camera writes the tag and
+ * expects the viewer to honour it, so a derivative that strips every tag
+ * without first baking the rotation into pixels renders sideways forever. This
+ * fixture is landscape with orientation 6, so a correctly processed derivative
+ * comes out portrait and an incorrectly processed one does not.
+ */
+export async function imageWithPrivateMetadata(): Promise<{
+  readonly bytes: Uint8Array;
+  readonly deviceMarker: string;
+}> {
+  const deviceMarker = 'VeloraFixtureCamera';
+  const bytes = await sharp({
+    create: {
+      background: { b: 200, g: 120, r: 10 },
+      channels: 3,
+      height: 60,
+      width: 120,
+    },
+  })
+    .withMetadata({ orientation: 6 })
+    .withExif({
+      IFD0: { Make: deviceMarker, Model: 'Fixture' },
+      // IFD3 is the GPS directory in sharp's mapping. Writing this under a
+      // `GPS` key type-checks nowhere and writes nothing, which would have made
+      // the fixture quietly prove less than it claims.
+      IFD3: {
+        GPSLatitude: '51/1 30/1 0/1',
+        GPSLatitudeRef: 'N',
+        GPSLongitude: '0/1 7/1 0/1',
+        GPSLongitudeRef: 'W',
+      },
+    })
+    .jpeg()
+    .toBuffer();
+  return { bytes: new Uint8Array(bytes), deviceMarker };
+}
+
 /** A valid image carrying the development scanner's refusal marker. */
 export async function markedForScanner(marker: string): Promise<Uint8Array> {
   const png = await image({ format: 'png' });

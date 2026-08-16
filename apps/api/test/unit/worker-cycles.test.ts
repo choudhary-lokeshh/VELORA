@@ -39,6 +39,7 @@ describe('the worker starts every cycle it composes', () => {
       deliverySweep: cycle('delivery'),
       financialReconciliation: cycle('reconciliation'),
       mediaInspection: cycle('media-inspection'),
+      mediaProcessing: cycle('media-processing'),
       mediaUploadSweep: cycle('media-upload'),
       providerEventDrain: cycle('provider-events'),
       relayPoller: cycle('relay'),

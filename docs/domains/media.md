@@ -141,7 +141,21 @@ Inspection is claimed under a database lease, so several workers take different 
 
 Test fixtures are generated rather than committed, so a hostile input is a description in code instead of an opaque file. None of them is real malware.
 
-Not built yet, and not to be inferred from the model's generality: the processing worker and variant generation, delivery routes, takedown propagation, reconciliation, and Admin operations.
+## Processing and privacy
+
+A derivative is **rendered from decoded pixels**, never assembled by copying the source container. That one rule is what makes the privacy guarantee structural rather than a stripping step somebody could forget: there is no path by which a source's EXIF, GPS, device identity, colour profile, or embedded comment can reach an output, because the output is built from pixels and an encoder rather than from the file it came from. The tests prove the source really carries those things before asserting their absence, and they assert the absence of the device string anywhere in the output bytes rather than only the absence of an EXIF block.
+
+Orientation is baked in during decode, and that is a privacy consequence rather than a rendering nicety. A camera writes an orientation tag and expects the viewer to honour it; the platform strips every tag, so a derivative that had not been rotated first would render sideways for ever. Measured on this toolchain: a 120×60 source tagged orientation 6 becomes a 60×120 derivative when auto-oriented and stays 120×60 when it is not. Both branches are asserted.
+
+Variants are `avatar_small` and `avatar_large` as square crops, and `card` and `display` as bounding boxes that preserve aspect. Nothing is enlarged — a small source stays small rather than becoming a larger, blurrier copy of itself — so a recorded dimension always describes picture rather than padding. Every derivative is WebP, because a derivative is a platform artefact rather than a copy of what somebody uploaded; WebP carries alpha, so a transparent PNG survives as one.
+
+Each variant records the processing version that produced it. Bumping that version does not rewrite anything: it makes a new derivative set addressable alongside the old, and deciding what to do with the old one is a separate deliberate act rather than a silent change to what historical outputs mean.
+
+The row is inserted **before** the bytes are written, the same ordering the upload path uses and for the same reason. A crash between the two leaves a record of an object that is missing — which reconciliation can see — rather than bytes at a key nothing references, which nobody would ever look for. It also means a writer that loses the uniqueness race never gets as far as writing, so there is nothing to clean up.
+
+`ready` is reached only when every derivative the class owes is durable, and it remains a claim about bytes rather than about permission. Processing runs on the worker; the API composes neither an inspector nor a processor, so decoding hostile input and re-encoding pixels cannot compete with serving traffic and cannot be reached from a request at all.
+
+Not built yet, and not to be inferred from the model's generality: delivery routes, takedown propagation, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

@@ -155,6 +155,56 @@ export const requiredMediaVariants: Readonly<
   creator_content_image: ['card', 'display'],
 };
 
+/**
+ * Which processor produced a derivative.
+ *
+ * Recorded on every variant so a future pipeline change is an explicit
+ * regeneration decision rather than a silent change to what historical outputs
+ * mean. Bumping it does not rewrite anything: it makes a new derivative set
+ * addressable alongside the old one, and deciding what to do with the old one
+ * is a separate, deliberate act.
+ */
+export const mediaProcessingVersion = 1;
+
+/**
+ * What each derivative measures, under {@link mediaProcessingVersion}.
+ *
+ * `cover` crops to a square because an avatar slot is square and letterboxing
+ * one looks broken. `inside` preserves aspect because a card and a display are
+ * bounding boxes rather than shapes. Nothing is enlarged: a small source stays
+ * small rather than being upscaled into a blurrier copy of itself, so a
+ * variant's recorded dimensions are what was actually produced.
+ */
+export const mediaVariantGeometry: Readonly<
+  Record<
+    MediaVariantKind,
+    {
+      readonly fit: 'cover' | 'inside';
+      readonly height: number;
+      readonly width: number;
+    }
+  >
+> = {
+  avatar_small: { fit: 'cover', height: 64, width: 64 },
+  avatar_large: { fit: 'cover', height: 256, width: 256 },
+  card: { fit: 'inside', height: 640, width: 640 },
+  display: { fit: 'inside', height: 1600, width: 1600 },
+};
+
+/**
+ * The one format every derivative is written in.
+ *
+ * One output format rather than one per source, because a derivative is a
+ * platform artefact rather than a copy of what somebody uploaded. WebP carries
+ * alpha, so a transparent PNG survives as one, and it is smaller than the
+ * alternatives at the qualities these sizes need.
+ */
+export const mediaVariantFormat = 'webp' as const;
+export const mediaVariantQuality = 82;
+
+/** How often processing obligations are claimed. */
+export const mediaProcessingIntervalMilliseconds = 5_000;
+
 /** An object is either what was uploaded or something the platform made. */
 export const mediaObjectRoles = ['original', 'variant'] as const;
 export type MediaObjectRole = (typeof mediaObjectRoles)[number];

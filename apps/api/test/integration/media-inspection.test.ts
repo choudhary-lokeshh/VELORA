@@ -52,7 +52,7 @@ function runtime(scanner: 'local-test' | 'unavailable') {
       MEDIA_STORAGE_PROVIDER: 'local-test',
     }),
     database: database.drizzle,
-    inspects: true,
+    performsByteWork: true,
     logger: silentLogger(),
   });
 }

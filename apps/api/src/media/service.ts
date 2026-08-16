@@ -7,11 +7,13 @@ import type {
   MediaUploadSessionRow,
 } from './schema.js';
 import type { MediaInspector } from './inspection.js';
+import type { MediaImageProcessorPort } from './processing.js';
 import type { MediaInspectionFacts, MediaRepository } from './repository.js';
 import {
   isMediaIdempotencyKey,
   maximumMediaObjectBytes,
   maximumMediaObligationAttempts,
+  maximumMediaReadBytes,
   mediaAbandonedUploadMilliseconds,
   mediaObjectKey,
   mediaObligationBackoffMilliseconds,
@@ -24,6 +26,7 @@ import {
   type MediaRejectionReason,
 } from './policy.js';
 import {
+  mediaContentTypes,
   MediaStorageUnavailableError,
   type MediaStoragePort,
 } from './storage.js';
@@ -85,8 +88,16 @@ export interface MediaServiceDependencies {
   readonly inspector?: MediaInspector;
   readonly logger: SafeLogger;
   readonly now: () => Date;
+  /** Absent for the same reason the inspector is. Byte work is the worker's. */
+  readonly processor?: MediaImageProcessorPort;
   readonly repository: MediaRepository;
   readonly storage: MediaStoragePort;
+}
+
+function digestOf(bytes: Uint8Array): string {
+  const hasher = new Bun.CryptoHasher('sha256');
+  hasher.update(bytes);
+  return hasher.digest('hex');
 }
 
 export class MediaService {
@@ -683,6 +694,211 @@ export class MediaService {
         'media obligation attempt failed',
       );
       return 'noop';
+    }
+  }
+
+  /**
+   * Claims processing obligations and produces the derivative set.
+   *
+   * Every variant is rendered from decoded pixels and written under a fresh
+   * server-generated key. The row is inserted **before** the bytes are written,
+   * which is the same ordering the upload path uses and for the same reason: a
+   * crash between the two leaves a record of an object that is missing, which
+   * reconciliation can see, rather than bytes at a key nothing references,
+   * which nobody would ever look for.
+   *
+   * Concurrency is settled by the database. Fifty attempts on one asset produce
+   * one durable variant set, because the partial unique index over asset,
+   * variant kind, and processing version admits exactly one row — and a losing
+   * writer therefore never gets as far as writing bytes.
+   */
+  async runProcessing(input: {
+    readonly limit?: number;
+    readonly owner: string;
+  }): Promise<{ readonly ready: number }> {
+    const { processor, repository } = this.dependencies;
+    if (processor === undefined) return { ready: 0 };
+
+    const claimed = await repository.claimObligations({
+      kind: 'process',
+      leaseMilliseconds: mediaObligationLeaseMilliseconds,
+      limit: input.limit ?? mediaSweepBatchSize,
+      now: this.dependencies.now(),
+      owner: input.owner,
+    });
+
+    let ready = 0;
+    for (const obligation of claimed) {
+      if (await this.process(obligation, input.owner, processor)) ready += 1;
+    }
+    return { ready };
+  }
+
+  private async process(
+    obligation: MediaObligationRow,
+    owner: string,
+    processor: MediaImageProcessorPort,
+  ): Promise<boolean> {
+    const { repository, storage } = this.dependencies;
+    try {
+      const asset = await repository.findAsset(
+        repository.transactionless,
+        obligation.assetId,
+      );
+      const original =
+        asset === undefined
+          ? undefined
+          : await repository.findOriginalObject(
+              repository.transactionless,
+              asset.id,
+            );
+      // `processing` as well as `inspected`, because a previous attempt may
+      // have died partway and left the asset mid-flight. Anything else — gone,
+      // quarantined, already ready, being deleted — is work that no longer
+      // exists, and the duty is discharged rather than retried.
+      if (
+        asset === undefined ||
+        original === undefined ||
+        (asset.lifecycle !== 'inspected' && asset.lifecycle !== 'processing')
+      ) {
+        await this.completeObligation(obligation.id, owner);
+        return false;
+      }
+
+      const started =
+        asset.lifecycle === 'processing'
+          ? asset
+          : await repository.transitionAsset(repository.transactionless, {
+              assetId: asset.id,
+              expectedLifecycle: 'inspected',
+              lifecycle: 'processing',
+              now: this.dependencies.now(),
+            });
+      if (started === undefined) {
+        await this.completeObligation(obligation.id, owner);
+        return false;
+      }
+
+      const read = await storage.readObject({
+        maximumBytes: maximumMediaReadBytes,
+        objectKey: original.objectKey,
+      });
+      if (read.kind !== 'bytes') {
+        // The original is gone or has grown beyond what the platform will
+        // decode. Either way there is nothing to render from, and a derivative
+        // set cannot be invented.
+        await repository.transitionAsset(repository.transactionless, {
+          assetId: asset.id,
+          expectedLifecycle: 'processing',
+          lifecycle: 'quarantined',
+          now: this.dependencies.now(),
+          rejectionReason:
+            read.kind === 'absent' ? 'object_missing' : 'too_large',
+        });
+        await this.completeObligation(obligation.id, owner);
+        return false;
+      }
+
+      const existing = await repository.listObjects(
+        repository.transactionless,
+        asset.id,
+      );
+      const present = new Set(
+        existing
+          .filter(
+            (object) =>
+              object.role === 'variant' &&
+              object.processingVersion === processor.version,
+          )
+          .map((object) => object.variantKind),
+      );
+
+      for (const kind of requiredMediaVariants[asset.assetClass]) {
+        // A retry re-renders only what is missing. Rendering a variant that
+        // already exists would be work whose result the index would refuse
+        // anyway.
+        if (present.has(kind)) continue;
+        const rendition = await processor.render({ bytes: read.bytes, kind });
+        const objectKey = mediaObjectKey({
+          assetId: asset.id,
+          processingVersion: processor.version,
+          role: 'variant',
+          variantKind: kind,
+        });
+        const now = this.dependencies.now();
+        const reserved = await repository.insertObject(
+          repository.transactionless,
+          {
+            assetId: asset.id,
+            byteSize: rendition.bytes.byteLength,
+            digest: digestOf(rendition.bytes),
+            format: rendition.format,
+            height: rendition.height,
+            id: crypto.randomUUID(),
+            now,
+            objectKey,
+            processingVersion: processor.version,
+            provider: storage.name,
+            role: 'variant',
+            variantKind: kind,
+            width: rendition.width,
+          },
+        );
+        // Another writer got there first. Nothing has been written to the
+        // provider under this key, so there is nothing to clean up.
+        if (reserved === undefined) continue;
+        await storage.writeObject({
+          bytes: rendition.bytes,
+          contentType: mediaContentTypes[rendition.format],
+          objectKey,
+        });
+      }
+
+      const durable = await repository.listObjects(
+        repository.transactionless,
+        asset.id,
+      );
+      const complete = requiredMediaVariants[asset.assetClass].every((kind) =>
+        durable.some(
+          (object) =>
+            object.role === 'variant' &&
+            object.variantKind === kind &&
+            object.processingVersion === processor.version &&
+            object.state === 'present',
+        ),
+      );
+
+      const now = this.dependencies.now();
+      if (complete) {
+        // `ready` is the strongest thing this domain says, and it says it only
+        // once every derivative the class owes is durable.
+        await repository.transitionAsset(repository.transactionless, {
+          assetId: asset.id,
+          expectedLifecycle: 'processing',
+          lifecycle: 'ready',
+          now,
+          readyAt: now,
+        });
+      }
+      await this.completeObligation(obligation.id, owner);
+      return complete;
+    } catch (error) {
+      await this.dependencies.repository.failObligation(
+        this.dependencies.repository.transactionless,
+        {
+          backoffMilliseconds: mediaObligationBackoffMilliseconds,
+          failureReason: 'processing_failed',
+          maximumAttempts: maximumMediaObligationAttempts,
+          now: this.dependencies.now(),
+          obligationId: obligation.id,
+          owner,
+        },
+      );
+      this.dependencies.logger.error(
+        { error, obligation: obligation.kind },
+        'media obligation attempt failed',
+      );
+      return false;
     }
   }
 

@@ -37,6 +37,7 @@ import { createQueue, createWorkerRuntime } from './jobs/runtime.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import {
   mediaInspectionIntervalMilliseconds,
+  mediaProcessingIntervalMilliseconds,
   mediaUploadSweepIntervalMilliseconds,
 } from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
@@ -131,6 +132,8 @@ export interface WorkerComposition {
   readonly media: MediaRuntime;
   /** Derives what uploaded bytes actually are. Quarantines what fails. */
   readonly mediaInspection: Poller;
+  /** Renders the derivative set from decoded pixels. Strips every tag. */
+  readonly mediaProcessing: Poller;
   /** Closes spent upload windows, recovers stranded ones, reclaims the dead. */
   readonly mediaUploadSweep: Poller;
   /** PAYOUTS, composed here because this process applies both sides of the seam. */
@@ -370,9 +373,10 @@ export function createWorkerComposition(input: {
   const media = createMediaRuntime({
     config: input.config,
     database: handle,
-    // Only here. Decoding hostile input belongs on the worker boundary, and the
-    // API composes no inspector at all, so it cannot be talked into one.
-    inspects: true,
+    // Only here. Decoding hostile input and re-encoding pixels belong on the
+    // worker boundary, and the API composes neither, so it cannot be talked
+    // into either.
+    performsByteWork: true,
     logger: input.logger,
     now,
   });
@@ -421,6 +425,22 @@ export function createWorkerComposition(input: {
     name: 'media-inspection',
   });
 
+  // Processing is the CPU-heavy half and it runs here rather than anywhere a
+  // request could reach, so re-encoding a large image cannot compete with
+  // serving traffic.
+  const mediaProcessing = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const { ready } = await media.service.runProcessing({ owner });
+        if (ready > 0) {
+          input.logger.info({ ready }, 'media derivative sets completed');
+        }
+      }),
+    intervalMilliseconds: mediaProcessingIntervalMilliseconds,
+    logger: input.logger,
+    name: 'media-processing',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -433,6 +453,7 @@ export function createWorkerComposition(input: {
     financialReconciliation,
     media,
     mediaInspection,
+    mediaProcessing,
     mediaUploadSweep,
     payouts,
     async close() {
@@ -442,6 +463,7 @@ export function createWorkerComposition(input: {
         financialReconciliation.stop(),
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
+        mediaProcessing.stop(),
         mediaUploadSweep.stop(),
         deliverySweep.stop(),
       ]);
@@ -457,6 +479,7 @@ export function createWorkerComposition(input: {
       await safetyDeadlineSweep.runOnce();
       await mediaUploadSweep.runOnce();
       await mediaInspection.runOnce();
+      await mediaProcessing.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,
