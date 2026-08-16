@@ -31,6 +31,11 @@ export interface ImposeRequest extends EnforcementIdentity {
   /** When a time-bounded restriction stops on its own. Absent is indefinite. */
   readonly expiresAt?: Date | undefined;
   readonly reasonCode: EnforcementReasonCode;
+  /**
+   * The report this decision named, where it named one. Absent for anything a
+   * case produced: a case is the unit of review and the decision that produced
+   * this record names both the case and the evidence it cited.
+   */
   readonly reportId?: string | undefined;
 }
 

@@ -1066,6 +1066,34 @@ describe('a consumer cannot become a moderator', () => {
 });
 
 describe('enforcement is applied by the domain that owns what changes', () => {
+  /**
+   * The open case a report opened, and the version a reviewer would have read.
+   *
+   * A decision is taken on a case rather than on a report: the case is the unit
+   * of review, and a decision that named a report would settle one person's
+   * allegation while leaving the others in the same case open.
+   */
+  async function openCaseFor(
+    targetId: string,
+  ): Promise<{ id: string; version: number }> {
+    const rows = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${targetId} and state not in ('decided', 'closed')
+        order by opened_at desc limit 1`,
+    );
+    const row = rows[0];
+    if (row === undefined) throw new Error('no open case for that target');
+    return row;
+  }
+
+  async function evidenceFor(caseId: string): Promise<string[]> {
+    const rows = await rowsOf<{ id: string }>(
+      database.sql`select id from safety_evidence
+        where case_id = ${caseId} order by recorded_at, id`,
+    );
+    return rows.map((row) => row.id);
+  }
+
   it('restricts an account and removes it from discovery and messaging', async () => {
     const pair = await connectedPair('enforce-account');
     const reporter = pair.first;
@@ -1081,13 +1109,15 @@ describe('enforcement is applied by the domain that owns what changes', () => {
 
     const review = await safety.moderation.beginReview({ reportId });
     expect(review.kind).toBe('recorded');
-    const decision = await safety.moderation.decide({
+    const open = await openCaseFor(subject.id);
+    const decision = await safety.moderation.decideCase({
+      action: 'restrict_capability',
       actorReference: 'operator-reference-1',
-      enforcement: {
-        reasonCode: 'harassment',
-        scope: 'account_restriction',
-      },
-      reportId,
+      caseId: open.id,
+      evidenceIds: await evidenceFor(open.id),
+      expectedVersion: open.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
     });
     expect(decision.kind).toBe('recorded');
 
@@ -1124,15 +1154,18 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
+    expect(reportId.length).toBeGreaterThan(0);
 
-    const decision = await safety.moderation.decide({
+    const open = await openCaseFor(pair.second.id);
+    const decision = await safety.moderation.decideCase({
+      action: 'restrict_capability',
       actorReference: 'operator-reference-2',
-      enforcement: {
-        reasonCode: 'harassment',
-        scope: 'conversation_closure',
-        targetConversationId: pair.conversationId,
-      },
-      reportId,
+      caseId: open.id,
+      evidenceIds: await evidenceFor(open.id),
+      expectedVersion: open.version,
+      reasonCode: 'harassment',
+      scope: 'conversation_closure',
+      targetConversationId: pair.conversationId,
     });
     expect(decision.kind).toBe('recorded');
 
@@ -1161,10 +1194,16 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
+    expect(reportId.length).toBeGreaterThan(0);
 
-    const decision = await safety.moderation.decide({
+    const open = await openCaseFor(subject.id);
+    const decision = await safety.moderation.decideCase({
+      action: 'no_action',
       actorReference: 'operator-reference-3',
-      reportId,
+      caseId: open.id,
+      evidenceIds: [],
+      expectedVersion: open.version,
+      reasonCode: 'no_violation_found',
     });
     expect(decision.kind).toBe('recorded');
     expect(await countOf('safety_enforcements')).toBe(0);
@@ -1189,16 +1228,27 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
+    expect(reportId.length).toBeGreaterThan(0);
 
+    const open = await openCaseFor(subject.id);
+    const evidenceIds = await evidenceFor(open.id);
     const outcomes = await Promise.all([
-      safety.moderation.decide({
+      safety.moderation.decideCase({
+        action: 'restrict_capability',
         actorReference: 'operator-a',
-        enforcement: { reasonCode: 'harassment', scope: 'account_restriction' },
-        reportId,
+        caseId: open.id,
+        evidenceIds,
+        expectedVersion: open.version,
+        reasonCode: 'harassment',
+        scope: 'account_restriction',
       }),
-      safety.moderation.decide({
+      safety.moderation.decideCase({
+        action: 'no_action',
         actorReference: 'operator-b',
-        reportId,
+        caseId: open.id,
+        evidenceIds: [],
+        expectedVersion: open.version,
+        reasonCode: 'no_violation_found',
       }),
     ]);
     const recorded = outcomes.filter(
@@ -1221,20 +1271,28 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
+    expect(reportId.length).toBeGreaterThan(0);
 
-    const decision = await safety.moderation.decide({
+    const open = await openCaseFor(subject.id);
+    const decision = await safety.moderation.decideCase({
+      action: 'restrict_capability',
       actorReference: 'operator-reference-4',
-      enforcement: {
-        reasonCode: 'harassment',
-        scope: 'conversation_closure',
-        targetConversationId: crypto.randomUUID(),
-      },
-      reportId,
+      caseId: open.id,
+      evidenceIds: await evidenceFor(open.id),
+      expectedVersion: open.version,
+      reasonCode: 'harassment',
+      scope: 'conversation_closure',
+      // A conversation no report in this case named. Closing it would be a
+      // decision about two people nobody complained about.
+      targetConversationId: crypto.randomUUID(),
     });
     expect(decision.kind).toBe('not_applicable');
-    // A report marked actioned with no enforcement behind it is a state an
-    // audit could not explain, so it is not reachable.
+    // A case marked decided with no decision behind it, or a report marked
+    // actioned with no enforcement, are states an audit could not explain, so
+    // neither is reachable.
     expect(await countOf('safety_reports', "state = 'received'")).toBe(1);
+    expect(await countOf('safety_cases', "state = 'new'")).toBe(1);
+    expect(await countOf('safety_decisions')).toBe(0);
     expect(await countOf('safety_enforcements')).toBe(0);
   });
 
@@ -1249,33 +1307,62 @@ describe('enforcement is applied by the domain that owns what changes', () => {
       }),
     );
     const reportId = ((await filed.json()) as { id: string }).id;
-    await safety.moderation.decide({
+    expect(reportId.length).toBeGreaterThan(0);
+    const open = await openCaseFor(subject.id);
+    const evidenceIds = await evidenceFor(open.id);
+    const restricted = await safety.moderation.decideCase({
+      action: 'restrict_capability',
       actorReference: 'operator-reference-5',
-      enforcement: { reasonCode: 'harassment', scope: 'account_restriction' },
-      reportId,
+      caseId: open.id,
+      evidenceIds,
+      expectedVersion: open.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
     });
+    if (restricted.kind !== 'recorded') throw new Error('setup failed');
 
-    expect(
-      await safety.moderation.restoreAccount({
-        actorReference: 'operator-reference-6',
-        subjectId: subject.id,
-      }),
-    ).toBe(true);
+    // The reversal is a decision that names the decision it replaces, not an
+    // edit of it and not a free-standing lift with no record of who decided.
+    const settled = await rowsOf<{ version: number }>(
+      database.sql`select version from safety_cases where id = ${open.id}`,
+    );
+    const reversal = await safety.moderation.decideCase({
+      action: 'revoke_restriction',
+      actorReference: 'operator-reference-6',
+      caseId: open.id,
+      evidenceIds,
+      expectedVersion: settled[0]?.version ?? 0,
+      reasonCode: 'platform_integrity',
+      scope: 'account_restriction',
+      supersedesDecisionId: restricted.decision.id,
+    });
+    expect(reversal.kind).toBe('recorded');
+    if (reversal.kind !== 'recorded') return;
+    expect(reversal.decision.supersedesId).toBe(restricted.decision.id);
+    expect(reversal.decision.priorState).toBe('restricted');
+    expect(reversal.decision.resultingState).toBe('unrestricted');
+
     const account = await rowsOf<{ status: string }>(
       database.sql`select status from users_accounts where id = ${subject.id}`,
     );
     expect(account[0]?.status).toBe('active');
-    // Two records, and the first is unchanged.
+    // Two enforcement records, and the first is unchanged.
     const enforcements = await safety.moderation.enforcementsFor(subject.id);
     expect(enforcements).toHaveLength(2);
     expect(
-      enforcements.filter((entry) => entry.reportId === reportId),
-    ).toHaveLength(1);
+      enforcements.filter((entry) => entry.reportId === null),
+    ).toHaveLength(2);
+    // And the superseded decision is exactly what was written.
+    const detail = await safety.moderation.caseDetail(open.id);
+    const original = detail?.decisions.find(
+      (entry) => entry.id === restricted.decision.id,
+    );
+    expect(original).toEqual(restricted.decision);
   });
 });
 
 describe('the database enforces the safety invariants', () => {
-  it('owns exactly the four safety tables and nothing else', async () => {
+  it('owns exactly the safety tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
         where table_schema = 'public' and table_name like 'safety_%'
@@ -1284,7 +1371,10 @@ describe('the database enforces the safety invariants', () => {
     expect(rows.map((row) => row.table_name)).toEqual([
       'safety_blocks',
       'safety_cases',
+      'safety_decision_evidence',
+      'safety_decisions',
       'safety_enforcements',
+      'safety_evidence',
       'safety_reports',
     ]);
   });

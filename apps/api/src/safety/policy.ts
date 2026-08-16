@@ -122,22 +122,37 @@ export const casePolicyVersion = 'v1-provisional';
 /**
  * Case lifecycle.
  *
- * Only the states this milestone can actually reach. `decision_pending` and
- * `decided` arrive with moderation decisions and `appealed` with appeals;
- * declaring them now would put states in the schema that no code could move a
- * row out of, which is how a value nothing is entitled to write ends up being
- * set for convenience later.
+ * Only the states this milestone can actually reach. `appealed` arrives with
+ * appeals; declaring it now would put a state in the schema that no code could
+ * move a row out of, which is how a value nothing is entitled to write ends up
+ * being set for convenience later.
+ *
+ * `decided` and `closed` are both terminal and they are not the same fact. A
+ * closed case is one nobody is going to look at any further; a decided case is
+ * one somebody judged, and the judgement is a record of its own. Collapsing
+ * them would make "was this reviewed" a question answerable only by joining to
+ * another table, and would let a case that was quietly dropped read exactly
+ * like one that was considered.
  */
 export const caseStates = [
   'new',
   'triaged',
   'investigating',
+  'decided',
   'closed',
 ] as const;
 export type CaseState = (typeof caseStates)[number];
 
 /** Cases a new report joins rather than opening a second one beside. */
 export const openCaseStates = ['new', 'triaged', 'investigating'] as const;
+
+/**
+ * Cases that have left the queue.
+ *
+ * A target may have a new case opened about it once the previous one reaches
+ * one of these, because the previous review is over either way.
+ */
+export const resolvedCaseStates: readonly CaseState[] = ['decided', 'closed'];
 
 /**
  * How urgent a reviewer judged a case to be.
@@ -201,6 +216,118 @@ export const caseClaimLeaseMilliseconds = 30 * 60 * 1000;
 
 /** Largest page of cases one queue read returns. */
 export const maximumCasePageSize = 50;
+
+/**
+ * Which evidence rule was in force. Recorded on every evidence record.
+ *
+ * Separate from the case version because what may be recorded as evidence, and
+ * in what shape, moves for its own reasons — a new reference type or a new
+ * bound on a note is not a change to how a queue is worked.
+ */
+export const evidencePolicyVersion = 'v1-provisional';
+
+/**
+ * What may be recorded as evidence in a case.
+ *
+ * Evidence explains a decision. It is a **reference or a minimal snapshot** and
+ * never a copy of another domain's record: a whole private conversation copied
+ * into `safety_` would be a second, less protected store of the thing the
+ * platform is most obliged not to leak, and it would go stale the moment the
+ * original changed. [ADR-0022](../../../../docs/decisions/ADR-0022-trust-safety-policy-enforcement-authority.md)
+ * fixes that shape, and the column layout enforces it: a reference kind carries
+ * an identifier and nothing else, a snapshot kind carries a bounded state label
+ * that cannot hold prose, and exactly one kind carries free text.
+ */
+export const evidenceKinds = [
+  /** A report filed in this case. The narrative stays on the report. */
+  'report',
+  /** One message named by a report in this case. Never its body. */
+  'message_reference',
+  'creator_content_reference',
+  'club_reference',
+  /** What a creator's page was, at the moment somebody looked. */
+  'creator_profile_state',
+  /** A depicted-person consent record held by an approved verifier. */
+  'consent_evidence_reference',
+  /** An approved verifier's outcome reference. Never a document. */
+  'external_verification_reference',
+  /** A reviewer's own words. The one kind that carries prose. */
+  'operator_note',
+  /** Something the platform observed about itself. A code, not a sentence. */
+  'system_fact',
+] as const;
+export type EvidenceKind = (typeof evidenceKinds)[number];
+
+/**
+ * What an evidence reference names.
+ *
+ * A closed vocabulary for the same reason the report target types are one: the
+ * type is what decides how the identifier is checked, and a free string would
+ * be evidence pointing at something nobody owns.
+ */
+export const evidenceReferenceTypes = [
+  'safety_report',
+  'message',
+  'creator_profile',
+  'creator_content',
+  'club',
+  'consent_record',
+] as const;
+export type EvidenceReferenceType = (typeof evidenceReferenceTypes)[number];
+
+/** Kinds that name something, and therefore carry a reference. */
+export const referencedEvidenceKinds: readonly EvidenceKind[] = [
+  'club_reference',
+  'consent_evidence_reference',
+  'creator_content_reference',
+  'creator_profile_state',
+  'message_reference',
+  'report',
+];
+
+/**
+ * Kinds that carry a bounded state label rather than a reference or prose.
+ *
+ * The label is a code — lowercase, no spaces, sixty-four characters — because a
+ * snapshot field that accepted a sentence would become the place a message body
+ * or a reporter's narrative ends up, one convenient call site at a time.
+ */
+export const snapshotEvidenceKinds: readonly EvidenceKind[] = [
+  'creator_profile_state',
+  'system_fact',
+];
+
+/**
+ * Kinds no approved authority can produce yet.
+ *
+ * Depicted-person consent and external verification are references to an
+ * approved verifier's outcome, and Velora has no approved verifier: the
+ * configuration that would name one refuses in every deployed environment. The
+ * vocabulary exists so the evidence model is whole; recording one of these is
+ * refused rather than accepted as an unbacked assertion, which is the same
+ * fail-closed shape the adult-assurance gate already has.
+ */
+export const unavailableEvidenceKinds: readonly EvidenceKind[] = [
+  'consent_evidence_reference',
+  'external_verification_reference',
+];
+
+/**
+ * The shape a snapshot label and an external reference may take.
+ *
+ * Both are deliberately narrow. A label is an identifier-shaped code and an
+ * external reference is an opaque verifier handle; neither can hold a
+ * narrative, a message body, or a line of identity evidence, because neither
+ * can hold a space.
+ */
+export const evidenceStateLabelPattern = '^[a-z][a-z0-9_]{0,63}$';
+export const evidenceExternalReferencePattern = '^[A-Za-z0-9._:-]{1,200}$';
+
+/** Longest reviewer note accepted. Prose, and bounded like any input. */
+export const maximumOperatorNoteCharacters = 2_000;
+
+/** Largest page of evidence or decisions one case read returns. */
+export const maximumCaseRecordPageSize = 200;
 
 /** Which enforcement rule produced an action. Recorded on every enforcement. */
 export const enforcementPolicyVersion = 'v1-provisional';
@@ -348,6 +475,124 @@ export const enforcementReasonCodes = [
   'platform_integrity',
 ] as const;
 export type EnforcementReasonCode = (typeof enforcementReasonCodes)[number];
+
+/** Which decision rule was in force. Recorded on every decision. */
+export const decisionPolicyVersion = 'v1-provisional';
+
+/**
+ * Why a decision was taken.
+ *
+ * A superset of the enforcement findings, because a review that found nothing
+ * still has a reason and none of the findings is it. Recording "no action,
+ * platform integrity" would be a decision that reads like a finding of
+ * wrongdoing followed by leniency, which is a worse record than none.
+ *
+ * A decision that enforces may use only the finding vocabulary — a restriction
+ * imposed for `no_violation_found` would be incoherent — and the schema
+ * enforces that rather than leaving it to the caller.
+ */
+export const decisionReasonCodes = [
+  ...enforcementReasonCodes,
+  /** Reviewed, and the allegation was not made out. */
+  'no_violation_found',
+  /** Reviewed, and there was not enough to decide either way. */
+  'insufficient_evidence',
+  /** Handed on, because deciding it needs authority this reviewer lacks. */
+  'requires_specialist_review',
+] as const;
+export type DecisionReasonCode = (typeof decisionReasonCodes)[number];
+
+/**
+ * What a reviewer may decide.
+ *
+ * A closed vocabulary, and separate from both the scope and the reason code. A
+ * scope says what a restriction is *about*; an action says what the reviewer
+ * did, including deciding to do nothing — which is a decision worth recording,
+ * because "we looked and found no violation" is the only thing that
+ * distinguishes an examined case from an abandoned one.
+ *
+ * `temporary_hold` is deliberately its own action rather than a restriction
+ * with an expiry attached. [ADR-0022](../../../../docs/decisions/ADR-0022-trust-safety-policy-enforcement-authority.md)
+ * requires a hold to be distinguishable in the schema from a final violation
+ * finding, because an accusation recorded as guilt is a defamation the platform
+ * authored.
+ */
+export const decisionActions = [
+  'no_action',
+  'temporary_hold',
+  'unpublish',
+  'restrict_capability',
+  'revoke_restriction',
+  'escalate',
+] as const;
+export type DecisionAction = (typeof decisionActions)[number];
+
+/**
+ * Actions that end the review.
+ *
+ * Everything except escalation, which hands the case on rather than settling
+ * it. The distinction is load-bearing: a case may be escalated many times and
+ * settled once, which is what the partial unique index over the resolving
+ * decisions of a case enforces.
+ */
+export const resolvingDecisionActions: readonly DecisionAction[] = [
+  'no_action',
+  'restrict_capability',
+  'revoke_restriction',
+  'temporary_hold',
+  'unpublish',
+];
+
+/** Actions that produce an enforcement record, and therefore name a scope. */
+export const enforcingDecisionActions: readonly DecisionAction[] = [
+  'restrict_capability',
+  'revoke_restriction',
+  'temporary_hold',
+  'unpublish',
+];
+
+/**
+ * Which scopes each action may name.
+ *
+ * The map is here rather than at the call site so that a scope added to the
+ * enforcement vocabulary has to be given an action deliberately. A scope no
+ * action names is a restriction nothing can decide, which is a better failure
+ * than a decision quietly acquiring a power nobody granted it.
+ */
+const scopesByDecisionAction: Readonly<
+  Record<DecisionAction, readonly EnforcementScope[]>
+> = {
+  escalate: [],
+  no_action: [],
+  restrict_capability: [
+    'account_restriction',
+    'conversation_closure',
+    'creator_suspension',
+    'club_membership_revocation',
+  ],
+  revoke_restriction: liftableEnforcementScopes,
+  temporary_hold: ['account_restriction', 'creator_suspension'],
+  unpublish: ['creator_object_removal'],
+};
+
+export function scopesForDecision(
+  action: DecisionAction,
+): readonly EnforcementScope[] {
+  return scopesByDecisionAction[action];
+}
+
+/**
+ * What a decision records about the subject's safety standing.
+ *
+ * The prior and resulting state describe **what this domain decides**, not
+ * another domain's column. An account's status is USERS' truth and SAFETY may
+ * not read it; what SAFETY can state, and be held to, is whether a live
+ * restriction stood before the decision and whether one stands after it. Both
+ * are read inside the decision's own transaction, under the subject lock, so
+ * the pair is a fact about one instant rather than two.
+ */
+export const decisionSubjectStates = ['unrestricted', 'restricted'] as const;
+export type DecisionSubjectState = (typeof decisionSubjectStates)[number];
 
 /**
  * Version of the rule that composes live enforcements into an answer.

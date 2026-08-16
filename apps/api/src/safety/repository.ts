@@ -23,18 +23,27 @@ import type { CaseCursor } from './cursor.js';
 import {
   openCaseStates,
   openReportStates,
+  resolvedCaseStates,
   type CasePriority,
   type CaseQueue,
   type CaseState,
+  type DecisionAction,
+  type DecisionSubjectState,
   type EnforcementDisposition,
   type EnforcementObjectType,
+  type EnforcementScope,
+  type EvidenceKind,
+  type EvidenceReferenceType,
   type ReportSourceSurface,
   type ReportTargetType,
 } from './policy.js';
 import {
   safetyBlocks,
   safetyCases,
+  safetyDecisionEvidence,
+  safetyDecisions,
   safetyEnforcements,
+  safetyEvidence,
   safetyReports,
 } from './schema.js';
 
@@ -42,6 +51,8 @@ export type BlockRow = typeof safetyBlocks.$inferSelect;
 export type CaseRow = typeof safetyCases.$inferSelect;
 export type ReportRow = typeof safetyReports.$inferSelect;
 export type EnforcementRow = typeof safetyEnforcements.$inferSelect;
+export type EvidenceRow = typeof safetyEvidence.$inferSelect;
+export type DecisionRow = typeof safetyDecisions.$inferSelect;
 
 /**
  * Every TRUST & SAFETY read and write.
@@ -442,7 +453,17 @@ export class SafetyRepository {
     return updated[0];
   }
 
-  /** Moves a case, and optionally its priority, against the version read. */
+  /**
+   * Moves a case, and optionally its priority, against the version read.
+   *
+   * Only ever from an open state. A case that has already left the queue —
+   * decided or closed — is not moved again, so a reviewer working from a stale
+   * read loses to whoever resolved it rather than reopening their decision.
+   *
+   * Leaving the queue releases the claim and stamps the moment. A case somebody
+   * still held could not be worked on and could not be reclaimed, and a
+   * resolved case with no moment would be a review with no end.
+   */
   async transitionCase(
     executor: Executor,
     input: {
@@ -453,11 +474,11 @@ export class SafetyRepository {
       readonly state: CaseState;
     },
   ): Promise<CaseRow | undefined> {
-    const closing = input.state === 'closed';
+    const resolving = resolvedCaseStates.includes(input.state);
     const updated = await executor
       .update(safetyCases)
       .set({
-        ...(closing
+        ...(resolving
           ? {
               assignedActorReference: null,
               assignedAt: null,
@@ -619,6 +640,308 @@ export class SafetyRepository {
     return updated[0];
   }
 
+  /**
+   * Resolves every still-open report a case carries, in one statement.
+   *
+   * Called only from inside a decision, which holds the subject lock and has
+   * already won the case's compare-and-set, so there is no second writer to
+   * lose a version race against. Reports that were already resolved are left
+   * exactly as they were: a report decided under an earlier case is not
+   * re-decided because a later one reached a different conclusion.
+   */
+  async resolveOpenReportsForCase(
+    executor: Executor,
+    input: {
+      readonly caseId: string;
+      readonly now: Date;
+      readonly state: 'actioned' | 'dismissed';
+    },
+  ): Promise<ReportRow[]> {
+    return executor
+      .update(safetyReports)
+      .set({
+        resolvedAt: input.now,
+        state: input.state,
+        updatedAt: input.now,
+        version: sql`${safetyReports.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyReports.caseId, input.caseId),
+          inArray(safetyReports.state, [...openReportStates]),
+        ),
+      )
+      .returning();
+  }
+
+  /** One report, but only if it is evidence in the case named. */
+  async findReportInCase(
+    executor: Executor,
+    input: { readonly caseId: string; readonly reportId: string },
+  ): Promise<ReportRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyReports)
+      .where(
+        and(
+          eq(safetyReports.id, input.reportId),
+          eq(safetyReports.caseId, input.caseId),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Whether a report in this case named this conversation or message.
+   *
+   * The question a piece of message evidence has to answer before it may be
+   * recorded. SAFETY cannot ask MESSAGING whether a message exists without
+   * being handed a way to probe for other people's messages, and it does not
+   * need to: what makes a message citable is that somebody reported it, and
+   * that fact is already in this domain.
+   */
+  async caseNamesConversation(
+    executor: Executor,
+    input: { readonly caseId: string; readonly conversationId: string },
+  ): Promise<boolean> {
+    const rows = await executor
+      .select({ id: safetyReports.id })
+      .from(safetyReports)
+      .where(
+        and(
+          eq(safetyReports.caseId, input.caseId),
+          eq(safetyReports.conversationId, input.conversationId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async caseNamesMessage(
+    executor: Executor,
+    input: { readonly caseId: string; readonly messageId: string },
+  ): Promise<boolean> {
+    const rows = await executor
+      .select({ id: safetyReports.id })
+      .from(safetyReports)
+      .where(
+        and(
+          eq(safetyReports.caseId, input.caseId),
+          eq(safetyReports.messageId, input.messageId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /** Appends evidence to a case. Nothing here is ever updated or removed. */
+  async insertEvidence(
+    executor: Executor,
+    input: {
+      readonly actorReference: string | null;
+      readonly caseId: string;
+      readonly externalReference: string | null;
+      readonly kind: EvidenceKind;
+      readonly note: string | null;
+      readonly now: Date;
+      readonly observedAt: Date | null;
+      readonly policyVersion: string;
+      readonly referenceId: string | null;
+      readonly referenceType: EvidenceReferenceType | null;
+      readonly stateLabel: string | null;
+    },
+  ): Promise<EvidenceRow> {
+    const rows = await executor
+      .insert(safetyEvidence)
+      .values({
+        actorReference: input.actorReference,
+        caseId: input.caseId,
+        externalReference: input.externalReference,
+        id: crypto.randomUUID(),
+        kind: input.kind,
+        note: input.note,
+        observedAt: input.observedAt,
+        policyVersion: input.policyVersion,
+        recordedAt: input.now,
+        referenceId: input.referenceId,
+        referenceType: input.referenceType,
+        stateLabel: input.stateLabel,
+      })
+      .returning();
+    const row = rows[0];
+    if (row === undefined) throw new Error('Evidence insert returned no row');
+    return row;
+  }
+
+  /** A case's evidence, oldest first. Bounded, like every read here. */
+  async listEvidenceForCase(
+    executor: Executor,
+    input: { readonly caseId: string; readonly limit: number },
+  ): Promise<EvidenceRow[]> {
+    return executor
+      .select()
+      .from(safetyEvidence)
+      .where(eq(safetyEvidence.caseId, input.caseId))
+      .orderBy(asc(safetyEvidence.recordedAt), asc(safetyEvidence.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * The named evidence, and only what genuinely belongs to the case.
+   *
+   * A decision cites evidence by identifier, and a citation of something from
+   * another case is refused rather than silently dropped: the caller compares
+   * what it asked for against what came back.
+   */
+  async listEvidenceInCase(
+    executor: Executor,
+    input: {
+      readonly caseId: string;
+      readonly evidenceIds: readonly string[];
+    },
+  ): Promise<EvidenceRow[]> {
+    if (input.evidenceIds.length === 0) return [];
+    return executor
+      .select()
+      .from(safetyEvidence)
+      .where(
+        and(
+          eq(safetyEvidence.caseId, input.caseId),
+          inArray(safetyEvidence.id, [...input.evidenceIds]),
+        ),
+      );
+  }
+
+  /**
+   * Appends a decision, or reports that the database refused it.
+   *
+   * Nothing is returned when a partial unique index rejected the write: either
+   * this case already has a resolving decision, or the record this one claims
+   * to correct has already been corrected. Both are somebody else having
+   * decided first, and both are the caller's `conflict`.
+   */
+  async insertDecision(
+    executor: Executor,
+    input: {
+      readonly action: DecisionAction;
+      readonly actorReference: string;
+      readonly caseId: string;
+      readonly enforcementId: string | null;
+      readonly expiresAt: Date | null;
+      readonly now: Date;
+      readonly policyVersion: string;
+      readonly priorState: DecisionSubjectState | null;
+      readonly reasonCode: string;
+      readonly resultingState: DecisionSubjectState | null;
+      readonly scope: EnforcementScope | null;
+      readonly subjectId: string;
+      readonly supersedesId: string | null;
+      readonly targetType: ReportTargetType;
+    },
+  ): Promise<DecisionRow | undefined> {
+    const rows = await executor
+      .insert(safetyDecisions)
+      .values({
+        action: input.action,
+        actorReference: input.actorReference,
+        caseId: input.caseId,
+        decidedAt: input.now,
+        enforcementId: input.enforcementId,
+        expiresAt: input.expiresAt,
+        id: crypto.randomUUID(),
+        policyVersion: input.policyVersion,
+        priorState: input.priorState,
+        reasonCode: input.reasonCode,
+        resultingState: input.resultingState,
+        scope: input.scope,
+        subjectId: input.subjectId,
+        supersedesId: input.supersedesId,
+        targetType: input.targetType,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return rows[0];
+  }
+
+  /** Records which evidence a decision rested on. */
+  async linkDecisionEvidence(
+    executor: Executor,
+    input: {
+      readonly caseId: string;
+      readonly decisionId: string;
+      readonly evidenceIds: readonly string[];
+      readonly now: Date;
+    },
+  ): Promise<void> {
+    if (input.evidenceIds.length === 0) return;
+    await executor.insert(safetyDecisionEvidence).values(
+      input.evidenceIds.map((evidenceId) => ({
+        caseId: input.caseId,
+        decisionId: input.decisionId,
+        evidenceId,
+        recordedAt: input.now,
+      })),
+    );
+  }
+
+  async findDecision(
+    executor: Executor,
+    id: string,
+  ): Promise<DecisionRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyDecisions)
+      .where(eq(safetyDecisions.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
+  /** A case's decisions, oldest first. History, never a single answer. */
+  async listDecisionsForCase(
+    executor: Executor,
+    input: { readonly caseId: string; readonly limit: number },
+  ): Promise<DecisionRow[]> {
+    return executor
+      .select()
+      .from(safetyDecisions)
+      .where(eq(safetyDecisions.caseId, input.caseId))
+      .orderBy(asc(safetyDecisions.decidedAt), asc(safetyDecisions.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * The evidence each of these decisions cited.
+   *
+   * Asked about the whole page at once rather than per decision, because a case
+   * with a long history would otherwise cost one query per record — the shape
+   * that turns a reviewer opening a case into a query storm.
+   */
+  async listEvidenceIdsForDecisions(
+    executor: Executor,
+    decisionIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string[]>> {
+    const cited = new Map<string, string[]>();
+    if (decisionIds.length === 0) return cited;
+    const rows = await executor
+      .select({
+        decisionId: safetyDecisionEvidence.decisionId,
+        evidenceId: safetyDecisionEvidence.evidenceId,
+      })
+      .from(safetyDecisionEvidence)
+      .where(inArray(safetyDecisionEvidence.decisionId, [...decisionIds]))
+      .orderBy(
+        asc(safetyDecisionEvidence.decisionId),
+        asc(safetyDecisionEvidence.evidenceId),
+      );
+    for (const row of rows) {
+      const existing = cited.get(row.decisionId);
+      if (existing === undefined) cited.set(row.decisionId, [row.evidenceId]);
+      else existing.push(row.evidenceId);
+    }
+    return cited;
+  }
+
   /** Appends an enforcement record. Nothing here is ever updated. */
   async insertEnforcement(
     executor: Executor,
@@ -631,6 +954,7 @@ export class SafetyRepository {
       readonly now: Date;
       readonly policyVersion: string;
       readonly reasonCode: string;
+      /** The report a decision named, where a decision named one. */
       readonly reportId: string | null;
       readonly scope: string;
       readonly subjectId: string;

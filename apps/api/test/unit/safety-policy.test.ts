@@ -13,8 +13,17 @@ import {
   casePriorities,
   caseQueues,
   caseStates,
+  decisionActions,
+  decisionPolicyVersion,
+  decisionReasonCodes,
+  decisionSubjectStates,
   denialReasonFor,
   eligibilityPolicyVersion,
+  enforcingDecisionActions,
+  evidenceExternalReferencePattern,
+  evidenceKinds,
+  evidencePolicyVersion,
+  evidenceStateLabelPattern,
   enforcementDispositions,
   enforcementPolicyVersion,
   enforcementPrecedence,
@@ -26,8 +35,11 @@ import {
   objectScopedEnforcements,
   openReportStates,
   productionBlockers,
+  referencedEvidenceKinds,
   reportPolicyVersion,
   reportReasonCodes,
+  resolvedCaseStates,
+  resolvingDecisionActions,
   openCaseStates,
   queueFor,
   reportSourceSurfaces,
@@ -35,8 +47,11 @@ import {
   reportTargetTypes,
   safetyCapabilities,
   safetyDenialReasons,
+  scopesForDecision,
+  snapshotEvidenceKinds,
   subjectKindForCapability,
   subjectKindOf,
+  unavailableEvidenceKinds,
 } from '../../src/safety/policy.js';
 
 /**
@@ -196,20 +211,35 @@ describe('safety vocabularies stay provisional and separate', () => {
   });
 
   it('opens a case in a state something can move it out of', () => {
-    // `decision_pending`, `decided`, and `appealed` arrive with the phases that
-    // can reach them. Declaring them now would put states in the schema no code
-    // could move a row out of, which is how a value nothing is entitled to
-    // write ends up being set for convenience later.
+    // `appealed` arrives with the phase that can reach it. Declaring it now
+    // would put a state in the schema no code could move a row out of, which is
+    // how a value nothing is entitled to write ends up being set for
+    // convenience later.
     expect([...caseStates]).toEqual([
       'new',
       'triaged',
       'investigating',
+      'decided',
       'closed',
     ]);
     expect([...openCaseStates]).toEqual(['new', 'triaged', 'investigating']);
     for (const state of openCaseStates) {
       expect([...caseStates], state).toContain(state);
     }
+  });
+
+  it('keeps a decided case distinct from one that was merely dropped', () => {
+    // Both are out of the queue and they are not the same fact: one was judged
+    // and one was abandoned. A schema that could not tell them apart would make
+    // "was this reviewed" a question nothing could answer.
+    expect([...resolvedCaseStates]).toEqual(['decided', 'closed']);
+    for (const state of resolvedCaseStates) {
+      expect([...caseStates], state).toContain(state);
+      expect([...openCaseStates], state).not.toContain(state);
+    }
+    expect(resolvedCaseStates.length + openCaseStates.length).toBe(
+      caseStates.length,
+    );
   });
 
   it('starts every case untriaged, because nobody has looked yet', () => {
@@ -250,6 +280,112 @@ describe('safety vocabularies stay provisional and separate', () => {
       'creator_studio',
     ]);
     expect([...reportSourceSurfaces]).not.toContain('platform_admin');
+  });
+
+  it('versions the evidence and decision rules separately', () => {
+    // They move for their own reasons: one when what may be recorded as
+    // evidence changes, the other when what a reviewer may decide changes.
+    expect(evidencePolicyVersion).toBe('v1-provisional');
+    expect(decisionPolicyVersion).toBe('v1-provisional');
+  });
+
+  it('gives every evidence kind exactly one shape', () => {
+    // Each kind is a reference, a bounded snapshot, prose, or an external
+    // handle — and never two of those at once, because a kind that could be
+    // either is a column nobody can constrain.
+    for (const kind of evidenceKinds) {
+      const shapes = [
+        referencedEvidenceKinds.includes(kind),
+        snapshotEvidenceKinds.includes(kind),
+        kind === 'operator_note',
+        kind === 'external_verification_reference',
+      ].filter(Boolean).length;
+      // `creator_profile_state` is deliberately both a reference and a
+      // snapshot: it names whose page it is and what that page was.
+      expect(shapes, kind).toBeGreaterThan(0);
+    }
+    expect([...snapshotEvidenceKinds]).toEqual([
+      'creator_profile_state',
+      'system_fact',
+    ]);
+    for (const kind of [...referencedEvidenceKinds, ...snapshotEvidenceKinds]) {
+      expect([...evidenceKinds], kind).toContain(kind);
+    }
+  });
+
+  it('refuses the evidence no approved authority can produce', () => {
+    // Velora has no approved verifier, so a consent or verification reference
+    // would be an assertion dressed as evidence. The vocabulary exists so the
+    // model is whole; the capability fails closed, which is correct rather than
+    // a gap.
+    expect([...unavailableEvidenceKinds]).toEqual([
+      'consent_evidence_reference',
+      'external_verification_reference',
+    ]);
+    for (const kind of unavailableEvidenceKinds) {
+      expect([...evidenceKinds], kind).toContain(kind);
+    }
+  });
+
+  it('shapes a snapshot label so it cannot hold a sentence', () => {
+    const label = new RegExp(evidenceStateLabelPattern, 'u');
+    expect(label.test('published')).toBe(true);
+    expect(label.test('profile_withdrawn')).toBe(true);
+    // No spaces, no punctuation, no capitals: a field a narrative cannot reach.
+    expect(label.test('the reporter said they were sixteen')).toBe(false);
+    expect(label.test('Published')).toBe(false);
+    expect(label.test('a'.repeat(65))).toBe(false);
+    const external = new RegExp(evidenceExternalReferencePattern, 'u');
+    expect(external.test('verifier:outcome-0001')).toBe(true);
+    expect(external.test('passport number 123 456')).toBe(false);
+  });
+
+  it('gives every decision action scopes that exist, or none at all', () => {
+    for (const action of decisionActions) {
+      const scopes = scopesForDecision(action);
+      for (const scope of scopes) {
+        expect([...enforcementScopes], action).toContain(scope);
+      }
+      // An action that produces an enforcement names a scope; one that does not
+      // may name none, so the two sets partition the vocabulary.
+      expect(scopes.length > 0, action).toBe(
+        enforcingDecisionActions.includes(action),
+      );
+    }
+    expect(scopesForDecision('unpublish')).toEqual(['creator_object_removal']);
+    expect(scopesForDecision('revoke_restriction')).toEqual([
+      ...liftableEnforcementScopes,
+    ]);
+  });
+
+  it('settles a case with anything except handing it on', () => {
+    // Escalation is the one action that is not a settlement, which is what lets
+    // a case be escalated many times and decided once.
+    expect([...decisionActions].sort()).toEqual(
+      [...resolvingDecisionActions, 'escalate' as const].sort(),
+    );
+    expect([...resolvingDecisionActions]).not.toContain('escalate');
+    for (const action of enforcingDecisionActions) {
+      expect([...resolvingDecisionActions], action).toContain(action);
+    }
+  });
+
+  it('lets a review that found nothing say so, and never enforce for it', () => {
+    // The findings are a subset: a decision may record that nothing was made
+    // out, and a restriction imposed for `no_violation_found` would be a record
+    // that contradicts itself.
+    for (const reason of enforcementReasonCodes) {
+      expect([...decisionReasonCodes], reason).toContain(reason);
+    }
+    expect([...decisionReasonCodes]).toContain('no_violation_found');
+    expect([...enforcementReasonCodes]).not.toContain('no_violation_found');
+  });
+
+  it('describes only the standing this domain owns', () => {
+    // Prior and resulting state are about whether a live restriction stood, not
+    // about another domain's column: an account's status is USERS' truth and
+    // SAFETY may not read it.
+    expect([...decisionSubjectStates]).toEqual(['unrestricted', 'restricted']);
   });
 
   it('names what blocks production rather than implying nothing does', () => {

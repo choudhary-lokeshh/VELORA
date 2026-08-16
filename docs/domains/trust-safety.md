@@ -80,6 +80,8 @@ The gap between the two is the point. A caller cannot invent a target, cannot re
 
 A conversation is reportable only by somebody in it. A report naming an arbitrary conversation would otherwise be a way to assert that two other people are talking, and that disclosure would stand however the report was later handled.
 
+The same predicate now covers a conversation attached to a report as *evidence* rather than named as its target. It used to be stored on the reporter's word alone, which was not harmless: a moderation decision can close a conversation, so an unchecked reference was a way to point an operator at two people the reporter had nothing to do with.
+
 The surface a report was filed from is taken from the credential's audience and never from the request body. A client-declared surface would be a client-authoritative fact about policy, and surface is the axis [surface and distribution eligibility](../compliance/07-surface-and-distribution-eligibility.md) makes load-bearing. It is recorded as absent for reports filed before Velora kept one, which is true rather than a guess.
 
 The reason codes are a **reporter-facing selection and not the approved risk taxonomy**, which remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`. They are deliberately a different set from the vocabulary an enforcement decision records: a report is an allegation, and only a review makes it anything more. A unit assertion keeps the two sets from converging.
@@ -128,13 +130,29 @@ The report transition and the enforcement are one transaction. A report marked a
 
 **The moderation seam has no HTTP surface, and that is the design.** Platform Admin sign-in has no approved implementation — the local identity contract refuses the Platform Admin audience outright, and the configured privileged authenticator verifier refuses every assertion — so publishing a moderation route would mean publishing an endpoint that either nobody can reach or that somebody eventually reaches with a consumer credential. What exists is the contract MODERATION and ADMIN will call once privileged authentication does, wired to real enforcement, with no path from a consumer request to any of it. Regressions assert that no route matching admin, moderation, or enforcement is published; that no consumer action produces an enforcement row; and that a non-consumer browser session is refused on every consumer safety route.
 
+### Evidence and decisions
+
+`0031_safety_evidence_decisions` adds the two records that make a consequential decision explainable, and a trigger that stops any of it being rewritten.
+
+Evidence is a **reference or a minimal snapshot**, never a copy of another domain's record. The shape is enforced by the columns rather than by convention: a reference kind carries an identifier and no text, a snapshot kind carries a state label that cannot hold a space, and exactly one kind — an operator note — carries prose and requires an author. A reference must name something the case is already about, checked inside this domain rather than by asking MESSAGING or CREATORS, because a contract that answered "does this message exist" would be a way to probe for other people's messages. Every report becomes evidence at intake, so a case's evidence is what was known, in the order it was known.
+
+A decision names its case, actor, subject, action from a closed vocabulary, reason, policy version, instant, cited evidence, the enforcement it produced, and the standing before and after. That standing is **this domain's** — whether a live restriction stood — rather than another domain's column, because an account's status is USERS' truth and SAFETY may not read it.
+
+Nothing is edited. A decision, its evidence, the citations between them, and the enforcement log are all append-only in the database: `velora_safety_reject_mutation` refuses every update and delete, which makes append-only a property PostgreSQL keeps rather than one the writing code remembers. `safety_enforcements` had been described as append-only since `0011_safety` and was until now only append-only by convention.
+
+A correction is a second decision naming the first. Two partial unique indexes make "exactly one settlement per case, and one correction per correction" a fact the database keeps: at most one resolving decision may start a chain, and at most one record may supersede a given one. Escalation is outside that rule, because handing a case on is not settling it.
+
+The decision, the case transition, the enforcement, the owning domain's state change, and the resolution of the case's open reports are one transaction, and every refusal rolls back rather than returns — an account restricted with no decision behind it would be exactly the unexplainable state the transaction exists to prevent. What the platform cannot carry out it does not record: creator scopes belong to Platform Admin's operations and are refused here.
+
+A case that has been decided is distinguishable from one that was closed without a decision. Both are out of the queue and they are not the same fact: one was judged and one was dropped.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
 ## Where this domain is going
 
-[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, and the published capability answer are built and described above. Still to come: reports and cases and evidence and decisions and appeals as separate append-oriented records, surface as a first-class closed vocabulary, depicted-person consent held as scoped references to an approved verifier rather than as documents, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
+[ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, the published capability answer, and reports, cases, evidence, and decisions as separate append-oriented records are built and described above. Still to come: appeals, surface as a first-class closed vocabulary, depicted-person consent held as scoped references to an approved verifier rather than as documents, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.
 
 ## Phase/open questions
 

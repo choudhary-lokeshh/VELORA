@@ -100,6 +100,29 @@ export class ReportTargetResolver {
   ) {}
 
   /**
+   * Whether the reporter is in the conversation they attached as evidence.
+   *
+   * A report about an account may name the conversation it came from, and that
+   * name was previously stored on the reporter's word alone. It is not a
+   * harmless string: a moderation decision can close a conversation, so an
+   * unchecked one is a way to point an operator at two people the reporter has
+   * nothing to do with. Membership is the same predicate that makes a
+   * conversation reportable at all, asked here for the evidence rather than for
+   * the target.
+   */
+  async participatesIn(input: {
+    readonly conversationId: string;
+    readonly executor: Executor;
+    readonly reporterId: string;
+  }): Promise<boolean> {
+    return this.dependencies.conversations.participates({
+      accountId: input.reporterId,
+      conversationId: input.conversationId,
+      executor: input.executor,
+    });
+  }
+
+  /**
    * Resolves what a reporter named into what SAFETY stores, or nothing.
    *
    * The reporter's own identifier is a parameter because two of these answers

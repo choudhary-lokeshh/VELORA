@@ -114,10 +114,15 @@ const truncationRoots = [
   'notifications_feed',
   'notifications_intents',
   'safety_blocks',
-  // Cases are the parent of reports, so truncating them cascades. Listing the
-  // reports as well keeps the intent readable rather than implicit.
+  // Cases are the parent of reports, evidence, and decisions, so truncating
+  // them cascades. Listing the rest keeps the intent readable rather than
+  // implicit. `truncate` fires no row triggers, so the append-only triggers on
+  // these tables do not stand in the way of resetting a test database.
   'safety_cases',
+  'safety_decision_evidence',
+  'safety_decisions',
   'safety_enforcements',
+  'safety_evidence',
   'safety_reports',
   'users_accounts',
 ];

@@ -11,6 +11,7 @@ import {
 } from './cursor.js';
 import {
   casePolicyVersion,
+  evidencePolicyVersion,
   maximumSafetyPageSize,
   queueFor,
   reportPolicyVersion,
@@ -245,6 +246,21 @@ export class SafetyService {
     // report", which is what stops it becoming an enumeration oracle.
     if (resolved === undefined) return { kind: 'invalid_target' };
 
+    // A conversation attached as evidence is checked the same way a reported
+    // conversation is. It used to be stored on the reporter's word alone, which
+    // made it a way to point a moderation decision — one that can close a
+    // conversation — at two people the reporter had nothing to do with.
+    if (
+      input.conversationId !== undefined &&
+      !(await this.dependencies.targets.participatesIn({
+        conversationId: input.conversationId,
+        executor: repository.transactionless,
+        reporterId: actor.id,
+      }))
+    ) {
+      return { kind: 'invalid_target' };
+    }
+
     const now = this.dependencies.now();
     const existing = await repository.findReportByClientId(
       repository.transactionless,
@@ -284,6 +300,26 @@ export class SafetyService {
         subjectId: resolved.targetId,
         targetType: resolved.targetType,
       });
+      if (created !== undefined) {
+        // A report is the first evidence in the case it opened or joined, and
+        // it is evidence by reference: the narrative, the reporter, and the
+        // surface stay on the report itself. Recording it here rather than when
+        // a reviewer first cites something is what makes the case's evidence a
+        // complete record of what was known, in the order it was known.
+        await repository.insertEvidence(executor, {
+          actorReference: null,
+          caseId: openCase.id,
+          externalReference: null,
+          kind: 'report',
+          note: null,
+          now,
+          observedAt: null,
+          policyVersion: evidencePolicyVersion,
+          referenceId: created.id,
+          referenceType: 'safety_report',
+          stateLabel: null,
+        });
+      }
       return (
         created ??
         (await repository.findReportByClientId(executor, {
