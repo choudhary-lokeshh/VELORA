@@ -158,6 +158,21 @@ export const mediaAssets = pgTable(
     index('media_assets_transient_idx')
       .on(table.lifecycleChangedAt, table.id)
       .where(inList(table.lifecycle, transientMediaLifecycles)),
+    // Narrow, on the lifecycle alone, and it earns its keep twice.
+    //
+    // The stall query filters on *which* transient state an asset is in, and
+    // the partial index above is keyed on the instant rather than the state —
+    // so with no index leading on the lifecycle the planner scanned every asset
+    // on the platform every cycle. Measured at four hundred thousand assets:
+    // ten thousand four hundred and forty buffers before, six after.
+    //
+    // It also turns the operator screen's `group by lifecycle` into an
+    // index-only scan, which is the second reason it is narrow. A composite on
+    // `(lifecycle, lifecycle_changed_at, id)` fixes the stall query just as
+    // well and is seven times the size, and the planner then declines it for
+    // the aggregate for being wider than the question — so it would have cost
+    // more and fixed less. Wider is not safer.
+    index('media_assets_lifecycle_idx').on(table.lifecycle),
     check(
       'media_assets_owner_domain_check',
       inList(table.ownerDomain, mediaOwnerDomains),
@@ -293,6 +308,20 @@ export const mediaUploadSessions = pgTable(
   },
   (table) => [
     uniqueIndex('media_upload_sessions_object_key_uk').on(table.objectKey),
+    // Windows that committed and never got a capability, oldest first.
+    //
+    // The crash window made cheap as well as visible. Without it the recovery
+    // sweep scanned every open window and sorted the result on every cycle;
+    // with it the index holds only the stranded ones, so it is thirty-two
+    // kilobytes against a forty-two megabyte table and shrinks back to nothing
+    // as they are recovered. Measured at two hundred thousand open windows:
+    // five hundred and forty-seven buffers and a top-N sort before, a plain
+    // index scan after.
+    index('media_upload_sessions_stranded_idx')
+      .on(table.createdAt, table.id)
+      .where(
+        sql`${table.state} = 'issued' and ${table.providerReference} is null`,
+      ),
     // Closed windows nobody has checked for orphaned bytes, oldest first.
     index('media_upload_sessions_unreconciled_idx')
       .on(table.createdAt, table.id)
@@ -408,6 +437,11 @@ export const mediaObjects = pgTable(
     // revisited in turn, so the walk is an ordered index scan over a bounded
     // batch rather than a periodic pass over the whole table.
     index('media_objects_verification_idx').on(table.verifiedAt, table.id),
+    // The operator screen's `group by role, state`, as an index-only scan.
+    // Measured at two hundred thousand objects: seven thousand four hundred and
+    // twenty-four buffers before, one hundred and seventy-seven after, for one
+    // and a half megabytes.
+    index('media_objects_role_state_idx').on(table.role, table.state),
     // Purges asked for and never answered. Partial, so it holds the backlog
     // rather than the history: an object with a recorded outcome leaves it.
     index('media_objects_purge_pending_idx')
@@ -536,6 +570,12 @@ export const mediaObligations = pgTable(
       .on(table.kind, table.sequence)
       .where(sql`${table.state} = 'pending'`),
     index('media_obligations_asset_idx').on(table.assetId, table.kind),
+    // The operator screen's `group by kind, state`. The claimable index above
+    // cannot serve it: that one is partial on `pending`, and the screen's whole
+    // point is to show what was discharged and what was given up on. Measured
+    // at two hundred thousand obligations: three thousand four hundred and
+    // seventy-two buffers before, one hundred and seventy-seven after.
+    index('media_obligations_kind_state_idx').on(table.kind, table.state),
     check(
       'media_obligations_kind_check',
       inList(table.kind, mediaObligationKinds),

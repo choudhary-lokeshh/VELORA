@@ -309,6 +309,13 @@
       "when": 1786899625740,
       "tag": "0043_media_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786908445708,
+      "tag": "0044_scale_indexes",
+      "breakpoints": true
     }
   ]
 }

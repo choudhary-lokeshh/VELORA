@@ -7,7 +7,7 @@ import {
   isNotNull,
   isNull,
   lte,
-  notInArray,
+  notExists,
   or,
   sql,
 } from 'drizzle-orm';
@@ -519,10 +519,6 @@ export class MediaRepository {
     executor: MediaExecutor,
     input: { readonly before: Date; readonly limit: number },
   ): Promise<readonly MediaAssetRow[]> {
-    const openSessions = executor
-      .select({ assetId: mediaUploadSessions.assetId })
-      .from(mediaUploadSessions)
-      .where(eq(mediaUploadSessions.state, 'issued'));
     return executor
       .select()
       .from(mediaAssets)
@@ -530,7 +526,24 @@ export class MediaRepository {
         and(
           inArray(mediaAssets.lifecycle, ['initiated', 'awaiting_upload']),
           lte(mediaAssets.lifecycleChangedAt, input.before),
-          notInArray(mediaAssets.id, openSessions),
+          // A correlated anti-join rather than `not in (select ...)`. The two
+          // read the same but cost differently at size: `not in` builds a hash
+          // of *every* open window before it can reject one candidate, so the
+          // sweep's cost grew with how many uploads were in flight. This probes
+          // the one-open-window index once per candidate instead, so the cost
+          // is the batch. Measured at two hundred thousand open windows: five
+          // thousand five hundred and six buffers before, four hundred after.
+          notExists(
+            executor
+              .select({ present: sql`1` })
+              .from(mediaUploadSessions)
+              .where(
+                and(
+                  eq(mediaUploadSessions.assetId, mediaAssets.id),
+                  eq(mediaUploadSessions.state, 'issued'),
+                ),
+              ),
+          ),
         ),
       )
       .orderBy(asc(mediaAssets.lifecycleChangedAt), asc(mediaAssets.id))
@@ -1121,24 +1134,6 @@ export class MediaRepository {
       readonly remedy: MediaObligationKind;
     },
   ): Promise<readonly MediaAssetRow[]> {
-    const carried = executor
-      .select({ assetId: mediaObligations.assetId })
-      .from(mediaObligations)
-      .where(
-        and(
-          eq(mediaObligations.kind, input.remedy),
-          eq(mediaObligations.state, 'pending'),
-        ),
-      );
-    const reported = executor
-      .select({ assetId: mediaDriftFindings.assetId })
-      .from(mediaDriftFindings)
-      .where(
-        and(
-          eq(mediaDriftFindings.kind, 'stalled_lifecycle'),
-          isNull(mediaDriftFindings.resolvedAt),
-        ),
-      );
     return executor
       .select()
       .from(mediaAssets)
@@ -1147,8 +1142,38 @@ export class MediaRepository {
           inArray(mediaAssets.lifecycle, [...input.lifecycles]),
           lte(mediaAssets.lifecycleChangedAt, input.before),
           isNull(mediaAssets.legalHoldAt),
-          notInArray(mediaAssets.id, carried),
-          notInArray(mediaAssets.id, reported),
+          // Correlated anti-joins, for the reason the abandonment sweep uses
+          // them, and this was by far the worse of the two. As `not in`
+          // subqueries these defeated every index on the table and the sweep
+          // scanned all four hundred thousand assets every sixty seconds:
+          // measured at ten thousand four hundred and forty buffers, against
+          // six now. Rewriting alone was not enough — without a narrow index
+          // leading on the lifecycle it still scanned — so both halves of that
+          // fix are load-bearing and neither is sufficient.
+          notExists(
+            executor
+              .select({ present: sql`1` })
+              .from(mediaObligations)
+              .where(
+                and(
+                  eq(mediaObligations.assetId, mediaAssets.id),
+                  eq(mediaObligations.kind, input.remedy),
+                  eq(mediaObligations.state, 'pending'),
+                ),
+              ),
+          ),
+          notExists(
+            executor
+              .select({ present: sql`1` })
+              .from(mediaDriftFindings)
+              .where(
+                and(
+                  eq(mediaDriftFindings.assetId, mediaAssets.id),
+                  eq(mediaDriftFindings.kind, 'stalled_lifecycle'),
+                  isNull(mediaDriftFindings.resolvedAt),
+                ),
+              ),
+          ),
         ),
       )
       .orderBy(asc(mediaAssets.lifecycleChangedAt), asc(mediaAssets.id))
@@ -1166,26 +1191,6 @@ export class MediaRepository {
     executor: MediaExecutor,
     input: { readonly before: Date; readonly limit: number },
   ): Promise<readonly MediaObjectRow[]> {
-    const carried = executor
-      .select({ objectId: mediaObligations.objectId })
-      .from(mediaObligations)
-      .where(
-        and(
-          eq(mediaObligations.kind, 'purge'),
-          eq(mediaObligations.state, 'pending'),
-          isNotNull(mediaObligations.objectId),
-        ),
-      );
-    const reported = executor
-      .select({ objectId: mediaDriftFindings.objectId })
-      .from(mediaDriftFindings)
-      .where(
-        and(
-          eq(mediaDriftFindings.kind, 'stale_purge'),
-          isNull(mediaDriftFindings.resolvedAt),
-          isNotNull(mediaDriftFindings.objectId),
-        ),
-      );
     return executor
       .select()
       .from(mediaObjects)
@@ -1194,8 +1199,35 @@ export class MediaRepository {
           isNotNull(mediaObjects.purgeRequestedAt),
           isNull(mediaObjects.purgeOutcome),
           lte(mediaObjects.purgeRequestedAt, input.before),
-          notInArray(mediaObjects.id, carried),
-          notInArray(mediaObjects.id, reported),
+          // Anti-joins here too. This query was already index-driven, because
+          // the partial purge-backlog index is selective enough to lead — but
+          // the `not in` form would have started hashing every pending purge
+          // obligation the moment a backlog existed, which is exactly when this
+          // query runs. Consistent with the other two, and free.
+          notExists(
+            executor
+              .select({ present: sql`1` })
+              .from(mediaObligations)
+              .where(
+                and(
+                  eq(mediaObligations.objectId, mediaObjects.id),
+                  eq(mediaObligations.kind, 'purge'),
+                  eq(mediaObligations.state, 'pending'),
+                ),
+              ),
+          ),
+          notExists(
+            executor
+              .select({ present: sql`1` })
+              .from(mediaDriftFindings)
+              .where(
+                and(
+                  eq(mediaDriftFindings.objectId, mediaObjects.id),
+                  eq(mediaDriftFindings.kind, 'stale_purge'),
+                  isNull(mediaDriftFindings.resolvedAt),
+                ),
+              ),
+          ),
         ),
       )
       .orderBy(asc(mediaObjects.purgeRequestedAt), asc(mediaObjects.id))

@@ -1003,3 +1003,45 @@ describe('database constraints protect profile invariants', () => {
     ).toBe(true);
   });
 });
+
+describe('the readiness sweep reads its index rather than the table', () => {
+  it('serves `asc nulls first` from an index declared the same way', async () => {
+    // No volume needed, and that is the point of asking it this way. A b-tree
+    // ASC index stores nulls **last**, so an index declared `(checked_at, id)`
+    // cannot serve `order by checked_at asc nulls first` at any size — the
+    // planner must sort. With sequential scans off, a matching index answers
+    // with a plain index scan and a mismatched one still sorts, so the
+    // assertion catches the defect without seeding a hundred thousand rows to
+    // make a cost comparison tip.
+    //
+    // This was real: the index was declared without `nulls first`, the sweep
+    // scanned and sorted every attached slot on every cycle, and the comment
+    // above the query claimed the index served it. Measured at two hundred
+    // thousand rows before the fix: parallel sequential scan plus sort.
+    const plan = await database.sql.begin(async (connection: Bun.SQL) => {
+      // Bitmap scans too, and not as belt and braces: a bitmap scan discards
+      // index order by construction, so at any volume small enough for the
+      // planner to prefer one it would sort regardless of how the index is
+      // declared, and the assertion would fail against a correct schema. With
+      // both off the planner must reach for an ordered index scan, which a
+      // matching index can satisfy without a sort and a mismatched one cannot.
+      await execute(
+        connection.unsafe(
+          'set local enable_seqscan = off; set local enable_bitmapscan = off',
+        ),
+      );
+      const rows = await rowsOf<Record<string, string>>(
+        connection.unsafe(
+          `explain select id from users_profile_media where state = 'attached'
+           order by readiness_checked_at asc nulls first, id asc limit 100`,
+        ),
+      );
+      return rows.map((row) => Object.values(row).join(' ')).join('\n');
+    });
+
+    expect(plan).toContain('users_profile_media_readiness_idx');
+    // The ordering comes from the index. A sort here would mean the sweep pays
+    // for every attached slot on the platform to find the twenty it wants.
+    expect(plan).not.toContain('Sort');
+  });
+});

@@ -88,6 +88,8 @@ A profile holds a bounded number of images in dense zero-based slots. The partia
 
 There is no URL column and no public address. Delivery is authorized and signed per request, so a link cannot outlive the authorization decision that produced it.
 
+The cached readiness answer is refreshed by a sweep that reads least-recently-checked first, so a never-checked slot is picked up before a stale one and every projection is revisited within a bounded period. Its index has to be declared `nulls first` to match, and for a long time it was not: a b-tree ASC index stores nulls **last**, so the index could not serve that ordering at all and the planner answered every cycle with a sequential scan and a sort of every attached slot on the platform. The comment above the query claimed the index served it, which is the part that made the defect invisible. Corrected in `0044_scale_indexes`, and held there by an assertion that disables both sequential and bitmap scans so it discriminates without needing volume.
+
 `USERS_PROFILE_MEDIA_STORAGE` selects the adapter and defaults to `unavailable`, which refuses every upload and every inspection. Staging and production reject any other value while no storage provider is approved in [open decisions](../decisions/DECISIONS_REQUIRED.md), so a deployed environment cannot accept an image and therefore cannot produce a discoverable account. That is the intended outcome: an empty discovery surface is better than one running on unverified media. The `local-test` adapter keeps objects in process memory for development and tests; it verifies magic bytes and size and performs no malware or moderation scanning, so its acceptance is never evidence about real user content.
 
 ### Preferences

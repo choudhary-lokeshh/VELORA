@@ -487,7 +487,11 @@ export class ProfileRepository implements ProfileCompletenessReader {
    *
    * Never-checked rows sort first, so a freshly attached asset is picked up on
    * the next cycle rather than waiting behind everything else. Bounded, and
-   * served by the partial readiness index.
+   * served by the partial readiness index — which it genuinely is only because
+   * that index is declared `nulls first` to match. A b-tree ASC index stores
+   * nulls last, so the obvious declaration cannot serve this ordering and the
+   * planner falls back to scanning and sorting every attached slot each cycle.
+   * That is what it used to do, and this comment used to claim otherwise.
    */
   async listStaleReadiness(
     executor: AnyExecutor,

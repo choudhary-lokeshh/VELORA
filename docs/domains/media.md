@@ -309,6 +309,39 @@ There is deliberately **no deletion** and **no legal hold** on this surface. Des
 
 Availability is reported from the adapters the process actually composed rather than from the configuration meant to select them, and it needs both halves of the seam: an approved store with no scanner accepts bytes nobody vetted, and a scanner with no store has nothing to vet.
 
+## What this costs at size
+
+Every read in this domain was correct at any volume before this section existed. Five of them were not *cheap* at one the platform will reach, and the difference was invisible until somebody measured it — which is the whole argument for measuring rather than reasoning about plans.
+
+Measured on the real schema at four hundred thousand assets, two hundred thousand upload windows, two hundred thousand stored objects, and two hundred thousand obligations, with `EXPLAIN (ANALYZE, BUFFERS)`. Buffers rather than timings throughout: a duration is a property of the machine that ran it, and a buffer count is a property of the plan, which is the thing a later change can silently take away.
+
+| Read | Before | After |
+|---|---|---|
+| Reconciliation's stall query | 10,440 buffers — a parallel scan of **every asset**, every sixty seconds | 6 |
+| The abandonment sweep | 5,506 — a hash of **every open upload window** before it can reject one candidate | 400 |
+| Recovering stranded upload windows | 547 — a scan and a sort | index scan |
+| Operator screen, assets by lifecycle | 10,450 | 349 |
+| Operator screen, objects by role and state | 7,424 | 177 |
+| Operator screen, obligations by kind and state | 3,472 | 177 |
+
+Four paths were already right and are now *proved* rather than assumed. Claiming an obligation costs **3 buffers** with two hundred thousand discharged obligations sitting in the table, because the claimable index is partial on `pending` — which is why retaining a year of them is free. The verification cursor, the purge backlog, and the abandonment sweep's outer scan are all ordered index scans.
+
+Three things are worth taking from how these were fixed, because each is a way to get it wrong.
+
+**A rewrite that reads better can change nothing.** Turning the stall query's `not in (select ...)` into a correlated anti-join moved it from 10,440 buffers to 10,434 — essentially nothing — because the driving scan was still sequential. It needed a narrow index leading on the lifecycle as well. Both halves are load-bearing and neither is sufficient, and shipping either alone would have been a fix that fixed nothing.
+
+**Wider is not safer.** A composite index on `(lifecycle, lifecycle_changed_at, id)` fixes the stall query just as well as the narrow one, is seven times the size, and is then *declined* by the planner for the operator aggregate for being wider than the question. It would have cost more and fixed less. The narrow `(lifecycle)` index fixes both.
+
+**The covering indexes were declined once on reasoning rather than numbers.** The argument was that they would tax every write for a screen nobody reads continuously. Measured, they are 2,784 kB, 1,416 kB, and 1,416 kB against an 82 MB table, and they buy twenty to thirty times. The measurement overruled the argument.
+
+Separately, `users_profile_media_readiness_idx` was a defect rather than a tuning. The readiness sweep orders `asc nulls first` so a never-checked slot is picked up before a stale one; a b-tree ASC index stores nulls **last**, so the index as declared could not serve that ordering at all and the planner answered every cycle with a sequential scan and a sort of every attached slot. The comment above the query claimed the index served it. It is now declared `nulls first`, and the assertion that holds it there disables both sequential and bitmap scans so that it discriminates at any volume — verified by putting the old index back and watching it fail.
+
+### A fleet, not a worker
+
+The correctness suites prove one worker behaves and that a second cannot take a leased row. What [`media-concurrency`](../../apps/api/test/integration/media-concurrency.test.ts) proves is the property those imply without demonstrating: eight separate runtimes over one database discharge every duty exactly once and lose none. Twelve uploads reach `ready` with thirty-six derivatives and not one more; eight deletions are counted across the fleet rather than by one worker, so two workers both believing they deleted the same asset would read nine; eight simultaneous reconciliation cycles file one finding and perform one repair; and a duty held by a worker that died is reclaimed by exactly one of the eight once its lease expires on a database instant rather than in the dead process's memory.
+
+There are no sleeps in that file. Every ordering that matters is a database fact — a lease instant, a unique index, a claimed row — because a test that waits is a test that passes until the machine is busy, which is when concurrency defects surface.
+
 ## Phase, events, and open questions
 
 Images only in this milestone. The asset and variant model is shaped so that a future video asset class is a new class rather than a new schema, but no transcoding, streaming, or segmented delivery is implemented, and none may be inferred from the model's generality.

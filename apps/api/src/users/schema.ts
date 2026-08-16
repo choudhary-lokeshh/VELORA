@@ -449,8 +449,16 @@ export const userProfileMedia = pgTable(
     // The refresh sweep: attached slots, least recently checked first, so every
     // projection is revisited within a bounded period rather than whichever
     // ones happen to be read.
+    //
+    // `nullsFirst` is not decoration and it was missing. The sweep orders `asc
+    // nulls first` so a never-checked slot is picked up before a stale one, and
+    // a b-tree ASC index stores nulls **last** — so an index declared without
+    // this cannot serve that ordering at all, and the planner answered the
+    // sweep with a sequential scan and a sort of every attached slot on every
+    // cycle. Measured on two hundred thousand rows: parallel seq scan plus sort
+    // before, plain index scan after.
     index('users_profile_media_readiness_idx')
-      .on(table.readinessCheckedAt, table.id)
+      .on(table.readinessCheckedAt.nullsFirst(), table.id)
       .where(sql`${table.state} = 'attached'`),
     check(
       'users_profile_media_state_check',
