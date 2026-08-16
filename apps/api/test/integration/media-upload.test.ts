@@ -122,11 +122,48 @@ describe('MEDIA publishes no upload endpoint of its own', () => {
     // and calls the service; a route here would let somebody reserve storage
     // with no product reason at all.
     expect(paths.filter((path) => path.startsWith('/v1/media'))).toEqual([]);
+
+    // Every other route that names media is an owning domain's — a profile
+    // slot — or an operator's. The operator set is enumerated rather than
+    // pattern-matched, so a fourth one cannot appear here silently: this
+    // assertion exists to catch a media route arriving without a purpose, and
+    // a filter that let any `/v1/admin/media/...` through would stop doing
+    // that.
     expect(
-      paths.filter(
-        (path) => path.includes('media') && !path.includes('profile'),
-      ),
-    ).toEqual([]);
+      paths
+        .filter((path) => path.includes('media') && !path.includes('profile'))
+        .sort(),
+    ).toEqual([
+      '/v1/admin/media/asset',
+      '/v1/admin/media/purge',
+      '/v1/admin/media/state',
+    ]);
+  });
+
+  it('publishes no operator route that could reserve storage or destroy it', () => {
+    const application = createApplication({ config });
+    const operatorRoutes = application.app.routes.filter((route) =>
+      route.path.startsWith('/v1/admin/media'),
+    );
+
+    // Two reads and one repair. A purge asks a cache to forget an address; it
+    // creates nothing, destroys nothing, and denies nothing the origin was not
+    // already refusing — which is why it is the only operator action here.
+    expect(
+      operatorRoutes.map((route) => `${route.method} ${route.path}`).sort(),
+    ).toEqual([
+      'GET /v1/admin/media/asset',
+      'GET /v1/admin/media/state',
+      'POST /v1/admin/media/purge',
+    ]);
+    // No deletion and no legal hold. Destroying bytes would destroy what an
+    // appeal needs, and a hold placed with no enforcement record behind it
+    // would be an unaudited action on evidence.
+    for (const route of operatorRoutes) {
+      expect(route.method).not.toBe('DELETE');
+      expect(route.path).not.toContain('hold');
+      expect(route.path).not.toContain('deletion');
+    }
   });
 });
 

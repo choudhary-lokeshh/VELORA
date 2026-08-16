@@ -37,6 +37,10 @@ import {
   adminCreatorListResponseSchema,
   adminFinancialStateResponseSchema,
   adminCreatorSearchSchema,
+  adminMediaAssetResponseSchema,
+  adminMediaPurgeRequestSchema,
+  adminMediaPurgeResponseSchema,
+  adminMediaStateResponseSchema,
   adminOperationResponseSchema,
   adminReinstateCreatorRequestSchema,
   adminRemoveObjectRequestSchema,
@@ -223,6 +227,9 @@ export const apiRoutePaths = {
   adminCreatorReinstatement: '/v1/admin/creators/reinstatement',
   adminCreatorSuspension: '/v1/admin/creators/suspension',
   adminCreators: '/v1/admin/creators',
+  adminMediaAsset: '/v1/admin/media/asset',
+  adminMediaPurge: '/v1/admin/media/purge',
+  adminMediaState: '/v1/admin/media/state',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
   adminSafetyAppealOutcome: '/v1/admin/safety/appeals/outcome',
   adminSafetyAppeals: '/v1/admin/safety/appeals',
@@ -358,6 +365,10 @@ export const apiSchemas = {
   RetireCommercialPriceRequest: retireCommercialPriceRequestSchema,
   AdminCreatorListResponse: adminCreatorListResponseSchema,
   AdminFinancialStateResponse: adminFinancialStateResponseSchema,
+  AdminMediaAssetResponse: adminMediaAssetResponseSchema,
+  AdminMediaPurgeRequest: adminMediaPurgeRequestSchema,
+  AdminMediaPurgeResponse: adminMediaPurgeResponseSchema,
+  AdminMediaStateResponse: adminMediaStateResponseSchema,
   AdminOperationResponse: adminOperationResponseSchema,
   AdminReinstateCreatorRequest: adminReinstateCreatorRequestSchema,
   AdminRemoveObjectRequest: adminRemoveObjectRequestSchema,
@@ -454,6 +465,7 @@ export const apiQueryParameters = {
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
   adminSearch: adminCreatorSearchSchema,
+  assetId: z.uuid(),
   caseId: z.uuid(),
   moderationQueue: moderationQueueSchema,
   clubId: clubIdSchema,
@@ -2159,6 +2171,63 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Upholding a complaint names the superseding decision that replaced the original, and the server refuses one that does not genuinely replace it. Every outcome records the operator who reached it, because a complaint may not be decided solely by automated means and a column only a person fills is how that stops being a promise.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminMediaState',
+    path: apiRoutePaths.adminMediaState,
+    responses: {
+      '200': {
+        description:
+          'The media platform in operational terms: how many assets are in each technical state, how many stored objects are present or destroyed, how much work is owed and how much of it the platform gave up on, and which disagreements with the storage provider nobody could safely correct. Counts and adapter names only \u2014 no asset identifier, no owner, no object key, and no digest.',
+        schemaName: 'AdminMediaStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A read and only a read. The adapters are the ones this process actually composed rather than the configuration meant to select them, so the screen cannot report one thing while the process runs another, and naming them rather than reporting a boolean is what makes "off" and "off because no storage provider or malware scanner has been approved" distinguishable. Availability needs both halves: an approved store with no scanner accepts bytes nobody vetted, and a scanner with no store has nothing to vet.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminMediaAsset',
+    path: apiRoutePaths.adminMediaAsset,
+    requestQuery: [
+      { description: 'The media asset to describe', name: 'assetId' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "One asset's technical truth: its lifecycle, every object stored for it, and a bounded, newest-first window onto the duties owed against it and the disagreements with the provider recorded about it. Both of those are retained history rather than current state, so the response says when it cut something off instead of letting a reader believe they have all of it.",
+        schemaName: 'AdminMediaAssetResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'There is no list of assets and no search anywhere in this contract. An operator who could page through everybody\u2019s media would have a browsing surface over private images however it was labelled, so this answers about one asset whose identifier the operator already has from a finding or a report. It carries the technical lifecycle that every product surface is deliberately denied, and no owner identifier at all.',
+  },
+  {
+    method: 'post',
+    operationId: 'purgeAdminMediaAsset',
+    path: apiRoutePaths.adminMediaPurge,
+    requestSchemaName: 'AdminMediaPurgeRequest',
+    responses: {
+      '200': {
+        description:
+          'A cache purge is now owed for every public address of the asset, and the asset comes back so the purge state is visible on the objects themselves.',
+        schemaName: 'AdminMediaPurgeResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The one media action an operator has, and it is safe in both directions: a purge asks a delivery layer to forget an address, destroys nothing, and denies nothing the origin was not already refusing. Asking twice owes it once. There is deliberately no deletion and no legal hold here \u2014 destroying bytes would destroy what an appeal needs, and a hold placed with no enforcement record behind it would be an unaudited action on evidence.',
   },
   {
     method: 'get',

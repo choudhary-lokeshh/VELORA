@@ -472,3 +472,179 @@ export type ModerationActionValue = z.infer<typeof moderationActionSchema>;
 export type ModerationReasonCodeValue = z.infer<
   typeof moderationReasonCodeSchema
 >;
+
+/**
+ * ADMIN wire vocabulary for media operations.
+ *
+ * The media platform is the one domain whose operator surface has to carry
+ * technical state, and that is a deliberate exception rather than a leak.
+ * [ADR-0023](../../../docs/decisions/ADR-0023-media-platform-architecture.md)
+ * keeps MEDIA's technical lifecycle disjoint from any publication vocabulary
+ * and hides it behind a coarse readiness projection precisely so that no
+ * product surface can spend `ready` as permission to render. An operator is the
+ * one person that projection is useless to: "checking" tells them nothing about
+ * whether a worker died mid-decode. So these shapes carry the lifecycle, and
+ * nothing that reads them is a product surface.
+ *
+ * What they never carry is a person. There is no owner identifier, no account,
+ * no handle, and no digest anywhere here, and the state screen carries no
+ * identifiers at all — an operator watching an incident needs counts, and a
+ * dashboard that also listed whose uploads were failing is a dashboard somebody
+ * eventually screenshots.
+ *
+ * There is no list of assets and no search, on the same rule. An operator who
+ * could page through everybody's media has a browsing surface over private
+ * images however it is labelled; the detail route answers about one asset whose
+ * identifier the operator already has from a finding or a report.
+ */
+
+/** One count under a label. The same shape the financial screen uses. */
+export const adminMediaCountSchema = z
+  .object({ count: z.number().int().min(0), state: z.string().min(1).max(64) })
+  .strict();
+
+/**
+ * Which media adapters are in force, reported by name.
+ *
+ * `unavailable` across the row is the truth about a deployed environment: no
+ * approved storage provider and no approved malware scanner, so the platform
+ * refuses every upload rather than accepting bytes nobody vetted. Reporting the
+ * adapter name rather than a boolean is what makes "off" and "off because
+ * nobody has approved one" distinguishable without a second screen.
+ */
+export const adminMediaAdapterStateSchema = z
+  .object({
+    scanner: z.string().min(1).max(64),
+    storage: z.string().min(1).max(64),
+  })
+  .strict();
+
+export const adminMediaStateResponseSchema = z
+  .object({
+    adapters: adminMediaAdapterStateSchema,
+    assets: z.array(adminMediaCountSchema),
+    /** Everything that needs a person. Nothing here resolves on its own. */
+    attention: z.array(adminMediaCountSchema),
+    /** Outstanding disagreements between the record and the provider. */
+    drift: z.array(adminMediaCountSchema),
+    /** Whether this environment can accept media at all. */
+    liveMediaAvailable: z.boolean(),
+    objects: z.array(adminMediaCountSchema),
+    obligations: z.array(adminMediaCountSchema),
+  })
+  .strict();
+export type AdminMediaStateResponse = z.infer<
+  typeof adminMediaStateResponseSchema
+>;
+
+/**
+ * One stored object as an operator sees it.
+ *
+ * The object key is here on purpose, and it is the one field worth arguing
+ * about. A key is not a credential: delivery requires a signature the platform
+ * mints against current server truth, and key knowledge is nowhere in the
+ * authorization model — which is exactly why keys are random rather than
+ * derived from anything. An operator whose delivery layer is still serving
+ * something taken down has to be able to name the object to their provider.
+ */
+export const adminMediaObjectSchema = z
+  .object({
+    byteSize: z.number().int().min(0).optional(),
+    format: z.string().min(1).max(16).optional(),
+    id: z.uuid(),
+    objectKey: z.string().min(1).max(256),
+    purgeOutcome: z.enum(['purged', 'unsupported', 'failed']).optional(),
+    purgeRequestedAt: z.iso.datetime().optional(),
+    role: z.enum(['original', 'variant']),
+    state: z.enum(['present', 'deleting', 'deleted']),
+    variantKind: z.string().min(1).max(32).optional(),
+    verifiedAt: z.iso.datetime(),
+  })
+  .strict();
+
+/** One recorded disagreement between the record and the provider. */
+export const adminMediaFindingSchema = z
+  .object({
+    firstObservedAt: z.iso.datetime(),
+    kind: z.string().min(1).max(64),
+    lastObservedAt: z.iso.datetime(),
+    occurrences: z.number().int().min(1),
+  })
+  .strict();
+
+/** One duty the platform owes against this asset. */
+export const adminMediaObligationSchema = z
+  .object({
+    attempts: z.number().int().min(0),
+    availableAt: z.iso.datetime(),
+    /** A short code the platform chose. Never a provider message. */
+    failureReason: z.string().min(1).max(64).optional(),
+    kind: z.string().min(1).max(32),
+    state: z.string().min(1).max(32),
+  })
+  .strict();
+
+/**
+ * One asset in full.
+ *
+ * `ownerDomain` and not an owner identifier: an operator needs to know which
+ * product surface an image belongs to in order to route an incident, and naming
+ * the person would turn a technical fault into a file on somebody.
+ */
+export const adminMediaAssetSchema = z
+  .object({
+    assetClass: z.string().min(1).max(64),
+    createdAt: z.iso.datetime(),
+    deletionRequestedAt: z.iso.datetime().optional(),
+    findings: z.array(adminMediaFindingSchema),
+    id: z.uuid(),
+    legalHold: z.boolean(),
+    lifecycle: z.string().min(1).max(32),
+    lifecycleChangedAt: z.iso.datetime(),
+    objects: z.array(adminMediaObjectSchema),
+    obligations: z.array(adminMediaObligationSchema),
+    ownerDomain: z.enum(['users', 'creators', 'clubs']),
+    readyAt: z.iso.datetime().optional(),
+    rejectionReason: z.string().min(1).max(64).optional(),
+    /**
+     * Whether the retained history below was cut short.
+     *
+     * Obligations and findings are kept rather than tidied away, so an asset
+     * that has been through several removals and several provider incidents
+     * accumulates them. Saying so is the difference between an operator knowing
+     * they are looking at part of the history and believing they have all of
+     * it.
+     */
+    truncated: z.boolean(),
+  })
+  .strict();
+
+export const adminMediaAssetResponseSchema = z
+  .object({ asset: adminMediaAssetSchema })
+  .strict();
+export type AdminMediaAssetResponse = z.infer<
+  typeof adminMediaAssetResponseSchema
+>;
+
+export const adminMediaPurgeRequestSchema = z
+  .object({ assetId: z.uuid() })
+  .strict();
+
+/**
+ * What a requested purge did.
+ *
+ * `owed` counts the addresses now queued to be forgotten, and a repeat asking
+ * for the same asset owes nothing further — the duty is already recorded, and a
+ * second row would mean discharging it twice. Zero is therefore a success and
+ * not a failure, which is why the asset comes back with it: an operator needs
+ * to see the purge state on the objects rather than infer it from a number.
+ */
+export const adminMediaPurgeResponseSchema = z
+  .object({
+    asset: adminMediaAssetSchema,
+    owed: z.number().int().min(0),
+  })
+  .strict();
+export type AdminMediaPurgeResponse = z.infer<
+  typeof adminMediaPurgeResponseSchema
+>;

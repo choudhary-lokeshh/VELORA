@@ -321,6 +321,7 @@ export function testAdminRuntime(input: {
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
+  readonly media: MediaRuntime;
   readonly now?: () => Date;
   readonly safety: SafetyRuntime;
 }): AdminRuntime {
@@ -339,6 +340,10 @@ export function testAdminRuntime(input: {
     content: input.clubs.repository,
     creators: input.creators.repository,
     database,
+    media: {
+      operations: input.media.operations,
+      purge: input.media.service,
+    },
     ...(input.now === undefined ? {} : { now: input.now }),
     profiles: input.creators.profileRepository,
     refunds: input.billing.refunds,
@@ -459,15 +464,25 @@ export function testProductRuntimes(input: {
   // reversal is BILLING's decision taken with an operator's authority, so ADMIN
   // receives the service rather than a database of its own.
   const billing = testBillingRuntime({ ...input, clubs, creators });
+  // MEDIA before ADMIN, exactly as the application composes them. An operator
+  // taking an object out of public view owes the cache the news, so ADMIN
+  // receives MEDIA's purge seam and its operational read rather than a media
+  // database of its own.
+  const media = testMediaRuntime(input);
   return {
-    admin: testAdminRuntime({ ...input, billing, clubs, creators, safety }),
+    admin: testAdminRuntime({
+      ...input,
+      billing,
+      clubs,
+      creators,
+      media,
+      safety,
+    }),
     billing,
     clubs,
     creators,
     discovery,
-    // MEDIA consumes nothing and is consumed by nothing yet, so its position
-    // here is alphabetical rather than meaningful.
-    media: testMediaRuntime(input),
+    media,
     messaging: testMessagingRuntime({
       ...input,
       discovery,

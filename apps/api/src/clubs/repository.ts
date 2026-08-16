@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, isNull, lt, or, sql } from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import type { CatalogCursor } from './cursor.js';
@@ -6,7 +6,7 @@ import type {
   CreatorContentLifecycle,
   CreatorContentVisibility,
 } from './policy.js';
-import { clubs, creatorContent } from './schema.js';
+import { clubs, creatorContent, creatorContentMedia } from './schema.js';
 
 export type ClubsDatabase = BunSQLDatabase;
 export type ClubsExecutor = Parameters<
@@ -242,6 +242,27 @@ export class ClubsRepository {
       )
       .returning();
     return updated[0];
+  }
+
+  /**
+   * Which images an item is showing, in order.
+   *
+   * PRIVATE CLUBS owns the attachment, so this is the only place that can
+   * answer it. A takedown asks, because withdrawing an item from public view
+   * leaves whatever it was showing sitting in a cache until somebody tells the
+   * cache — and MEDIA holds the bytes without holding any idea of what they
+   * were attached to.
+   */
+  async listContentMediaAssets(
+    executor: AnyExecutor,
+    contentId: string,
+  ): Promise<readonly string[]> {
+    const rows = await executor
+      .select({ mediaAssetId: creatorContentMedia.mediaAssetId })
+      .from(creatorContentMedia)
+      .where(eq(creatorContentMedia.contentId, contentId))
+      .orderBy(asc(creatorContentMedia.position));
+    return rows.map((row) => row.mediaAssetId);
   }
 }
 

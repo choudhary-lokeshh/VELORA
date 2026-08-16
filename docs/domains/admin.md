@@ -12,6 +12,16 @@ Creator suspension is scoped to the creator. The person's consumer account is un
 
 What an operator sees is operational state and nothing else: no AUTH subject, no consumer identifier, no contact detail, no financial data, and no moderation narrative. Search is a bounded prefix over the public handle, which is already public; searching by anything a visitor could not already see would make this a lookup tool for private data.
 
+## Implemented media operations
+
+Taking an object out of public view now owes a cache purge for every image it was showing, in the same transaction that records the enforcement. Withdrawing something from the origin is not the same as a delivery layer forgetting it: a derivative is served from a permanent immutable address and stays fetchable by anybody holding the URL until the cache is told. Owing the purge with the decision rather than after it is what makes "taken down but still served" a state the platform cannot be left in. Nothing is deleted by it — an appeal that succeeded against destroyed media would have nothing to restore.
+
+Beside that there is a state screen, a per-asset view, and one action. The state screen is counts and adapter names with no identifier anywhere on it, because a dashboard that also listed whose uploads were failing is a dashboard somebody eventually screenshots. The per-asset view carries MEDIA's technical lifecycle, which every product surface is deliberately denied — an operator is the one person the coarse readiness projection is useless to — and it names the owning *domain* rather than the owner. There is no list of assets and no search: an operator who could page through everybody's media would have a browsing surface over private images however it was labelled.
+
+The action is a cache purge, and it is the only one because it is the only one that is safe in both directions: it destroys nothing, denies nothing the origin was not already refusing, and asking twice owes it once. There is deliberately no deletion here, and no legal hold — a hold preserves evidence for a case and belongs to a Trust & Safety decision vocabulary that has no scope for it yet, so placing one from an operator screen would be an unaudited action on evidence. That gap is recorded rather than worked around.
+
+The operational read itself lives in MEDIA rather than here, unlike the financial one, because nothing outside that domain queries a `media_` table. See [MEDIA](media.md).
+
 ## Purpose and scope
 
 ADMIN owns privileged operation requests, role grants, scoped operational workflows, approvals, audit records, controlled support views, system configuration/feature/country controls, and health dashboards. It does not own user, payment, creator, moderation, or enforcement truth; it invokes their contracts.

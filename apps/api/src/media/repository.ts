@@ -1292,6 +1292,27 @@ export class MediaRepository {
       .orderBy(asc(mediaDriftFindings.createdAt), asc(mediaDriftFindings.id));
   }
 
+  /**
+   * Findings against one asset, resolved or not, newest first.
+   *
+   * Retained history rather than a backlog. "This asset's derivative went
+   * missing twice last month" is a question an operator will ask, and a view
+   * that showed only what is currently wrong could not answer it — but the
+   * history has no natural bound, so the caller says how much of it it wants
+   * and the newest is what explains what is happening now.
+   */
+  listFindings(
+    executor: MediaExecutor,
+    input: { readonly assetId: string; readonly limit: number },
+  ): Promise<readonly MediaDriftFindingRow[]> {
+    return executor
+      .select()
+      .from(mediaDriftFindings)
+      .where(eq(mediaDriftFindings.assetId, input.assetId))
+      .orderBy(desc(mediaDriftFindings.createdAt), desc(mediaDriftFindings.id))
+      .limit(input.limit);
+  }
+
   /** Closes a finding, saying which of the three things happened to it. */
   resolveDriftFinding(
     executor: MediaExecutor,
@@ -1327,14 +1348,23 @@ export class MediaRepository {
     return row?.total ?? 0;
   }
 
+  /**
+   * Obligations against one asset.
+   *
+   * Discharged rows are retained, so an old asset accumulates them and an
+   * unbounded read here would grow without limit. A caller that wants a bound
+   * gives one and gets the newest by claim order; the internal callers that
+   * ask about a specific kind want every one of them and say so by omitting it.
+   */
   listObligations(
     executor: MediaExecutor,
     input: {
       readonly assetId: string;
       readonly kinds?: readonly MediaObligationKind[];
+      readonly limit?: number;
     },
   ): Promise<readonly MediaObligationRow[]> {
-    return executor
+    const query = executor
       .select()
       .from(mediaObligations)
       .where(
@@ -1344,7 +1374,9 @@ export class MediaRepository {
               eq(mediaObligations.assetId, input.assetId),
               inArray(mediaObligations.kind, [...input.kinds]),
             ),
-      );
+      )
+      .orderBy(desc(mediaObligations.sequence));
+    return input.limit === undefined ? query : query.limit(input.limit);
   }
 }
 

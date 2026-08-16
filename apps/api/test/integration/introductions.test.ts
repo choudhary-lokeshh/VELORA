@@ -153,6 +153,7 @@ const application = createApplication({
       config,
       clubs: clubsRuntime,
       creators,
+      media: mediaRuntime,
       safety,
     }),
     clubs: clubsRuntime,
@@ -162,7 +163,7 @@ const application = createApplication({
     discovery,
     ephemeralRedis: healthy,
     logger,
-    media: testMediaRuntime({ config, database: database.drizzle }),
+    media: mediaRuntime,
     messaging,
     notifications: testNotificationsApiRuntime({
       database: database.drizzle,

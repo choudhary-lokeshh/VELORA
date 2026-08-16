@@ -10,6 +10,7 @@ import type { SafeLogger } from '@velora/observability/server';
 import type { DatabaseHandle } from '../database/executor.js';
 import { MediaDeliveryService } from './delivery.js';
 import { MediaInspector } from './inspection.js';
+import { MediaOperations } from './operations.js';
 import { SharpMediaImageProcessor } from './processing.js';
 import {
   DenyingMediaSafety,
@@ -39,6 +40,13 @@ export interface MediaRuntime {
    * bound to one asset and one variant for a restricted one.
    */
   readonly delivery: MediaDeliveryService;
+  /**
+   * What an operator may see of this platform.
+   *
+   * Composed everywhere, unlike the reconciler: reading operational state
+   * touches no bytes, and the API is where an operator's request arrives.
+   */
+  readonly operations: MediaOperations;
   /**
    * Whether these bytes may reach this person, on this surface, right now.
    *
@@ -116,6 +124,11 @@ export function createMediaRuntime(input: {
       publication,
       repository,
       storage,
+    }),
+    operations: new MediaOperations({
+      repository,
+      scannerName: scanner.name,
+      storageName: storage.name,
     }),
     publication,
     reconciliation:

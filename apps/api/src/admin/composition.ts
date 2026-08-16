@@ -7,6 +7,7 @@ import type {
   CreatorsDatabase,
   CreatorsRepository,
 } from '../creators/repository.js';
+import type { MediaOperations } from '../media/operations.js';
 import type { AppealService } from '../safety/appeals.js';
 import type { EnforcementAuthority } from '../safety/enforcement.js';
 import type { ModerationService } from '../safety/moderation.js';
@@ -14,15 +15,18 @@ import { AdminBillingRoutes } from './billing-routes.js';
 import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
+import { AdminMediaRoutes } from './media-routes.js';
 import { AdminModerationRoutes } from './moderation-routes.js';
 import { AdminRoutes } from './routes.js';
-import { AdminCreatorService } from './service.js';
+import { AdminCreatorService, type AdminMediaPurgePort } from './service.js';
 
 export interface AdminRuntime {
   readonly adminContext: AdminContextResolver;
   /** Operator financial surface. Nothing here owns a financial row. */
   readonly billingRoutes: AdminBillingRoutes;
   readonly directory: AdminCreatorDirectory;
+  /** Operator media surface. A read, a read, and one idempotent repair. */
+  readonly mediaRoutes: AdminMediaRoutes;
   /** Operator moderation surface. Every route is an explicit command. */
   readonly moderationRoutes: AdminModerationRoutes;
   readonly routes: AdminRoutes;
@@ -54,6 +58,21 @@ export function createAdminRuntime(input: {
     readonly payoutProvider: string;
     readonly taxAuthority: string;
   };
+  /**
+   * MEDIA's operator seam.
+   *
+   * The operational read lives in MEDIA rather than here because nothing
+   * outside that domain queries a `media_` table — the readiness projection
+   * exists so other domains cannot learn the technical lifecycle by accident,
+   * and an Admin module holding raw SQL over `media_objects` would have been
+   * the first exception. The purge port is separate and narrow: it is the one
+   * thing a takedown owes the bytes, and ADMIN is given nothing it does not
+   * need.
+   */
+  readonly media: {
+    readonly operations: MediaOperations;
+    readonly purge: AdminMediaPurgePort;
+  };
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
   /** TRUST & SAFETY's complaint seam. */
@@ -71,6 +90,7 @@ export function createAdminRuntime(input: {
     content: input.content,
     creators: input.creators,
     database: input.database,
+    media: input.media.purge,
     now,
     profiles: input.profiles,
   });
@@ -84,6 +104,11 @@ export function createAdminRuntime(input: {
       refunds: input.refunds,
     }),
     directory,
+    mediaRoutes: new AdminMediaRoutes({
+      adminContext,
+      media: input.media.purge,
+      operations: input.media.operations,
+    }),
     moderationRoutes: new AdminModerationRoutes({
       adminContext,
       appeals: input.appeals,

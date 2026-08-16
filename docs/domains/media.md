@@ -257,7 +257,7 @@ A **takedown** owes a purge without deleting anything, because a takedown is not
 
 No retention duration is invented anywhere. How long a hold lasts, and how long a quarantined original or a deleted asset's evidence is kept, remain `LEGAL REVIEW REQUIRED`, and nothing in this schema expires on a timer.
 
-Not built yet: Creator Studio media management surfaces, peer delivery of consumer images, the Admin trigger that calls the takedown purge, and Admin operational visibility.
+Not built yet: Creator Studio media management surfaces, and peer delivery of consumer images.
 
 ## Reconciliation, and what a repair is allowed to decide
 
@@ -284,6 +284,30 @@ Two exclusions keep the sweep from starving itself. An asset whose remedy is alr
 An asset under a legal hold sitting in `deleting` is not a stall. It is doing exactly what a hold means, and owing it another deletion would discharge against the hold and come straight back.
 
 This phase also closed a real defect in inspection, found by reading the claim path rather than by a failure. A worker that died between taking the `inspecting` state and reaching a conclusion left an obligation whose lease expired; the reclaiming worker saw an asset that was no longer `uploaded`, concluded the work no longer existed, and discharged the duty — leaving the asset in `inspecting` for ever with nothing owed against it. Inspection now accepts `inspecting` as well as `uploaded`, the way processing already accepted `processing`, and for the same reason. Reconciliation is the second net rather than the only one.
+
+## Operator surface, and the takedown that reaches the cache
+
+Taking a creator's object out of public view is not the same as a delivery layer forgetting it. A derivative is served from a permanent immutable address, so it stays fetchable by anybody holding the URL until the cache is told — and the origin refusing does nothing about that, because the origin is not where the bytes are coming from. So `removeObject` owes a cache purge for every image the withdrawn object was showing, **in the transaction that records the enforcement**. That ordering is the guarantee: a decision that took something down without owing the cache the news is not a state the platform can be left in, and a crash immediately afterwards loses a queue message rather than the duty.
+
+Which images those are is the owning domain's answer and not MEDIA's. A profile shows an avatar and a cover; an item shows its attachments; MEDIA holds the bytes without holding any idea of what they are attached to. A **club** contributes nothing, and that is not an oversight — a club carries no media of its own, a `public` item is not club-gated so withdrawing the club does not withdraw the item, and a `members_only` item's images are delivered under short-lived private credentials that no shared cache holds.
+
+Nothing is deleted by a takedown. A purge asks a cache to forget an address; the bytes, the record, and the creator's ownership of them are untouched, because an appeal that succeeded against destroyed media would have nothing to restore.
+
+### What the operator screen is, and what it refuses to be
+
+The operational read lives in MEDIA rather than in ADMIN, unlike the financial one. `AdminFinancialDirectory` queries `billing_` tables directly; nothing outside MEDIA queries a `media_` table, because the readiness projection exists precisely so other domains cannot learn the technical lifecycle by accident. An Admin module holding raw SQL over `media_objects` would have been the first exception to that rule, so the query is where the rule is.
+
+The operator surface does carry the technical lifecycle, and that is the one deliberate exception to hiding it: an operator is the single person the coarse projection is useless to, because "checking" tells them nothing about whether a worker died mid-decode. What it carries instead of a person is a domain — `ownerDomain` and never an owner identifier, so a technical incident does not become a file on somebody. The state screen carries no identifiers at all.
+
+There is **no list of assets and no search**. An operator who could page through everybody's media has a browsing surface over private images however it is labelled, so the detail route answers about one asset whose identifier the operator already holds from a finding or a report.
+
+The object key *is* exposed on the detail view, and it is the one field worth arguing about. A key is not a credential: delivery requires a signature minted against current server truth, and key knowledge is nowhere in the authorization model — which is exactly why keys are random rather than derived. An operator whose delivery layer is still serving something taken down has to be able to name the object to their provider, and withholding it would push them to query the database by hand.
+
+One action, and it is safe in both directions. A purge destroys nothing, denies nothing the origin was not already refusing, and is idempotent, so it needs no enforcement record of its own — its obligation rows are the audit. Asking twice owes it once, which is why zero owed is a success and the asset comes back with the count.
+
+There is deliberately **no deletion** and **no legal hold** on this surface. Destroying bytes would destroy what an appeal needs. A hold preserves evidence for a case and belongs to a Trust & Safety decision vocabulary that has no scope for it yet; an operator placing one with no enforcement record behind it would be an unaudited action on evidence. `setLegalHold` therefore stays an internal seam with no route, and giving it one is a `DECISION REQUIRED` about the enforcement vocabulary rather than a missing endpoint.
+
+Availability is reported from the adapters the process actually composed rather than from the configuration meant to select them, and it needs both halves of the seam: an approved store with no scanner accepts bytes nobody vetted, and a scanner with no store has nothing to vet.
 
 ## Phase, events, and open questions
 

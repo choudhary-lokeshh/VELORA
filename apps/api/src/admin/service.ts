@@ -75,12 +75,29 @@ export type AdminOutcome =
    */
   | { readonly kind: 'refused' };
 
+/**
+ * What ADMIN asks MEDIA to do when a takedown withdraws something.
+ *
+ * One method, named for the one thing an operator's removal owes the bytes.
+ * ADMIN is given this rather than the media service so that the surface it can
+ * reach is the surface it needs: there is no deletion here, no legal hold, and
+ * no way to make anything deliverable, because none of those is what taking an
+ * object out of public view means.
+ */
+export interface AdminMediaPurgePort {
+  requestPurge(input: {
+    readonly assetId: string;
+    readonly executor?: TransactionHandle;
+  }): Promise<{ readonly owed: number }>;
+}
+
 export interface AdminServiceDependencies {
   readonly authority: EnforcementAuthority;
   readonly clubs: ClubRepository;
   readonly content: ClubsRepository;
   readonly creators: CreatorsRepository;
   readonly database: DatabaseHandle;
+  readonly media: AdminMediaPurgePort;
   readonly now: () => Date;
   readonly profiles: CreatorProfileRepository;
 }
@@ -203,6 +220,20 @@ export class AdminCreatorService {
    * Removal is not deletion. The row stays, the creator keeps it, and the
    * enforcement record says what was taken down and why — which is what an
    * appeal needs and what a deletion would have destroyed.
+   *
+   * It also owes a cache purge for every image the object was showing, in this
+   * same transaction. Withdrawing something from public view is not the same as
+   * a delivery layer forgetting it: a derivative served from an immutable
+   * public address stays fetchable by anybody who already has the URL until the
+   * cache is told, and the origin refusing does nothing about that. Owing the
+   * purge here rather than afterwards is what makes "taken down but still
+   * served" a state the platform cannot be left in — a crash between the two
+   * would lose a queue message and not the duty.
+   *
+   * Nothing is deleted by this. A purge asks a cache to forget an address; the
+   * bytes, the record, and the creator's ownership of them are untouched,
+   * because an appeal that succeeded against destroyed media would have nothing
+   * to restore.
    */
   async removeObject(input: {
     readonly actorReference: string;
@@ -237,6 +268,7 @@ export class AdminCreatorService {
         this.dependencies.now(),
       );
       if (!removed) refuse();
+      await this.purgeAttachedMedia(executor, input);
       return {
         creator,
         enforcement: imposed.enforcement,
@@ -327,6 +359,56 @@ export class AdminCreatorService {
       id: input.objectId,
       type: input.objectType === 'creator_content' ? 'creator_content' : 'club',
     };
+  }
+
+  /**
+   * Owes a cache purge for every image the withdrawn object was showing.
+   *
+   * Which images those are is the owning domain's answer, not MEDIA's: a
+   * profile shows an avatar and a cover, an item shows its attachments, and
+   * MEDIA holds neither association. So the asset identifiers are read from the
+   * domain that owns the attachment and handed to MEDIA, which is the same
+   * direction every other media call in this codebase runs.
+   *
+   * A **club** contributes nothing here, and that is not an oversight. A club
+   * carries no media of its own, and a `public` content item is not club-gated
+   * — withdrawing the club does not withdraw the item, so purging the item's
+   * addresses would be forgetting something that is still legitimately being
+   * served. A `members_only` item's images are delivered under short-lived
+   * private credentials that no shared cache holds, so there is nothing for a
+   * purge to reach. Taking an item down is its own operation.
+   */
+  private async purgeAttachedMedia(
+    executor: TransactionHandle,
+    input: {
+      readonly creatorId: string;
+      readonly objectId: string | undefined;
+      readonly objectType: AdminRemovableObjectValue;
+    },
+  ): Promise<void> {
+    const { content, media, profiles } = this.dependencies;
+    const assetIds: string[] = [];
+
+    if (input.objectType === 'creator_profile') {
+      const record = await profiles.findByCreatorId(executor, input.creatorId);
+      for (const assetId of [
+        record?.profile.avatarMediaAssetId,
+        record?.profile.coverMediaAssetId,
+      ]) {
+        if (assetId != null) assetIds.push(assetId);
+      }
+    } else if (
+      input.objectType === 'creator_content' &&
+      input.objectId !== undefined
+    ) {
+      assetIds.push(
+        ...(await content.listContentMediaAssets(executor, input.objectId)),
+      );
+    }
+
+    for (const assetId of assetIds) {
+      await media.requestPurge({ assetId, executor });
+    }
   }
 
   /** Unpublishes one object, if it belongs to the named creator. */

@@ -1120,6 +1120,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/media/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A read and only a read. The adapters are the ones this process actually composed rather than the configuration meant to select them, so the screen cannot report one thing while the process runs another, and naming them rather than reporting a boolean is what makes "off" and "off because no storage provider or malware scanner has been approved" distinguishable. Availability needs both halves: an approved store with no scanner accepts bytes nobody vetted, and a scanner with no store has nothing to vet. */
+        get: operations["getAdminMediaState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/media/asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** There is no list of assets and no search anywhere in this contract. An operator who could page through everybody’s media would have a browsing surface over private images however it was labelled, so this answers about one asset whose identifier the operator already has from a finding or a report. It carries the technical lifecycle that every product surface is deliberately denied, and no owner identifier at all. */
+        get: operations["getAdminMediaAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/media/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The one media action an operator has, and it is safe in both directions: a purge asks a delivery layer to forget an address, destroys nothing, and denies nothing the origin was not already refusing. Asking twice owes it once. There is deliberately no deletion and no legal hold here — destroying bytes would destroy what an appeal needs, and a hold placed with no enforcement record behind it would be an unaudited action on evidence. */
+        post: operations["purgeAdminMediaAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/billing/state": {
         parameters: {
             query?: never;
@@ -1862,6 +1913,148 @@ export interface components {
                 state: string;
             }[];
             subscriptions: {
+                count: number;
+                state: string;
+            }[];
+        };
+        AdminMediaAssetResponse: {
+            asset: {
+                assetClass: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                deletionRequestedAt?: string;
+                findings: {
+                    /** Format: date-time */
+                    firstObservedAt: string;
+                    kind: string;
+                    /** Format: date-time */
+                    lastObservedAt: string;
+                    occurrences: number;
+                }[];
+                /** Format: uuid */
+                id: string;
+                legalHold: boolean;
+                lifecycle: string;
+                /** Format: date-time */
+                lifecycleChangedAt: string;
+                objects: {
+                    byteSize?: number;
+                    format?: string;
+                    /** Format: uuid */
+                    id: string;
+                    objectKey: string;
+                    /** @enum {string} */
+                    purgeOutcome?: "purged" | "unsupported" | "failed";
+                    /** Format: date-time */
+                    purgeRequestedAt?: string;
+                    /** @enum {string} */
+                    role: "original" | "variant";
+                    /** @enum {string} */
+                    state: "present" | "deleting" | "deleted";
+                    variantKind?: string;
+                    /** Format: date-time */
+                    verifiedAt: string;
+                }[];
+                obligations: {
+                    attempts: number;
+                    /** Format: date-time */
+                    availableAt: string;
+                    failureReason?: string;
+                    kind: string;
+                    state: string;
+                }[];
+                /** @enum {string} */
+                ownerDomain: "users" | "creators" | "clubs";
+                /** Format: date-time */
+                readyAt?: string;
+                rejectionReason?: string;
+                truncated: boolean;
+            };
+        };
+        AdminMediaPurgeRequest: {
+            /** Format: uuid */
+            assetId: string;
+        };
+        AdminMediaPurgeResponse: {
+            asset: {
+                assetClass: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                deletionRequestedAt?: string;
+                findings: {
+                    /** Format: date-time */
+                    firstObservedAt: string;
+                    kind: string;
+                    /** Format: date-time */
+                    lastObservedAt: string;
+                    occurrences: number;
+                }[];
+                /** Format: uuid */
+                id: string;
+                legalHold: boolean;
+                lifecycle: string;
+                /** Format: date-time */
+                lifecycleChangedAt: string;
+                objects: {
+                    byteSize?: number;
+                    format?: string;
+                    /** Format: uuid */
+                    id: string;
+                    objectKey: string;
+                    /** @enum {string} */
+                    purgeOutcome?: "purged" | "unsupported" | "failed";
+                    /** Format: date-time */
+                    purgeRequestedAt?: string;
+                    /** @enum {string} */
+                    role: "original" | "variant";
+                    /** @enum {string} */
+                    state: "present" | "deleting" | "deleted";
+                    variantKind?: string;
+                    /** Format: date-time */
+                    verifiedAt: string;
+                }[];
+                obligations: {
+                    attempts: number;
+                    /** Format: date-time */
+                    availableAt: string;
+                    failureReason?: string;
+                    kind: string;
+                    state: string;
+                }[];
+                /** @enum {string} */
+                ownerDomain: "users" | "creators" | "clubs";
+                /** Format: date-time */
+                readyAt?: string;
+                rejectionReason?: string;
+                truncated: boolean;
+            };
+            owed: number;
+        };
+        AdminMediaStateResponse: {
+            adapters: {
+                scanner: string;
+                storage: string;
+            };
+            assets: {
+                count: number;
+                state: string;
+            }[];
+            attention: {
+                count: number;
+                state: string;
+            }[];
+            drift: {
+                count: number;
+                state: string;
+            }[];
+            liveMediaAvailable: boolean;
+            objects: {
+                count: number;
+                state: string;
+            }[];
+            obligations: {
                 count: number;
                 state: string;
             }[];
@@ -11023,6 +11216,314 @@ export interface operations {
             };
             /** @description A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see. */
             409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminMediaState: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The media platform in operational terms: how many assets are in each technical state, how many stored objects are present or destroyed, how much work is owed and how much of it the platform gave up on, and which disagreements with the storage provider nobody could safely correct. Counts and adapter names only — no asset identifier, no owner, no object key, and no digest. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaStateResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminMediaAsset: {
+        parameters: {
+            query?: {
+                /** @description The media asset to describe */
+                assetId?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One asset's technical truth: its lifecycle, every object stored for it, and a bounded, newest-first window onto the duties owed against it and the disagreements with the provider recorded about it. Both of those are retained history rather than current state, so the response says when it cut something off instead of letting a reader believe they have all of it. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaAssetResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    purgeAdminMediaAsset: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMediaPurgeRequest"];
+            };
+        };
+        responses: {
+            /** @description A cache purge is now owed for every public address of the asset, and the asset comes back so the purge state is visible on the objects themselves. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMediaPurgeResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
                 headers: {
                     /** @description Request correlation identifier */
                     "x-correlation-id"?: string;

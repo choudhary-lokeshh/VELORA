@@ -101,6 +101,9 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
   // BILLING before ADMIN, exactly as the application composes them: an operator
   // reversal is BILLING's decision taken with an operator's authority.
   const billing = testBillingRuntime({ clubs, config, creators, users });
+  // MEDIA before ADMIN, exactly as the application composes them: an operator
+  // taking an object out of public view owes the cache the news.
+  const media = testMediaRuntime({ config });
   return {
     admin: testAdminRuntime({
       billing,
@@ -108,15 +111,14 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
       clubs,
       config,
       creators,
+      media,
       safety,
     }),
     billing,
     clubs,
     creators,
     discovery,
-    // MEDIA consumes nothing from the others and publishes nothing to them
-    // yet, so it is wired on its own rather than threaded through the chain.
-    media: testMediaRuntime({ config }),
+    media,
     messaging: testMessagingRuntime({
       config,
       discovery,

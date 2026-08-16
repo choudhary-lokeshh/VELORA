@@ -1204,31 +1204,34 @@ export class MediaService {
    * than performing anything, so a worker dying immediately afterwards loses a
    * queue message and not the duty — which is the whole reason a takedown
    * cannot quietly fail to reach a cache.
+   *
+   * The caller may hand in its own transaction, and the one that matters does.
+   * A takedown records the enforcement decision, withdraws the object through
+   * the domain that owns it, and owes this purge in a single commit — so a
+   * decision that took something down without owing the cache the news is not a
+   * state that can exist. Called without one, this commits on its own, which is
+   * right for an operator asking for a purge by itself.
    */
   async requestPurge(input: {
     readonly assetId: string;
+    readonly executor?: MediaExecutor;
   }): Promise<{ readonly owed: number }> {
     const { repository } = this.dependencies;
-    const objects = await repository.listObjects(
-      repository.transactionless,
-      input.assetId,
-    );
+    const executor = input.executor ?? repository.transactionless;
+    const objects = await repository.listObjects(executor, input.assetId);
     const now = this.dependencies.now();
     let owed = 0;
     for (const object of objects) {
       // Only derivatives are ever served from a public address, so only they
       // can be sitting in a cache.
       if (object.role !== 'variant') continue;
-      const appended = await repository.appendObligation(
-        repository.transactionless,
-        {
-          assetId: input.assetId,
-          id: crypto.randomUUID(),
-          kind: 'purge',
-          now,
-          objectId: object.id,
-        },
-      );
+      const appended = await repository.appendObligation(executor, {
+        assetId: input.assetId,
+        id: crypto.randomUUID(),
+        kind: 'purge',
+        now,
+        objectId: object.id,
+      });
       if (appended !== undefined) owed += 1;
     }
     return { owed };

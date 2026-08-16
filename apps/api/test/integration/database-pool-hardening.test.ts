@@ -220,6 +220,7 @@ function createInstance(name: string): Instance {
         config,
         clubs: clubsRuntime,
         creators,
+        media: mediaRuntime,
         safety,
       }),
       clubs: clubsRuntime,
@@ -229,7 +230,7 @@ function createInstance(name: string): Instance {
       discovery,
       ephemeralRedis: healthy,
       logger,
-      media: testMediaRuntime({ config, database: service.database }),
+      media: mediaRuntime,
       messaging,
       notifications: createNotificationsApiRuntime({
         consumerContext: users.consumerContext,

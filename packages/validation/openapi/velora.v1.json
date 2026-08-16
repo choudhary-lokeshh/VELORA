@@ -14856,6 +14856,560 @@
         "summary": "Upholding a complaint names the superseding decision that replaced the original, and the server refuses one that does not genuinely replace it. Every outcome records the operator who reached it, because a complaint may not be decided solely by automated means and a column only a person fills is how that stops being a promise."
       }
     },
+    "/v1/admin/media/state": {
+      "get": {
+        "operationId": "getAdminMediaState",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMediaStateResponse"
+                }
+              }
+            },
+            "description": "The media platform in operational terms: how many assets are in each technical state, how many stored objects are present or destroyed, how much work is owed and how much of it the platform gave up on, and which disagreements with the storage provider nobody could safely correct. Counts and adapter names only — no asset identifier, no owner, no object key, and no digest.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "A read and only a read. The adapters are the ones this process actually composed rather than the configuration meant to select them, so the screen cannot report one thing while the process runs another, and naming them rather than reporting a boolean is what makes \"off\" and \"off because no storage provider or malware scanner has been approved\" distinguishable. Availability needs both halves: an approved store with no scanner accepts bytes nobody vetted, and a scanner with no store has nothing to vet."
+      }
+    },
+    "/v1/admin/media/asset": {
+      "get": {
+        "operationId": "getAdminMediaAsset",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The media asset to describe",
+            "in": "query",
+            "name": "assetId",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMediaAssetResponse"
+                }
+              }
+            },
+            "description": "One asset's technical truth: its lifecycle, every object stored for it, and a bounded, newest-first window onto the duties owed against it and the disagreements with the provider recorded about it. Both of those are retained history rather than current state, so the response says when it cut something off instead of letting a reader believe they have all of it.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "There is no list of assets and no search anywhere in this contract. An operator who could page through everybody’s media would have a browsing surface over private images however it was labelled, so this answers about one asset whose identifier the operator already has from a finding or a report. It carries the technical lifecycle that every product surface is deliberately denied, and no owner identifier at all."
+      }
+    },
+    "/v1/admin/media/purge": {
+      "post": {
+        "operationId": "purgeAdminMediaAsset",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminMediaPurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMediaPurgeResponse"
+                }
+              }
+            },
+            "description": "A cache purge is now owed for every public address of the asset, and the asset comes back so the purge state is visible on the objects themselves.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "The one media action an operator has, and it is safe in both directions: a purge asks a delivery layer to forget an address, destroys nothing, and denies nothing the origin was not already refusing. Asking twice owes it once. There is deliberately no deletion and no legal hold here — destroying bytes would destroy what an appeal needs, and a hold placed with no enforcement record behind it would be an unaudited action on evidence."
+      }
+    },
     "/v1/admin/billing/state": {
       "get": {
         "operationId": "getAdminFinancialState",
@@ -22473,6 +23027,641 @@
           "reconciliation",
           "refunds",
           "subscriptions"
+        ],
+        "additionalProperties": false
+      },
+      "AdminMediaAssetResponse": {
+        "type": "object",
+        "properties": {
+          "asset": {
+            "type": "object",
+            "properties": {
+              "assetClass": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "deletionRequestedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "firstObservedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "lastObservedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "occurrences": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "firstObservedAt",
+                    "kind",
+                    "lastObservedAt",
+                    "occurrences"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "legalHold": {
+                "type": "boolean"
+              },
+              "lifecycle": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "lifecycleChangedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "objects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "byteSize": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "format": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "objectKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "purgeOutcome": {
+                      "type": "string",
+                      "enum": [
+                        "purged",
+                        "unsupported",
+                        "failed"
+                      ]
+                    },
+                    "purgeRequestedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "original",
+                        "variant"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "present",
+                        "deleting",
+                        "deleted"
+                      ]
+                    },
+                    "variantKind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "verifiedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "objectKey",
+                    "role",
+                    "state",
+                    "verifiedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "obligations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "availableAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "failureReason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "state": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "required": [
+                    "attempts",
+                    "availableAt",
+                    "kind",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "ownerDomain": {
+                "type": "string",
+                "enum": [
+                  "users",
+                  "creators",
+                  "clubs"
+                ]
+              },
+              "readyAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "rejectionReason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "assetClass",
+              "createdAt",
+              "findings",
+              "id",
+              "legalHold",
+              "lifecycle",
+              "lifecycleChangedAt",
+              "objects",
+              "obligations",
+              "ownerDomain",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "additionalProperties": false
+      },
+      "AdminMediaPurgeRequest": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "additionalProperties": false
+      },
+      "AdminMediaPurgeResponse": {
+        "type": "object",
+        "properties": {
+          "asset": {
+            "type": "object",
+            "properties": {
+              "assetClass": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "deletionRequestedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "firstObservedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "lastObservedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "occurrences": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "firstObservedAt",
+                    "kind",
+                    "lastObservedAt",
+                    "occurrences"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "legalHold": {
+                "type": "boolean"
+              },
+              "lifecycle": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "lifecycleChangedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "objects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "byteSize": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "format": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 16
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "objectKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "purgeOutcome": {
+                      "type": "string",
+                      "enum": [
+                        "purged",
+                        "unsupported",
+                        "failed"
+                      ]
+                    },
+                    "purgeRequestedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "original",
+                        "variant"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "present",
+                        "deleting",
+                        "deleted"
+                      ]
+                    },
+                    "variantKind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "verifiedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "objectKey",
+                    "role",
+                    "state",
+                    "verifiedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "obligations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "availableAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "failureReason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "state": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "required": [
+                    "attempts",
+                    "availableAt",
+                    "kind",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "ownerDomain": {
+                "type": "string",
+                "enum": [
+                  "users",
+                  "creators",
+                  "clubs"
+                ]
+              },
+              "readyAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "rejectionReason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "assetClass",
+              "createdAt",
+              "findings",
+              "id",
+              "legalHold",
+              "lifecycle",
+              "lifecycleChangedAt",
+              "objects",
+              "obligations",
+              "ownerDomain",
+              "truncated"
+            ],
+            "additionalProperties": false
+          },
+          "owed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "asset",
+          "owed"
+        ],
+        "additionalProperties": false
+      },
+      "AdminMediaStateResponse": {
+        "type": "object",
+        "properties": {
+          "adapters": {
+            "type": "object",
+            "properties": {
+              "scanner": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "storage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "scanner",
+              "storage"
+            ],
+            "additionalProperties": false
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "count",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "attention": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "count",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "drift": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "count",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "liveMediaAvailable": {
+            "type": "boolean"
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "count",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "count",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "adapters",
+          "assets",
+          "attention",
+          "drift",
+          "liveMediaAvailable",
+          "objects",
+          "obligations"
         ],
         "additionalProperties": false
       },
