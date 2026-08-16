@@ -38,6 +38,7 @@ import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import {
   mediaInspectionIntervalMilliseconds,
   mediaProcessingIntervalMilliseconds,
+  mediaRemovalIntervalMilliseconds,
   mediaUploadSweepIntervalMilliseconds,
 } from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
@@ -141,6 +142,8 @@ export interface WorkerComposition {
   readonly mediaProcessing: Poller;
   /** Keeps USERS' cached readiness projection from going stale unnoticed. */
   readonly profileMediaReadiness: Poller;
+  /** Destroys bytes and asks caches to forget. Never loses either duty. */
+  readonly mediaRemoval: Poller;
   /** Closes spent upload windows, recovers stranded ones, reclaims the dead. */
   readonly mediaUploadSweep: Poller;
   /** PAYOUTS, composed here because this process applies both sides of the seam. */
@@ -485,6 +488,39 @@ export function createWorkerComposition(input: {
     name: 'profile-media-readiness',
   });
 
+  // Deletion and purge in one cycle, deletion first: destroying a derivative is
+  // what creates the obligation to purge its address, so running purge first
+  // would simply find less to do and come back for it a cycle later.
+  const mediaRemoval = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const removal = await media.service.runDeletions({ owner });
+        const purge = await media.service.runPurges({ owner });
+        if (
+          removal.deleted > 0 ||
+          removal.held > 0 ||
+          purge.purged > 0 ||
+          purge.unsupported > 0
+        ) {
+          // Counts only, and `held` and `unsupported` are reported rather than
+          // folded into success: one means evidence is being preserved, the
+          // other means a cache was never actually told.
+          input.logger.info(
+            {
+              deleted: removal.deleted,
+              held: removal.held,
+              purged: purge.purged,
+              unsupported: purge.unsupported,
+            },
+            'media removal cycle completed',
+          );
+        }
+      }),
+    intervalMilliseconds: mediaRemovalIntervalMilliseconds,
+    logger: input.logger,
+    name: 'media-removal',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -498,6 +534,7 @@ export function createWorkerComposition(input: {
     media,
     mediaInspection,
     mediaProcessing,
+    mediaRemoval,
     mediaUploadSweep,
     profileMediaReadiness,
     payouts,
@@ -509,6 +546,7 @@ export function createWorkerComposition(input: {
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
         mediaProcessing.stop(),
+        mediaRemoval.stop(),
         mediaUploadSweep.stop(),
         profileMediaReadiness.stop(),
         deliverySweep.stop(),
@@ -526,6 +564,7 @@ export function createWorkerComposition(input: {
       await mediaUploadSweep.runOnce();
       await mediaInspection.runOnce();
       await mediaProcessing.runOnce();
+      await mediaRemoval.runOnce();
       await profileMediaReadiness.runOnce();
       await deliverySweep.runOnce();
     },

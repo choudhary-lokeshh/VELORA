@@ -962,6 +962,270 @@ export class MediaService {
     }
   }
 
+  /**
+   * Discharges deletion obligations against the provider.
+   *
+   * Reaches **every** object of the asset, original and derivative alike. A
+   * deletion that reached only the original would leave three sanitized copies
+   * of the same picture on a CDN, which is the failure this enumeration exists
+   * to prevent.
+   *
+   * Deletion is idempotent and an object the provider no longer has counts as
+   * deleted — that conclusion is safe here because the local adapter's
+   * semantics say so, and it is a question asked of every candidate provider
+   * rather than assumed for all of them.
+   *
+   * A legal hold changes exactly one thing: the original survives. The
+   * derivatives are still destroyed, the caches are still purged, and delivery
+   * is still denied, because preservation and availability are independent and
+   * conflating them would either serve something taken down or destroy
+   * evidence a case needs. An asset under hold therefore stops at `deleting`,
+   * and the database refuses to record it as `deleted` while the hold stands.
+   */
+  async runDeletions(input: {
+    readonly limit?: number;
+    readonly owner: string;
+  }): Promise<{ readonly deleted: number; readonly held: number }> {
+    const { repository, storage } = this.dependencies;
+    const claimed = await repository.claimObligations({
+      kind: 'delete',
+      leaseMilliseconds: mediaObligationLeaseMilliseconds,
+      limit: input.limit ?? mediaSweepBatchSize,
+      now: this.dependencies.now(),
+      owner: input.owner,
+    });
+
+    let deleted = 0;
+    let held = 0;
+    for (const obligation of claimed) {
+      try {
+        const asset = await repository.findAsset(
+          repository.transactionless,
+          obligation.assetId,
+        );
+        if (asset === undefined || asset.lifecycle === 'deleted') {
+          await this.completeObligation(obligation.id, input.owner);
+          continue;
+        }
+
+        const objects = await repository.listObjects(
+          repository.transactionless,
+          asset.id,
+        );
+        const underHold = asset.legalHoldAt !== null;
+        let originalRemains = false;
+
+        for (const object of objects) {
+          if (object.state === 'deleted') continue;
+          if (underHold && object.role === 'original') {
+            originalRemains = true;
+            continue;
+          }
+          await storage.deleteObject(object.objectKey);
+          const now = this.dependencies.now();
+          await repository.markObjectState(repository.transactionless, {
+            deletedAt: now,
+            now,
+            objectId: object.id,
+            state: 'deleted',
+          });
+          // A destroyed derivative may still be sitting in a cache. Owing the
+          // purge separately is what keeps that visible rather than assumed.
+          if (object.role === 'variant') {
+            await repository.appendObligation(repository.transactionless, {
+              assetId: asset.id,
+              id: crypto.randomUUID(),
+              kind: 'purge',
+              now,
+              objectId: object.id,
+            });
+          }
+        }
+
+        const now = this.dependencies.now();
+        if (originalRemains) {
+          held += 1;
+        } else {
+          await repository.transitionAsset(repository.transactionless, {
+            assetId: asset.id,
+            deletedAt: now,
+            expectedLifecycle: 'deleting',
+            lifecycle: 'deleted',
+            now,
+          });
+          deleted += 1;
+        }
+        await this.completeObligation(obligation.id, input.owner);
+      } catch (error) {
+        await repository.failObligation(repository.transactionless, {
+          backoffMilliseconds: mediaObligationBackoffMilliseconds,
+          failureReason: 'deletion_failed',
+          maximumAttempts: maximumMediaObligationAttempts,
+          now: this.dependencies.now(),
+          obligationId: obligation.id,
+          owner: input.owner,
+        });
+        this.dependencies.logger.error(
+          { error, obligation: obligation.kind },
+          'media obligation attempt failed',
+        );
+      }
+    }
+    return { deleted, held };
+  }
+
+  /**
+   * Asks the delivery layer to forget addresses, and records what it said.
+   *
+   * Origin denial never waits for this. A held or removed asset stops being
+   * authorized the moment any authority says so, and a cache that has not yet
+   * been told is a separate, visible obligation rather than a hole in the
+   * decision.
+   *
+   * `unsupported` completes the obligation and is recorded as itself: a
+   * provider with no purge mechanism has not purged, and writing that down is
+   * the difference between an operator knowing the exposure and believing it
+   * was handled. A failure stays pending and backs off, so a purge backlog is
+   * something somebody can see.
+   */
+  async runPurges(input: {
+    readonly limit?: number;
+    readonly owner: string;
+  }): Promise<{ readonly purged: number; readonly unsupported: number }> {
+    const { repository, storage } = this.dependencies;
+    const claimed = await repository.claimObligations({
+      kind: 'purge',
+      leaseMilliseconds: mediaObligationLeaseMilliseconds,
+      limit: input.limit ?? mediaSweepBatchSize,
+      now: this.dependencies.now(),
+      owner: input.owner,
+    });
+
+    let purged = 0;
+    let unsupported = 0;
+    for (const obligation of claimed) {
+      try {
+        const object =
+          obligation.objectId === null
+            ? undefined
+            : await repository.findObject(
+                repository.transactionless,
+                obligation.objectId,
+              );
+        if (object === undefined) {
+          await this.completeObligation(obligation.id, input.owner);
+          continue;
+        }
+
+        await repository.markPurgeRequested(repository.transactionless, {
+          now: this.dependencies.now(),
+          objectId: object.id,
+        });
+        const outcome = await storage.purge(object.objectKey);
+        if (outcome.kind === 'failed') {
+          // Not recorded as an outcome, because it is not one yet. The
+          // obligation stays owed and visible.
+          throw new Error(`purge refused: ${outcome.code}`);
+        }
+        await repository.recordPurgeOutcome(repository.transactionless, {
+          now: this.dependencies.now(),
+          objectId: object.id,
+          outcome: outcome.kind,
+        });
+        if (outcome.kind === 'purged') purged += 1;
+        else unsupported += 1;
+        await this.completeObligation(obligation.id, input.owner);
+      } catch (error) {
+        await repository.failObligation(repository.transactionless, {
+          backoffMilliseconds: mediaObligationBackoffMilliseconds,
+          failureReason: 'purge_failed',
+          maximumAttempts: maximumMediaObligationAttempts,
+          now: this.dependencies.now(),
+          obligationId: obligation.id,
+          owner: input.owner,
+        });
+        this.dependencies.logger.error(
+          { error, obligation: obligation.kind },
+          'media obligation attempt failed',
+        );
+      }
+    }
+    return { purged, unsupported };
+  }
+
+  /**
+   * Places or lifts a legal hold.
+   *
+   * Independent of removal in both directions. Holding an asset does not stop
+   * it being taken down, and taking it down does not destroy what a case needs.
+   */
+  async setLegalHold(input: {
+    readonly assetId: string;
+    readonly held: boolean;
+  }): Promise<MediaOutcome> {
+    const { repository } = this.dependencies;
+    const now = this.dependencies.now();
+    const row = await repository.setLegalHold(repository.transactionless, {
+      assetId: input.assetId,
+      held: input.held,
+      now,
+    });
+    if (row === undefined) return { kind: 'not_found' };
+
+    // Lifting a hold on an asset that was already being removed resumes the
+    // deletion. The obligation that ran under the hold was discharged — it did
+    // everything it was allowed to do — so without this the removal would stay
+    // owed with nothing left to carry it out, and the asset would sit in
+    // `deleting` until a reconciliation pass noticed. A deferred duty that
+    // depends on somebody spotting it later is not a duty the platform owes.
+    if (!input.held && row.lifecycle === 'deleting') {
+      await repository.appendObligation(repository.transactionless, {
+        assetId: row.id,
+        id: crypto.randomUUID(),
+        kind: 'delete',
+        now,
+      });
+    }
+    return { asset: row, kind: 'asset' };
+  }
+
+  /**
+   * Owes a cache purge for every address of an asset that has one.
+   *
+   * The operation a takedown authority calls. It records an obligation rather
+   * than performing anything, so a worker dying immediately afterwards loses a
+   * queue message and not the duty — which is the whole reason a takedown
+   * cannot quietly fail to reach a cache.
+   */
+  async requestPurge(input: {
+    readonly assetId: string;
+  }): Promise<{ readonly owed: number }> {
+    const { repository } = this.dependencies;
+    const objects = await repository.listObjects(
+      repository.transactionless,
+      input.assetId,
+    );
+    const now = this.dependencies.now();
+    let owed = 0;
+    for (const object of objects) {
+      // Only derivatives are ever served from a public address, so only they
+      // can be sitting in a cache.
+      if (object.role !== 'variant') continue;
+      const appended = await repository.appendObligation(
+        repository.transactionless,
+        {
+          assetId: input.assetId,
+          id: crypto.randomUUID(),
+          kind: 'purge',
+          now,
+          objectId: object.id,
+        },
+      );
+      if (appended !== undefined) owed += 1;
+    }
+    return { owed };
+  }
+
   private async completeObligation(
     obligationId: string,
     owner: string,

@@ -202,6 +202,15 @@ export const mediaVariantGeometry: Readonly<
 export const mediaVariantFormat = 'webp' as const;
 export const mediaVariantQuality = 82;
 
+/**
+ * How often deletion and purge obligations are claimed.
+ *
+ * Faster than the housekeeping sweep because a takedown is waiting on it, and
+ * slower than inspection because nobody is watching a spinner: the delivery
+ * decision already refuses, and this is the byte work converging behind it.
+ */
+export const mediaRemovalIntervalMilliseconds = 5_000;
+
 /** How often processing obligations are claimed. */
 export const mediaProcessingIntervalMilliseconds = 5_000;
 
@@ -285,6 +294,17 @@ export const readinessFor: Readonly<
 /** An object is either what was uploaded or something the platform made. */
 export const mediaObjectRoles = ['original', 'variant'] as const;
 export type MediaObjectRole = (typeof mediaObjectRoles)[number];
+
+/**
+ * What the delivery layer said when asked to forget an address.
+ *
+ * `unsupported` is a first-class outcome rather than a failure, because a
+ * provider with no purge mechanism has genuinely not purged and recording it as
+ * success would be the platform lying to its own operators. `failed` stays a
+ * visible obligation.
+ */
+export const mediaPurgeRecords = ['purged', 'unsupported', 'failed'] as const;
+export type MediaPurgeRecord = (typeof mediaPurgeRecords)[number];
 
 /** Whether the provider still holds the bytes. Not whether anybody may read them. */
 export const mediaObjectStates = ['present', 'deleting', 'deleted'] as const;

@@ -31,6 +31,7 @@ import {
   mediaObligationKinds,
   mediaObligationStates,
   mediaOwnerDomains,
+  mediaPurgeRecords,
   mediaRejectionReasons,
   mediaUploadSessionStates,
   mediaVariantKinds,
@@ -43,6 +44,7 @@ import {
   type MediaObligationKind,
   type MediaObligationState,
   type MediaOwnerDomain,
+  type MediaPurgeRecord,
   type MediaRejectionReason,
   type MediaUploadSessionState,
   type MediaVariantKind,
@@ -85,6 +87,21 @@ export const mediaAssets = pgTable(
     createdAt: timestamptz('created_at').notNull(),
     /** Set when the provider no longer holds the original or any derivative. */
     deletedAt: timestamptz('deleted_at'),
+    /**
+     * Evidence preservation, which is not the same thing as availability.
+     *
+     * An asset under hold stops being delivered like any other removed asset —
+     * the association is detached, the derivatives are destroyed, and the
+     * caches are purged — but the original is deliberately kept. The two
+     * questions are independent, and a platform that conflated them would
+     * either serve something it had taken down or destroy evidence a case
+     * needs.
+     *
+     * No duration is invented anywhere. How long a hold lasts is a decision
+     * recorded in `docs/decisions/DECISIONS_REQUIRED.md`, and nothing expires
+     * on a timer.
+     */
+    legalHoldAt: timestamptz('legal_hold_at'),
     /** When removal was first owed, whichever authority asked for it. */
     deletionRequestedAt: timestamptz('deletion_requested_at'),
     /** Identified from the object's own header, never from a name or a claim. */
@@ -202,6 +219,13 @@ export const mediaAssets = pgTable(
       'media_assets_deleted_shape_check',
       sql`(${table.lifecycle} = 'deleted') = (${table.deletedAt} is not null)`,
     ),
+    // `deleted` means the provider no longer holds the original. Under a legal
+    // hold it still does, on purpose — so the combination is not a state the
+    // database will store, and the two cannot silently drift into agreeing.
+    check(
+      'media_assets_hold_shape_check',
+      sql`${table.lifecycle} <> 'deleted' or ${table.legalHoldAt} is null`,
+    ),
     // Removal is owed before it is done, so the request instant is present for
     // both halves and never only for the second.
     check(
@@ -311,6 +335,17 @@ export const mediaObjects = pgTable(
     /** Server-generated and opaque, unique across the whole platform. */
     objectKey: text('object_key').notNull(),
     /**
+     * What the delivery layer said when asked to forget this address.
+     *
+     * Recorded rather than assumed. `unsupported` is a real answer — a provider
+     * with no purge mechanism has not purged — and a failure stays visible as
+     * an operational obligation instead of an error somebody swallowed. Origin
+     * denial never waits for any of this.
+     */
+    purgeOutcome: text('purge_outcome').$type<MediaPurgeRecord>(),
+    purgeRequestedAt: timestamptz('purge_requested_at'),
+    purgedAt: timestamptz('purged_at'),
+    /**
      * Which processor produced this derivative. Recorded so a future pipeline
      * change is a regeneration decision rather than a silent change to what
      * historical outputs mean.
@@ -380,6 +415,20 @@ export const mediaObjects = pgTable(
     check(
       'media_objects_deleted_shape_check',
       sql`(${table.state} = 'deleted') = (${table.deletedAt} is not null)`,
+    ),
+    check(
+      'media_objects_purge_outcome_check',
+      sql`${table.purgeOutcome} is null or ${inList(table.purgeOutcome, mediaPurgeRecords)}`,
+    ),
+    // An outcome is something that happened, so it needs the instant it
+    // happened at, and it cannot exist for a purge nobody asked for.
+    check(
+      'media_objects_purge_shape_check',
+      sql`(${table.purgeOutcome} is null) = (${table.purgedAt} is null)`,
+    ),
+    check(
+      'media_objects_purge_requested_check',
+      sql`${table.purgedAt} is null or ${table.purgeRequestedAt} is not null`,
     ),
   ],
 );

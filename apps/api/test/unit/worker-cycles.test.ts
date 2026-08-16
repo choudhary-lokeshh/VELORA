@@ -40,6 +40,7 @@ describe('the worker starts every cycle it composes', () => {
       financialReconciliation: cycle('reconciliation'),
       mediaInspection: cycle('media-inspection'),
       mediaProcessing: cycle('media-processing'),
+      mediaRemoval: cycle('media-removal'),
       mediaUploadSweep: cycle('media-upload'),
       profileMediaReadiness: cycle('profile-media-readiness'),
       providerEventDrain: cycle('provider-events'),

@@ -35,6 +35,7 @@ import {
   type MediaObjectRole,
   type MediaObligationKind,
   type MediaOwnerDomain,
+  type MediaPurgeRecord,
   type MediaRejectionReason,
   type MediaVariantKind,
 } from './policy.js';
@@ -815,6 +816,77 @@ export class MediaRepository {
         ),
       )
       .returning()
+      .then(([row]) => row);
+  }
+
+  /** Records what the delivery layer said when asked to forget an address. */
+  recordPurgeOutcome(
+    executor: MediaExecutor,
+    input: {
+      readonly now: Date;
+      readonly objectId: string;
+      readonly outcome: MediaPurgeRecord;
+    },
+  ): Promise<MediaObjectRow | undefined> {
+    return executor
+      .update(mediaObjects)
+      .set({
+        purgeOutcome: input.outcome,
+        purgedAt: input.now,
+        updatedAt: input.now,
+      })
+      .where(eq(mediaObjects.id, input.objectId))
+      .returning()
+      .then(([row]) => row);
+  }
+
+  /** Marks that a purge has been asked for, before anybody asks a provider. */
+  markPurgeRequested(
+    executor: MediaExecutor,
+    input: { readonly now: Date; readonly objectId: string },
+  ): Promise<void> {
+    return executor
+      .update(mediaObjects)
+      .set({ purgeRequestedAt: input.now, updatedAt: input.now })
+      .where(
+        and(
+          eq(mediaObjects.id, input.objectId),
+          isNull(mediaObjects.purgeRequestedAt),
+        ),
+      )
+      .then(() => undefined);
+  }
+
+  /** Places or lifts a legal hold. Independent of whether delivery is denied. */
+  setLegalHold(
+    executor: MediaExecutor,
+    input: {
+      readonly assetId: string;
+      readonly held: boolean;
+      readonly now: Date;
+    },
+  ): Promise<MediaAssetRow | undefined> {
+    return executor
+      .update(mediaAssets)
+      .set({
+        legalHoldAt: input.held ? input.now : null,
+        updatedAt: input.now,
+      })
+      .where(eq(mediaAssets.id, input.assetId))
+      .returning()
+      .then(([row]) => row);
+  }
+
+  /** One object by identifier, for an obligation that names one. */
+  findObject(
+    executor: MediaExecutor,
+    objectId: string,
+  ): Promise<MediaObjectRow | undefined> {
+    return executor
+      .select()
+      .from(mediaObjects)
+      .where(eq(mediaObjects.id, objectId))
+      .limit(1)
       .then(([row]) => row);
   }
 

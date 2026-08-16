@@ -237,7 +237,27 @@ Mature content stays refused inside that gate by a capability with exactly one c
 
 The adapter deliberately passes no viewer adult assurance. Assurance is consulted only for a mature class, and a mature class is refused before the question is reached — so supplying a value there could only ever weaken a gate, never satisfy one.
 
-Not built yet, and not to be inferred from the model's generality: Creator Studio media management surfaces, peer delivery of consumer images, takedown propagation and cache purge, reconciliation, and Admin operations.
+## Removal, takedown, purge, and hold
+
+Four concepts, and until `0042_media_takedown_purge` they were four words in this document and one behaviour in the code.
+
+**Product removal** detaches an asset from a surface. The owning domain owns it; bytes are unaffected.
+
+**Provider deletion** destroys the original *and every derivative*. A deletion reaching only the original would leave three sanitized copies of the same picture on a CDN, so the worker enumerates every object of the asset — which is why originals and derivatives share one table under a role discriminator rather than being a join. Deletion is idempotent, and an object the provider no longer holds counts as deleted: safe against this adapter's documented semantics, and a question asked of every candidate provider rather than assumed for all of them.
+
+**Cache purge** is separate work with a separate record. Destroying a derivative owes a purge for its address, and what the delivery layer says is written down. `unsupported` is a real outcome rather than a failure — a provider with no purge mechanism has genuinely not purged, and recording that as success would be the platform lying to its own operators about the exposure. A *failure* is not recorded as an outcome at all: the obligation stays owed, backs off, and dead-letters after five attempts as retained evidence rather than being dropped so the backlog looks clean.
+
+Origin denial never waits for any of this. A held or removed asset stops being authorised the moment any authority says so, because every issuance re-derives the decision; a cache that has not yet been told is a visible obligation, not a hole in the decision.
+
+**Legal hold** preserves an original as evidence, and is independent of removal in both directions. An asset under hold loses its derivatives, has its caches purged, and stops being delivered like any other removed asset — the original simply survives. It therefore stops at `deleting`, and the database refuses to record it as `deleted` while the hold stands, because `deleted` means the provider no longer holds the original and under a hold it does.
+
+Lifting a hold **resumes** the deferred deletion by owing it again. The obligation that ran under the hold was discharged — it did everything it was permitted to do — so without this the removal would stay owed with nothing to carry it out, and the asset would sit in `deleting` until a reconciliation pass happened to notice. A duty that depends on somebody spotting it later is not a duty the platform owes. That defect was real and a test caught it.
+
+A **takedown** owes a purge without deleting anything, because a takedown is not a deletion and conflating them would destroy something a case might need. The obligation is recorded rather than performed, so a worker dying immediately afterwards loses a queue message and not the duty.
+
+No retention duration is invented anywhere. How long a hold lasts, and how long a quarantined original or a deleted asset's evidence is kept, remain `LEGAL REVIEW REQUIRED`, and nothing in this schema expires on a timer.
+
+Not built yet: Creator Studio media management surfaces, peer delivery of consumer images, the Admin trigger that calls the takedown purge, reconciliation of provider drift, and Admin operational visibility.
 
 ## Phase, events, and open questions
 
