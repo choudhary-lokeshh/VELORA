@@ -51,6 +51,11 @@ import { billingRevenueIntakes } from './payouts/revenue-intake.js';
 import { payoutsOutbox } from './payouts/schema.js';
 import { SafetyDirectory } from './safety/directory.js';
 import { SafetyRepository } from './safety/repository.js';
+import {
+  LocalTestTakedownPolicy,
+  TakedownService,
+  UnpublishedTakedownPolicy,
+} from './safety/takedown.js';
 import { UsersRepository } from './users/repository.js';
 import {
   ConsumerAdultStandingDirectory,
@@ -86,6 +91,17 @@ import {
 export const financialReconciliationIntervalMilliseconds = 30_000;
 
 /**
+ * How often passed takedown deadlines are looked for.
+ *
+ * A minute, because a deadline is a row rather than a timer: the sweep is
+ * recovering facts that are already true rather than firing an alarm at the
+ * instant one passes, so it can be leisurely and lose nothing. On a platform
+ * that publishes no deadline policy it finds nothing at all, every time, which
+ * is the accurate answer rather than an idle loop pretending otherwise.
+ */
+export const safetyDeadlineSweepIntervalMilliseconds = 60_000;
+
+/**
  * Starts every recurring cycle this worker composes.
  *
  * Named by type rather than one by one, deliberately. A cycle that was
@@ -116,6 +132,8 @@ export interface WorkerComposition {
   readonly providerEventDrain: Poller;
   readonly relay: OutboxRelay;
   readonly relayPoller: Poller;
+  /** Records passed takedown deadlines as evidence. Decides nothing. */
+  readonly safetyDeadlineSweep: Poller;
   readonly registry: JobRegistry;
   /** Runs both loops once. Used at startup so a restart drains immediately. */
   drainOnce(): Promise<void>;
@@ -302,6 +320,37 @@ export function createWorkerComposition(input: {
     logger: input.logger,
     name: 'financial-reconciliation',
   });
+  // TRUST & SAFETY's obligations are rows, so the worker's part is to notice
+  // when one has passed and write that down. It never decides a case: a sweep
+  // that quietly actioned a claim would be automation deciding a safety matter,
+  // which this domain does not do.
+  const takedown = new TakedownService({
+    now,
+    policy:
+      input.config.SAFETY_TAKEDOWN_POLICY === 'local-test'
+        ? new LocalTestTakedownPolicy()
+        : new UnpublishedTakedownPolicy(),
+    repository: new SafetyRepository(handle),
+  });
+  const safetyDeadlineSweep = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const { recorded } = await takedown.recordOverdue({
+          actorReference: owner,
+        });
+        // Silent when nothing passed, which is the ordinary case and, on a
+        // platform publishing no deadline policy, the only one. A count and
+        // nothing else: an identifier here would put one person's complaint in
+        // a log line, and nothing in this domain writes one.
+        if (recorded > 0) {
+          input.logger.warn({ recorded }, 'takedown action deadlines passed');
+        }
+      }),
+    intervalMilliseconds: safetyDeadlineSweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'safety-deadline-sweep',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -318,6 +367,7 @@ export function createWorkerComposition(input: {
         relayPoller.stop(),
         providerEventDrain.stop(),
         financialReconciliation.stop(),
+        safetyDeadlineSweep.stop(),
         deliverySweep.stop(),
       ]);
     },
@@ -329,12 +379,14 @@ export function createWorkerComposition(input: {
       await providerEventDrain.runOnce();
       await relayPoller.runOnce();
       await financialReconciliation.runOnce();
+      await safetyDeadlineSweep.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,
     registry,
     relay,
     relayPoller,
+    safetyDeadlineSweep,
   };
 }
 

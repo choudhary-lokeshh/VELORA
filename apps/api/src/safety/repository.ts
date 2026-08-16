@@ -1581,7 +1581,42 @@ export class SafetyRepository {
     return updated[0];
   }
 
-  /** Appends a takedown claim. */
+  /**
+   * Stamps a claim as having had its passed deadline recorded.
+   *
+   * Written in the same transaction as the evidence it describes, and only
+   * while the caller still holds the lease, so two workers cannot both record
+   * a breach for one claim.
+   */
+  async recordTakedownBreach(
+    executor: Executor,
+    input: {
+      readonly actorReference: string;
+      readonly claimId: string;
+      readonly now: Date;
+    },
+  ): Promise<TakedownClaimRow | undefined> {
+    const updated = await executor
+      .update(safetyTakedownClaims)
+      .set({
+        breachRecordedAt: input.now,
+        leaseActorReference: null,
+        leaseExpiresAt: null,
+        updatedAt: input.now,
+        version: sql`${safetyTakedownClaims.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyTakedownClaims.id, input.claimId),
+          eq(safetyTakedownClaims.leaseActorReference, input.actorReference),
+          isNull(safetyTakedownClaims.breachRecordedAt),
+        ),
+      )
+      .returning();
+    return updated[0];
+  }
+
+  /** Appends a takedown claim. */ /** Appends a takedown claim. */
   async insertTakedownClaim(
     executor: Executor,
     input: {
@@ -1743,6 +1778,10 @@ export class SafetyRepository {
         and(
           inArray(safetyTakedownClaims.state, [...openTakedownStates]),
           lte(safetyTakedownClaims.actionDueAt, input.now),
+          // A breach already recorded is not offered again. The evidence is on
+          // the case and the case is in the queue; offering it every cycle
+          // would be a worker rediscovering the same fact for ever.
+          isNull(safetyTakedownClaims.breachRecordedAt),
           or(
             isNull(safetyTakedownClaims.leaseExpiresAt),
             lte(safetyTakedownClaims.leaseExpiresAt, input.now),

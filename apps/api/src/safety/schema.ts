@@ -1139,6 +1139,15 @@ export const safetyTakedownClaims = pgTable(
     acknowledgementDueAt: timestamptz('acknowledgement_due_at'),
     /** When it owes the removal or the refusal itself. */
     actionDueAt: timestamptz('action_due_at'),
+    /**
+     * When a passed action deadline was recorded as evidence on the case.
+     *
+     * Set once, by the sweep, and what makes the sweep idempotent: a claim that
+     * has already had its breach recorded stops being offered, so a worker that
+     * dies before committing simply has the work repeated and one that dies
+     * after it does not.
+     */
+    breachRecordedAt: timestamptz('breach_recorded_at'),
     /** The case this claim is reviewed in. Every claim gets one. */
     caseId: uuid('case_id')
       .notNull()
@@ -1241,6 +1250,12 @@ export const safetyTakedownClaims = pgTable(
     check(
       'safety_takedown_claims_lease_shape_check',
       nullablePairing(table.leaseActorReference, table.leaseExpiresAt),
+    ),
+    // A breach is a passed deadline, so a claim that never had one cannot have
+    // had it pass.
+    check(
+      'safety_takedown_claims_breach_shape_check',
+      sql`${table.breachRecordedAt} is null or ${table.actionDueAt} is not null`,
     ),
     check('safety_takedown_claims_version_check', sql`${table.version} >= 1`),
   ],

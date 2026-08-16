@@ -427,6 +427,88 @@ describe('a deadline is a row, not a timer', () => {
   });
 });
 
+describe('a passed deadline is recorded, and decides nothing', () => {
+  it('writes a code on the case and never a sentence', async () => {
+    const submission = await submitted();
+    clockOffsetMilliseconds = 48 * hour;
+
+    const swept = await takedown.recordOverdue({
+      actorReference: 'worker:one',
+    });
+
+    expect(swept.recorded).toBe(1);
+    const evidence = await rowsOf<{
+      kind: string;
+      note: string | null;
+      state_label: string;
+    }>(
+      database.sql`select kind, note, state_label from safety_evidence
+        where case_id = ${submission.claim.caseId} and kind = 'system_fact'`,
+    );
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      kind: 'system_fact',
+      note: null,
+      state_label: 'takedown_action_deadline_passed',
+    });
+    // A fact about the platform's own timeliness. Nothing was decided, nothing
+    // was enforced, and the claim is still owed a reviewer's answer.
+    expect(await countOf('safety_decisions')).toBe(0);
+    expect(await countOf('safety_enforcements')).toBe(0);
+    expect(await countOf('safety_takedown_claims', "state = 'received'")).toBe(
+      1,
+    );
+  });
+
+  it('records one breach however many times the sweep runs', async () => {
+    await submitted();
+    clockOffsetMilliseconds = 48 * hour;
+
+    const first = await takedown.recordOverdue({
+      actorReference: 'worker:one',
+    });
+    const second = await takedown.recordOverdue({
+      actorReference: 'worker:two',
+    });
+    const third = await takedown.recordOverdue({
+      actorReference: 'worker:one',
+    });
+
+    expect([first.recorded, second.recorded, third.recorded]).toEqual([
+      1, 0, 0,
+    ]);
+    // One passed deadline, one record of it, however many workers looked.
+    expect(await countOf('safety_evidence', "kind = 'system_fact'")).toBe(1);
+  });
+
+  it('records nothing at all when no deadline policy is published', async () => {
+    await submitted(unpublished);
+    clockOffsetMilliseconds = 365 * 24 * hour;
+
+    const swept = await unpublished.recordOverdue({
+      actorReference: 'worker:one',
+    });
+
+    // Nothing to pass, so nothing passed. An empty cycle here is the accurate
+    // answer rather than a loop pretending to work.
+    expect(swept.recorded).toBe(0);
+    expect(await countOf('safety_evidence', "kind = 'system_fact'")).toBe(0);
+  });
+
+  it('lets two workers sweep at once and record one breach between them', async () => {
+    await submitted();
+    clockOffsetMilliseconds = 48 * hour;
+
+    const swept = await Promise.all([
+      takedown.recordOverdue({ actorReference: 'worker:one' }),
+      takedown.recordOverdue({ actorReference: 'worker:two' }),
+    ]);
+
+    expect(swept.reduce((total, cycle) => total + cycle.recorded, 0)).toBe(1);
+    expect(await countOf('safety_evidence', "kind = 'system_fact'")).toBe(1);
+  });
+});
+
 describe('the database keeps the claim honest', () => {
   it('refuses a claimant identity nobody is entitled to record', async () => {
     const submission = await submitted();

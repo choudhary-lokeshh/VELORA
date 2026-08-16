@@ -1,6 +1,7 @@
 import { lockSubject } from '../database/subject-lock.js';
 import {
   casePolicyVersion,
+  evidencePolicyVersion,
   maximumTakedownPageSize,
   queueFor,
   takedownLeaseMilliseconds,
@@ -322,6 +323,70 @@ export class TakedownService {
     return rows.map(claimView);
   }
 
+  /**
+   * Records that an action deadline passed, as evidence on the case.
+   *
+   * One transaction per claim, so a worker that dies mid-sweep has recorded
+   * exactly the breaches it committed and none it did not. The stamp is written
+   * beside the evidence and only while this worker still holds the lease, so
+   * two sweeps cannot both record the same breach — and a claim whose breach is
+   * recorded stops being offered, which is what stops a worker rediscovering
+   * the same fact for ever.
+   *
+   * The evidence is a **code**, not a sentence. `system_fact` carries a bounded
+   * state label, so what lands on the case is `takedown_action_deadline_passed`
+   * and an instant, never a narrative about somebody.
+   *
+   * Nothing here decides anything. A passed deadline is a fact about the
+   * platform's own timeliness; the decision it was owed is still a reviewer's,
+   * and a sweep that quietly actioned a claim would be automation deciding a
+   * safety case, which this domain does not do.
+   */
+  async recordOverdue(input: {
+    readonly actorReference: string;
+    readonly limit?: number | undefined;
+  }): Promise<{ readonly recorded: number }> {
+    const { repository } = this.dependencies;
+    const overdue = await this.claimOverdue(input);
+    let recorded = 0;
+    for (const claim of overdue) {
+      const written = await repository
+        .transaction(async (executor) => {
+          const found = await repository.findTakedownClaim(executor, claim.id);
+          if (found === undefined) return false;
+          await repository.insertEvidence(executor, {
+            actorReference: null,
+            caseId: found.caseId,
+            externalReference: null,
+            kind: 'system_fact',
+            note: null,
+            now: this.dependencies.now(),
+            observedAt: found.actionDueAt,
+            policyVersion: evidencePolicyVersion,
+            referenceId: null,
+            referenceType: null,
+            stateLabel: takedownBreachStateLabel,
+          });
+          const stamped = await repository.recordTakedownBreach(executor, {
+            actorReference: input.actorReference,
+            claimId: claim.id,
+            now: this.dependencies.now(),
+          });
+          // Somebody else's lease won, or the breach was recorded between the
+          // read and the write. Rolling back takes the evidence with it, so the
+          // case never carries two records of one passed deadline.
+          if (stamped === undefined) throw new LeaseLost();
+          return true;
+        })
+        .catch((error: unknown) => {
+          if (error instanceof LeaseLost) return false;
+          throw error;
+        });
+      if (written) recorded += 1;
+    }
+    return { recorded };
+  }
+
   async claimsForContent(
     contentId: string,
   ): Promise<readonly TakedownClaimView[]> {
@@ -357,6 +422,22 @@ export class TakedownService {
     return moved === undefined
       ? { kind: 'conflict' }
       : { claim: claimView(moved), kind: 'recorded' };
+  }
+}
+
+/**
+ * The one thing a passed takedown deadline records.
+ *
+ * A code rather than a sentence, and the same code every time, so the fact is
+ * countable and carries nothing about anybody.
+ */
+export const takedownBreachStateLabel = 'takedown_action_deadline_passed';
+
+/** Rolls a breach record back when somebody else's lease won. */
+class LeaseLost extends Error {
+  constructor() {
+    super('The takedown lease was lost before the breach was recorded');
+    this.name = 'LeaseLost';
   }
 }
 

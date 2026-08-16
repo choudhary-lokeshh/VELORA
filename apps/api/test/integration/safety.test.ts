@@ -1370,6 +1370,69 @@ describe('enforcement is applied by the domain that owns what changes', () => {
   });
 });
 
+describe('nothing sensitive reaches a log line', () => {
+  it('logs no narrative, no operator note, and no appellant statement', async () => {
+    const reporter = await consumer('logging-reporter@velora.test');
+    const subject = await consumer('logging-subject@velora.test');
+    const narrative = 'REPORTER-NARRATIVE-a4f2';
+    const note = 'OPERATOR-NOTE-b7c1';
+    const statement = 'APPELLANT-STATEMENT-c9d3';
+
+    await handle(
+      post('/v1/safety/reports', reporter, {
+        clientReportId: 'logging-key-0001',
+        detail: narrative,
+        reasonCode: 'harassment',
+        target: { accountId: subject.id, type: 'consumer_account' },
+      }),
+    );
+    const [opened] = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${subject.id} limit 1`,
+    );
+    if (opened === undefined) throw new Error('no case opened');
+
+    await safety.moderation.recordEvidence({
+      actorReference: 'session:reviewer-a',
+      caseId: opened.id,
+      evidence: { kind: 'operator_note', note },
+    });
+    const evidenceIds = (
+      await rowsOf<{ id: string }>(
+        database.sql`select id from safety_evidence where case_id = ${opened.id}`,
+      )
+    ).map((row) => row.id);
+    const decided = await safety.moderation.decideCase({
+      action: 'restrict_capability',
+      actorReference: 'session:reviewer-a',
+      caseId: opened.id,
+      evidenceIds,
+      expectedVersion: opened.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
+    });
+    if (decided.kind !== 'recorded') throw new Error('setup failed');
+
+    await handle(
+      post('/v1/safety/appeals', subject, {
+        decisionId: decided.decision.id,
+        statement,
+      }),
+    );
+
+    // Every one of these is stored, and none of them is a thing an operator
+    // reads out of a log, a metric label, or an error line.
+    const written = JSON.stringify(logs);
+    expect(written).not.toContain(narrative);
+    expect(written).not.toContain(note);
+    expect(written).not.toContain(statement);
+    // And what was stored genuinely is stored, so this is not passing because
+    // nothing happened.
+    expect(await countOf('safety_evidence', "kind = 'operator_note'")).toBe(1);
+    expect(await countOf('safety_appeals')).toBe(1);
+  });
+});
+
 describe('the database enforces the safety invariants', () => {
   it('owns exactly the safety tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(

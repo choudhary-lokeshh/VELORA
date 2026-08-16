@@ -40,6 +40,7 @@ describe('the worker starts every cycle it composes', () => {
       financialReconciliation: cycle('reconciliation'),
       providerEventDrain: cycle('provider-events'),
       relayPoller: cycle('relay'),
+      safetyDeadlineSweep: cycle('safety-deadlines'),
     };
     // The shape the worker actually hands over: cycles among things that are
     // not cycles, which is why the starter selects by type.
