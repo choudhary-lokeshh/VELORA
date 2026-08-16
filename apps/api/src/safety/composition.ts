@@ -1,9 +1,11 @@
 import {
   localTestConsentPolicy,
   localTestDepictedPersonVerifier,
+  localTestTakedownPolicy,
   unavailableDepictedPersonVerifier,
   matureContentEnabled,
   unpublishedConsentPolicy,
+  unpublishedTakedownPolicy,
   type ServerConfig,
 } from '@velora/config/server';
 
@@ -30,6 +32,12 @@ import { SafetyRepository } from './repository.js';
 import { SafetyRoutes } from './routes.js';
 import { SafetyService } from './service.js';
 import {
+  LocalTestTakedownPolicy,
+  TakedownService,
+  UnpublishedTakedownPolicy,
+  type TakedownDeadlinePolicy,
+} from './takedown.js';
+import {
   ReportTargetResolver,
   type SafetyCatalogTargetPort,
   type SafetyConsumerTargetPort,
@@ -53,6 +61,8 @@ export interface SafetyRuntime {
   readonly repository: SafetyRepository;
   readonly routes: SafetyRoutes;
   readonly service: SafetyService;
+  /** Takedown claims and the deadlines a published policy would give them. */
+  readonly takedown: TakedownService;
 }
 
 /**
@@ -129,6 +139,11 @@ export function createSafetyRuntime(input: {
       safety: service,
     }),
     service,
+    takedown: new TakedownService({
+      now,
+      policy: selectTakedownPolicy(input.config),
+      repository,
+    }),
   };
 }
 
@@ -172,6 +187,22 @@ function selectConsentPolicy(config: ServerConfig): ConsentCopyPolicy {
   if (build === undefined) {
     throw new Error(
       `Unsupported consent policy: ${config.SAFETY_CONSENT_POLICY}`,
+    );
+  }
+  return build();
+}
+
+const takedownPolicies: Readonly<Record<string, () => TakedownDeadlinePolicy>> =
+  {
+    [localTestTakedownPolicy]: () => new LocalTestTakedownPolicy(),
+    [unpublishedTakedownPolicy]: () => new UnpublishedTakedownPolicy(),
+  };
+
+function selectTakedownPolicy(config: ServerConfig): TakedownDeadlinePolicy {
+  const build = takedownPolicies[config.SAFETY_TAKEDOWN_POLICY];
+  if (build === undefined) {
+    throw new Error(
+      `Unsupported takedown policy: ${config.SAFETY_TAKEDOWN_POLICY}`,
     );
   }
   return build();

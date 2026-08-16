@@ -190,6 +190,24 @@ describe('server configuration', () => {
     }
   });
 
+  it('publishes no takedown deadline, and refuses to in a deployed environment', () => {
+    // Inventing one is worse than having none: a hard-coded number would look
+    // like compliance, carry no authority, and be the value an operator later
+    // defended in writing.
+    expect(loadServerConfig(validEnvironment).SAFETY_TAKEDOWN_POLICY).toBe(
+      'unpublished',
+    );
+    for (const appEnvironment of ['staging', 'production']) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        SAFETY_TAKEDOWN_POLICY: 'local-test',
+      });
+      expect(failure).toContain('SAFETY_TAKEDOWN_POLICY');
+      expect(failure).toContain('carry no authority');
+    }
+  });
+
   it('gives mature content one value, which is off, everywhere', () => {
     // Not a feature flag. A flag that could be flipped is enablement waiting
     // for an accident, and Apple treats a dormant remotely-enabled feature as a

@@ -1381,6 +1381,7 @@ describe('the database enforces the safety invariants', () => {
       'safety_enforcements',
       'safety_evidence',
       'safety_reports',
+      'safety_takedown_claims',
     ]);
   });
 

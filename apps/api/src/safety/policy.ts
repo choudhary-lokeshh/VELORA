@@ -998,3 +998,116 @@ export type ContentDenialReason = (typeof contentDenialReasons)[number];
  * which is the correct behaviour rather than a gap.
  */
 export const matureViewerAssurance = 'verified_adult';
+
+/**
+ * Which takedown rule was in force. Recorded on every claim.
+ *
+ * Separate from the deadline policy version, which is recorded beside it. This
+ * one moves when the claim vocabulary changes; that one moves when a published
+ * deadline does, and production publishes none.
+ */
+export const takedownPolicyVersion = 'v1-provisional';
+
+/**
+ * Who is asking for something to come down.
+ *
+ * A claim is not a report. A report is filed by a Velora account about a
+ * target; a claim asks for a specific item to be removed and can come from
+ * somebody who has no account at all — a depicted person is the case
+ * [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * records, where the card-network requirement is an appeals route allowing a
+ * depicted person to request removal.
+ *
+ * Only an account holder has an identifier here. Nothing stores a name, an
+ * address, or a means of contact for anybody else, because this domain has no
+ * business holding one and no contract that would use it.
+ */
+export const takedownClaimantKinds = [
+  'depicted_person',
+  'account_holder',
+  'operator',
+  'external',
+] as const;
+export type TakedownClaimantKind = (typeof takedownClaimantKinds)[number];
+
+/**
+ * What a claim says is wrong.
+ *
+ * Provisional, and deliberately narrow: these are the classes with a published
+ * obligation behind them rather than a general complaint vocabulary, which is
+ * what reports are for.
+ */
+export const takedownReasonCodes = [
+  'non_consensual_content',
+  'consent_withdrawn',
+  'illegal_content',
+  'other',
+] as const;
+export type TakedownReasonCode = (typeof takedownReasonCodes)[number];
+
+/**
+ * Claim lifecycle.
+ *
+ * `received -> acknowledged -> decided -> completed`, or `dismissed`. Decided
+ * and completed are separate instants because a decision to remove something
+ * and the removal actually taking effect are different facts, and an obligation
+ * measured against the wrong one would be measured against a promise.
+ */
+export const takedownStates = [
+  'received',
+  'acknowledged',
+  'decided',
+  'completed',
+  'dismissed',
+] as const;
+export type TakedownState = (typeof takedownStates)[number];
+
+/** Claims still owed work. */
+export const openTakedownStates = ['received', 'acknowledged'] as const;
+
+/**
+ * How fast a claim is owed attention.
+ *
+ * Derived from what is alleged rather than chosen by the claimant, so nobody
+ * can mark their own complaint urgent. It affects **only the deadline** and
+ * never the decision: a reviewer's priority stays their own judgement, and no
+ * claim decides anything by existing.
+ */
+export const takedownUrgencies = ['standard', 'urgent'] as const;
+export type TakedownUrgency = (typeof takedownUrgencies)[number];
+
+const urgencyByTakedownReason: Readonly<
+  Record<TakedownReasonCode, TakedownUrgency>
+> = {
+  consent_withdrawn: 'urgent',
+  illegal_content: 'urgent',
+  non_consensual_content: 'urgent',
+  other: 'standard',
+};
+
+export function urgencyFor(reasonCode: TakedownReasonCode): TakedownUrgency {
+  return urgencyByTakedownReason[reasonCode];
+}
+
+/**
+ * How long a worker holds a claim while acting on its deadline.
+ *
+ * A lease rather than an assignment, for the reason a case claim is one: a
+ * worker that dies releases what it held, and the deadline survives because the
+ * deadline is a row and not a timer.
+ */
+export const takedownLeaseMilliseconds = 15 * 60 * 1000;
+
+/** Largest page of claims one read returns. */
+export const maximumTakedownPageSize = 50;
+
+/**
+ * How many claims one account may file in the rate window.
+ *
+ * A cap on volume, not on truth, exactly as the report bound is: reaching it
+ * refuses further submissions and never removes or alters a claim already made.
+ * It exists because urgency is derived from what is alleged, so a flood of
+ * urgent claims is the shape an abuser would reach for.
+ */
+export const takedownRateLimitCount = 10;
+export const takedownRateWindowMilliseconds = 60 * 60 * 1000;

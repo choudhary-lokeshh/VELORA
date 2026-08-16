@@ -25,6 +25,7 @@ import {
   maximumDepictedPersonPageSize,
   openCaseStates,
   openReportStates,
+  openTakedownStates,
   resolvedCaseStates,
   type CasePriority,
   type CaseQueue,
@@ -43,6 +44,10 @@ import {
   type EvidenceReferenceType,
   type ReportSourceSurface,
   type ReportTargetType,
+  type TakedownClaimantKind,
+  type TakedownReasonCode,
+  type TakedownState,
+  type TakedownUrgency,
 } from './policy.js';
 import {
   safetyBlocks,
@@ -56,6 +61,7 @@ import {
   safetyEnforcements,
   safetyEvidence,
   safetyReports,
+  safetyTakedownClaims,
 } from './schema.js';
 
 export type BlockRow = typeof safetyBlocks.$inferSelect;
@@ -70,6 +76,7 @@ export type DepictedParticipantRow =
 export type ConsentRecordRow = typeof safetyConsentRecords.$inferSelect;
 export type ClassificationRow =
   typeof safetyContentClassifications.$inferSelect;
+export type TakedownClaimRow = typeof safetyTakedownClaims.$inferSelect;
 
 /**
  * Every TRUST & SAFETY read and write.
@@ -1421,6 +1428,192 @@ export class SafetyRepository {
         asc(safetyConsentRecords.id),
       )
       .limit(maximumConsentRecordsPerContent);
+  }
+
+  /** Appends a takedown claim. */
+  async insertTakedownClaim(
+    executor: Executor,
+    input: {
+      readonly acknowledgementDueAt: Date | null;
+      readonly actionDueAt: Date | null;
+      readonly caseId: string;
+      readonly claimantAccountId: string | null;
+      readonly claimantKind: TakedownClaimantKind;
+      readonly consentRecordId: string | null;
+      readonly contentId: string;
+      readonly creatorId: string;
+      readonly deadlinePolicyVersion: string | null;
+      readonly now: Date;
+      readonly policyVersion: string;
+      readonly reasonCode: TakedownReasonCode;
+      readonly triageDueAt: Date | null;
+      readonly urgency: TakedownUrgency;
+    },
+  ): Promise<TakedownClaimRow> {
+    const rows = await executor
+      .insert(safetyTakedownClaims)
+      .values({
+        acknowledgementDueAt: input.acknowledgementDueAt,
+        actionDueAt: input.actionDueAt,
+        caseId: input.caseId,
+        claimantAccountId: input.claimantAccountId,
+        claimantKind: input.claimantKind,
+        consentRecordId: input.consentRecordId,
+        contentId: input.contentId,
+        creatorId: input.creatorId,
+        deadlinePolicyVersion: input.deadlinePolicyVersion,
+        id: crypto.randomUUID(),
+        policyVersion: input.policyVersion,
+        reasonCode: input.reasonCode,
+        receivedAt: input.now,
+        state: 'received',
+        triageDueAt: input.triageDueAt,
+        updatedAt: input.now,
+        urgency: input.urgency,
+      })
+      .returning();
+    const row = rows[0];
+    if (row === undefined) {
+      throw new Error('Takedown claim insert returned no row');
+    }
+    return row;
+  }
+
+  async findTakedownClaim(
+    executor: Executor,
+    id: string,
+  ): Promise<TakedownClaimRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(safetyTakedownClaims)
+      .where(eq(safetyTakedownClaims.id, id))
+      .limit(1);
+    return rows[0];
+  }
+
+  /** Every claim about one item, oldest first. */
+  async listTakedownClaims(
+    executor: Executor,
+    input: { readonly contentId: string; readonly limit: number },
+  ): Promise<TakedownClaimRow[]> {
+    return executor
+      .select()
+      .from(safetyTakedownClaims)
+      .where(eq(safetyTakedownClaims.contentId, input.contentId))
+      .orderBy(
+        asc(safetyTakedownClaims.receivedAt),
+        asc(safetyTakedownClaims.id),
+      )
+      .limit(input.limit);
+  }
+
+  /** How many claims this account has filed since a moment. */
+  async countTakedownClaimsSince(
+    executor: Executor,
+    input: { readonly claimantAccountId: string; readonly since: Date },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: count() })
+      .from(safetyTakedownClaims)
+      .where(
+        and(
+          eq(safetyTakedownClaims.claimantAccountId, input.claimantAccountId),
+          gt(safetyTakedownClaims.receivedAt, input.since),
+        ),
+      );
+    return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Moves a claim, against the version the caller read and only from a state
+   * the transition is defined for.
+   */
+  async transitionTakedownClaim(
+    executor: Executor,
+    input: {
+      readonly claimId: string;
+      readonly expectedVersion: number;
+      readonly from: readonly TakedownState[];
+      readonly now: Date;
+      readonly state: TakedownState;
+    },
+  ): Promise<TakedownClaimRow | undefined> {
+    const stamps = {
+      acknowledged: { acknowledgedAt: input.now },
+      completed: { completedAt: input.now },
+      decided: { decidedAt: input.now },
+      dismissed: { acknowledgedAt: input.now, decidedAt: input.now },
+      received: {},
+    } as const;
+    const updated = await executor
+      .update(safetyTakedownClaims)
+      .set({
+        ...stamps[input.state],
+        // Whoever moves a claim releases the lease with it: the work the lease
+        // was held for is the work that just happened.
+        leaseActorReference: null,
+        leaseExpiresAt: null,
+        state: input.state,
+        updatedAt: input.now,
+        version: sql`${safetyTakedownClaims.version} + 1`,
+      })
+      .where(
+        and(
+          eq(safetyTakedownClaims.id, input.claimId),
+          eq(safetyTakedownClaims.version, input.expectedVersion),
+          inArray(safetyTakedownClaims.state, [...input.from]),
+        ),
+      )
+      .returning();
+    return updated[0];
+  }
+
+  /**
+   * Leases the claims whose action deadline has passed, oldest first.
+   *
+   * One statement, so two workers asking at the same moment cannot both take
+   * the same row: the predicate refuses a claim somebody else currently holds,
+   * and a lapsed lease is takeable again. Empty when no deadline is published,
+   * because a claim with no deadline is never overdue.
+   */
+  async claimOverdueTakedowns(
+    executor: Executor,
+    input: {
+      readonly actorReference: string;
+      readonly expiresAt: Date;
+      readonly limit: number;
+      readonly now: Date;
+    },
+  ): Promise<TakedownClaimRow[]> {
+    const due = executor
+      .select({ id: safetyTakedownClaims.id })
+      .from(safetyTakedownClaims)
+      .where(
+        and(
+          inArray(safetyTakedownClaims.state, [...openTakedownStates]),
+          lte(safetyTakedownClaims.actionDueAt, input.now),
+          or(
+            isNull(safetyTakedownClaims.leaseExpiresAt),
+            lte(safetyTakedownClaims.leaseExpiresAt, input.now),
+          ),
+        ),
+      )
+      .orderBy(
+        asc(safetyTakedownClaims.actionDueAt),
+        asc(safetyTakedownClaims.id),
+      )
+      .limit(input.limit)
+      .for('update', { skipLocked: true });
+    return executor
+      .update(safetyTakedownClaims)
+      .set({
+        leaseActorReference: input.actorReference,
+        leaseExpiresAt: input.expiresAt,
+        updatedAt: input.now,
+        version: sql`${safetyTakedownClaims.version} + 1`,
+      })
+      .where(inArray(safetyTakedownClaims.id, due))
+      .returning();
   }
 
   /**

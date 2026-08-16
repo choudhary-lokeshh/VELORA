@@ -182,6 +182,22 @@ Each capability asks the consent scope it actually needs, so publication consent
 
 **Mature content cannot be turned on.** `SAFETY_MATURE_CONTENT` has exactly one value the schema admits, in every environment including local and test. That is not a feature flag: there is no state to flip, which is what [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) requires and what Apple Guideline 2.3.1(a) makes necessary, since a dormant remotely-enabled feature is a violation in its own right. The surrounding gates are each exercisable on their own, and a regression asserts that an item satisfying every one of them — classified, consented, on an eligible surface, by an unrestricted creator, to a verified adult — is still refused, with the capability being the only gate left closed.
 
+### Takedown claims, and deadlines that come from a policy
+
+`0034_safety_takedown_claims` records a claim that one specific item should come down. A claim is **not a report**: a report is filed by a Velora account about a target, and a claim can come from somebody with no account at all — a depicted person asking for a depiction of themselves to be removed is exactly the route the card-network requirements in [surface and distribution eligibility](../compliance/07-surface-and-distribution-eligibility.md) describe.
+
+**A claim decides nothing by existing.** It opens or joins a case about the item and is reviewed there like any other allegation; the removal itself is a moderation decision with its own record and its own enforcement. Several claims about one item converge on one review, under the same subject lock a report takes, and every claim survives as its own record.
+
+Urgency is derived from what is alleged rather than chosen by the claimant, so nobody can mark their own complaint urgent, and it affects **only the deadline** — never the decision, and never a reviewer's priority, which stays their judgement. Volume is bounded per account per window for the same reason report volume is.
+
+**No deadline is invented.** Every instant a claim carries — acknowledgement due, triage due, action due — comes from a published policy and is stored beside the version that produced it, and a database constraint refuses a deadline with no version behind it. `SAFETY_TAKEDOWN_POLICY` publishes none by default and is rejected outright in staging and production, so a deployed platform records claims with all three columns null and computes nothing. That is the accurate state of a platform whose obligations nobody has approved, and it is better than a hard-coded number that would look like compliance, carry no authority, and be the figure an operator later defended in writing. The seven-business-day card-network figure is recorded as evidence about what a policy will need to say and is deliberately not compiled in.
+
+`decided` and `completed` are separate instants, because a decision to remove something and the removal taking effect are different facts and an obligation measured against the wrong one is measured against a promise.
+
+**A deadline is a row, not a timer.** Overdue claims are handed to a worker under a lease, in one statement, so two workers asking at the same moment cannot both take the same claim; a lapsed lease is takeable again, so a worker that dies holds nothing; and moving a claim releases the lease with it, because the work the lease was held for is the work that just happened. A claim with no deadline is never overdue, so the queue is empty in the deployment that publishes no policy.
+
+Nothing here holds a name, an address, or a means of contact. Only an account holder has an identifier, because that is the only claimant this domain already knows, and a regression asserts no column exists that could hold the rest.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).

@@ -147,6 +147,28 @@ export const localTestConsentPolicy = 'local-test';
 export const disabledMatureContent = 'disabled';
 
 /**
+ * Where takedown deadlines come from.
+ *
+ * Not a provider. This gates *policy*: how long the platform has to
+ * acknowledge, triage, and act on a claim that something should come down.
+ * Every one of those values is undecided, and inventing one is worse than
+ * having none — a hard-coded seven days would look like compliance, would carry
+ * no authority, and would be the number an operator later defended in writing.
+ * The seven-business-day figure recorded from Mastercard in
+ * [surface and distribution eligibility](../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * is a card-network programme requirement, which is evidence about what a
+ * policy will need to say rather than a value to compile in.
+ *
+ * `unpublished` publishes no deadline, so a claim is recorded with none and
+ * nothing computes one. That is not a failure state: it is the accurate
+ * description of a platform whose obligations nobody has approved. `local-test`
+ * publishes deterministic arithmetic so the engine is exercisable, and is named
+ * so no test using it reads as evidence about a real deadline.
+ */
+export const unpublishedTakedownPolicy = 'unpublished';
+export const localTestTakedownPolicy = 'local-test';
+
+/**
  * Profile media storage adapters. No storage vendor is approved, so
  * `unavailable` refuses every upload and every inspection, which is the only
  * behaviour a deployed environment may have. `local-test` keeps objects in
@@ -337,6 +359,9 @@ export const serverConfigSchema = z
     SAFETY_MATURE_CONTENT: z
       .enum([disabledMatureContent])
       .default(disabledMatureContent),
+    SAFETY_TAKEDOWN_POLICY: z
+      .enum([unpublishedTakedownPolicy, localTestTakedownPolicy])
+      .default(unpublishedTakedownPolicy),
     SAFETY_DEPICTED_PERSON_VERIFIER: z
       .enum([
         unavailableDepictedPersonVerifier,
@@ -377,6 +402,13 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `SAFETY_DEPICTED_PERSON_VERIFIER is not usable in ${config.APP_ENV}: no identity, age, or consent verification provider is approved, and whether Velora is the party obliged to hold depicted-person records at all is unresolved; see DECISIONS_REQUIRED`,
         path: ['SAFETY_DEPICTED_PERSON_VERIFIER'],
+      });
+    }
+    if (config.SAFETY_TAKEDOWN_POLICY !== unpublishedTakedownPolicy) {
+      context.addIssue({
+        code: 'custom',
+        message: `SAFETY_TAKEDOWN_POLICY is not usable in ${config.APP_ENV}: no acknowledgement, triage, or action deadline is approved, and a deadline invented here would carry no authority; see DECISIONS_REQUIRED`,
+        path: ['SAFETY_TAKEDOWN_POLICY'],
       });
     }
     if (config.SAFETY_CONSENT_POLICY !== unpublishedConsentPolicy) {
@@ -539,6 +571,7 @@ export function redactServerConfig(config: ServerConfig) {
     consentPolicy: config.SAFETY_CONSENT_POLICY,
     depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
     matureContent: config.SAFETY_MATURE_CONTENT,
+    takedownPolicy: config.SAFETY_TAKEDOWN_POLICY,
     commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
     commercePolicy: config.BILLING_COMMERCE_POLICY,
     taxAuthority: config.BILLING_TAX_AUTHORITY,

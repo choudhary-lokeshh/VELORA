@@ -47,6 +47,10 @@ import {
   resolvedCaseStates,
   resolvingDecisionActions,
   snapshotEvidenceKinds,
+  takedownClaimantKinds,
+  takedownReasonCodes,
+  takedownStates,
+  takedownUrgencies,
   enforcementDispositions,
   enforcementObjectTypes,
   enforcementReasonCodes,
@@ -69,6 +73,10 @@ import {
   type EvidenceReferenceType,
   type ReportSourceSurface,
   type ReportTargetType,
+  type TakedownClaimantKind,
+  type TakedownReasonCode,
+  type TakedownState,
+  type TakedownUrgency,
 } from './policy.js';
 
 /** A closed vocabulary rendered as SQL literals for a CHECK or an index. */
@@ -1089,5 +1097,145 @@ export const safetyContentClassifications = pgTable(
       'safety_content_classifications_version_check',
       sql`${table.version} >= 1`,
     ),
+  ],
+);
+
+/**
+ * A claim that something should come down.
+ *
+ * Not a report. A report is filed by a Velora account about a target; a claim
+ * asks for one specific item to be removed, can come from somebody with no
+ * account at all, and carries an obligation with instants attached. A depicted
+ * person asking for a depiction of themselves to be taken down is the case
+ * [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
+ * records, where the card-network requirement is exactly that route.
+ *
+ * **A claim decides nothing by existing.** It opens or joins a case and is
+ * reviewed there like any other allegation, and the removal itself is a
+ * moderation decision with its own record. The claim carries when the platform
+ * is *owed* an answer, not what the answer is.
+ *
+ * Every deadline comes from a published policy and is stored beside the version
+ * that produced it. Production publishes none, so production records claims
+ * with no deadlines at all — which is the honest state of a platform whose
+ * obligations nobody has approved, and is why the columns are nullable together
+ * rather than defaulted to something invented.
+ *
+ * Nothing here holds a name, an address, or a means of contact. Only an account
+ * holder has an identifier, because that is the only claimant this domain
+ * already knows.
+ */
+export const safetyTakedownClaims = pgTable(
+  'safety_takedown_claims',
+  {
+    acknowledgedAt: timestamptz('acknowledged_at'),
+    /** When the platform owes an acknowledgement. Null while none is published. */
+    acknowledgementDueAt: timestamptz('acknowledgement_due_at'),
+    /** When it owes the removal or the refusal itself. */
+    actionDueAt: timestamptz('action_due_at'),
+    /** The case this claim is reviewed in. Every claim gets one. */
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => safetyCases.id),
+    /** Opaque USERS reference, and only when the claimant holds an account. */
+    claimantAccountId: uuid('claimant_account_id'),
+    claimantKind: text('claimant_kind').notNull().$type<TakedownClaimantKind>(),
+    completedAt: timestamptz('completed_at'),
+    /** The consent record a withdrawal names, when that is what this is. */
+    consentRecordId: uuid('consent_record_id').references(
+      () => safetyConsentRecords.id,
+    ),
+    /** Opaque PRIVATE CLUBS reference to what is asked to come down. */
+    contentId: uuid('content_id').notNull(),
+    /** Opaque CREATORS reference to whose item it is. */
+    creatorId: uuid('creator_id').notNull(),
+    decidedAt: timestamptz('decided_at'),
+    /** Which published deadline policy produced the instants above. */
+    deadlinePolicyVersion: text('deadline_policy_version'),
+    id: uuid('id').primaryKey(),
+    /** Opaque reference to the worker holding this claim's deadline work. */
+    leaseActorReference: text('lease_actor_reference'),
+    leaseExpiresAt: timestamptz('lease_expires_at'),
+    policyVersion: text('policy_version').notNull(),
+    reasonCode: text('reason_code').notNull().$type<TakedownReasonCode>(),
+    receivedAt: timestamptz('received_at').notNull(),
+    state: text('state').notNull().$type<TakedownState>(),
+    /** When a reviewer owes it a first look. */
+    triageDueAt: timestamptz('triage_due_at'),
+    updatedAt: timestamptz('updated_at').notNull(),
+    /** Derived from what is alleged. Never chosen by the claimant. */
+    urgency: text('urgency').notNull().$type<TakedownUrgency>(),
+    /** Optimistic concurrency. Two workers acting at once produce one move. */
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('safety_takedown_claims_content_idx').on(
+      table.contentId,
+      table.receivedAt,
+    ),
+    index('safety_takedown_claims_case_idx').on(table.caseId),
+    // The overdue queue, ordered exactly as a worker walks it, and partial so a
+    // platform that publishes no deadline carries an empty index rather than
+    // one row per claim ever made.
+    index('safety_takedown_claims_due_idx')
+      .on(table.actionDueAt, table.id)
+      .where(sql`${table.actionDueAt} is not null`),
+    index('safety_takedown_claims_claimant_idx')
+      .on(table.claimantAccountId, table.receivedAt)
+      .where(sql`${table.claimantAccountId} is not null`),
+    check(
+      'safety_takedown_claims_state_check',
+      inList(table.state, takedownStates),
+    ),
+    check(
+      'safety_takedown_claims_reason_check',
+      inList(table.reasonCode, takedownReasonCodes),
+    ),
+    check(
+      'safety_takedown_claims_claimant_kind_check',
+      inList(table.claimantKind, takedownClaimantKinds),
+    ),
+    check(
+      'safety_takedown_claims_urgency_check',
+      inList(table.urgency, takedownUrgencies),
+    ),
+    // An account holder is the one claimant this domain can identify, and the
+    // only one it may. Anybody else is a claim with no identity attached.
+    check(
+      'safety_takedown_claims_claimant_shape_check',
+      sql`(${table.claimantKind} = 'account_holder') = (${table.claimantAccountId} is not null)`,
+    ),
+    // A withdrawal names what was withdrawn; nothing else may.
+    check(
+      'safety_takedown_claims_consent_shape_check',
+      sql`${table.consentRecordId} is null or ${table.reasonCode} = 'consent_withdrawn'`,
+    ),
+    // Deadlines arrive together with the version that produced them, or not at
+    // all. A deadline with no policy behind it is a number somebody invented.
+    check(
+      'safety_takedown_claims_deadline_shape_check',
+      sql`(${table.deadlinePolicyVersion} is null) = (${table.acknowledgementDueAt} is null)
+        and (${table.deadlinePolicyVersion} is null) = (${table.triageDueAt} is null)
+        and (${table.deadlinePolicyVersion} is null) = (${table.actionDueAt} is null)`,
+    ),
+    check(
+      'safety_takedown_claims_deadline_order_check',
+      sql`${table.acknowledgementDueAt} is null
+        or (${table.acknowledgementDueAt} > ${table.receivedAt}
+          and ${table.triageDueAt} >= ${table.acknowledgementDueAt}
+          and ${table.actionDueAt} >= ${table.triageDueAt})`,
+    ),
+    // Each state has its moment, and a moment nothing reached is absent.
+    check(
+      'safety_takedown_claims_progress_check',
+      sql`(${table.state} not in ('acknowledged', 'decided', 'completed') or ${table.acknowledgedAt} is not null)
+        and (${table.state} in ('decided', 'completed', 'dismissed')) = (${table.decidedAt} is not null)
+        and (${table.state} = 'completed') = (${table.completedAt} is not null)`,
+    ),
+    check(
+      'safety_takedown_claims_lease_shape_check',
+      nullablePairing(table.leaseActorReference, table.leaseExpiresAt),
+    ),
+    check('safety_takedown_claims_version_check', sql`${table.version} >= 1`),
   ],
 );

@@ -58,6 +58,7 @@ import {
   resolvedCaseStates,
   resolvingDecisionActions,
   openCaseStates,
+  openTakedownStates,
   queueFor,
   reportSourceSurfaces,
   reportStates,
@@ -68,8 +69,17 @@ import {
   snapshotEvidenceKinds,
   subjectKindForCapability,
   subjectKindOf,
+  takedownClaimantKinds,
+  takedownLeaseMilliseconds,
+  takedownPolicyVersion,
+  takedownRateLimitCount,
+  takedownRateWindowMilliseconds,
+  takedownReasonCodes,
+  takedownStates,
+  takedownUrgencies,
   unavailableEvidenceKinds,
   unpublishedConsentCopyVersion,
+  urgencyFor,
 } from '../../src/safety/policy.js';
 
 /**
@@ -538,6 +548,51 @@ describe('safety vocabularies stay provisional and separate', () => {
       expect([...enforcementReasonCodes], reason).not.toContain(reason);
       expect([...reportReasonCodes], reason).not.toContain(reason);
     }
+  });
+
+  it('keeps a takedown claim a different thing from a report', () => {
+    // A report is filed by an account about a target; a claim asks for one item
+    // to come down and can come from somebody with no account at all. Sharing a
+    // vocabulary would make the two indistinguishable in the record.
+    expect([...takedownReasonCodes]).not.toEqual([...reportReasonCodes]);
+    expect([...takedownReasonCodes]).toContain('non_consensual_content');
+    expect([...takedownStates]).toEqual([
+      'received',
+      'acknowledged',
+      'decided',
+      'completed',
+      'dismissed',
+    ]);
+    for (const state of openTakedownStates) {
+      expect([...takedownStates], state).toContain(state);
+    }
+    expect(takedownPolicyVersion).toBe('v1-provisional');
+  });
+
+  it('derives urgency from what is alleged rather than from who is asking', () => {
+    // A claimant who could mark their own complaint urgent would be steering
+    // the platform's obligations, so the map is here and takes no input from
+    // the claim beyond what it says is wrong.
+    for (const reason of takedownReasonCodes) {
+      expect([...takedownUrgencies], reason).toContain(urgencyFor(reason));
+    }
+    expect(urgencyFor('non_consensual_content')).toBe('urgent');
+    expect(urgencyFor('illegal_content')).toBe('urgent');
+    expect(urgencyFor('other')).toBe('standard');
+  });
+
+  it('identifies only the claimant it already knows', () => {
+    // Nothing stores a name, an address, or a means of contact. An account
+    // holder is the one claimant this domain has an identifier for.
+    expect([...takedownClaimantKinds]).toEqual([
+      'depicted_person',
+      'account_holder',
+      'operator',
+      'external',
+    ]);
+    expect(takedownLeaseMilliseconds).toBeGreaterThan(0);
+    expect(takedownRateLimitCount).toBeGreaterThan(0);
+    expect(takedownRateWindowMilliseconds).toBeGreaterThan(0);
   });
 
   it('names what blocks production rather than implying nothing does', () => {
