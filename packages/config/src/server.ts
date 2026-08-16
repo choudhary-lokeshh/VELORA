@@ -197,6 +197,25 @@ export const unavailableProfileMediaStorage = 'unavailable';
 export const localTestProfileMediaStorage = 'local-test';
 
 /**
+ * MEDIA platform storage adapters.
+ *
+ * No object-storage, CDN, or media provider is approved. The eligibility
+ * register in `docs/compliance/08-media-provider-eligibility.md` records why:
+ * five assessed providers are *silent* on the content Velora serves, which is
+ * the absence of a written answer rather than permission, and the two most
+ * obvious processing platforms prohibit it outright. So `unavailable` refuses
+ * every upload, read, write, deletion, delivery authorization, and purge, and
+ * it is the only value a deployed environment may hold.
+ *
+ * `local-test` is filesystem-backed, so the API and the worker see the same
+ * objects. It performs no malware scanning and no content moderation, and
+ * nothing it accepts is evidence about real user content. The environment guard
+ * below refuses it outside local and test.
+ */
+export const unavailableMediaStorage = 'unavailable';
+export const localTestMediaStorage = 'local-test';
+
+/**
  * Where messaging takes its "may these two people still interact" answer from.
  *
  * `trust-and-safety` is the real block store TRUST & SAFETY owns. It is refused
@@ -317,6 +336,20 @@ const verificationKeysSchema = z
   )
   .transform((keys): readonly string[] => [...new Set(keys)]);
 
+/**
+ * An optional value where an empty string means "not configured".
+ *
+ * Container platforms inject absent variables as empty strings routinely, and
+ * treating `''` as a configured value is how an adapter ends up holding a
+ * zero-length signing key it believes is real.
+ */
+const optionalTextSchema = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value === undefined || value.trim().length === 0 ? undefined : value,
+  );
+
 export const serverConfigSchema = z
   .object({
     APP_ENV: appEnvironmentSchema.default('local'),
@@ -398,6 +431,18 @@ export const serverConfigSchema = z
     USERS_PROFILE_MEDIA_STORAGE: z
       .enum([unavailableProfileMediaStorage, localTestProfileMediaStorage])
       .default(unavailableProfileMediaStorage),
+    MEDIA_STORAGE_PROVIDER: z
+      .enum([unavailableMediaStorage, localTestMediaStorage])
+      .default(unavailableMediaStorage),
+    /** Where the `local-test` adapter keeps objects. Required when it is used. */
+    MEDIA_LOCAL_STORAGE_DIRECTORY: optionalTextSchema,
+    /**
+     * HMAC material for `local-test` delivery grants. Configured rather than
+     * generated per process, because two API replicas that generated their own
+     * would each reject the other's credentials — which would hide, in
+     * development, exactly the multi-instance bug this platform must not have.
+     */
+    MEDIA_DELIVERY_SIGNING_KEY: optionalTextSchema,
   })
   .superRefine((config, context) => {
     if (config.APP_ENV !== 'staging' && config.APP_ENV !== 'production') return;
@@ -520,6 +565,13 @@ export const serverConfigSchema = z
         path: ['USERS_PROFILE_MEDIA_STORAGE'],
       });
     }
+    if (config.MEDIA_STORAGE_PROVIDER !== unavailableMediaStorage) {
+      context.addIssue({
+        code: 'custom',
+        message: `MEDIA_STORAGE_PROVIDER is not usable in ${config.APP_ENV}: no object-storage, CDN, or scanning provider is approved, and a provider whose policy is silent about what Velora serves has given no answer rather than permission; see the media provider eligibility record and DECISIONS_REQUIRED`,
+        path: ['MEDIA_STORAGE_PROVIDER'],
+      });
+    }
     for (const [path, message] of [
       [
         'AUTH_IDENTITY_PROVIDER',
@@ -542,6 +594,30 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `${path} is not usable in ${config.APP_ENV}: ${message}`,
         path: [path],
+      });
+    }
+  })
+  .superRefine((config, context) => {
+    // Runs in every environment, unlike the guard above. Selecting the
+    // development media adapter without telling it where to keep objects or
+    // what to sign with must fail at startup: an adapter that quietly fell back
+    // to a temporary directory or a generated key would work on one process and
+    // fail across two, which is the failure mode hardest to find later.
+    if (config.MEDIA_STORAGE_PROVIDER !== localTestMediaStorage) return;
+    if (config.MEDIA_LOCAL_STORAGE_DIRECTORY === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'MEDIA_LOCAL_STORAGE_DIRECTORY is required when MEDIA_STORAGE_PROVIDER is local-test',
+        path: ['MEDIA_LOCAL_STORAGE_DIRECTORY'],
+      });
+    }
+    if (config.MEDIA_DELIVERY_SIGNING_KEY === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'MEDIA_DELIVERY_SIGNING_KEY is required when MEDIA_STORAGE_PROVIDER is local-test',
+        path: ['MEDIA_DELIVERY_SIGNING_KEY'],
       });
     }
   })
@@ -608,6 +684,9 @@ export function redactServerConfig(config: ServerConfig) {
     payoutPolicy: config.PAYOUTS_POLICY,
     payoutProvider: config.PAYOUTS_PROVIDER,
     profileMediaStorage: config.USERS_PROFILE_MEDIA_STORAGE,
+    mediaStorageProvider: config.MEDIA_STORAGE_PROVIDER,
+    mediaDeliverySigningKeyConfigured:
+      config.MEDIA_DELIVERY_SIGNING_KEY !== undefined,
     accessTokenSigningKeyConfigured:
       config.AUTH_ACCESS_TOKEN_SIGNING_KEY !== undefined,
     accessTokenVerificationKeyCount:

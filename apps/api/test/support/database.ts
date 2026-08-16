@@ -109,6 +109,10 @@ const truncationRoots = [
   'discovery_outbox',
   'discovery_passes',
   'discovery_presentations',
+  // MEDIA holds no foreign key to any other domain — an owner is an opaque
+  // reference — so nothing cascades into it and the asset is its own root. Its
+  // sessions, objects, and obligations follow by cascade.
+  'media_assets',
   'messaging_conversations',
   'messaging_outbox',
   'notifications_feed',

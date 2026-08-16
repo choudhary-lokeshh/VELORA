@@ -38,6 +38,7 @@ import {
   testAdminRuntime,
   testBillingRuntime,
   testPayoutsRuntime,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 /**
@@ -169,6 +170,7 @@ const application = createApplication({
     discovery,
     ephemeralRedis: healthy,
     logger,
+    media: testMediaRuntime({ config, database: database.drizzle }),
     messaging,
     notifications: testNotificationsApiRuntime({
       database: database.drizzle,

@@ -133,6 +133,63 @@ describe('server configuration', () => {
     });
   }
 
+  it('refuses the media platform in every deployed environment', () => {
+    // Nothing set is the answer a deployed environment gets, and it refuses
+    // every upload, read, write, deletion, delivery authorization, and purge.
+    expect(loadServerConfig(validEnvironment).MEDIA_STORAGE_PROVIDER).toBe(
+      'unavailable',
+    );
+
+    for (const environment of ['staging', 'production'] as const) {
+      expect(
+        loadServerConfigResult({
+          ...validEnvironment,
+          APP_ENV: environment,
+          MEDIA_DELIVERY_SIGNING_KEY: 'development-only-key',
+          MEDIA_LOCAL_STORAGE_DIRECTORY: '/tmp/velora-media',
+          MEDIA_STORAGE_PROVIDER: 'local-test',
+        }),
+        `media storage in ${environment}`,
+      ).toContain('MEDIA_STORAGE_PROVIDER');
+    }
+  });
+
+  it('will not run the development media adapter half-configured', () => {
+    // A directory and a signing key or nothing. An adapter that fell back to a
+    // temporary directory or a per-process key would work on one replica and
+    // fail across two, which is the failure hardest to find later.
+    expect(
+      loadServerConfigResult({
+        ...validEnvironment,
+        MEDIA_STORAGE_PROVIDER: 'local-test',
+      }),
+    ).toContain('MEDIA_LOCAL_STORAGE_DIRECTORY');
+    expect(
+      loadServerConfigResult({
+        ...validEnvironment,
+        MEDIA_LOCAL_STORAGE_DIRECTORY: '/tmp/velora-media',
+        MEDIA_STORAGE_PROVIDER: 'local-test',
+      }),
+    ).toContain('MEDIA_DELIVERY_SIGNING_KEY');
+    // An injected empty string is absent, not configured.
+    expect(
+      loadServerConfigResult({
+        ...validEnvironment,
+        MEDIA_DELIVERY_SIGNING_KEY: '   ',
+        MEDIA_LOCAL_STORAGE_DIRECTORY: '/tmp/velora-media',
+        MEDIA_STORAGE_PROVIDER: 'local-test',
+      }),
+    ).toContain('MEDIA_DELIVERY_SIGNING_KEY');
+    expect(
+      loadServerConfigResult({
+        ...validEnvironment,
+        MEDIA_DELIVERY_SIGNING_KEY: 'development-only-key',
+        MEDIA_LOCAL_STORAGE_DIRECTORY: '/tmp/velora-media',
+        MEDIA_STORAGE_PROVIDER: 'local-test',
+      }),
+    ).toBe('');
+  });
+
   it('defaults safety eligibility to the source that denies everything', () => {
     // Message retention duration and post-block history visibility are both
     // undecided, so messaging in a deployed environment refuses to carry a
@@ -262,6 +319,21 @@ describe('server configuration', () => {
     expect(output).not.toContain('6379');
     expect(redacted.databaseConfigured).toBe(true);
     expect(redacted.queueRedisConfigured).toBe(true);
+  });
+
+  it('never reports media delivery key material when redacting', () => {
+    const redacted = redactServerConfig(
+      loadServerConfig({
+        ...validEnvironment,
+        MEDIA_DELIVERY_SIGNING_KEY: 'development-only-key',
+        MEDIA_LOCAL_STORAGE_DIRECTORY: '/tmp/velora-media',
+        MEDIA_STORAGE_PROVIDER: 'local-test',
+      }),
+    );
+
+    expect(JSON.stringify(redacted)).not.toContain('development-only-key');
+    expect(redacted.mediaDeliverySigningKeyConfigured).toBe(true);
+    expect(redacted.mediaStorageProvider).toBe('local-test');
   });
 });
 

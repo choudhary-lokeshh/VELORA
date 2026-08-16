@@ -84,8 +84,24 @@ Every step above is at-least-once and every effect is idempotent, because the du
 - Accepted formats are an explicit allow-list backed by an actual safe decoder. Script-capable formats are refused in this milestone.
 - Decoding is bounded: dimensions, pixel count, frames, and metadata size all have limits, and unlimited byte loading is refused.
 - No raw media bytes, signed delivery credential, upload token, provider secret, or EXIF value reaches a log.
-- Storage keys, digests, byte sizes, and adapter names are internal and are never rendered to a client.
+- Storage keys, digests, byte sizes, and adapter names are internal. No product contract, response field, or delivery response carries one. The single exception is inherent rather than chosen: a direct-to-storage upload capability is an address for one object, so that object's key appears inside that URL and nowhere else. It is the key of the caller's own object, it is unguessable, and knowing it grants nothing, because the capability is bound to that object and every other operation is authorized server-side.
 - No provider or network call happens inside a database transaction.
+
+## Implemented foundation
+
+`0038_media_platform` creates four tables, all owned here and all prefixed `media_`.
+
+`media_assets` is the identity other domains hold plus the facts inspection derived: detected format, byte length, digest, dimensions, and frame count, each nullable until something measured it. `owner_domain` and `owner_reference` are provenance — which domain may act on the asset — and carry no foreign key. Idempotency is unique over the owner and the owning domain's operation identity, so a repeated initiation collapses to one asset and a reused identity naming a different class is a conflict rather than a silent substitution. The shape constraints are the point of the table: nothing reaches `inspected`, `processing`, or `ready` without every measurement present, a `quarantined` row exists exactly when a reason does, and `deleted` exactly when an instant does. A state that lies is refused by PostgreSQL rather than found in a log afterwards.
+
+`media_upload_sessions` is one attempt to put bytes somewhere: the object key, the ceiling, the expiry, and the provider capability reference, which is written by a second statement because the provider call happens outside every transaction. A partial unique index allows one open window per asset. `media_objects` holds originals and derivatives in one table under a role discriminator, with partial unique indexes giving exactly one original per asset and exactly one variant per kind per processing version — which is where concurrent processing collapses into one durable truth, decided by an index rather than by a read. `media_obligations` follows the transactional outbox: a lease that survives the process holding it, an attempt count, a deferral instant, and a partial claimable index; two partial unique indexes rather than one over a nullable column, because a unique index treats nulls as distinct and would admit a duplicate exactly where a duplicate means discharging a deletion twice.
+
+The lifecycle order lives in code as a transition map and the shape of each state lives in the database. Neither is sufficient alone: the map is what stops `quarantined` becoming `ready`, and the constraints are what stop `ready` existing without the measurements that justify it.
+
+`MediaStoragePort` covers capability issuance, object stat, bounded read, derivative write, deletion, delivery authorization, and purge. Reading is bounded and an oversized object is an outcome rather than an exception, so a worker refuses it instead of allocating it. Deletion distinguishes `deleted` from `already_absent`, because whether an absent object counts as deleted is a provider-semantics question answered per adapter rather than folded away here. Purge has `unsupported` as a first-class answer, so an adapter with no cache in front of it reports that rather than claiming success.
+
+`MEDIA_STORAGE_PROVIDER` defaults to `unavailable`, which refuses every operation, and staging and production reject any other value. The `local-test` adapter is filesystem-backed rather than in-process, because inspection runs in the worker and the API issues capabilities, and an in-memory adapter would let two processes disagree about whether an object exists. It requires an explicit directory and an explicit delivery signing key in every environment: a per-process fallback key would work on one replica and fail across two, which is the multi-instance bug hardest to find later. It performs no malware scanning and no content moderation, so nothing it accepts is evidence about real content.
+
+Not built yet, and not to be inferred from the model's generality: upload HTTP surfaces, the inspection and processing workers, the scanner port, delivery routes, takedown propagation, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 

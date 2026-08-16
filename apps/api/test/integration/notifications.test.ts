@@ -42,6 +42,7 @@ import {
   testAdminRuntime,
   testBillingRuntime,
   testPayoutsRuntime,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_notifications');
@@ -196,6 +197,7 @@ const application = createApplication({
     discovery,
     ephemeralRedis: healthy,
     logger,
+    media: testMediaRuntime({ config, database: database.drizzle }),
     messaging,
     notifications: createNotificationsApiRuntime({
       consumerContext: users.consumerContext,

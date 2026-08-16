@@ -50,6 +50,10 @@ import {
   type PayoutsRuntime,
 } from '../../src/payouts/composition.js';
 import {
+  createMediaRuntime,
+  type MediaRuntime,
+} from '../../src/media/composition.js';
+import {
   createSafetyRuntime,
   type SafetyRuntime,
 } from '../../src/safety/composition.js';
@@ -392,6 +396,20 @@ export function testPayoutsRuntime(input: {
   });
 }
 
+export function testMediaRuntime(input: {
+  readonly config: ServerConfig;
+  readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
+  readonly now?: () => Date;
+}): MediaRuntime {
+  return createMediaRuntime({
+    config: input.config,
+    database: input.database ?? drizzle.mock(),
+    logger: input.logger ?? silentLogger(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
 export function testProductRuntimes(input: {
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
@@ -405,6 +423,7 @@ export function testProductRuntimes(input: {
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
+  readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
   readonly payouts: PayoutsRuntime;
@@ -427,6 +446,9 @@ export function testProductRuntimes(input: {
     clubs,
     creators,
     discovery,
+    // MEDIA consumes nothing and is consumed by nothing yet, so its position
+    // here is alphabetical rather than meaningful.
+    media: testMediaRuntime(input),
     messaging: testMessagingRuntime({
       ...input,
       discovery,

@@ -41,7 +41,9 @@ There are four, and confusing any two of them is how media platforms leak.
 
 **Threats.** A public bucket; a predictable key; direct provider-origin access bypassing every authorization decision; credentials reaching a client; an original reachable through any ordinary API.
 
-**Controls.** Production origins are private with no unauthenticated object access. Keys are unguessable and are never rendered to any client. Provider credentials exist only server-side. Originals are a separate object role from derivatives, and no consumer or creator contract returns an original address.
+**Controls.** Production origins are private with no unauthenticated object access. Keys are unguessable and appear in exactly one place a client can see: inside the direct-upload capability for that client's own object, which is an address for one object and cannot be otherwise. No product contract, response field, or delivery response carries a key, and knowing one grants nothing, because every operation on an object is authorized server-side against the record rather than against key knowledge. Provider credentials exist only server-side. Originals are a separate object role from derivatives, and no consumer or creator contract returns an original address.
+
+The claim worth stating precisely, because the loose version of it is false: obscurity of the key is not part of the authorization model, so the fact that a key is visible in an upload URL costs nothing. What would cost something is a key that could be *derived* — from an asset identifier, an account identifier, or a filename — and that is why keys carry a random component and no user input reaches one.
 
 ## Inspection
 

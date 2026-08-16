@@ -34,6 +34,7 @@ import {
   createDiscoveryRuntime,
   type DiscoveryRuntime,
 } from './discovery/composition.js';
+import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import {
   createMessagingRuntime,
   type MessagingRuntime,
@@ -90,6 +91,7 @@ export interface ApplicationDependencies {
   readonly discovery: DiscoveryRuntime;
   readonly ephemeralRedis: HealthDependency;
   readonly logger: SafeLogger;
+  readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
   readonly outboundHttp: OutboundHttpPort;
@@ -152,6 +154,7 @@ export function createApplication(
   const injectedBilling = options.dependencies?.billing;
   const injectedAdmin = options.dependencies?.admin;
   const injectedDiscovery = options.dependencies?.discovery;
+  const injectedMedia = options.dependencies?.media;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
@@ -166,6 +169,7 @@ export function createApplication(
   let billing: BillingRuntime;
   let admin: AdminRuntime;
   let discovery: DiscoveryRuntime;
+  let media: MediaRuntime;
   let messaging: MessagingRuntime;
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
@@ -294,6 +298,18 @@ export function createApplication(
         moderation: safety.moderation,
         safety: safety.authority,
       });
+    // MEDIA depends on nothing. An owning domain authorizes a purpose and then
+    // calls it; it never calls back, reads no other domain's tables, and asks
+    // no other domain a question. Composing it here rather than lazily is what
+    // makes an unapproved storage provider a startup failure instead of a
+    // failure on the first upload somebody attempts.
+    media =
+      injectedMedia ??
+      createMediaRuntime({
+        config,
+        database: ownedDatabase.database,
+        logger,
+      });
     discovery =
       injectedDiscovery ??
       createDiscoveryRuntime({
@@ -339,6 +355,7 @@ export function createApplication(
       injectedBilling === undefined ||
       injectedAdmin === undefined ||
       injectedDiscovery === undefined ||
+      injectedMedia === undefined ||
       injectedMessaging === undefined ||
       injectedNotifications === undefined ||
       injectedPayouts === undefined ||
@@ -346,7 +363,7 @@ export function createApplication(
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, ADMIN, DISCOVERY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, ADMIN, DISCOVERY, MEDIA, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
@@ -357,6 +374,7 @@ export function createApplication(
     billing = injectedBilling;
     admin = injectedAdmin;
     discovery = injectedDiscovery;
+    media = injectedMedia;
     messaging = injectedMessaging;
     notifications = injectedNotifications;
     payouts = injectedPayouts;
@@ -394,6 +412,7 @@ export function createApplication(
     discovery,
     ephemeralRedis,
     logger,
+    media,
     messaging,
     notifications,
     outboundHttp:

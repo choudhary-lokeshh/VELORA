@@ -21,6 +21,7 @@ import {
   testAuthRuntime,
   testBillingRuntime,
   testDiscoveryRuntime,
+  testMediaRuntime,
   testMessagingRuntime,
   testNotificationsApiRuntime,
   testSafetyRuntime,
@@ -113,6 +114,9 @@ function productDomains(auth: AuthRuntime, config: ServerConfig) {
     clubs,
     creators,
     discovery,
+    // MEDIA consumes nothing from the others and publishes nothing to them
+    // yet, so it is wired on its own rather than threaded through the chain.
+    media: testMediaRuntime({ config }),
     messaging: testMessagingRuntime({
       config,
       discovery,

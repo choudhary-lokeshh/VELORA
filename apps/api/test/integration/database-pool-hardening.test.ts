@@ -39,6 +39,7 @@ import {
   testAdminRuntime,
   testBillingRuntime,
   testPayoutsRuntime,
+  testMediaRuntime,
 } from '../support/harness.js';
 
 /**
@@ -217,6 +218,7 @@ function createInstance(name: string): Instance {
       discovery,
       ephemeralRedis: healthy,
       logger,
+      media: testMediaRuntime({ config, database: service.database }),
       messaging,
       notifications: createNotificationsApiRuntime({
         consumerContext: users.consumerContext,
