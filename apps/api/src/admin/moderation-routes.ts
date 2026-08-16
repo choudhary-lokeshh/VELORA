@@ -117,6 +117,7 @@ export class AdminModerationRoutes {
         decisions: detail.decisions.map(decisionBody),
         evidence: detail.evidence.map(evidenceBody),
         reports: detail.reports.map(reportBody),
+        truncated: detail.truncated,
       }),
       status: 200,
     };

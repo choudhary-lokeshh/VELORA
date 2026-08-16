@@ -343,6 +343,13 @@ export const moderationCaseDetailResponseSchema = z
     decisions: z.array(moderationDecisionSchema),
     evidence: z.array(moderationEvidenceSchema),
     reports: z.array(moderationReportSchema),
+    /**
+     * Whether any of the three lists stopped at its bound.
+     *
+     * Said out loud, because a reviewer looking at a partial case that looks
+     * complete is a reviewer deciding on less than they think they have.
+     */
+    truncated: z.boolean(),
   })
   .strict();
 

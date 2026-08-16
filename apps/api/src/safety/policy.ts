@@ -548,6 +548,24 @@ export const resolvingDecisionActions: readonly DecisionAction[] = [
   'unpublish',
 ];
 
+/**
+ * Actions a subject may be told about.
+ *
+ * The ones that *imposed* something. A decision that lifted a restriction is
+ * not something somebody is under, and one that did nothing is not something
+ * they were told about — so neither appears in a statement of reasons.
+ *
+ * It lives here rather than beside the code that reads it because the query
+ * filters on it: a statement of reasons that filtered *after* limiting could
+ * hide a live restriction behind fifty newer decisions that say nothing, which
+ * is the one failure this whole surface exists to prevent.
+ */
+export const disclosableDecisionActions: readonly DecisionAction[] = [
+  'restrict_capability',
+  'temporary_hold',
+  'unpublish',
+];
+
 /** Actions that produce an enforcement record, and therefore name a scope. */
 export const enforcingDecisionActions: readonly DecisionAction[] = [
   'restrict_capability',
@@ -1180,6 +1198,22 @@ export const maximumAppealStatementCharacters = 2_000;
 
 /** Largest page of appeals one read returns. */
 export const maximumAppealPageSize = 50;
+
+/**
+ * How many complaints one account may make in the rate window.
+ *
+ * Bounded for the reason reports are, and for one more. The live-complaint
+ * index is partial on the non-withdrawn rows, so withdrawing frees somebody to
+ * complain again — which is right, and which without a bound lets one account
+ * cycle submit and withdraw indefinitely, writing a row each time. Combined
+ * with a bounded list, that is an appellant pushing their own live complaint
+ * out of their own reach.
+ *
+ * Reaching the bound refuses further submissions and removes nothing already
+ * made, exactly as the report bound does.
+ */
+export const appealRateLimitCount = 20;
+export const appealRateWindowMilliseconds = 24 * 60 * 60 * 1000;
 
 /**
  * What stands between Velora and mature creator content.

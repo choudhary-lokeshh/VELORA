@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { createApplication } from '../../src/application.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
+import { appealRateLimitCount } from '../../src/safety/policy.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { LocalTestProfileMediaStorage } from '../../src/users/media.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
@@ -1250,6 +1251,228 @@ describe('a person is told what was done and can contest it', () => {
     // Sent once and never read back: the appellant already knows what they
     // wrote, and echoing it would turn a record into a readable store.
     expect(await listed.text()).not.toContain('private explanation');
+  });
+});
+
+describe('what a person is told cannot be pushed out of view', () => {
+  /** A subject with a restriction and then a great deal of noise after it. */
+  async function buriedRestriction(): Promise<{
+    readonly decisionId: string;
+    readonly subject: Session;
+  }> {
+    const subject = await consumer('buried-subject@velora.test');
+    const reporter = await consumer('buried-reporter@velora.test');
+    await fileReport(reporter, subject.id);
+    const [row] = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${subject.id} limit 1`,
+    );
+    if (row === undefined) throw new Error('no case opened');
+    const decided = await moderation.decideCase({
+      action: 'restrict_capability',
+      actorReference: 'session:reviewer-a',
+      caseId: row.id,
+      evidenceIds: await evidenceIds(row.id),
+      expectedVersion: row.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
+    });
+    if (decided.kind !== 'recorded') throw new Error('setup failed');
+
+    // Sixty later decisions about the same subject that say nothing. Written
+    // directly, because reaching sixty through the product would be sixty
+    // cases and this is about what the read returns.
+    await execute(
+      database.sql`insert into safety_decisions
+        (action, actor_reference, case_id, decided_at, id, policy_version,
+         reason_code, subject_id, target_type)
+        select 'escalate', 'session:reviewer-a', ${row.id},
+               now() + (n || ' seconds')::interval, gen_random_uuid(),
+               'v1-provisional', 'requires_specialist_review',
+               ${subject.id}, 'consumer_account'
+        from generate_series(1, 60) as n`,
+    );
+    return { decisionId: decided.decision.id, subject };
+  }
+
+  it('still discloses a restriction buried under newer decisions', async () => {
+    const buried = await buriedRestriction();
+
+    const response = await handle(
+      request('/v1/safety/standing', buried.subject),
+    );
+    const body = (await response.json()) as {
+      statements: { decisionId: string; reasonCode: string }[];
+    };
+
+    // The restriction is older than a page of decisions that say nothing. A
+    // read that filtered after limiting would tell this person nothing is in
+    // force while they are restricted, which is the one answer this surface
+    // must never give.
+    expect(body.statements.map((entry) => entry.decisionId)).toEqual([
+      buried.decisionId,
+    ]);
+    expect(body.statements[0]?.reasonCode).toBe('account_restricted');
+  });
+
+  it('stops disclosing it once a lift lands, however much came between', async () => {
+    const buried = await buriedRestriction();
+    const [settled] = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${buried.subject.id} limit 1`,
+    );
+    if (settled === undefined) throw new Error('setup failed');
+    const reversed = await moderation.decideCase({
+      action: 'revoke_restriction',
+      actorReference: 'session:reviewer-b',
+      caseId: settled.id,
+      evidenceIds: await evidenceIds(settled.id),
+      expectedVersion: settled.version,
+      reasonCode: 'platform_integrity',
+      scope: 'account_restriction',
+      supersedesDecisionId: buried.decisionId,
+    });
+    expect(reversed.kind).toBe('recorded');
+
+    const response = await handle(
+      request('/v1/safety/standing', buried.subject),
+    );
+    const body = (await response.json()) as { statements: unknown[] };
+
+    // The supersession is a fact about a row far outside any page. Telling
+    // somebody they are restricted when they are not is worse than telling
+    // them nothing.
+    expect(body.statements).toEqual([]);
+  });
+});
+
+describe('a partial case says it is partial', () => {
+  it('reports truncation rather than looking complete', async () => {
+    const opened = await reportedCase('truncation');
+    const complete = await moderation.caseDetail(opened.id);
+    expect(complete?.truncated).toBe(false);
+
+    // One more than the bound, written directly because what is under test is
+    // what the read says about itself rather than how the rows got there.
+    await execute(
+      database.sql`insert into safety_evidence
+        (actor_reference, case_id, id, kind, note, policy_version, recorded_at)
+        select 'session:reviewer-a', ${opened.id}, gen_random_uuid(),
+               'operator_note', 'note ' || n, 'v1-provisional',
+               now() + (n || ' seconds')::interval
+        from generate_series(1, 201) as n`,
+    );
+
+    const partial = await moderation.caseDetail(opened.id);
+
+    // A reviewer looking at a partial case that looked complete would be
+    // deciding on less than they thought they had.
+    expect(partial?.truncated).toBe(true);
+    expect(partial?.evidence).toHaveLength(200);
+  });
+});
+
+describe('a complaint stays reachable and bounded', () => {
+  async function decidedAgainst(prefix: string): Promise<{
+    readonly decisionId: string;
+    readonly subject: Session;
+  }> {
+    const subject = await consumer(`${prefix}-subject@velora.test`);
+    const reporter = await consumer(`${prefix}-reporter@velora.test`);
+    await fileReport(reporter, subject.id);
+    const [row] = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${subject.id} limit 1`,
+    );
+    if (row === undefined) throw new Error('no case opened');
+    const decided = await moderation.decideCase({
+      action: 'restrict_capability',
+      actorReference: 'session:reviewer-a',
+      caseId: row.id,
+      evidenceIds: await evidenceIds(row.id),
+      expectedVersion: row.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
+    });
+    if (decided.kind !== 'recorded') throw new Error('setup failed');
+    return { decisionId: decided.decision.id, subject };
+  }
+
+  it('withdraws a complaint older than a page of the caller own', async () => {
+    const against = await decidedAgainst('withdraw-reach');
+    const first = await handle(
+      request('/v1/safety/appeals', against.subject, {
+        body: { decisionId: against.decisionId },
+        method: 'POST',
+      }),
+    );
+    const appeal = (await first.json()) as { id: string };
+
+    // Sixty later complaints, so the first is well outside any page of the
+    // caller's own. Written directly for the same reason as above.
+    await execute(
+      database.sql`insert into safety_appeals
+        (appellant_kind, appellant_reference, case_id, decision_id, id,
+         policy_version, state, submitted_at, updated_at)
+        select 'subject', ${against.subject.id}, c.id, d.id, gen_random_uuid(),
+               'v1-provisional', 'withdrawn', now() + (n || ' seconds')::interval,
+               now()
+        from generate_series(1, 60) as n,
+             lateral (select id from safety_cases limit 1) as c,
+             lateral (select id from safety_decisions
+                      where id = ${against.decisionId}) as d`,
+    );
+
+    const withdrawn = await handle(
+      request('/v1/safety/appeals/withdrawal', against.subject, {
+        body: { appealId: appeal.id },
+        method: 'POST',
+      }),
+    );
+
+    // Resolved by identity. Looking through a page of the caller's own would
+    // answer this exactly as though the complaint were somebody else's.
+    expect(withdrawn.status).toBe(200);
+    expect((await withdrawn.json()) as { state: string }).toMatchObject({
+      state: 'withdrawn',
+    });
+  });
+
+  it('bounds how many complaints one account may make', async () => {
+    const against = await decidedAgainst('appeal-bound');
+    const complain = () =>
+      handle(
+        request('/v1/safety/appeals', against.subject, {
+          body: { decisionId: against.decisionId },
+          method: 'POST',
+        }),
+      );
+    const withdraw = async (appealId: string) =>
+      handle(
+        request('/v1/safety/appeals/withdrawal', against.subject, {
+          body: { appealId },
+          method: 'POST',
+        }),
+      );
+
+    // Withdrawing frees somebody to complain again, which is right. Without a
+    // bound it also lets one account cycle indefinitely, writing a row each
+    // time and pushing its own live complaint out of its own reach.
+    let refusedAt = 0;
+    for (let attempt = 1; attempt <= appealRateLimitCount + 2; attempt += 1) {
+      const response = await complain();
+      if (response.status !== 200) {
+        refusedAt = attempt;
+        expect(response.status).toBe(409);
+        break;
+      }
+      const created = (await response.json()) as { id: string };
+      await withdraw(created.id);
+    }
+
+    expect(refusedAt).toBe(appealRateLimitCount + 1);
+    // And nothing already made was removed or altered.
+    expect(await countOf('safety_appeals')).toBe(appealRateLimitCount);
   });
 });
 

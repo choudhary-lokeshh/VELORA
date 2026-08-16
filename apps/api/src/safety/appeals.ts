@@ -1,5 +1,7 @@
 import {
   appealPolicyVersion,
+  appealRateLimitCount,
+  appealRateWindowMilliseconds,
   appealableBy,
   denialReasonFor,
   eligibilityPolicyVersion,
@@ -115,6 +117,8 @@ export type AppealSubmission =
   | { readonly kind: 'out_of_time' }
   /** This person already has a live complaint about this decision. */
   | { readonly kind: 'already_appealed' }
+  /** This account has made as many complaints as the window allows. */
+  | { readonly kind: 'rate_limited' }
   | { readonly kind: 'invalid_statement' };
 
 export type AppealTransition =
@@ -129,13 +133,6 @@ export interface AppealDependencies {
   readonly policy: AppealWindowPolicy;
   readonly repository: SafetyRepository;
 }
-
-/** Decisions a subject may be told about: the ones that imposed something. */
-const disclosableActions = new Set([
-  'restrict_capability',
-  'temporary_hold',
-  'unpublish',
-]);
 
 export class AppealService {
   constructor(private readonly dependencies: AppealDependencies) {}
@@ -158,24 +155,44 @@ export class AppealService {
     subjectId: string,
   ): Promise<readonly StatementOfReasons[]> {
     const { repository } = this.dependencies;
-    const rows = await repository.listDecisionsForSubject(
+    // Both conditions are in the query. Reading the newest decisions and
+    // filtering afterwards would hide a live restriction behind newer decisions
+    // that say nothing, and would show a lifted one whose lift fell outside the
+    // window: a limit applied to the wrong set is a wrong answer, not a bound.
+    const rows = await repository.listImposingDecisionsForSubject(
       repository.transactionless,
       { limit: maximumAppealPageSize, subjectId },
-    );
-    const superseded = new Set(
-      rows
-        .map((row) => row.supersedesId)
-        .filter((id): id is string => id !== null),
     );
     const statements: StatementOfReasons[] = [];
     for (const row of rows) {
       const scope = row.scope;
+      // A disclosable action always names a scope, so this is unreachable; it
+      // is here because the type says the column is nullable and a statement
+      // with no scope would tell somebody nothing.
       if (scope === null) continue;
-      if (!disclosableActions.has(row.action)) continue;
-      if (superseded.has(row.id)) continue;
       statements.push(this.statement(row, scope));
     }
     return statements;
+  }
+
+  /**
+   * One of the caller's own complaints, by identity.
+   *
+   * Resolved by identifier rather than by looking through a page of theirs: an
+   * appellant with more complaints than one page cannot reach an older one that
+   * way, and would be answered exactly as though it were somebody else's.
+   */
+  async appealFor(input: {
+    readonly appealId: string;
+    readonly appellantReference: string;
+  }): Promise<AppealView | undefined> {
+    const found = await this.dependencies.repository.findAppeal(
+      this.dependencies.repository.transactionless,
+      input.appealId,
+    );
+    return found?.appellantReference === input.appellantReference
+      ? appealView(found)
+      : undefined;
   }
 
   /**
@@ -226,6 +243,19 @@ export class AppealService {
     if (closesAt !== undefined && closesAt <= now) {
       return { kind: 'out_of_time' };
     }
+
+    const recent = await repository.countAppealsSince(
+      repository.transactionless,
+      {
+        appellantReference: input.appellantReference,
+        since: new Date(now.getTime() - appealRateWindowMilliseconds),
+      },
+    );
+    // Withdrawing frees somebody to complain again, which is right and which
+    // without a bound lets one account cycle submit and withdraw indefinitely.
+    // Reaching the bound refuses further submissions and removes nothing
+    // already made.
+    if (recent >= appealRateLimitCount) return { kind: 'rate_limited' };
 
     const appeal = await repository.insertAppeal(repository.transactionless, {
       appealPolicyVersion: this.dependencies.policy.version ?? null,

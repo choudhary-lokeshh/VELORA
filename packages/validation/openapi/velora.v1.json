@@ -23165,13 +23165,17 @@
               ],
               "additionalProperties": false
             }
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "required": [
           "case",
           "decisions",
           "evidence",
-          "reports"
+          "reports",
+          "truncated"
         ],
         "additionalProperties": false
       },

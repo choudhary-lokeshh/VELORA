@@ -236,7 +236,8 @@ export class SafetyRoutes {
         };
       }
       case 'already_appealed':
-      case 'out_of_time': {
+      case 'out_of_time':
+      case 'rate_limited': {
         return routeFailure(
           409,
           productErrorCodes.conflict,
@@ -273,10 +274,14 @@ export class SafetyRoutes {
     const parsed = parseRouteBody(withdrawAppealRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
 
-    const found = await this.dependencies.appeals.appealsFor(
-      resolved.context.account.id,
-    );
-    const mine = found.find((appeal) => appeal.id === parsed.value.appealId);
+    // Resolved by identity rather than by looking through a page of the
+    // caller's own: an appellant with more complaints than one page could not
+    // reach an older one that way, and was answered exactly as though it were
+    // somebody else's.
+    const mine = await this.dependencies.appeals.appealFor({
+      appealId: parsed.value.appealId,
+      appellantReference: resolved.context.account.id,
+    });
     // Somebody else's complaint is answered exactly as one that does not exist.
     if (mine === undefined) return this.invalid(input);
 

@@ -2038,6 +2038,7 @@ export interface components {
                 /** @enum {string} */
                 targetType: "consumer_account" | "creator_profile" | "creator_content" | "club" | "conversation";
             }[];
+            truncated: boolean;
         };
         ModerationCaseListResponse: {
             cases: {

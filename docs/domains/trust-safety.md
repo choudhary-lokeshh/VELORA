@@ -254,6 +254,23 @@ The **overdue takedown queue** now excludes recorded breaches in the index predi
 
 Concurrency is proven across the whole vertical rather than per feature. Intake, a claim, two opposed decisions, a closure, and an operator note all reach for one subject and one case at the same moment; the ordering rule the domain follows everywhere — the subject advisory lock before any row lock — makes that a serial order rather than a cycle. `pg_stat_database.deadlocks` does not move, at most one settlement is recorded whatever order they arrived in, the case leaves the queue exactly once, and every report filed survives as its own record.
 
+### What a hostile read of this domain found
+
+Four defects, each one a correct-looking read that would have failed the person it was for.
+
+**A restriction could be hidden from the person it was against.** A statement of reasons read the newest fifty decisions about a subject and filtered afterwards for the ones that imposed something and that nothing had replaced. Fifty newer decisions that say nothing — escalations, no-action findings — pushed a live restriction out of the window, and the surface then told that person nothing was in force while they were restricted. The same bug ran the other way: a lift falling outside the window left the restriction still displayed. Both conditions are now in the statement rather than applied to its result, because **a limit applied to the wrong set is a wrong answer rather than a bound**. A regression buries a restriction under sixty later decisions and asserts it is still disclosed, then supersedes it and asserts it stops being.
+
+**An older complaint could not be withdrawn.** The withdrawal resolved the complaint by looking through a page of the caller's own, so an appellant with more complaints than one page was told theirs did not exist — in the same words used for somebody else's. It is resolved by identity now.
+
+**Complaints were unbounded.** The live-complaint index is partial on the non-withdrawn rows, so withdrawing frees somebody to complain again, which is right — and without a bound it let one account cycle submit and withdraw indefinitely, writing a row each time and pushing its own live complaint out of its own reach. Bounded per account per window, exactly as reports are: reaching the bound refuses further submissions and removes nothing already made.
+
+**A partial case looked complete.** The operator case view bounded reports, evidence, and decisions at two hundred each and said nothing when it reached one, so a reviewer could be deciding on less than they thought they had. It now over-fetches by one and reports the truncation.
+
+Two gaps are recorded rather than closed, because closing either would mean inventing something:
+
+- **Creator-scoped decisions are still refused by the review seam.** An operator deciding a creator-content case may take no action or escalate; suspending a creator or taking an object down remains Platform Admin's own explicit command, with its own audit. The seam holds no contract that changes a creator's state, and a record claiming an effect that never happened is worse than a refusal.
+- **A creator has no statement of reasons and no complaint route.** Consumer standing keys on the consumer account, and a creator suspension's subject is the creator identity, so a suspended creator learns from Creator Studio that their access is suspended and gets no disclosable reason and no way to contest it. That is a real transparency gap and is named here rather than papered over.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).

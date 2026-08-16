@@ -137,6 +137,15 @@ export interface CaseDetail {
   readonly decisions: readonly ModerationDecisionView[];
   readonly evidence: readonly ModerationEvidenceView[];
   readonly reports: readonly ModerationReportView[];
+  /**
+   * Whether any of the three lists stopped at its bound.
+   *
+   * Said out loud, because a reviewer looking at a partial case that looks
+   * complete is a reviewer deciding on less than they think they have. Every
+   * read here is bounded and always will be; what was missing was telling
+   * somebody when a bound was reached.
+   */
+  readonly truncated: boolean;
 }
 
 export type CaseQueuePage =
@@ -338,25 +347,25 @@ export class ModerationService {
     const executor = repository.transactionless;
     const found = await repository.findCase(executor, caseId);
     if (found === undefined) return undefined;
+    // One more than the bound from each, so reaching it is observable rather
+    // than indistinguishable from a case that happens to be exactly that size.
+    const overFetch = maximumCaseRecordPageSize + 1;
     const [reports, evidence, decisions] = await Promise.all([
-      repository.listReportsForCase(executor, {
-        caseId,
-        limit: maximumCaseRecordPageSize,
-      }),
-      repository.listEvidenceForCase(executor, {
-        caseId,
-        limit: maximumCaseRecordPageSize,
-      }),
-      repository.listDecisionsForCase(executor, {
-        caseId,
-        limit: maximumCaseRecordPageSize,
-      }),
+      repository.listReportsForCase(executor, { caseId, limit: overFetch }),
+      repository.listEvidenceForCase(executor, { caseId, limit: overFetch }),
+      repository.listDecisionsForCase(executor, { caseId, limit: overFetch }),
     ]);
+    const truncated = [reports, evidence, decisions].some(
+      (rows) => rows.length > maximumCaseRecordPageSize,
+    );
     return {
       case: caseView(found),
-      decisions: await this.decisionViews(decisions),
-      evidence: evidence.map(evidenceView),
-      reports: reports.map(moderationView),
+      decisions: await this.decisionViews(
+        decisions.slice(0, maximumCaseRecordPageSize),
+      ),
+      evidence: evidence.slice(0, maximumCaseRecordPageSize).map(evidenceView),
+      reports: reports.slice(0, maximumCaseRecordPageSize).map(moderationView),
+      truncated,
     };
   }
 

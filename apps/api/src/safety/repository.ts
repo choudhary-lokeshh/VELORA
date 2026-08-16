@@ -21,6 +21,7 @@ import type {
 } from '../database/executor.js';
 import type { CaseCursor } from './cursor.js';
 import {
+  disclosableDecisionActions,
   maximumConsentRecordsPerContent,
   openAppealStates,
   maximumDepictedPersonPageSize,
@@ -1453,17 +1454,50 @@ export class SafetyRepository {
     return rows.length > 0;
   }
 
-  /** Decisions about one subject, newest first. */
-  async listDecisionsForSubject(
+  /**
+   * Decisions a subject may be told about: the ones that imposed something and
+   * that nothing has replaced, newest first.
+   *
+   * Both conditions are in the statement rather than applied to its result, and
+   * that is the whole point. Reading the newest decisions and filtering
+   * afterwards hides a live restriction behind newer decisions that say
+   * nothing — the person is told nothing is in force while they are restricted
+   * — and it shows a lifted one whose lift fell outside the window. A limit
+   * applied to the wrong set is not a bound, it is a wrong answer.
+   */
+  async listImposingDecisionsForSubject(
     executor: Executor,
     input: { readonly limit: number; readonly subjectId: string },
   ): Promise<DecisionRow[]> {
     return executor
       .select()
       .from(safetyDecisions)
-      .where(eq(safetyDecisions.subjectId, input.subjectId))
+      .where(
+        and(
+          eq(safetyDecisions.subjectId, input.subjectId),
+          inArray(safetyDecisions.action, [...disclosableDecisionActions]),
+          sql`not exists (select 1 from ${safetyDecisions} as superseding where superseding.supersedes_id = ${safetyDecisions.id})`,
+        ),
+      )
       .orderBy(desc(safetyDecisions.decidedAt), desc(safetyDecisions.id))
       .limit(input.limit);
+  }
+
+  /** How many complaints this account has made since a moment. */
+  async countAppealsSince(
+    executor: Executor,
+    input: { readonly appellantReference: string; readonly since: Date },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: count() })
+      .from(safetyAppeals)
+      .where(
+        and(
+          eq(safetyAppeals.appellantReference, input.appellantReference),
+          gt(safetyAppeals.submittedAt, input.since),
+        ),
+      );
+    return rows[0]?.total ?? 0;
   }
 
   /**
