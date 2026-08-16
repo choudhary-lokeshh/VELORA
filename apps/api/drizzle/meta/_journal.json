@@ -260,6 +260,13 @@
       "when": 1786862384745,
       "tag": "0036_safety_takedown_breach",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786863791694,
+      "tag": "0037_safety_scale_indexes",
+      "breakpoints": true
     }
   ]
 }

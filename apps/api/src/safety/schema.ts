@@ -22,6 +22,7 @@ import {
 import {
   appealStates,
   appellantKinds,
+  openReportStates,
   casePriorities,
   caseQueues,
   caseStates,
@@ -142,6 +143,13 @@ export const safetyBlocks = pgTable(
     // "Who has blocked me" is asked as often as "who have I blocked", because
     // the effect is symmetric. Both directions are an index lookup.
     index('safety_blocks_blocked_idx').on(table.blockedId, table.blockerId),
+    // The caller's own list, ordered exactly as the cursor pages it and partial
+    // on the live rows. The live-pair unique index leads with the blocked
+    // account, so it can answer "is this pair blocked" and cannot supply this
+    // order at all — without this the page was a scan and a sort.
+    index('safety_blocks_live_idx')
+      .on(table.blockerId, table.createdAt, table.id)
+      .where(sql`${table.revokedAt} is null`),
     check(
       'safety_blocks_not_self_check',
       sql`${table.blockerId} <> ${table.blockedId}`,
@@ -211,6 +219,14 @@ export const safetyCases = pgTable(
     index('safety_cases_assignment_idx')
       .on(table.assignmentExpiresAt)
       .where(sql`${table.assignmentExpiresAt} is not null`),
+    // The queue with no filter, which is the operator's default view. The
+    // index above leads with `queue`, so it cannot serve one, and the read fell
+    // back to a scan and a sort the moment nobody chose a queue.
+    index('safety_cases_open_idx')
+      .on(table.openedAt, table.id)
+      .where(
+        sql`${table.state} not in (${sql.raw(literals(resolvedCaseStates))})`,
+      ),
     index('safety_cases_target_idx').on(table.targetType, table.targetId),
     check('safety_cases_state_check', inList(table.state, caseStates)),
     check(
@@ -307,10 +323,19 @@ export const safetyReports = pgTable(
       table.reporterId,
       table.clientReportId,
     ),
-    // The moderation queue: open reports, oldest first.
+    // The moderation queue: open reports, oldest first. Partial and ordered as
+    // the read walks it, because two open states through a leading-state index
+    // means a merge and a sort rather than one walk that stops.
+    index('safety_reports_open_idx')
+      .on(table.createdAt, table.id)
+      .where(sql`${table.state} in (${sql.raw(literals(openReportStates))})`),
     index('safety_reports_state_idx').on(table.state, table.createdAt),
     index('safety_reports_subject_idx').on(table.targetType, table.subjectId),
-    index('safety_reports_reporter_idx').on(table.reporterId, table.createdAt),
+    index('safety_reports_reporter_idx').on(
+      table.reporterId,
+      table.createdAt,
+      table.id,
+    ),
     // Every report a case carries, which is what a reviewer reads.
     index('safety_reports_case_idx').on(table.caseId, table.createdAt),
     // Reporting yourself is refused where "yourself" is a thing this domain can
@@ -682,7 +707,11 @@ export const safetyDecisions = pgTable(
       table.id,
     ),
     uniqueIndex('safety_decisions_case_identity_uk').on(table.id, table.caseId),
-    index('safety_decisions_subject_idx').on(table.subjectId, table.decidedAt),
+    index('safety_decisions_subject_idx').on(
+      table.subjectId,
+      table.decidedAt,
+      table.id,
+    ),
     index('safety_decisions_enforcement_idx')
       .on(table.enforcementId)
       .where(sql`${table.enforcementId} is not null`),
@@ -1194,7 +1223,9 @@ export const safetyTakedownClaims = pgTable(
     // one row per claim ever made.
     index('safety_takedown_claims_due_idx')
       .on(table.actionDueAt, table.id)
-      .where(sql`${table.actionDueAt} is not null`),
+      .where(
+        sql`${table.actionDueAt} is not null and ${table.breachRecordedAt} is null`,
+      ),
     index('safety_takedown_claims_claimant_idx')
       .on(table.claimantAccountId, table.receivedAt)
       .where(sql`${table.claimantAccountId} is not null`),
@@ -1330,6 +1361,7 @@ export const safetyAppeals = pgTable(
     index('safety_appeals_appellant_idx').on(
       table.appellantReference,
       table.submittedAt,
+      table.id,
     ),
     // The operator queue: complaints still owed an answer, oldest first.
     index('safety_appeals_open_idx')

@@ -892,6 +892,68 @@ describe('however many reviewers, one outcome', () => {
     expect(decision.decision.evidenceIds).toEqual([...opened.evidenceIds]);
   });
 
+  it('takes no deadlock when every part of the vertical contends at once', async () => {
+    const deadlocks = async () => {
+      const rows = await rowsOf<{ deadlocks: string }>(
+        database.sql`select deadlocks from pg_stat_database
+          where datname = current_database()`,
+      );
+      return Number(rows[0]?.deadlocks ?? 0);
+    };
+    const opened = await reportedCase('vertical');
+    const others = await Promise.all(
+      Array.from({ length: 4 }, async (_, index) =>
+        consumer(`vertical-reporter-${String(index)}@velora.test`),
+      ),
+    );
+    const before = await deadlocks();
+
+    // Intake, review, and closure all reach for the same subject lock and the
+    // same case row, from different directions, at the same moment. The
+    // ordering rule the whole domain follows — subject lock before any row lock
+    // — is what makes this a serial order rather than a cycle.
+    await Promise.all([
+      ...others.map(async (reporter) => fileReport(reporter, opened.subjectId)),
+      moderation.claimCase({
+        actorReference: 'session:reviewer-a',
+        caseId: opened.id,
+      }),
+      moderation.decideCase({
+        action: 'restrict_capability',
+        actorReference: 'session:reviewer-b',
+        caseId: opened.id,
+        evidenceIds: opened.evidenceIds,
+        expectedVersion: opened.version,
+        reasonCode: 'harassment',
+        scope: 'account_restriction',
+      }),
+      moderation.decideCase({
+        action: 'no_action',
+        actorReference: 'session:reviewer-c',
+        caseId: opened.id,
+        evidenceIds: [],
+        expectedVersion: opened.version,
+        reasonCode: 'no_violation_found',
+      }),
+      moderation.closeCase({ caseId: opened.id }),
+      moderation.recordEvidence({
+        actorReference: 'session:reviewer-d',
+        caseId: opened.id,
+        evidence: { kind: 'operator_note', note: 'Looking at this now.' },
+      }),
+    ]);
+
+    expect(await deadlocks()).toBe(before);
+    // At most one settlement, whatever order they arrived in, and every report
+    // filed survives as its own record.
+    expect(await countOf('safety_decisions')).toBeLessThanOrEqual(1);
+    expect(await countOf('safety_reports')).toBe(5);
+    // And the case left the queue exactly once, by one route or the other.
+    expect(
+      await countOf('safety_cases', "state in ('decided', 'closed')"),
+    ).toBeLessThanOrEqual(1);
+  });
+
   it('takes no deadlock across a batch of contended decisions', async () => {
     const deadlocks = async () => {
       const rows = await rowsOf<{ deadlocks: string }>(

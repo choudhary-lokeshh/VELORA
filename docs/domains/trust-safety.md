@@ -238,6 +238,22 @@ The sweep is idempotent by construction rather than by luck. The evidence and th
 
 **Nothing sensitive reaches a log line.** Not a reporter's narrative, not an operator's note, not an appellant's statement, and not a message body. The sweep logs a count and is silent when there is nothing to count, because an identifier there would put one person's complaint in a log line. A regression files a report with a distinctive narrative, records a note, decides the case, and appeals it, then asserts none of those strings appears anywhere in what the logger was given.
 
+### Staying cheap as the tables grow
+
+Every safety read was correct at any size and several would have become an outage. `0037_safety_scale_indexes` fixes the ones that grow, each found by measuring rather than by reading the code, and a suite seeds sixty thousand rows and asserts the plan the planner actually chose — plans rather than timings, because a duration is a property of the machine and the chosen index is a property of the schema.
+
+The **unfiltered operator queue** is the default view, and the queue index leads with the queue, so it could serve no such read: the planner scanned every case ever opened and sorted it. A partial index over the open cases, ordered exactly as the cursor pages them, makes it a walk that stops.
+
+The **open report queue** spans two states, so an index leading with `state` means a merge and a sort. Partial over the open rows in the read's own order is one walk.
+
+A person's **own blocks** page by creation instant, and the live-pair unique index leads with the blocked account — it answers "is this pair blocked" and can supply no order at all.
+
+Three lists paged on a **tiebreaker the index did not carry**: decisions about a subject, complaints by an appellant, and reports by their reporter each order by an instant and then by identifier, so the identifier belongs in the index or the sort returns at every page boundary. The first of those is on the path of a request a restricted person makes.
+
+The **overdue takedown queue** now excludes recorded breaches in the index predicate rather than filtering them afterwards, so the sweep does not rediscover every breach it has ever recorded on every cycle for ever.
+
+Concurrency is proven across the whole vertical rather than per feature. Intake, a claim, two opposed decisions, a closure, and an operator note all reach for one subject and one case at the same moment; the ordering rule the domain follows everywhere — the subject advisory lock before any row lock — makes that a serial order rather than a cycle. `pg_stat_database.deadlocks` does not move, at most one settlement is recorded whatever order they arrived in, the case leaves the queue exactly once, and every report filed survives as its own record.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
