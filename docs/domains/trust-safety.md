@@ -283,6 +283,16 @@ The last step of that walk re-reads all three consumer surfaces and asserts that
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
+## MEDIA as a consumer of this domain
+
+[MEDIA](media.md) asks this domain whether an asset may be delivered, and asks nothing else. It receives one boolean, never an enforcement, a scope, a report, or a reviewer, and it holds no rule of its own about what a restriction implies.
+
+It cannot form the question unaided: an asset has no idea what it is for, so it does not know which subject a restriction would name, which object a takedown would name, or which capability applies. The owning domain supplies those three and MEDIA relays them, which keeps the safety rule here and the binary lifecycle there.
+
+Two consequences are worth stating. A hold stops **new** delivery authorizations immediately, because the answer is re-read inside the transaction that authorises rather than cached. And an asset attached to a content item is marked content-gated, which additionally requires the content safety gate above — classification, depicted-person consent, surface eligibility, viewer assurance, and the mature-content gate. Until that wiring exists, a content-gated asset is **denied**, so no media path can become a way around a gate this domain owns.
+
+Revoking already-issued delivery credentials is a separate matter with a bounded window; see [MEDIA](media.md) and [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md).
+
 ## Where this domain is going
 
 [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, the published capability answer, reports and cases and evidence and decisions as separate append-oriented records, and depicted-person consent held as scoped references to an approved verifier rather than as documents are built and described above. Still to come: appeals, surface as a first-class closed vocabulary, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.

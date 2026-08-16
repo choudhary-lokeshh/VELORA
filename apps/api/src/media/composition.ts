@@ -10,6 +10,13 @@ import type { SafeLogger } from '@velora/observability/server';
 import type { DatabaseHandle } from '../database/executor.js';
 import { MediaInspector } from './inspection.js';
 import { SharpMediaImageProcessor } from './processing.js';
+import {
+  DenyingMediaSafety,
+  MediaPublicationAuthority,
+  UnattachedMediaAssociation,
+  type MediaAssociationPort,
+  type MediaSafetyPort,
+} from './publication.js';
 import { MediaRepository } from './repository.js';
 import {
   LocalTestMediaScanner,
@@ -24,6 +31,14 @@ import {
 } from './storage.js';
 
 export interface MediaRuntime {
+  /**
+   * Whether these bytes may reach this person, on this surface, right now.
+   *
+   * The composition of MEDIA's technical answer with the owning domain's
+   * association and Trust and Safety's decision. It is the only thing any
+   * surface may ask, and `ready` alone never satisfies it.
+   */
+  readonly publication: MediaPublicationAuthority;
   readonly repository: MediaRepository;
   /** Exposed so operational surfaces can report which scanner is in force. */
   readonly scanner: MediaScannerPort;
@@ -53,11 +68,25 @@ export function createMediaRuntime(input: {
   readonly performsByteWork?: boolean;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
+  /**
+   * The owning domain's answer, and Trust and Safety's.
+   *
+   * Both default to refusing. A composition that has not been given a safety
+   * adapter has not been told there are no restrictions; it has been told
+   * nothing, and nothing is not permission. Phases 7 and 8 wire the real ones.
+   */
+  readonly association?: MediaAssociationPort;
+  readonly safety?: MediaSafetyPort;
 }): MediaRuntime {
   const repository = new MediaRepository(input.database);
   const storage = selectMediaStorage(input.config);
   const scanner = selectMediaScanner(input.config);
   return {
+    publication: new MediaPublicationAuthority({
+      association: input.association ?? new UnattachedMediaAssociation(),
+      repository,
+      safety: input.safety ?? new DenyingMediaSafety(),
+    }),
     repository,
     scanner,
     service: new MediaService({

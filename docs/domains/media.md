@@ -155,7 +155,21 @@ The row is inserted **before** the bytes are written, the same ordering the uplo
 
 `ready` is reached only when every derivative the class owes is durable, and it remains a claim about bytes rather than about permission. Processing runs on the worker; the API composes neither an inspector nor a processor, so decoding hostile input and re-encoding pixels cannot compete with serving traffic and cannot be reached from a request at all.
 
-Not built yet, and not to be inferred from the model's generality: delivery routes, takedown propagation, reconciliation, and Admin operations.
+## The publication bridge
+
+`ready` is one term in a conjunction, and MEDIA supplies only that one. A delivery decision composes it with the owning domain's association and publication intent, the viewer's entitlement, and Trust and Safety's current answer. The composition lives here rather than in each caller for a specific reason: a conjunction evaluated separately by four surfaces is four chances to omit a term, and omitting one here is a compile error.
+
+MEDIA reproduces no part of the safety policy engine, reads no `safety_` row, and holds no opinion about what a restriction implies. It cannot even form the safety question on its own — an asset has no idea what it is for, so it does not know which subject a restriction would name, which object a takedown would name, or which capability applies. The owning domain supplies those three; Trust and Safety answers them through the published eligibility contract; MEDIA obeys.
+
+Every input is re-read inside the caller's executor at the moment of the decision, on the rule the eligibility contract already states: a safety check that commits separately from the thing it authorises is not a check. A hold therefore stops **new** authorizations immediately, with no cache to invalidate and no replica holding a stale yes.
+
+Refusals report **every** closed gate rather than the first, ordered by the vocabulary so the headline is never whichever gate happened to be evaluated last. The reasoning is ADR-0022's: a caller told only the first refusal reasonably concludes that fixing it is enough, and here that is frequently untrue. An unknown asset identifier and an unattached asset give the same answer, because saying which would tell a stranger whether an identifier they guessed names anything.
+
+Two defaults refuse. A composition with no association adapter reports `not_attached`; one with no safety adapter reports `safety_restricted`. Neither means "no restrictions found" — nothing was asked, and nothing is not permission.
+
+The same rule covers the gap this milestone has not closed. An asset that hangs off a content item is marked content-gated, which additionally requires classification, depicted-person consent, surface eligibility, viewer assurance, and the mature-content gate. That gate is Phase 8's to wire, and until it is, **a content-gated asset is denied**. The missing piece is represented in the type system rather than assumed away, so it cannot be mistaken for a pass — and mature-content media stays blocked by the [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) configuration gate regardless.
+
+Not built yet, and not to be inferred from the model's generality: delivery routes and credentials, takedown propagation, reconciliation, and Admin operations.
 
 ## Phase, events, and open questions
 
