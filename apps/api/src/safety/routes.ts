@@ -1,7 +1,10 @@
 import {
+  appealListResponseSchema,
+  appealSchema,
   blockListResponseSchema,
   blockRequestSchema,
   blockSchema,
+  createAppealRequestSchema,
   createReportRequestSchema,
   cursorSchema,
   defaultPageSize,
@@ -9,6 +12,8 @@ import {
   productErrorCodes,
   reportListResponseSchema,
   reportSchema,
+  safetyStandingResponseSchema,
+  withdrawAppealRequestSchema,
 } from '@velora/validation';
 
 import {
@@ -22,10 +27,16 @@ import {
   type ConsumerContextResolver,
   type ConsumerRouteContext,
 } from '../users/context.js';
+import type {
+  AppealService,
+  AppealView,
+  StatementOfReasons,
+} from './appeals.js';
 import type { ReportSourceSurface } from './policy.js';
 import type { BlockView, ReportView, SafetyService } from './service.js';
 
 export interface SafetyRoutesDependencies {
+  readonly appeals: AppealService;
   readonly consumerContext: ConsumerContextResolver;
   readonly safety: SafetyService;
 }
@@ -33,10 +44,15 @@ export interface SafetyRoutesDependencies {
 /**
  * Consumer-facing safety routes.
  *
- * There is deliberately no moderation route here, and no admin route anywhere
- * in this application. The moderation seam is a service with no HTTP surface,
- * so there is no endpoint for a consumer credential to reach, mis-scope, or
- * escalate into. See `src/safety/moderation.ts`.
+ * There is deliberately no moderation route here. The operator surface lives
+ * under `/v1/admin/safety/` behind the Platform Admin audience and a fresh
+ * phishing-resistant assurance, so there is no endpoint on this surface for a
+ * consumer credential to reach, mis-scope, or escalate into.
+ *
+ * What a consumer *can* reach is what was done to them and how to contest it.
+ * That answer carries the category and the scope and nothing else: the review's
+ * finding, the evidence, the reviewer, and anything that could identify a
+ * reporter have no field in any shape this file produces.
  */
 export class SafetyRoutes {
   constructor(private readonly dependencies: SafetyRoutesDependencies) {}
@@ -177,6 +193,109 @@ export class SafetyRoutes {
     };
   }
 
+  /**
+   * What is currently in force against the caller, and why.
+   *
+   * Only decisions that imposed something and that nothing has replaced. A
+   * restriction that was lifted is not something somebody is under, and telling
+   * them otherwise would be worse than telling them nothing.
+   */
+  async getStanding(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+
+    const statements = await this.dependencies.appeals.statementsFor(
+      resolved.context.account.id,
+    );
+    return {
+      body: safetyStandingResponseSchema.parse({
+        statements: statements.map(statementBody),
+      }),
+      status: 200,
+    };
+  }
+
+  async createAppeal(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(createAppealRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+
+    const outcome = await this.dependencies.appeals.submitForAccount({
+      accountId: resolved.context.account.id,
+      decisionId: parsed.value.decisionId,
+      ...(parsed.value.statement === undefined
+        ? {}
+        : { statement: parsed.value.statement }),
+    });
+    switch (outcome.kind) {
+      case 'received': {
+        return {
+          body: appealSchema.parse(appealBody(outcome.appeal)),
+          status: 200,
+        };
+      }
+      case 'already_appealed':
+      case 'out_of_time': {
+        return routeFailure(
+          409,
+          productErrorCodes.conflict,
+          input.correlationId,
+        );
+      }
+      default: {
+        // A decision that does not exist, one about somebody else, a dismissal
+        // of somebody else's report, and a kind nobody may contest answer
+        // identically, so probing this path enumerates nothing.
+        return this.invalid(input);
+      }
+    }
+  }
+
+  async listAppeals(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+
+    const appeals = await this.dependencies.appeals.appealsFor(
+      resolved.context.account.id,
+    );
+    return {
+      body: appealListResponseSchema.parse({
+        appeals: appeals.map(appealBody),
+      }),
+      status: 200,
+    };
+  }
+
+  async withdrawAppeal(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(withdrawAppealRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+
+    const found = await this.dependencies.appeals.appealsFor(
+      resolved.context.account.id,
+    );
+    const mine = found.find((appeal) => appeal.id === parsed.value.appealId);
+    // Somebody else's complaint is answered exactly as one that does not exist.
+    if (mine === undefined) return this.invalid(input);
+
+    const outcome = await this.dependencies.appeals.withdraw({
+      appealId: mine.id,
+      appellantReference: resolved.context.account.id,
+      expectedVersion: mine.version,
+    });
+    if (outcome.kind === 'recorded') {
+      return {
+        body: appealSchema.parse(appealBody(outcome.appeal)),
+        status: 200,
+      };
+    }
+    return outcome.kind === 'not_found'
+      ? this.invalid(input)
+      : routeFailure(409, productErrorCodes.conflict, input.correlationId);
+  }
+
   private invalid(input: RouteRequest): RouteResult {
     return routeFailure(
       422,
@@ -188,6 +307,45 @@ export class SafetyRoutes {
   private requireConsumer(input: RouteRequest): Promise<ConsumerRouteContext> {
     return requireConsumerAccount(this.dependencies.consumerContext, input);
   }
+}
+
+/**
+ * A statement of reasons on the wire.
+ *
+ * The disclosable category, the scope, when, and the redress. There is no field
+ * here for the finding, the evidence, the reviewer, or the report.
+ */
+function statementBody(statement: StatementOfReasons) {
+  return {
+    appealable: statement.appealable,
+    ...(statement.appealWindowClosesAt === undefined
+      ? {}
+      : { appealWindowClosesAt: statement.appealWindowClosesAt.toISOString() }),
+    decidedAt: statement.decidedAt.toISOString(),
+    decisionId: statement.decisionId,
+    reasonCode: statement.reasonCode,
+    scope: statement.scope,
+  };
+}
+
+/**
+ * A complaint as its own appellant sees it.
+ *
+ * The state and the dates. Not the reviewer who answered it, not the decision
+ * that replaced the original, and not the statement they wrote: they already
+ * know what they wrote, and echoing stored text back turns a record into a
+ * readable store.
+ */
+function appealBody(appeal: AppealView) {
+  return {
+    decisionId: appeal.decisionId,
+    id: appeal.id,
+    state: appeal.state,
+    submittedAt: appeal.submittedAt.toISOString(),
+    ...(appeal.windowClosesAt === null
+      ? {}
+      : { windowClosesAt: appeal.windowClosesAt.toISOString() }),
+  };
 }
 
 function paginationOf(

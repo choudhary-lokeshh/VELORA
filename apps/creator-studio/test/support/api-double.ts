@@ -421,6 +421,28 @@ export function createCreatorApiDouble(
         },
       });
     }
+    if (path === '/v1/creator/safety/readiness' && method === 'GET') {
+      // The only answer this endpoint has, in every environment.
+      return json(200, {
+        blockers: [
+          'mature_content_capability_disabled',
+          'depicted_person_verifier_unavailable',
+          'consent_wording_unpublished',
+          'content_taxonomy_undecided',
+        ],
+        consentPolicySource: 'unpublished',
+        enabled: false,
+        matureContentSource: 'disabled',
+        surfaces: [
+          { eligible: true, surface: 'web' },
+          { eligible: false, surface: 'mobile_ios' },
+          { eligible: false, surface: 'mobile_android' },
+          { eligible: true, surface: 'creator_studio' },
+          { eligible: true, surface: 'platform_admin' },
+        ],
+        verifierSource: 'unavailable',
+      });
+    }
     if (path === '/v1/creator/payouts/readiness' && method === 'GET') {
       return json(200, {
         balances: state.payoutReadiness.balances.map((row) => ({ ...row })),

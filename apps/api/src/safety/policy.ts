@@ -1180,3 +1180,29 @@ export const maximumAppealStatementCharacters = 2_000;
 
 /** Largest page of appeals one read returns. */
 export const maximumAppealPageSize = 50;
+
+/**
+ * What stands between Velora and mature creator content.
+ *
+ * Reported to a creator rather than hidden behind a workflow that cannot
+ * succeed. Each is owned by a different authority and each is separately
+ * liftable, which is the whole architecture: satisfying one enables nothing,
+ * and a creator told "not yet" with no reason would reasonably assume the
+ * remaining work was theirs.
+ *
+ * Surface ineligibility is deliberately **not** here. The two mobile stores
+ * prohibit the class outright with no published approval path, so it is a
+ * permanent property of those surfaces rather than a blocker that could clear,
+ * and reporting it as one would imply somebody is working on it.
+ */
+export const matureReadinessBlockers = [
+  /** The capability itself. One configured value, and it is off. */
+  'mature_content_capability_disabled',
+  /** Nobody can be recorded as a verified depicted adult. */
+  'depicted_person_verifier_unavailable',
+  /** Nobody has approved the words a depicted person would agree to. */
+  'consent_wording_unpublished',
+  /** The classification taxonomy in code is provisional, not approved. */
+  'content_taxonomy_undecided',
+] as const;
+export type MatureReadinessBlocker = (typeof matureReadinessBlockers)[number];

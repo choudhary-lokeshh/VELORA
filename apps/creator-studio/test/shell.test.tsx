@@ -697,6 +697,26 @@ describe('Creator Studio home', () => {
     expect(textOf('dashboard-public-path')).toContain('/c/ember');
   });
 
+  it('says mature content is unavailable and why, with no control to try', async () => {
+    renderStudio(doubleWith(busyCreator()));
+    await signIn();
+
+    await waitFor(() => {
+      expect(textOf('mature-readiness-state')).toContain('not available');
+    });
+    // Each blocker is somebody else's to clear, and the surface says which.
+    const blockers = textOf('mature-blockers');
+    expect(blockers).toContain('capability itself is switched off');
+    expect(blockers).toContain('No approved provider');
+    expect(blockers).toContain('Nobody has approved the wording');
+    // Store ineligibility is stated separately: it is permanent rather than
+    // something anybody is working through.
+    expect(textOf('mature-ineligible-surfaces')).toContain('prohibit it');
+    // And there is nothing to press. A control that could not succeed would be
+    // a promise in a button.
+    expect(screen.queryByTestId('mature-enable')).toBeNull();
+  });
+
   it('shows no metric the platform does not compute', async () => {
     renderStudio(doubleWith(busyCreator()));
     await signIn();

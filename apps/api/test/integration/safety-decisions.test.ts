@@ -1055,6 +1055,142 @@ describe('the database keeps the record', () => {
   });
 });
 
+describe('a person is told what was done and can contest it', () => {
+  it('discloses the category and the scope, never the finding', async () => {
+    const opened = await reportedCase('standing');
+    const subject = await consumer('standing-subject-account@velora.test');
+    // The decision has to be about an account that can sign in, so the case is
+    // opened against that account rather than the generated one.
+    const theirCase = await (async () => {
+      const reporter = await consumer('standing-reporter@velora.test');
+      await fileReport(reporter, subject.id);
+      const [row] = await rowsOf<{ id: string; version: number }>(
+        database.sql`select id, version from safety_cases
+          where target_id = ${subject.id} order by opened_at desc limit 1`,
+      );
+      if (row === undefined) throw new Error('no case opened');
+      return row;
+    })();
+    expect(opened.id).not.toBe(theirCase.id);
+
+    const decided = await moderation.decideCase({
+      action: 'restrict_capability',
+      actorReference: 'session:reviewer-a',
+      caseId: theirCase.id,
+      evidenceIds: await evidenceIds(theirCase.id),
+      expectedVersion: theirCase.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
+    });
+    if (decided.kind !== 'recorded') throw new Error('setup failed');
+
+    const response = await handle(request('/v1/safety/standing', subject));
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('account_restricted');
+    expect(body).toContain('account_restriction');
+    // The review recorded `harassment`. Nothing the subject can read says so.
+    expect(body).not.toContain('harassment');
+    expect(body).not.toContain('session:reviewer-a');
+  });
+
+  it('accepts one complaint per decision, and another after a withdrawal', async () => {
+    const subject = await consumer('appeal-subject@velora.test');
+    const reporter = await consumer('appeal-reporter@velora.test');
+    await fileReport(reporter, subject.id);
+    const [row] = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${subject.id} limit 1`,
+    );
+    if (row === undefined) throw new Error('no case opened');
+    const decided = await moderation.decideCase({
+      action: 'restrict_capability',
+      actorReference: 'session:reviewer-a',
+      caseId: row.id,
+      evidenceIds: await evidenceIds(row.id),
+      expectedVersion: row.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
+    });
+    if (decided.kind !== 'recorded') throw new Error('setup failed');
+    const complain = (session: typeof subject) =>
+      handle(
+        request('/v1/safety/appeals', session, {
+          body: { decisionId: decided.decision.id },
+          method: 'POST',
+        }),
+      );
+
+    const first = await complain(subject);
+    expect(first.status).toBe(200);
+    const appeal = (await first.json()) as { id: string };
+    // One decision is not contested twice at once.
+    expect((await complain(subject)).status).toBe(409);
+    // And somebody else's decision is refused exactly as a decision that does
+    // not exist would be, so probing enumerates nothing.
+    expect((await complain(reporter)).status).toBe(422);
+
+    const withdrawn = await handle(
+      request('/v1/safety/appeals/withdrawal', subject, {
+        body: { appealId: appeal.id },
+        method: 'POST',
+      }),
+    );
+    expect(withdrawn.status).toBe(200);
+    expect((await complain(subject)).status).toBe(200);
+
+    // Withdrawing somebody else's complaint is answered as if it were not
+    // there at all.
+    expect(
+      (
+        await handle(
+          request('/v1/safety/appeals/withdrawal', reporter, {
+            body: { appealId: appeal.id },
+            method: 'POST',
+          }),
+        )
+      ).status,
+    ).toBe(422);
+  });
+
+  it('never echoes the appellant statement back', async () => {
+    const subject = await consumer('statement-subject@velora.test');
+    const reporter = await consumer('statement-reporter@velora.test');
+    await fileReport(reporter, subject.id);
+    const [row] = await rowsOf<{ id: string; version: number }>(
+      database.sql`select id, version from safety_cases
+        where target_id = ${subject.id} limit 1`,
+    );
+    if (row === undefined) throw new Error('no case opened');
+    const decided = await moderation.decideCase({
+      action: 'restrict_capability',
+      actorReference: 'session:reviewer-a',
+      caseId: row.id,
+      evidenceIds: await evidenceIds(row.id),
+      expectedVersion: row.version,
+      reasonCode: 'harassment',
+      scope: 'account_restriction',
+    });
+    if (decided.kind !== 'recorded') throw new Error('setup failed');
+
+    await handle(
+      request('/v1/safety/appeals', subject, {
+        body: {
+          decisionId: decided.decision.id,
+          statement: 'a private explanation nobody else should read',
+        },
+        method: 'POST',
+      }),
+    );
+    const listed = await handle(request('/v1/safety/appeals', subject));
+
+    expect(listed.status).toBe(200);
+    // Sent once and never read back: the appellant already knows what they
+    // wrote, and echoing it would turn a record into a readable store.
+    expect(await listed.text()).not.toContain('private explanation');
+  });
+});
+
 describe('none of it is reachable from outside', () => {
   it('publishes evidence, decisions, and notes only to an operator', () => {
     const operatorOnly = application.app.routes

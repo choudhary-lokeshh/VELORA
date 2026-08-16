@@ -474,6 +474,46 @@ describe('safety', () => {
     expect(document.activeElement).toBe(screen.getByTestId('report-open'));
   });
 
+  it('says nothing is restricted when nothing is', async () => {
+    await signedIn();
+    await click('nav-safety');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('standing-empty')).toBeTruthy();
+    });
+    // An ordinary account is the ordinary case. A screen that rendered it as a
+    // failed lookup would make everybody think something had gone wrong.
+    expect(textOf('standing-empty')).toContain('Nothing is currently');
+  });
+
+  it('tells somebody the category and offers to look again', async () => {
+    const double = await signedIn();
+    double.state.statements = [
+      {
+        appealable: true,
+        decidedAt: new Date().toISOString(),
+        decisionId: '99999999-9999-4999-8999-999999999999',
+        reasonCode: 'account_restricted',
+        scope: 'account_restriction',
+      },
+    ];
+    await click('nav-safety');
+
+    await waitFor(() => {
+      expect(textOf('standing-list')).toContain('Your account is restricted');
+    });
+    // The scope, so somebody knows what it reaches. Never the finding behind
+    // it, which the contract has no field for in any case.
+    expect(textOf('standing-list')).toContain('account restriction');
+    expect(document.body.textContent).not.toContain('harassment');
+
+    await click('appeal-99999999-9999-4999-8999-999999999999');
+    await waitFor(() => {
+      expect(textOf('standing-notice')).toContain('A person will look at it');
+    });
+    expect(double.state.appeals).toHaveLength(1);
+  });
+
   it('never shows who has blocked the person using it', async () => {
     await signedIn();
     await click('nav-safety');

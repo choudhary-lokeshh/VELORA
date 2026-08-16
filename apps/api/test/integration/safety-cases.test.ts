@@ -496,6 +496,62 @@ describe('several reports about one thing are one review', () => {
   });
 });
 
+describe('Creator Studio is told mature content is unavailable', () => {
+  it('reports every blocker and every ineligible surface', async () => {
+    await creator('readiness-creator@velora.test', 'readycreator');
+    const studio = await signIn(
+      'readiness-creator@velora.test',
+      'creator_studio',
+    );
+
+    const response = await handle(
+      request('/v1/creator/safety/readiness', studio, testCreatorOrigin),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      blockers: string[];
+      consentPolicySource: string;
+      enabled: boolean;
+      matureContentSource: string;
+      surfaces: { eligible: boolean; surface: string }[];
+      verifierSource: string;
+    };
+    expect(body.enabled).toBe(false);
+    // Every blocker, because every one of them is closed and none of the
+    // remaining work is the creator's.
+    expect(body.blockers).toEqual([
+      'mature_content_capability_disabled',
+      'depicted_person_verifier_unavailable',
+      'consent_wording_unpublished',
+      'content_taxonomy_undecided',
+    ]);
+    // Sources by name, so "off" and "off because nobody has approved one" are
+    // distinguishable.
+    expect(body.matureContentSource).toBe('disabled');
+    expect(body.verifierSource).toBe('unavailable');
+    expect(body.consentPolicySource).toBe('unpublished');
+    // Store ineligibility is a property of the surface, reported beside the
+    // blockers rather than among them.
+    const ineligible = body.surfaces
+      .filter((entry) => !entry.eligible)
+      .map((entry) => entry.surface);
+    expect(ineligible).toEqual(['mobile_ios', 'mobile_android']);
+  });
+
+  it('refuses the readiness answer to a consumer session', async () => {
+    const person = await consumer('readiness-consumer@velora.test');
+
+    const response = await handle(
+      request('/v1/creator/safety/readiness', person, testConsumerOrigin),
+    );
+
+    // Creator authority is Creator Studio's, and a consumer session carries
+    // none of it however visible the route is.
+    expect([401, 403]).toContain(response.status);
+  });
+});
+
 describe('a reviewer claims, judges, and closes', () => {
   async function openOneCase(): Promise<string> {
     const reporter = await consumer(

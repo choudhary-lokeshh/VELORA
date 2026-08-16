@@ -48,6 +48,7 @@ import {
   createPayoutsRuntime,
   type PayoutsRuntime,
 } from './payouts/composition.js';
+import { CreatorSafetyRoutes } from './safety/creator-routes.js';
 import {
   createSafetyRuntime,
   type SafetyRuntime,
@@ -472,6 +473,23 @@ export function createApplication(
       }
     };
   }
+
+  /**
+   * What Creator Studio is told about mature content.
+   *
+   * Composed here rather than inside the TRUST & SAFETY runtime because it
+   * needs CREATORS' session resolver and nothing of SAFETY's persistence: the
+   * answer is the same for every creator, and it is no. The policy it reports
+   * is SAFETY's; the audience it answers to is CREATORS'.
+   */
+  const creatorSafetyRoutes = new CreatorSafetyRoutes({
+    capabilities: {
+      consentPolicy: config.SAFETY_CONSENT_POLICY,
+      depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
+      matureContent: config.SAFETY_MATURE_CONTENT,
+    },
+    creatorContext: creators.creatorContext,
+  });
 
   const app = new Elysia({
     serve: {
@@ -968,6 +986,26 @@ export function createApplication(
     .get(
       apiRoutePaths.safetyReports,
       admitted(async (input) => safety.routes.listReports(input)),
+    )
+    .get(
+      apiRoutePaths.consumerSafetyStanding,
+      admitted(async (input) => safety.routes.getStanding(input)),
+    )
+    .post(
+      apiRoutePaths.consumerSafetyAppeals,
+      admitted(async (input) => safety.routes.createAppeal(input)),
+    )
+    .get(
+      apiRoutePaths.consumerSafetyAppeals,
+      admitted(async (input) => safety.routes.listAppeals(input)),
+    )
+    .post(
+      apiRoutePaths.consumerSafetyAppealWithdrawal,
+      admitted(async (input) => safety.routes.withdrawAppeal(input)),
+    )
+    .get(
+      apiRoutePaths.creatorMatureReadiness,
+      admitted(async (input) => creatorSafetyRoutes.getMatureReadiness(input)),
     )
     .get(
       apiRoutePaths.notifications,

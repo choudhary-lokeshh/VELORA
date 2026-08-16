@@ -189,3 +189,152 @@ export type EnforcementDispositionValue = z.infer<
 
 export type Block = z.infer<typeof blockSchema>;
 export type Report = z.infer<typeof reportSchema>;
+
+/**
+ * What a person may be told about a decision that affected them.
+ *
+ * Regulation (EU) 2022/2065 Article 17 shapes this: somebody whose account was
+ * restricted or whose content was removed is entitled to the reasons and to the
+ * redress available. What they are *not* entitled to, and what has no field
+ * here, is the review's finding, the evidence, the reviewer, or anything that
+ * could identify a reporter.
+ *
+ * The reason code is the disclosable one derived from the scope. It is a
+ * different vocabulary from the reporter categories and from the enforcement
+ * findings, and a unit assertion keeps the three from converging.
+ */
+export const safetyDenialReasonSchema = z.enum([
+  'account_restricted',
+  'creator_capability_suspended',
+  'conversation_closed',
+  'object_restricted',
+]);
+
+export const safetyStatementSchema = z
+  .object({
+    /** Whether a complaint about this decision is available. */
+    appealable: z.boolean(),
+    /** After which a complaint would be out of time. Absent while none is published. */
+    appealWindowClosesAt: z.iso.datetime().optional(),
+    decidedAt: z.iso.datetime(),
+    decisionId: z.uuid(),
+    reasonCode: safetyDenialReasonSchema,
+    scope: enforcementScopeSchema,
+  })
+  .strict();
+export type SafetyStatement = z.infer<typeof safetyStatementSchema>;
+
+/**
+ * What is currently in force against the caller, and why.
+ *
+ * Only decisions that imposed something and that nothing has replaced. A
+ * restriction that was lifted is not something somebody is under, and telling
+ * them otherwise would be worse than telling them nothing.
+ */
+export const safetyStandingResponseSchema = z
+  .object({ statements: z.array(safetyStatementSchema) })
+  .strict();
+
+export const appealStateSchema = z.enum([
+  'received',
+  'under_review',
+  'upheld',
+  'refused',
+  'withdrawn',
+]);
+export type AppealStateValue = z.infer<typeof appealStateSchema>;
+
+/**
+ * A complaint as its own appellant sees it.
+ *
+ * The state and the dates, and nothing else. Not the reviewer who answered it,
+ * not the decision that replaced the original, and not the statement they
+ * wrote — they already know what they wrote, and echoing stored text back over
+ * the API turns a record into a readable store.
+ */
+export const appealSchema = z
+  .object({
+    decisionId: z.uuid(),
+    id: z.uuid(),
+    state: appealStateSchema,
+    submittedAt: z.iso.datetime(),
+    windowClosesAt: z.iso.datetime().optional(),
+  })
+  .strict();
+export type Appeal = z.infer<typeof appealSchema>;
+
+export const appealListResponseSchema = z
+  .object({ appeals: z.array(appealSchema) })
+  .strict();
+
+/**
+ * Submitting a complaint.
+ *
+ * There is no field saying which kind of appellant the caller is. Who they are
+ * to this decision — the person it was about, or the person whose report was
+ * dismissed — is derived from the decision and the case on the server, because
+ * a client-declared role is a client-authoritative fact about entitlement.
+ */
+export const createAppealRequestSchema = z
+  .object({
+    decisionId: z.uuid(),
+    statement: z.string().min(1).max(2_000).optional(),
+  })
+  .strict();
+
+export const withdrawAppealRequestSchema = z
+  .object({ appealId: z.uuid() })
+  .strict();
+
+/**
+ * Why mature creator content is unavailable.
+ *
+ * Reported plainly rather than hidden behind a workflow that cannot succeed.
+ * Each blocker is owned by a different authority and each is separately
+ * liftable, so a creator can see that none of the remaining work is theirs.
+ */
+export const matureReadinessBlockerSchema = z.enum([
+  'mature_content_capability_disabled',
+  'depicted_person_verifier_unavailable',
+  'consent_wording_unpublished',
+  'content_taxonomy_undecided',
+]);
+
+export const matureSurfaceEligibilitySchema = z
+  .object({
+    /** False for the app-store surfaces, permanently and not by configuration. */
+    eligible: z.boolean(),
+    surface: z.enum([
+      'web',
+      'mobile_ios',
+      'mobile_android',
+      'creator_studio',
+      'platform_admin',
+    ]),
+  })
+  .strict();
+
+/**
+ * Whether a creator could publish mature content, and what stands in the way.
+ *
+ * `enabled` is false in every environment and there is no configured value that
+ * would make it true. The sources are reported by name rather than as booleans,
+ * because "off" and "off because nobody has approved one" are different facts
+ * and a creator deserves the second one.
+ */
+export const creatorMatureReadinessResponseSchema = z
+  .object({
+    blockers: z.array(matureReadinessBlockerSchema),
+    /** Which consent wording is published. `unpublished` everywhere. */
+    consentPolicySource: z.string().min(1).max(64),
+    enabled: z.boolean(),
+    /** Which mature-content capability value is configured. `disabled` everywhere. */
+    matureContentSource: z.string().min(1).max(64),
+    surfaces: z.array(matureSurfaceEligibilitySchema),
+    /** Which depicted-person verifier is configured. `unavailable` everywhere. */
+    verifierSource: z.string().min(1).max(64),
+  })
+  .strict();
+export type CreatorMatureReadinessResponse = z.infer<
+  typeof creatorMatureReadinessResponseSchema
+>;

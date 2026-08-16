@@ -246,7 +246,46 @@ export class AppealService {
       : { appeal: appealView(appeal), kind: 'received' };
   }
 
-  /** Complaints still owed an answer, oldest first. */
+  /**
+   * Records a complaint from an account, working out what that account is to
+   * the decision rather than being told.
+   *
+   * A client-declared role would be a client-authoritative fact about
+   * entitlement. The account is the subject if the decision was about them, and
+   * the notifier if they filed a report in the case it settled; anything else
+   * is refused with the same answer either way.
+   */
+  async submitForAccount(input: {
+    readonly accountId: string;
+    readonly decisionId: string;
+    readonly statement?: string | undefined;
+  }): Promise<AppealSubmission> {
+    const { repository } = this.dependencies;
+    const decision = await repository.findDecision(
+      repository.transactionless,
+      input.decisionId,
+    );
+    if (decision === undefined) return { kind: 'not_found' };
+    const kind: AppellantKind =
+      decision.subjectId === input.accountId ? 'subject' : 'notifier';
+    return this.submit({
+      appellantKind: kind,
+      appellantReference: input.accountId,
+      decisionId: input.decisionId,
+      ...(input.statement === undefined ? {} : { statement: input.statement }),
+    });
+  }
+
+  /** The caller's own complaints, newest first. */
+  async appealsFor(appellantReference: string): Promise<readonly AppealView[]> {
+    const rows = await this.dependencies.repository.listAppealsByAppellant(
+      this.dependencies.repository.transactionless,
+      { appellantReference, limit: maximumAppealPageSize },
+    );
+    return rows.map(appealView);
+  }
+
+  /** Complaints still owed an answer, oldest first. */ /** Complaints still owed an answer, oldest first. */
   async openAppeals(
     limit = maximumAppealPageSize,
   ): Promise<readonly AppealView[]> {

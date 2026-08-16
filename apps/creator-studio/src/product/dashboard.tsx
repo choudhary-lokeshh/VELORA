@@ -6,6 +6,7 @@ import type {
   CreatorApi,
   CreatorClubList,
   CreatorContentList,
+  CreatorMatureReadiness,
   CreatorProfile,
 } from '@velora/creator-client';
 import { publicationLabels, publicationView } from '@velora/creator-client';
@@ -99,6 +100,73 @@ export function Dashboard({
           These counts describe the first page the server returned, not a total.
         </p>
       ) : null}
+
+      <MatureReadiness api={api} onSessionEnded={onSessionEnded} />
     </Section>
   );
 }
+
+/**
+ * Why mature content is unavailable.
+ *
+ * There is no upload control here and no toggle, because there is nothing a
+ * creator could do that would work. What there is instead is the list of what
+ * actually stands in the way, each owned by somebody who is not the creator, so
+ * nobody is left assuming the remaining work is theirs.
+ *
+ * The two mobile surfaces are shown separately from the blockers. Both app
+ * stores prohibit the content class outright with no published approval path,
+ * so their ineligibility is a permanent fact about those surfaces rather than
+ * something anybody is working through, and listing it as a blocker would imply
+ * otherwise.
+ */
+function MatureReadiness({
+  api,
+  onSessionEnded,
+}: {
+  readonly api: CreatorApi;
+  readonly onSessionEnded: () => void;
+}) {
+  const load = useCallback(async () => api.matureReadiness(), [api]);
+  const readiness = useResource<CreatorMatureReadiness>(load, {
+    onUnauthenticated: onSessionEnded,
+  });
+  const value = readiness.value;
+
+  return (
+    <>
+      <ResourceState resource={readiness} testId="mature-readiness" />
+      {value === undefined ? null : (
+        <div data-testid="mature-readiness-detail">
+          <StatusMessage testId="mature-readiness-state">
+            Mature content is not available on Velora.
+          </StatusMessage>
+          <ul data-testid="mature-blockers">
+            {value.blockers.map((blocker) => (
+              <li key={blocker}>{blockerLabels[blocker] ?? blocker}</li>
+            ))}
+          </ul>
+          <p className="hint" data-testid="mature-ineligible-surfaces">
+            The iOS and Android apps could never carry it in any case: both
+            stores prohibit it outright.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Each blocker in plain words, and each attributed to somebody other than the
+ * creator reading it.
+ */
+const blockerLabels: Readonly<Record<string, string>> = {
+  consent_wording_unpublished:
+    'Nobody has approved the wording a depicted person would agree to.',
+  content_taxonomy_undecided:
+    'The content categories in use are provisional rather than approved.',
+  depicted_person_verifier_unavailable:
+    'No approved provider can verify a depicted adult.',
+  mature_content_capability_disabled:
+    'The capability itself is switched off and has no setting that turns it on.',
+};

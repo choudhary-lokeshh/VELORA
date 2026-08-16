@@ -1530,6 +1530,19 @@ export class SafetyRepository {
       .limit(limit);
   }
 
+  /** The caller's own complaints, newest first. Never anybody else's. */
+  async listAppealsByAppellant(
+    executor: Executor,
+    input: { readonly appellantReference: string; readonly limit: number },
+  ): Promise<AppealRow[]> {
+    return executor
+      .select()
+      .from(safetyAppeals)
+      .where(eq(safetyAppeals.appellantReference, input.appellantReference))
+      .orderBy(desc(safetyAppeals.submittedAt), desc(safetyAppeals.id))
+      .limit(input.limit);
+  }
+
   /**
    * Moves a complaint, against the version the caller read and only from a
    * state the transition is defined for.

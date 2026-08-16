@@ -34,6 +34,27 @@ const reportReasons = [
 
 const maximumReportDetail = 2000;
 
+/**
+ * The coarse categories a subject may be told, in plain words.
+ *
+ * These are the only four the server will ever send, and each is deliberately
+ * about scope rather than about what a review concluded.
+ */
+const denialLabels: Readonly<Record<string, string>> = {
+  account_restricted: 'Your account is restricted.',
+  conversation_closed: 'A conversation was closed.',
+  creator_capability_suspended: 'Your creator tools are suspended.',
+  object_restricted: 'Something you published is not public.',
+};
+
+const appealLabels: Readonly<Record<string, string>> = {
+  received: 'We have your request.',
+  refused: 'We looked again and the decision stands.',
+  under_review: 'Somebody is looking at it.',
+  upheld: 'We looked again and changed the decision.',
+  withdrawn: 'You withdrew this request.',
+};
+
 export function SafetyPanel({ api }: { readonly api: ConsumerApi }) {
   const loadBlocks = useCallback(
     async (signal: AbortSignal) => api.blocks({}, signal),
@@ -130,6 +151,8 @@ export function SafetyPanel({ api }: { readonly api: ConsumerApi }) {
         }}
       />
 
+      <StandingPanel api={api} />
+
       <Section headingId="reports-heading" title="Your reports">
         <ResourceState resource={reports} testId="reports" />
         {!reports.loading &&
@@ -150,6 +173,119 @@ export function SafetyPanel({ api }: { readonly api: ConsumerApi }) {
         </ul>
       </Section>
     </>
+  );
+}
+
+/**
+ * What is in force against this account, and how to contest it.
+ *
+ * The server sends the category and the scope and nothing else — never the
+ * review's finding, the evidence, the reviewer, or anything that could identify
+ * a reporter — so there is nothing here for this screen to leak. It renders
+ * what it is given and adds no interpretation of its own.
+ *
+ * An empty list is the ordinary case and says so plainly. A screen that showed
+ * "no restrictions found" as an error state would make an ordinary account look
+ * like a failed lookup.
+ */
+function StandingPanel({ api }: { readonly api: ConsumerApi }) {
+  const loadStanding = useCallback(
+    async (signal: AbortSignal) => api.standing(signal),
+    [api],
+  );
+  const loadAppeals = useCallback(
+    async (signal: AbortSignal) => api.appeals(signal),
+    [api],
+  );
+  const standing = useResource(loadStanding);
+  const appeals = useResource(loadAppeals);
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const { busy, run } = useSingleFlight();
+
+  const act = (work: () => Promise<ApiResult<unknown>>, success: string) => {
+    run(async () => {
+      setNotice(undefined);
+      const result = await work();
+      setNotice(result.kind === 'ok' ? success : failureMessage(result));
+      standing.reload();
+      appeals.reload();
+    });
+  };
+
+  const statements = standing.value?.statements ?? [];
+  const complaints = appeals.value?.appeals ?? [];
+
+  return (
+    <Section headingId="standing-heading" title="Decisions about your account">
+      <ResourceState resource={standing} testId="standing" />
+      {notice === undefined ? null : (
+        <StatusMessage testId="standing-notice">{notice}</StatusMessage>
+      )}
+      {!standing.loading &&
+      standing.error === undefined &&
+      statements.length === 0 ? (
+        <EmptyState testId="standing-empty">
+          Nothing is currently restricted on your account.
+        </EmptyState>
+      ) : null}
+
+      <ul data-testid="standing-list">
+        {statements.map((statement) => (
+          <li key={statement.decisionId}>
+            <p>{denialLabels[statement.reasonCode]}</p>
+            {/* The scope, so somebody knows what it reaches, and no more. */}
+            <p className="hint">{statement.scope.replaceAll('_', ' ')}</p>
+            {statement.appealWindowClosesAt === undefined ? null : (
+              <p className="hint">
+                You can ask us to look again until{' '}
+                {new Date(statement.appealWindowClosesAt).toLocaleDateString()}.
+              </p>
+            )}
+            {statement.appealable ? (
+              <button
+                data-testid={`appeal-${statement.decisionId}`}
+                disabled={busy}
+                onClick={() => {
+                  act(
+                    async () =>
+                      api.appeal({ decisionId: statement.decisionId }),
+                    'We have your request. A person will look at it.',
+                  );
+                }}
+                type="button"
+              >
+                Ask us to look again
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+
+      <ResourceState resource={appeals} testId="appeals" />
+      <ul data-testid="appeal-list">
+        {complaints.map((appeal) => (
+          <li key={appeal.id}>
+            {/* The lifecycle position. Never the reviewer, and never why. */}
+            <p>{appealLabels[appeal.state]}</p>
+            {appeal.state === 'received' || appeal.state === 'under_review' ? (
+              <button
+                data-testid={`withdraw-${appeal.id}`}
+                disabled={busy}
+                onClick={() => {
+                  act(
+                    async () => api.withdrawAppeal(appeal.id),
+                    'Withdrawn. You can ask again if you change your mind.',
+                  );
+                }}
+                type="button"
+              >
+                Withdraw
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

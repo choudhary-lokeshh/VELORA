@@ -1,6 +1,8 @@
 import { createVeloraApiClient } from '@velora/api-client';
 
 import type {
+  Appeal,
+  AppealList,
   Availability,
   Block,
   BlockList,
@@ -9,6 +11,7 @@ import type {
   ConsumerSubscriptionList,
   Conversation,
   ConversationList,
+  CreateAppealBody,
   CreateReportBody,
   DiscoveryFeed,
   Introduction,
@@ -21,6 +24,7 @@ import type {
   ProfileMediaUpload,
   Report,
   ReportList,
+  SafetyStanding,
   SaveAvailabilityBody,
   SavePreferencesBody,
   SaveProfileBody,
@@ -146,11 +150,16 @@ export interface ConsumerApi {
   pass(candidateId: string): Promise<ApiResult<{ suppressedUntil: string }>>;
   profile(signal?: AbortSignal): Promise<ApiResult<ConsumerProfile>>;
   removeProfileMedia(mediaId: string): Promise<ApiResult<ConsumerProfile>>;
+  appeals(signal?: AbortSignal): Promise<ApiResult<AppealList>>;
+  appeal(body: CreateAppealBody): Promise<ApiResult<Appeal>>;
   report(body: CreateReportBody): Promise<ApiResult<Report>>;
   reports(
     query: PageQuery,
     signal?: AbortSignal,
   ): Promise<ApiResult<ReportList>>;
+  /** What is currently in force against the caller, and why. */
+  standing(signal?: AbortSignal): Promise<ApiResult<SafetyStanding>>;
+  withdrawAppeal(appealId: string): Promise<ApiResult<Appeal>>;
   saveAvailability(
     body: SaveAvailabilityBody,
   ): Promise<ApiResult<Availability>>;
@@ -352,9 +361,32 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         }),
       ),
 
+    appeal: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/safety/appeals', { ...(await writing()), body }),
+      ),
+
+    appeals: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/safety/appeals', { ...(await reading(signal)) }),
+      ),
+
     report: async (body) =>
       attempt(async () =>
         api.POST('/v1/safety/reports', { ...(await writing()), body }),
+      ),
+
+    standing: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/safety/standing', { ...(await reading(signal)) }),
+      ),
+
+    withdrawAppeal: async (appealId) =>
+      attempt(async () =>
+        api.POST('/v1/safety/appeals/withdrawal', {
+          ...(await writing()),
+          body: { appealId },
+        }),
       ),
 
     reports: async (query, signal) =>

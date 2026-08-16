@@ -119,6 +119,21 @@ export interface ApiDoubleState {
     state: string;
     subjectId: string;
   }[];
+  /** Complaints the account has made about decisions. */
+  appeals: {
+    decisionId: string;
+    id: string;
+    state: string;
+    submittedAt: string;
+  }[];
+  /** What the server says is currently in force against the account. */
+  statements: {
+    appealable: boolean;
+    decidedAt: string;
+    decisionId: string;
+    reasonCode: string;
+    scope: string;
+  }[];
   session: {
     absoluteExpiresAt: string;
     accountId: string;
@@ -164,8 +179,10 @@ export function emptyState(): ApiDoubleState {
     notifications: [],
     onboarding: null,
     profile: null,
+    appeals: [],
     reports: [],
     session: null,
+    statements: [],
   };
 }
 
@@ -208,7 +225,9 @@ export function admittedState(): ApiDoubleState {
       preferencesVersion: 1,
       version: 1,
     },
+    appeals: [],
     reports: [],
+    statements: [],
     session: {
       absoluteExpiresAt: iso(86_400_000),
       accountId: ownAccountId,
@@ -555,6 +574,38 @@ export function createApiDouble(
       };
       state.reports = [...state.reports, report];
       return json(200, report);
+    }
+
+    if (path === '/v1/safety/standing' && method === 'GET') {
+      return json(200, { statements: state.statements });
+    }
+    if (path === '/v1/safety/appeals' && method === 'GET') {
+      return json(200, { appeals: state.appeals });
+    }
+    if (path === '/v1/safety/appeals' && method === 'POST') {
+      const input = body as { decisionId: string };
+      const appeal = {
+        decisionId: input.decisionId,
+        id: '88888888-8888-4888-8888-888888888888',
+        state: 'received',
+        submittedAt: iso(),
+      };
+      state.appeals = [...state.appeals, appeal];
+      return json(200, appeal);
+    }
+    if (path === '/v1/safety/appeals/withdrawal' && method === 'POST') {
+      const input = body as { appealId: string };
+      state.appeals = state.appeals.map((appeal) =>
+        appeal.id === input.appealId
+          ? { ...appeal, state: 'withdrawn' }
+          : appeal,
+      );
+      const withdrawn = state.appeals.find(
+        (appeal) => appeal.id === input.appealId,
+      );
+      return withdrawn === undefined
+        ? error(404, 'HTTP_404')
+        : json(200, withdrawn);
     }
 
     return error(404, 'HTTP_404');

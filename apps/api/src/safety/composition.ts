@@ -122,12 +122,13 @@ export function createSafetyRuntime(input: {
     verifier: selectDepictedPersonVerifier(input.config),
   });
   const eligibility = new SafetyEligibility(repository);
+  const appeals = new AppealService({
+    now,
+    policy: selectAppealPolicy(input.config),
+    repository,
+  });
   return {
-    appeals: new AppealService({
-      now,
-      policy: selectAppealPolicy(input.config),
-      repository,
-    }),
+    appeals,
     authority,
     consent,
     content: new ContentSafetyGate({
@@ -150,6 +151,7 @@ export function createSafetyRuntime(input: {
     }),
     repository,
     routes: new SafetyRoutes({
+      appeals,
       consumerContext: input.consumerContext,
       safety: service,
     }),

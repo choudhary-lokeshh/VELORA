@@ -63,6 +63,17 @@ export type ReportList = JsonBody<'/v1/safety/reports', 'get', 200>;
 export type Report = ReportList['reports'][number];
 
 export type CreateReportBody = RequestBody<'/v1/safety/reports', 'post'>;
+
+/**
+ * What the caller may be told about a decision that affected them, and how to
+ * contest it. There is no field for the review's finding, the evidence, the
+ * reviewer, or anything that could identify a reporter.
+ */
+export type SafetyStanding = JsonBody<'/v1/safety/standing', 'get', 200>;
+export type SafetyStatement = SafetyStanding['statements'][number];
+export type AppealList = JsonBody<'/v1/safety/appeals', 'get', 200>;
+export type Appeal = AppealList['appeals'][number];
+export type CreateAppealBody = RequestBody<'/v1/safety/appeals', 'post'>;
 export type SaveProfileBody = RequestBody<'/v1/users/me/profile', 'post'>;
 export type SaveAvailabilityBody = RequestBody<
   '/v1/users/me/availability',

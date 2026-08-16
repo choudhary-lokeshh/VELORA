@@ -929,23 +929,31 @@ describe('a report is evidence, not a message to the person reported', () => {
 });
 
 describe('a consumer cannot become a moderator', () => {
-  it('publishes no moderation or report-review route at all', () => {
+  it('keeps every review route behind the operator prefix', () => {
     const paths = application.app.routes.map((route) => route.path);
     for (const path of paths) {
-      // Platform Admin creator operations exist and are asserted unreachable
-      // below. A moderation queue and a report-review workflow do not: the
-      // review process, its SLA, and the appeal path are undecided.
-      expect(path).not.toMatch(/moderation|enforcement|report.*review/iu);
+      // The review workflow exists now and lives under Platform Admin, which
+      // is asserted unreachable below. What must never appear is one of these
+      // outside that prefix.
+      if (/moderation|enforcement|case|decision|evidence/iu.test(path)) {
+        expect(path, path).toStartWith('/v1/admin/');
+      }
     }
-    // The safety surface a consumer can reach, in full.
+    // The safety surface a consumer can reach, in full. Standing and appeals
+    // are here because a person is entitled to know what was done to them and
+    // to contest it; nothing on this list reveals anything about anybody else.
     expect(
       paths.filter((path) => path.startsWith('/v1/safety')).sort(),
     ).toEqual([
+      '/v1/safety/appeals',
+      '/v1/safety/appeals',
+      '/v1/safety/appeals/withdrawal',
       '/v1/safety/blocks',
       '/v1/safety/blocks',
       '/v1/safety/blocks/removal',
       '/v1/safety/reports',
       '/v1/safety/reports',
+      '/v1/safety/standing',
     ]);
   });
 

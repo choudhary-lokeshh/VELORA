@@ -106,6 +106,19 @@ export type CreatorPayoutReadiness = JsonBody<
   200
 >;
 export type CreatorPayoutBalance = CreatorPayoutReadiness['balances'][number];
+
+/**
+ * Whether mature creator content is available, and what stands in the way.
+ *
+ * It is not available in any environment. The blockers are reported so a
+ * creator can see that none of the remaining work is theirs, rather than being
+ * shown a workflow that cannot succeed.
+ */
+export type CreatorMatureReadiness = JsonBody<
+  '/v1/creator/safety/readiness',
+  'get',
+  200
+>;
 export type PayoutOnboarding = JsonBody<
   '/v1/creator/payouts/onboarding',
   'post',

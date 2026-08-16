@@ -19,6 +19,7 @@ import type {
   CreatorEarningsHistory,
   CreatorOnboardingState,
   CreatorPayoutHistory,
+  CreatorMatureReadiness,
   CreatorPayoutReadiness,
   PayoutOnboarding,
   RequestPayoutBody,
@@ -90,6 +91,8 @@ export interface CreatorApi {
   /** This creator's own payout instructions, newest first. */
   payouts(): Promise<ApiResult<CreatorPayoutHistory>>;
   /** Whether this creator could be paid, and what they hold per currency. */
+  /** Why mature content is unavailable. It always is. */
+  matureReadiness(): Promise<ApiResult<CreatorMatureReadiness>>;
   payoutReadiness(): Promise<ApiResult<CreatorPayoutReadiness>>;
   /** Opens the payout provider's own hosted onboarding. Collects nothing here. */
   startPayoutOnboarding(): Promise<ApiResult<PayoutOnboarding>>;
@@ -288,6 +291,12 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
 
     async payouts() {
       return attempt(async () => api.GET('/v1/creator/payouts', await read()));
+    },
+
+    async matureReadiness() {
+      return attempt(async () =>
+        api.GET('/v1/creator/safety/readiness', await read()),
+      );
     },
 
     async payoutReadiness() {

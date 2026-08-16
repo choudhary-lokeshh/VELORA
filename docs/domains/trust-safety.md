@@ -216,6 +216,16 @@ The window comes from a published policy and is stored beside its version. `SAFE
 
 The case gains no `appealed` state, and that is deliberate: an appeal has its own record, its own lifecycle, and its own queue, so a case state kept in step with it would be two sources of truth for one fact.
 
+### What a person and a creator are told
+
+A consumer surface exists for the two things somebody is entitled to: knowing what was done to them, and contesting it. `GET /v1/safety/standing` returns the statements of reasons from the appeal model — the scope, the disclosable category, when, whether a complaint is available, and by when — and `POST /v1/safety/appeals` opens one. Nothing on that surface reveals anything about anybody else, and a regression pins the complete list of paths a consumer credential can reach.
+
+**Who the caller is to a decision is derived, never claimed.** The submission body has no field for an appellant kind: the server decides whether this account is the subject the decision was about or the notifier whose report it dismissed, because a client-declared role is a client-authoritative fact about entitlement. A decision that does not exist, one about somebody else, and a dismissal of somebody else's report answer identically, so probing the path enumerates nothing.
+
+The appellant's statement is sent once and never read back. They already know what they wrote, and echoing stored text over the API turns a record into a readable store — the same rule the reporter narrative has followed since `0011_safety`.
+
+Creator Studio gets one route and one answer: `GET /v1/creator/safety/readiness` reports that mature content is unavailable, and *why*. Every blocker is listed — the capability itself, the absent verifier, the unpublished wording, the provisional taxonomy — each owned by somebody who is not the creator reading it. There is no upload control and no toggle anywhere in the Studio, because a control that could not succeed is a promise in a button. The configured sources are reported by name rather than as booleans, since "off" and "off because nobody has approved one" are different facts and a creator deserves the second. Store ineligibility is reported *beside* the blockers rather than among them: both app stores prohibit the class outright with no published approval path, so it is a permanent property of those surfaces rather than something anybody is working through.
+
 ### What blocks production
 
 Blocks and reports themselves are blocked on nothing: a person must be able to stop being contacted, and must be able to report, from the first day the product exists. What is blocked is the review and enforcement process around them — the risk taxonomy, emergency action policy, appeals and SLA, and evidence retention are all undecided, and Admin sign-in has no approved implementation. Each is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).

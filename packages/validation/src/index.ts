@@ -111,7 +111,13 @@ import {
   blockRequestSchema,
   blockSchema,
   createReportRequestSchema,
+  appealListResponseSchema,
+  appealSchema,
+  createAppealRequestSchema,
+  creatorMatureReadinessResponseSchema,
   reportListResponseSchema,
+  safetyStandingResponseSchema,
+  withdrawAppealRequestSchema,
   reportSchema,
 } from './safety.js';
 import {
@@ -226,6 +232,10 @@ export const apiRoutePaths = {
   adminSafetyCaseNotes: '/v1/admin/safety/cases/notes',
   adminSafetyCaseTriage: '/v1/admin/safety/cases/triage',
   adminSafetyCases: '/v1/admin/safety/cases',
+  consumerSafetyAppealWithdrawal: '/v1/safety/appeals/withdrawal',
+  consumerSafetyAppeals: '/v1/safety/appeals',
+  consumerSafetyStanding: '/v1/safety/standing',
+  creatorMatureReadiness: '/v1/creator/safety/readiness',
   checkouts: '/v1/billing/checkouts',
   providerEvents: '/v1/billing/provider-events',
   subscriptions: '/v1/billing/subscriptions',
@@ -411,6 +421,12 @@ export const apiSchemas = {
   CreateReportRequest: createReportRequestSchema,
   Report: reportSchema,
   ReportListResponse: reportListResponseSchema,
+  Appeal: appealSchema,
+  AppealListResponse: appealListResponseSchema,
+  CreateAppealRequest: createAppealRequestSchema,
+  CreatorMatureReadinessResponse: creatorMatureReadinessResponseSchema,
+  SafetyStandingResponse: safetyStandingResponseSchema,
+  WithdrawAppealRequest: withdrawAppealRequestSchema,
   ProfileMediaReferenceRequest: profileMediaReferenceRequestSchema,
   SaveAvailabilityRequest: saveAvailabilityRequestSchema,
   ProfileMediaUploadResponse: profileMediaUploadResponseSchema,
@@ -1680,6 +1696,23 @@ export const apiOperations = [
   },
   {
     method: 'get',
+    operationId: 'getMatureContentReadiness',
+    path: apiRoutePaths.creatorMatureReadiness,
+    responses: {
+      '200': {
+        description:
+          'Whether mature creator content is available to this creator, and what stands in the way. It is not available, in any environment, and the blockers say why rather than leaving a creator to assume the remaining work is theirs.',
+        schemaName: 'CreatorMatureReadinessResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Reports the configured source by name rather than a boolean, because "off" and "off because nobody has approved one" are different facts. Surface ineligibility is reported separately from the blockers: both app stores prohibit the class outright with no published approval path, so it is a permanent property of those surfaces rather than something anybody is working on.',
+  },
+  {
+    method: 'get',
     operationId: 'getPayoutReadiness',
     path: apiRoutePaths.creatorPayoutReadiness,
     responses: {
@@ -2457,6 +2490,92 @@ export const apiOperations = [
       },
     },
     security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'get',
+    operationId: 'getSafetyStanding',
+    path: apiRoutePaths.consumerSafetyStanding,
+    responses: {
+      '200': {
+        description:
+          'What is currently in force against the caller and why, with the redress available. Only decisions that imposed something and that nothing has replaced: a restriction that was lifted is not something somebody is under.',
+        schemaName: 'SafetyStandingResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      "The category and the scope, and nothing else. The review's finding, the evidence, the reviewer, and anything that could identify a reporter have no field in this response, so nothing can carry them.",
+  },
+  {
+    method: 'post',
+    operationId: 'createAppeal',
+    path: apiRoutePaths.consumerSafetyAppeals,
+    requestSchemaName: 'CreateAppealRequest',
+    responses: {
+      '200': {
+        description:
+          'The complaint as its own appellant may see it. Its state and its dates, and never the reviewer, the outcome record, or the statement they wrote.',
+        schemaName: 'Appeal',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The caller already has a live complaint about this decision, or the published window has closed. The body is an ApiError with code ${productErrorCodes.conflict}. Withdrawing an existing complaint frees the caller to make another; what is refused is contesting one decision twice at once.`,
+        schemaName: 'ApiError',
+      },
+      '422': {
+        description: `The body failed contract validation, or this caller may not complain about this decision. The body is an ApiError with code ${productErrorCodes.validationFailed}. A decision about somebody else, a dismissal of somebody else's report, and a decision of a kind nobody may contest answer identically, so probing this path enumerates nothing.`,
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'There is no field saying which kind of appellant the caller is. Who they are to this decision — the person it was about, or the person whose report was dismissed — is derived on the server from the decision and the case, because a client-declared role is a client-authoritative fact about entitlement.',
+  },
+  {
+    method: 'get',
+    operationId: 'listOwnAppeals',
+    path: apiRoutePaths.consumerSafetyAppeals,
+    responses: {
+      '200': {
+        description:
+          "Complaints the caller made, newest first. There is no route to anybody else's.",
+        schemaName: 'AppealListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'The state and the dates. An appellant already knows what they wrote, and echoing stored text back over the API turns a record into a readable store.',
+  },
+  {
+    method: 'post',
+    operationId: 'withdrawAppeal',
+    path: apiRoutePaths.consumerSafetyAppealWithdrawal,
+    requestSchemaName: 'WithdrawAppealRequest',
+    responses: {
+      '200': {
+        description:
+          'The complaint is withdrawn and the record of it stays. The caller is free to complain about the same decision again.',
+        schemaName: 'Appeal',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The complaint has already been answered or already withdrawn. The body is an ApiError with code ${productErrorCodes.conflict}.`,
+        schemaName: 'ApiError',
+      },
+      '422': {
+        description: `The body failed contract validation, or the complaint is not the caller's. The body is an ApiError with code ${productErrorCodes.validationFailed}. Somebody else's complaint is answered exactly as one that does not exist.`,
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Withdrawing leaves the record. Both facts matter: a complaint was made, and the person decided not to pursue it.',
   },
   {
     method: 'post',

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { creatorAccountStatusSchema, creatorHandleSchema } from './creator.js';
 import { currencyCodeSchema, minorUnitsSchema } from './money.js';
 import {
+  appealStateSchema,
   enforcementDispositionSchema,
   enforcementScopeSchema,
 } from './safety.js';
@@ -422,14 +423,6 @@ export const moderationDecisionRequestSchema = z
 export const moderationDecisionResponseSchema = z
   .object({ decision: moderationDecisionSchema })
   .strict();
-
-export const appealStateSchema = z.enum([
-  'received',
-  'under_review',
-  'upheld',
-  'refused',
-  'withdrawn',
-]);
 
 /**
  * One complaint as an operator sees it.
