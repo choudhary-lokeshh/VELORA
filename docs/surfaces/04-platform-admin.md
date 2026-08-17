@@ -51,3 +51,17 @@ There is no control on the screen that changes a financial row, because there is
 The capability row reports adapter names rather than a boolean. An operator seeing `unavailable` and `unpublished` across it is seeing the truth — no payment provider, no payout provider, no published commercial terms, no approved launch country, and no tax authority — and "off" and "off because nobody has approved one" are different situations.
 
 In a deployed environment nobody reaches any of it. ADR-0017 requires a recent phishing-resistant assurance for privileged access and no verifier that can produce one is approved, so every request is refused before any lookup happens on its behalf. The surface says that in those terms rather than showing an empty screen.
+
+## Implemented: media operations
+
+A second panel, and it reads for a stricter reason than the first.
+
+What it carries is the state of the media platform: which storage and scanning adapters this process actually composed, whether the environment can accept media at all, counts of assets, stored objects, and duties by state, the disagreements with the provider nobody could safely correct, and what needs a person.
+
+The rows worth having are the backlogs. Each class of owed work carries the **age of its oldest member** and the age at which that becomes an alert, because a count alone cannot separate a busy platform from a stuck one — forty purges owed for forty-five seconds and one owed for a day are the same kind of row and opposite situations. Every class is shown every time, healthy ones included: a panel that listed only what was wrong could not tell "nothing is owed" apart from "the signal stopped arriving". A class with nothing in it says so rather than reporting an age of zero. The thresholds come from [MEDIA](../domains/media.md), which derives them from the deadlines its own sweeps run on, so the screen cannot call work late that the platform is still working on.
+
+Nothing on it identifies anybody: no owner, no account, no object key, no digest, no asset identifier. There is also **no list and no search**, and that is the same rule rather than an omission — an operator who could page through everybody's media has a browsing surface over private images however it is labelled.
+
+The one media action an operator has — asking a delivery layer to forget an address — is deliberately not on this panel. It names one asset, it is reached from a drift finding, a report, or a support conversation rather than by browsing, and putting a lookup field beside it on a dashboard is where a search over private media begins. The API offers the action and the detail read to a tool that already holds an identifier; the screen offers neither.
+
+Its refusal state is the financial panel's, for the same reason: in a deployed environment nobody reaches it, and it says so rather than rendering an empty screen.

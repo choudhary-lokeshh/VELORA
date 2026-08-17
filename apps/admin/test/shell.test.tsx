@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import PlatformAdminShell from '../app/page';
 import { FinancialOperations } from '../src/financial-state';
+import { MediaOperations } from '../src/media-state';
 
 /**
  * The Platform Admin surface.
@@ -177,5 +178,150 @@ describe('Platform Admin financial operations', () => {
         expect(markup.toLowerCase()).not.toContain(forbidden.toLowerCase());
       }
     });
+  });
+});
+
+const deployedMedia = {
+  adapters: { scanner: 'unavailable', storage: 'unavailable' },
+  assets: [],
+  attention: [],
+  backlogs: [
+    {
+      breached: false,
+      count: 0,
+      state: 'purge_pending',
+      thresholdSeconds: 900,
+    },
+    {
+      breached: false,
+      count: 0,
+      state: 'drift_open',
+      thresholdSeconds: 3600,
+    },
+  ],
+  drift: [],
+  liveMediaAvailable: false,
+  objects: [],
+  obligations: [],
+};
+
+describe('Platform Admin media operations', () => {
+  it('says why nothing is reachable rather than showing an empty screen', async () => {
+    render(
+      <MediaOperations
+        apiBaseUrl={baseUrl}
+        fetchImplementation={respondWith({ code: 'ACTION_NOT_PERMITTED' }, 403)}
+      />,
+    );
+
+    const refusal = await screen.findByTestId('media-unauthorised');
+    expect(refusal.textContent).toContain('phishing-resistant');
+  });
+
+  it('reports the adapters by name, and whether media can be accepted at all', async () => {
+    render(
+      <MediaOperations
+        apiBaseUrl={baseUrl}
+        fetchImplementation={respondWith(deployedMedia)}
+      />,
+    );
+    await screen.findByTestId('media-state');
+
+    // The state every deployed environment is in: no approved storage provider
+    // and no approved scanner, so the platform accepts nothing. Naming the
+    // adapters is what makes "off" and "off because nobody has approved one"
+    // distinguishable without a second screen.
+    expect(screen.getByTestId('media-adapter-storage').textContent).toBe(
+      'unavailable',
+    );
+    expect(screen.getByTestId('media-adapter-scanner').textContent).toBe(
+      'unavailable',
+    );
+    expect(screen.getByTestId('media-available').textContent).toBe('no');
+  });
+
+  it('shows a healthy class rather than hiding it', async () => {
+    render(
+      <MediaOperations
+        apiBaseUrl={baseUrl}
+        fetchImplementation={respondWith(deployedMedia)}
+      />,
+    );
+    await screen.findByTestId('media-state');
+
+    // A screen that listed only what was wrong could not tell an operator
+    // "nothing is owed" apart from "the signal stopped arriving".
+    expect(screen.getByTestId('media-backlog-purge_pending').textContent).toBe(
+      'nothing owed',
+    );
+    expect(screen.getByTestId('media-backlog-drift_open').textContent).toBe(
+      'nothing owed',
+    );
+  });
+
+  it('separates a busy minute from a stuck hour, and says which is late', async () => {
+    render(
+      <MediaOperations
+        apiBaseUrl={baseUrl}
+        fetchImplementation={respondWith({
+          ...deployedMedia,
+          attention: [{ count: 1, state: 'late_drift_open' }],
+          backlogs: [
+            {
+              breached: false,
+              count: 40,
+              oldestAgeSeconds: 45,
+              state: 'purge_pending',
+              thresholdSeconds: 900,
+            },
+            {
+              breached: true,
+              count: 1,
+              oldestAgeSeconds: 93_600,
+              state: 'drift_open',
+              thresholdSeconds: 3600,
+            },
+          ],
+        })}
+      />,
+    );
+    await screen.findByTestId('media-state');
+
+    // Forty owed for forty-five seconds is a platform doing its work; one owed
+    // for a day is a platform that stopped. The count cannot tell them apart.
+    expect(screen.getByTestId('media-backlog-purge_pending').textContent).toBe(
+      '40 owed, oldest 45 seconds',
+    );
+    expect(screen.getByTestId('media-backlog-drift_open').textContent).toBe(
+      '1 owed, oldest 1 day — late',
+    );
+    expect(
+      screen.getByTestId('media-attention-late_drift_open').textContent,
+    ).toBe('1');
+  });
+
+  it('carries no identifier, and offers no control that writes', async () => {
+    render(
+      <MediaOperations
+        apiBaseUrl={baseUrl}
+        fetchImplementation={respondWith({
+          ...deployedMedia,
+          assets: [{ count: 12, state: 'ready' }],
+          objects: [{ count: 36, state: 'variant_present' }],
+        })}
+      />,
+    );
+    await screen.findByTestId('media-state');
+
+    // Counts and ages say how much is stuck without saying whose it is. And
+    // there is no lookup box: the one media action an operator has names an
+    // asset they already have an identifier for, from a finding or a report,
+    // and a search field here would be a browsing surface over private images.
+    const markup = document.body.textContent;
+    expect(markup).not.toContain('media/');
+    expect(markup).not.toContain('@');
+    expect(document.querySelectorAll('input')).toHaveLength(0);
+    expect(document.querySelectorAll('form')).toHaveLength(0);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });

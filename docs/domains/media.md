@@ -354,6 +354,8 @@ Two things are deliberately absent. A **dead-lettered** duty gets no age thresho
 
 The whole set is answered from the partial indexes that hold only outstanding rows, so the cost is proportional to what is owed rather than to what has ever been done: measured against forty thousand discharged duties and forty thousand five hundred retained findings, five hundred outstanding findings cost five buffers and two thousand outstanding duties cost forty-one.
 
+Where an operator reads it is the media panel on [Platform Admin](../surfaces/04-platform-admin.md). That panel carries no list, no search, and no action — the purge an operator can ask for names one asset reached from a finding or a report, and a lookup field beside a dashboard is where a search over private media begins.
+
 ## What a hostile read found
 
 The adversarial suite is [`media-red-team`](../../apps/api/test/integration/media-red-team.test.ts), and the [media threat model](../security/10-media-threat-model.md) records what it attacks and what held. Two things it broke are worth carrying here, because both are the same kind of mistake.
