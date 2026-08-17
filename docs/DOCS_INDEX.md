@@ -147,6 +147,7 @@ These are architecture/product gates, not legal advice:
 | [Finance/payout operations](operations/03-finance-payout-operations.md) | Refund, dispute, reconciliation, hold and payout operations |
 | [Incident response](operations/04-incident-response.md) | Incident lifecycle, emergency authority, evidence and recovery |
 | [Platform health](operations/05-platform-health.md) | Health signals, degraded behavior, SLO/capacity direction |
+| [Media operations](operations/06-media-operations.md) | What each media backlog class means, what an operator may do about it, and what is deliberately not offered |
 
 ## Engineering and decision authority
 
@@ -212,7 +213,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - RTC: phases, REALTIME, RTC flow, surfaces, provider adapters, Trust & Safety, media/privacy, Design/Figma.
 - Billing: phases, monetisation, BILLING, payment lifecycle/security, jobs/concurrency, compliance, finance operations, Admin approval.
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
-- Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, ADR-0010, ADR-0022, ADR-0023.
+- Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, media operations, ADR-0010, ADR-0022, ADR-0023.
 - Moderation/Trust & Safety: phase, both domains, report flow, moderation operations, evidence/privacy, Admin/RBAC, ADR-0022, creator gates and surface/distribution eligibility where applicable.
 - Security/privacy: security baseline and every relevant specialized security/compliance/incident authority plus owning domain/flow.
 - Design/Figma: relevant product/surface/flow/security/phase, then all six Design/Figma documents and exact approved Figma handoff.

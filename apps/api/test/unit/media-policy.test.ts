@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 
@@ -11,6 +12,7 @@ import {
   mediaBacklogThresholdMilliseconds,
   mediaDeliveryCredentialSeconds,
   mediaDriftAttentionMilliseconds,
+  mediaDriftKinds,
   mediaObjectKey,
   mediaObligationKinds,
   mediaPurgeStallMilliseconds,
@@ -490,6 +492,76 @@ describe('the backlogs an operator can be paged about', () => {
     // there is an amount of it that is fine.
     for (const backlog of mediaBacklogKinds) {
       expect(backlog).not.toContain('dead_letter');
+    }
+  });
+});
+
+describe('the runbook and the vocabulary it describes', () => {
+  /**
+   * A runbook that names classes the platform no longer reports, or omits ones
+   * it does, sends an operator looking for a row that is not there. The
+   * document is the operator's authority for what a backlog means and what is
+   * safe to do about it, so it is held to the vocabulary rather than trusted to
+   * be updated alongside it.
+   */
+  const runbook = readFileSync(
+    resolve(
+      import.meta.dirname,
+      '../../../../docs/operations/06-media-operations.md',
+    ),
+    'utf8',
+  );
+
+  it('documents every backlog class the platform reports', () => {
+    for (const backlog of mediaBacklogKinds) {
+      expect(runbook, backlog).toContain(`\`${backlog}\``);
+    }
+  });
+
+  it('names no class the platform does not report', () => {
+    // Every fenced `something_pending`, `..._open`, or `..._stalled` token in
+    // the table is a class the screen must actually carry.
+    const named = runbook.match(
+      /`[a-z]+_(?:pending|open|stalled|unanswered)`/gu,
+    );
+    for (const token of named ?? []) {
+      expect(mediaBacklogKinds as readonly string[], token).toContain(
+        token.replaceAll('`', ''),
+      );
+    }
+  });
+
+  it('states that dead letters are not a backlog with an age', () => {
+    // The one rule most likely to be quietly lost: a threshold on a dead letter
+    // would imply there is an amount of abandoned work that is acceptable.
+    expect(runbook).toContain('carry no age threshold');
+  });
+
+  it('documents every drift kind reconciliation can raise', () => {
+    // A backlog tells an operator to wait or to look; a finding tells them what
+    // follows, and each kind's answer is different — an original that is gone
+    // cannot be conjured where a derivative can be rendered again. A kind
+    // missing from the runbook arrives with no guidance at all.
+    for (const kind of mediaDriftKinds) {
+      expect(runbook, kind).toContain(`\`${kind}\``);
+    }
+  });
+
+  it('names in its tables only vocabulary the platform reports', () => {
+    // Anchored on the tables rather than on prose: the first cell of a fenced
+    // row is where the runbook asserts a term exists, and a term listed there
+    // that nothing raises sends somebody looking for a row that cannot appear.
+    const vocabulary: readonly string[] = [
+      ...mediaBacklogKinds,
+      ...mediaDriftKinds,
+    ];
+    const tabled = runbook.split('\n').flatMap((line) => {
+      const [, term] = /^\| `([a-z_]+)` \|/u.exec(line) ?? [];
+      return term === undefined ? [] : [term];
+    });
+    expect(tabled.length).toBe(vocabulary.length);
+    for (const term of tabled) {
+      expect(vocabulary, term).toContain(term);
     }
   });
 });
