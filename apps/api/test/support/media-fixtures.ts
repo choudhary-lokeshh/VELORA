@@ -205,6 +205,30 @@ export async function imageWithPrivateMetadata(): Promise<{
   return { bytes: new Uint8Array(bytes), deviceMarker };
 }
 
+/**
+ * A valid image whose metadata carries text an attacker chose.
+ *
+ * Harmless inside a JPEG and dangerous anywhere that renders the file as
+ * markup, which is the point: the payload has to be somewhere a careless
+ * pipeline would copy it from.
+ */
+export async function imageWithTextPayload(
+  payload: string,
+): Promise<Uint8Array> {
+  const bytes = await sharp({
+    create: {
+      background: { b: 30, g: 20, r: 10 },
+      channels: 3,
+      height: 48,
+      width: 48,
+    },
+  })
+    .withExif({ IFD0: { ImageDescription: payload, Software: payload } })
+    .jpeg()
+    .toBuffer();
+  return new Uint8Array(bytes);
+}
+
 /** A valid image carrying the development scanner's refusal marker. */
 export async function markedForScanner(marker: string): Promise<Uint8Array> {
   const png = await image({ format: 'png' });

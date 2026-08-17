@@ -316,6 +316,13 @@
       "when": 1786908445708,
       "tag": "0044_scale_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786911104640,
+      "tag": "0045_quarantined_removal",
+      "breakpoints": true
     }
   ]
 }

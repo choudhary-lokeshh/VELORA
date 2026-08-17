@@ -1,0 +1,39 @@
+-- A quarantined asset could never be removed.
+--
+-- Found by a hostile read of the finished platform rather than by a failure,
+-- which is the argument for looking.
+--
+-- `media_assets_quarantined_shape_check` was written as an *equivalence*:
+-- `(lifecycle = 'quarantined') = (rejection_reason is not null)`. The
+-- transition table permits `quarantined -> deleting`, so removal was supposed
+-- to be reachable — but moving off `quarantined` while the reason remained
+-- broke the equality, and the database refused the update. Somebody deleting a
+-- rejected upload, or an account taking its media with it, got a constraint
+-- violation. On the API path that is a five hundred; in the worker it is a
+-- failed obligation that retries five times and then dead-letters, so the
+-- removal is owed for ever and never performed.
+--
+-- Nothing caught it because every behaviour test that reaches `deleting` starts
+-- from a healthy asset, and every test that reaches `quarantined` stops there.
+-- The two vocabularies were each correct and the pair was not.
+--
+-- The fix is the shape the constraint one line below already uses, and its
+-- comment already states the reasoning: `ready` is checked as an implication
+-- rather than an equivalence "because a deleted asset keeps the record of
+-- having once been ready". A refusal reason is the same kind of fact and wants
+-- the same treatment — an appeal and an audit both need to know what an asset
+-- was refused for after it is gone.
+--
+-- Split into two constraints so that nothing the equivalence used to buy is
+-- dropped along with the defect. Quarantined still implies a reason, so a
+-- refusal with no recorded cause is unrepresentable. And a reason may now
+-- survive only into removal, so a `ready` asset carrying one — a record that
+-- lies about its own history — is still a state the database will not hold.
+--
+-- Ordered drop-then-add rather than a replacement in place, because PostgreSQL
+-- has no `ALTER CONSTRAINT` for a CHECK expression. The retention rule is added
+-- before the relaxed one so no window exists in which a reason could be written
+-- onto a lifecycle that should never carry it.
+ALTER TABLE "media_assets" DROP CONSTRAINT "media_assets_quarantined_shape_check";--> statement-breakpoint
+ALTER TABLE "media_assets" ADD CONSTRAINT "media_assets_rejection_retention_check" CHECK ("media_assets"."rejection_reason" is null or "media_assets"."lifecycle" in ('quarantined', 'deleting', 'deleted'));--> statement-breakpoint
+ALTER TABLE "media_assets" ADD CONSTRAINT "media_assets_quarantined_shape_check" CHECK ("media_assets"."lifecycle" <> 'quarantined' or "media_assets"."rejection_reason" is not null);

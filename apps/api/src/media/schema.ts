@@ -224,9 +224,29 @@ export const mediaAssets = pgTable(
       'media_assets_inspected_shape_check',
       sql`${table.lifecycle} not in ('inspected', 'processing', 'ready') or (${table.detectedFormat} is not null and ${table.byteSize} is not null and ${table.digest} is not null and ${table.width} is not null and ${table.height} is not null)`,
     ),
+    // A quarantined asset carries the reason it was refused. An implication
+    // rather than an equivalence, and it was written as an equivalence — which
+    // meant a quarantined asset could never be **removed**. The transition
+    // table permits `quarantined -> deleting`, and the database refused it,
+    // because moving off `quarantined` while the reason remained broke the
+    // equality. Somebody deleting a rejected upload, or an account taking its
+    // media with it, got a constraint violation; in the worker that is a
+    // failed obligation that retries and dead-letters. Found by a hostile read
+    // rather than by a failure, which is the point of looking.
+    //
+    // The reason is deliberately kept through removal, for exactly the reason
+    // stated one constraint below about `ready`: a deleted asset keeps the
+    // record of what it was.
     check(
       'media_assets_quarantined_shape_check',
-      sql`(${table.lifecycle} = 'quarantined') = (${table.rejectionReason} is not null)`,
+      sql`${table.lifecycle} <> 'quarantined' or ${table.rejectionReason} is not null`,
+    ),
+    // And the other half of what the equivalence used to buy, kept rather than
+    // dropped: a refusal reason may survive into removal and nowhere else, so
+    // a `ready` asset carrying one stays a state the database will not hold.
+    check(
+      'media_assets_rejection_retention_check',
+      sql`${table.rejectionReason} is null or ${table.lifecycle} in ('quarantined', 'deleting', 'deleted')`,
     ),
     // `ready` requires the instant it became so. It is not an equivalence,
     // because a deleted asset keeps the record of having once been ready.

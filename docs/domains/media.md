@@ -342,6 +342,16 @@ The correctness suites prove one worker behaves and that a second cannot take a 
 
 There are no sleeps in that file. Every ordering that matters is a database fact — a lease instant, a unique index, a claimed row — because a test that waits is a test that passes until the machine is busy, which is when concurrency defects surface.
 
+## What a hostile read found
+
+The adversarial suite is [`media-red-team`](../../apps/api/test/integration/media-red-team.test.ts), and the [media threat model](../security/10-media-threat-model.md) records what it attacks and what held. Two things it broke are worth carrying here, because both are the same kind of mistake.
+
+**A quarantined asset could never be removed.** The shape check tying `quarantined` to carrying a rejection reason was an equivalence, so moving off `quarantined` while keeping the reason was a state the database refused — and the transition table permits exactly that move. Somebody deleting a rejected upload got a constraint violation; a worker got an obligation that retried and dead-lettered, leaving the removal owed for ever. The constraint one line below it already had the right shape and the right reasoning written above it — `ready` is an implication rather than an equivalence "because a deleted asset keeps the record of having once been ready" — and the same reasoning simply had not been applied to the refusal reason.
+
+**Two storage methods threw where every other rejects.** Not a live bug, because both callers wrap them in a `try`. It is still an interface that behaves two ways on its error path, which is the sort of thing a future caller handles wrongly exactly once.
+
+Neither was reachable by a behaviour test. Every test that reaches `deleting` starts from a healthy asset; every test that reaches `quarantined` stops there. Each vocabulary was correct on its own and the *pair* was not, which is the class of defect only an adversarial read across a finished system turns up.
+
 ## Phase, events, and open questions
 
 Images only in this milestone. The asset and variant model is shaped so that a future video asset class is a new class rather than a new schema, but no transcoding, streaming, or segmented delivery is implemented, and none may be inferred from the model's generality.

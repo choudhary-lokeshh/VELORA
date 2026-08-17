@@ -285,7 +285,14 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     return timingSafeEqual(expected, input.signature);
   }
 
-  createUploadCapability(input: {
+  // `async`, so that a refused key arrives as a rejected promise rather than a
+  // synchronous throw. The two are not interchangeable to a caller: a
+  // synchronous throw escapes `objects.map((o) => storage.purge(o))` before
+  // `Promise.all` ever sees it, abandoning the other calls, and slips past a
+  // `.catch()` attached to the returned promise. Every other method on this
+  // port rejects, and an interface whose error mode depends on which method you
+  // called is one somebody eventually handles wrongly.
+  async createUploadCapability(input: {
     readonly expiresAt: Date;
     readonly maximumBytes: number;
     readonly objectKey: string;
@@ -327,7 +334,8 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     return `https://media.velora.invalid/local-test/public/${requireObjectKey(objectKey)}`;
   }
 
-  purge(objectKey: string): Promise<MediaPurgeOutcome> {
+  // `async` for the reason `createUploadCapability` is.
+  async purge(objectKey: string): Promise<MediaPurgeOutcome> {
     requireObjectKey(objectKey);
     // There is no cache in front of a directory. Reporting `purged` would be a
     // lie that a real adapter's tests would then be written against.
