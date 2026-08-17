@@ -1,4 +1,4 @@
-import { asc, isNull, sql } from 'drizzle-orm';
+import { asc, inArray, isNull, sql, type SQLWrapper } from 'drizzle-orm';
 
 import type { MediaExecutor, MediaRepository } from './repository.js';
 import {
@@ -7,14 +7,18 @@ import {
   mediaObjects,
   mediaObligations,
 } from './schema.js';
-import type {
-  MediaAssetLifecycle,
-  MediaDriftKind,
-  MediaObjectRole,
-  MediaObjectState,
-  MediaPurgeRecord,
-  MediaRejectionReason,
-  MediaVariantKind,
+import {
+  mediaBacklogKinds,
+  mediaBacklogThresholdMilliseconds,
+  stalledMediaLifecycles,
+  type MediaAssetLifecycle,
+  type MediaBacklogKind,
+  type MediaDriftKind,
+  type MediaObjectRole,
+  type MediaObjectState,
+  type MediaPurgeRecord,
+  type MediaRejectionReason,
+  type MediaVariantKind,
 } from './policy.js';
 
 /**
@@ -48,6 +52,33 @@ export interface MediaStateCount {
   readonly state: string;
 }
 
+/**
+ * One class of owed work, with the age of the oldest thing in it.
+ *
+ * The age is the whole point. A count says how much is waiting and says nothing
+ * about whether it is moving: a hundred purges owed in the last minute is a
+ * busy platform, and one purge owed since Tuesday is a broken one. The two are
+ * indistinguishable by count and unmistakable by age.
+ *
+ * `oldestAgeSeconds` is absent rather than zero when nothing is waiting,
+ * because a zero would read as "something has been waiting no time at all" and
+ * an alert rule written against it would be written against a lie.
+ */
+export interface MediaBacklogAge {
+  /** True when the oldest has waited past this class's threshold. */
+  readonly breached: boolean;
+  /** How many are waiting. */
+  readonly count: number;
+  /** How long the oldest has waited. Absent when nothing is waiting. */
+  readonly oldestAgeSeconds: number | undefined;
+  readonly state: MediaBacklogKind;
+  /**
+   * The age at which this class becomes an alert, reported alongside it so a
+   * screen and a rule cannot come to disagree about when work is late.
+   */
+  readonly thresholdSeconds: number;
+}
+
 export interface MediaOperationalState {
   /** Which adapters are in force, by name. `unavailable` is the truth. */
   readonly adapters: {
@@ -57,6 +88,14 @@ export interface MediaOperationalState {
   /** The classes that need a person to look at them. */
   readonly attention: readonly MediaStateCount[];
   readonly assets: readonly MediaStateCount[];
+  /**
+   * Owed work, by class, with the age of the oldest thing in each.
+   *
+   * Every class is reported every time, including the empty ones. An alert rule
+   * reading a list that omits what is healthy cannot tell "nothing is owed"
+   * from "the signal stopped arriving", and those are opposite situations.
+   */
+  readonly backlogs: readonly MediaBacklogAge[];
   /** Outstanding disagreements between the record and the provider, by kind. */
   readonly drift: readonly MediaStateCount[];
   readonly objects: readonly MediaStateCount[];
@@ -143,6 +182,15 @@ export interface MediaAssetDetail {
 const assetDetailLimit = 50;
 
 export interface MediaOperationsDependencies {
+  /**
+   * The clock the rest of the domain runs on.
+   *
+   * A backlog age is measured against it rather than against the database's
+   * `now()`, so the screen agrees with the sweeps about what is late. Reading
+   * one clock for the deadline and another for the age is how a screen comes to
+   * disagree with the worker it is reporting on.
+   */
+  readonly now: () => Date;
   readonly repository: MediaRepository;
   readonly scannerName: string;
   readonly storageName: string;
@@ -154,23 +202,22 @@ export class MediaOperations {
   /**
    * The media platform in operational terms.
    *
-   * A read and only a read, and the cost is stated rather than claimed away:
-   * these are four grouped aggregates over whole tables, so each one is
-   * proportional to the table it counts. That is deliberate. Covering indexes
-   * would make them index-only scans and would tax every insert and update on
-   * the three busiest tables in this domain, permanently, for a screen nobody
-   * reads continuously — the same trade `AdminFinancialDirectory` makes over
-   * the `billing_` tables. What keeps it safe is that this is an operator
-   * screen rather than a request path, and that it returns counts rather than
-   * rows however large the platform gets.
+   * A read and only a read. The three grouped counts are answered from covering
+   * indexes rather than from the tables — the argument that they would tax
+   * every write for a screen nobody reads continuously was overruled by
+   * measurement, which put them at a few megabytes against tens of thousands of
+   * buffers saved. The backlog reads are answered from the partial indexes that
+   * hold only the outstanding work, so each one is proportional to what is owed
+   * rather than to what has ever been done.
    */
   async operationalState(): Promise<MediaOperationalState> {
     const executor = this.dependencies.repository.transactionless;
-    const [assets, objects, obligations, drift] = await Promise.all([
+    const [assets, objects, obligations, drift, backlogs] = await Promise.all([
       this.assetStates(executor),
       this.objectStates(executor),
       this.obligationStates(executor),
       this.driftKinds(executor),
+      this.backlogs(executor),
     ]);
 
     return {
@@ -179,15 +226,19 @@ export class MediaOperations {
         storage: this.dependencies.storageName,
       },
       assets,
-      // Everything a person has to act on, gathered from the three places it
+      // Everything a person has to act on, gathered from the four places it
       // hides. A dead-lettered obligation is a duty the platform gave up on; a
-      // quarantined asset is somebody's upload that will never work; and
-      // outstanding drift is a disagreement with the provider nothing could
-      // safely correct. None of them resolves on its own.
+      // quarantined asset is somebody's upload that will never work; a breached
+      // backlog is work that is owed and not moving; and outstanding drift is a
+      // disagreement with the provider nothing could safely correct. None of
+      // them resolves on its own.
       attention: [
         ...obligations
           .filter((row) => row.state.endsWith('_dead_letter'))
           .map((row) => ({ count: row.count, state: row.state })),
+        ...backlogs
+          .filter((row) => row.breached)
+          .map((row) => ({ count: row.count, state: `late_${row.state}` })),
         ...drift.map((row) => ({
           count: row.count,
           state: `drift_${row.state}`,
@@ -196,6 +247,7 @@ export class MediaOperations {
           .filter((row) => row.state === 'quarantined')
           .map((row) => ({ count: row.count, state: 'quarantined_assets' })),
       ],
+      backlogs,
       drift,
       objects,
       obligations,
@@ -346,6 +398,110 @@ export class MediaOperations {
       .orderBy(asc(mediaDriftFindings.kind));
     return rows.map((row) => ({ count: row.count, state: row.state }));
   }
+
+  /**
+   * Owed work, by class, with the age of the oldest thing in each.
+   *
+   * Four reads, and each one asks a partial index that holds only the
+   * outstanding rows: the claimable obligations, the purges asked for and never
+   * answered, the findings nobody closed, and the assets still owed a move. A
+   * platform with a decade of discharged work answers all four from indexes the
+   * size of what is currently owed.
+   *
+   * The age is asked of PostgreSQL against the clock this domain runs on rather
+   * than against the database's own, so a screen and a sweep cannot disagree
+   * about whether something is late. It is clamped at zero because a seeded or
+   * skewed instant slightly in the future is a clock artefact, and a negative
+   * age would read as a backlog that has not started waiting yet.
+   */
+  private async backlogs(
+    executor: MediaExecutor,
+  ): Promise<readonly MediaBacklogAge[]> {
+    const now = this.dependencies.now().toISOString();
+    const ageSeconds = (column: SQLWrapper) =>
+      sql<number>`max(extract(epoch from (${now}::timestamptz - ${column})))::int`;
+
+    const [obligations, purges, drift, stalled] = await Promise.all([
+      executor
+        .select({
+          count: sql<number>`count(*)::int`,
+          kind: mediaObligations.kind,
+          oldest: ageSeconds(mediaObligations.createdAt),
+        })
+        .from(mediaObligations)
+        .where(sql`${mediaObligations.state} = 'pending'`)
+        .groupBy(mediaObligations.kind),
+      executor
+        .select({
+          count: sql<number>`count(*)::int`,
+          oldest: ageSeconds(mediaObjects.purgeRequestedAt),
+        })
+        .from(mediaObjects)
+        .where(
+          sql`${mediaObjects.purgeRequestedAt} is not null and ${mediaObjects.purgeOutcome} is null`,
+        ),
+      executor
+        .select({
+          count: sql<number>`count(*)::int`,
+          oldest: ageSeconds(mediaDriftFindings.createdAt),
+        })
+        .from(mediaDriftFindings)
+        .where(isNull(mediaDriftFindings.resolvedAt)),
+      executor
+        .select({
+          count: sql<number>`count(*)::int`,
+          oldest: ageSeconds(mediaAssets.lifecycleChangedAt),
+        })
+        .from(mediaAssets)
+        .where(inArray(mediaAssets.lifecycle, [...stalledMediaLifecycles])),
+    ]);
+
+    const measured = new Map<MediaBacklogKind, MeasuredBacklog>();
+    for (const row of obligations) {
+      measured.set(`${row.kind}_pending` satisfies MediaBacklogKind, row);
+    }
+    // An ungrouped aggregate returns one row whatever the table holds, so the
+    // fallback is unreachable rather than a default anybody relies on. It is
+    // written out because a missing row would mean nothing was owed, and that
+    // is the safe reading rather than a thrown screen.
+    const nothingOwed: MeasuredBacklog = { count: 0, oldest: 0 };
+    measured.set('purge_unanswered', purges[0] ?? nothingOwed);
+    measured.set('drift_open', drift[0] ?? nothingOwed);
+    measured.set('lifecycle_stalled', stalled[0] ?? nothingOwed);
+
+    // Every class every time, healthy ones included. A rule reading a list that
+    // omitted what was fine could not tell "nothing is owed" from "the signal
+    // stopped arriving".
+    return mediaBacklogKinds.map((state) => {
+      const row = measured.get(state);
+      const thresholdSeconds = Math.floor(
+        mediaBacklogThresholdMilliseconds[state] / 1_000,
+      );
+      if (row === undefined || row.count === 0) {
+        return {
+          breached: false,
+          count: 0,
+          oldestAgeSeconds: undefined,
+          state,
+          thresholdSeconds,
+        };
+      }
+      const oldestAgeSeconds = Math.max(0, row.oldest);
+      return {
+        breached: oldestAgeSeconds > thresholdSeconds,
+        count: row.count,
+        oldestAgeSeconds,
+        state,
+        thresholdSeconds,
+      };
+    });
+  }
+}
+
+/** One backlog class as the database reported it, before it is labelled. */
+interface MeasuredBacklog {
+  readonly count: number;
+  readonly oldest: number;
 }
 
 /** Whether this composition could accept media at all. */

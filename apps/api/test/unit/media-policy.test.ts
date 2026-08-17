@@ -7,12 +7,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import {
   maximumMediaObjectBytes,
   mediaAssetLifecycles,
+  mediaBacklogKinds,
+  mediaBacklogThresholdMilliseconds,
   mediaDeliveryCredentialSeconds,
+  mediaDriftAttentionMilliseconds,
   mediaObjectKey,
+  mediaObligationKinds,
+  mediaPurgeStallMilliseconds,
+  mediaStallMilliseconds,
   mediaTransitionAllowed,
   mediaVariantKinds,
   requiredMediaVariants,
   mediaAssetClasses,
+  stalledMediaLifecycles,
+  transientMediaLifecycles,
   type MediaAssetLifecycle,
 } from '../../src/media/policy.js';
 import {
@@ -410,5 +418,78 @@ describe('the scanner that refuses', () => {
         objectKey: 'unused',
       }),
     ).toBe('clean');
+  });
+});
+
+describe('the backlogs an operator can be paged about', () => {
+  it('has a class for every kind of work the platform can owe', () => {
+    // A new obligation kind with no backlog class would be work that could pile
+    // up invisibly, which is the exact failure this table exists to prevent. It
+    // is asserted against the obligation vocabulary rather than against a list
+    // written here, so adding a kind fails until somebody decides how late is
+    // too late for it.
+    for (const kind of mediaObligationKinds) {
+      expect(mediaBacklogKinds as readonly string[]).toContain(
+        `${kind}_pending`,
+      );
+    }
+  });
+
+  it('gives every class a threshold, and takes them from the machine', () => {
+    for (const backlog of mediaBacklogKinds) {
+      expect(
+        mediaBacklogThresholdMilliseconds[backlog],
+        backlog,
+      ).toBeGreaterThan(0);
+    }
+
+    // Derived from the deadlines the platform already runs on rather than
+    // chosen for a dashboard. A threshold shorter than the sweep's own bound
+    // would page somebody about work that is proceeding normally, and a longer
+    // one would stay quiet while reconciliation was already repairing.
+    expect(mediaBacklogThresholdMilliseconds.purge_pending).toBe(
+      mediaStallMilliseconds,
+    );
+    expect(mediaBacklogThresholdMilliseconds.lifecycle_stalled).toBe(
+      mediaStallMilliseconds,
+    );
+    expect(mediaBacklogThresholdMilliseconds.purge_unanswered).toBe(
+      mediaPurgeStallMilliseconds,
+    );
+    // The one exception, and it is measured against a person rather than a
+    // worker: what is left open is the drift no automatic correction was safe
+    // for, and only somebody deciding closes it.
+    expect(mediaBacklogThresholdMilliseconds.drift_open).toBe(
+      mediaDriftAttentionMilliseconds,
+    );
+    expect(mediaDriftAttentionMilliseconds).toBeGreaterThan(
+      mediaStallMilliseconds,
+    );
+  });
+
+  it('measures a stalled asset on the states the platform owes, not on every one in flight', () => {
+    // `initiated` and `awaiting_upload` are somebody choosing a file. They are
+    // transient, they are swept on their own far longer clock, and counting
+    // them would report every upload in progress as a backlog.
+    for (const lifecycle of stalledMediaLifecycles) {
+      expect(transientMediaLifecycles as readonly string[]).toContain(
+        lifecycle,
+      );
+    }
+    expect(stalledMediaLifecycles as readonly string[]).not.toContain(
+      'initiated',
+    );
+    expect(stalledMediaLifecycles as readonly string[]).not.toContain(
+      'awaiting_upload',
+    );
+  });
+
+  it('gives dead-lettered work no threshold at all', () => {
+    // A dead letter is not a backlog draining slowly; it is work the platform
+    // gave up on, actionable the instant it appears. A threshold would imply
+    // there is an amount of it that is fine.
+    for (const backlog of mediaBacklogKinds) {
+      expect(backlog).not.toContain('dead_letter');
+    }
   });
 });

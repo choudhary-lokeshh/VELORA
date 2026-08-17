@@ -519,12 +519,41 @@ export const adminMediaAdapterStateSchema = z
   })
   .strict();
 
+/**
+ * One class of owed work, with the age of the oldest thing in it.
+ *
+ * A count alone cannot distinguish a busy platform from a stuck one: a hundred
+ * purges owed in the last minute and one purge owed since Tuesday are the same
+ * number and opposite situations. The age is what separates them, and the
+ * threshold travels with it so an alert rule and the screen cannot come to
+ * disagree about when a class is late.
+ *
+ * `oldestAgeSeconds` is absent rather than zero when nothing is waiting. A zero
+ * would read as "something has been waiting no time at all", and a rule written
+ * against it would be written against a lie.
+ */
+export const adminMediaBacklogSchema = z
+  .object({
+    breached: z.boolean(),
+    count: z.number().int().min(0),
+    oldestAgeSeconds: z.number().int().min(0).optional(),
+    state: z.string().min(1).max(64),
+    thresholdSeconds: z.number().int().min(1),
+  })
+  .strict();
+
 export const adminMediaStateResponseSchema = z
   .object({
     adapters: adminMediaAdapterStateSchema,
     assets: z.array(adminMediaCountSchema),
     /** Everything that needs a person. Nothing here resolves on its own. */
     attention: z.array(adminMediaCountSchema),
+    /**
+     * Owed work, by class, every class every time. A list that omitted the
+     * healthy classes could not tell an operator "nothing is owed" apart from
+     * "the signal stopped arriving", and those are opposite situations.
+     */
+    backlogs: z.array(adminMediaBacklogSchema),
     /** Outstanding disagreements between the record and the provider. */
     drift: z.array(adminMediaCountSchema),
     /** Whether this environment can accept media at all. */

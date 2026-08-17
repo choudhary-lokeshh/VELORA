@@ -610,6 +610,75 @@ export const mediaPurgeStallMilliseconds = 15 * 60_000;
 export const mediaSweepBatchSize = 100;
 
 /**
+ * How long an outstanding disagreement may sit before a person owes it a look.
+ *
+ * Unlike every other threshold here, this one is not a machine's deadline. A
+ * finding the platform could repair is repaired inside a cycle, and one it
+ * could owe to the ordinary pipeline is owed inside a cycle; what is left open
+ * is the class no automatic correction was safe for, and the only thing that
+ * closes it is somebody deciding what to do. So this is measured against a
+ * person's response, not a worker's, and it is deliberately long enough that a
+ * transient disagreement observed and resolved between two audits never reaches
+ * it.
+ */
+export const mediaDriftAttentionMilliseconds = 60 * 60_000;
+
+/**
+ * The classes of owed work an operator can be paged about.
+ *
+ * Each is something the platform is *waiting* on rather than something it has
+ * done: work claimable and unclaimed, a purge asked for and unanswered, a
+ * disagreement nobody closed, an asset the platform still owes a move. A count
+ * alone cannot distinguish a busy minute from a stuck hour, which is why every
+ * one of them is reported with the age of its oldest member as well.
+ *
+ * Dead-lettered duties are deliberately *not* here. A dead letter is not a
+ * backlog draining slowly; it is work the platform gave up on, actionable the
+ * instant it appears and at any age, and it is already surfaced by count under
+ * `attention`. Giving it an age threshold would imply there is an amount of it
+ * that is fine.
+ */
+export const mediaBacklogKinds = [
+  'delete_pending',
+  'drift_open',
+  'inspect_pending',
+  'lifecycle_stalled',
+  'process_pending',
+  'purge_pending',
+  'purge_unanswered',
+  'reconcile_pending',
+  'scan_pending',
+] as const;
+export type MediaBacklogKind = (typeof mediaBacklogKinds)[number];
+
+/**
+ * How old the oldest member of a backlog may be before it is an alert.
+ *
+ * Derived from the durations the platform already runs on rather than chosen
+ * for a dashboard, because a threshold that disagrees with the machine's own
+ * deadlines pages somebody about work that is proceeding normally. An owed duty
+ * gets {@link mediaStallMilliseconds}, which the stall detector already treats
+ * as longer than a lease plus a full run of backoffs. An unanswered purge gets
+ * {@link mediaPurgeStallMilliseconds}, the same instant at which reconciliation
+ * decides the purge was never answered. An asset in a transient lifecycle gets
+ * the stall bound it is already measured against, so the screen and the sweep
+ * cannot disagree about what stuck means.
+ */
+export const mediaBacklogThresholdMilliseconds: Readonly<
+  Record<MediaBacklogKind, number>
+> = {
+  delete_pending: mediaStallMilliseconds,
+  drift_open: mediaDriftAttentionMilliseconds,
+  inspect_pending: mediaStallMilliseconds,
+  lifecycle_stalled: mediaStallMilliseconds,
+  process_pending: mediaStallMilliseconds,
+  purge_pending: mediaStallMilliseconds,
+  purge_unanswered: mediaPurgeStallMilliseconds,
+  reconcile_pending: mediaStallMilliseconds,
+  scan_pending: mediaStallMilliseconds,
+};
+
+/**
  * The shape an owning domain's operation identity must have.
  *
  * It matches the published client idempotency contract, because in practice it

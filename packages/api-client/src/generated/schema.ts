@@ -2045,6 +2045,13 @@ export interface components {
                 count: number;
                 state: string;
             }[];
+            backlogs: {
+                breached: boolean;
+                count: number;
+                oldestAgeSeconds?: number;
+                state: string;
+                thresholdSeconds: number;
+            }[];
             drift: {
                 count: number;
                 state: string;
@@ -11285,7 +11292,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The media platform in operational terms: how many assets are in each technical state, how many stored objects are present or destroyed, how much work is owed and how much of it the platform gave up on, and which disagreements with the storage provider nobody could safely correct. Counts and adapter names only — no asset identifier, no owner, no object key, and no digest. */
+            /** @description The media platform in operational terms: how many assets are in each technical state, how many stored objects are present or destroyed, how much work is owed and how much of it the platform gave up on, how long the oldest owed thing in each class has been waiting and whether that is past the age at which it becomes an alert, and which disagreements with the storage provider nobody could safely correct. Counts, ages, and adapter names only — no asset identifier, no owner, no object key, and no digest. */
             200: {
                 headers: {
                     /** @description Request correlation identifier */

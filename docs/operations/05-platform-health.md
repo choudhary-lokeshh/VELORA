@@ -10,6 +10,8 @@ Track user-visible journeys and their dependencies: authentication/onboarding, d
 
 Health indicators include availability, latency, errors, saturation, queue age/retries/DLQ, event lag, provider verification/failure, reconciliation backlog, authorization/entitlement denial anomalies, moderation/support backlog, deletion/export completion, audit pipeline, backup/restore status, and feature/country configuration drift.
 
+A backlog indicator is a count **and** an age. A count alone cannot separate a busy minute from a stuck hour, and only the age says which one an operator is looking at. Where a domain already runs on a deadline — a lease, a backoff run, a stall bound, a sweep interval — the alerting age is derived from that deadline rather than chosen separately, so a dashboard cannot call work late that the platform considers to be proceeding, or call it healthy while a sweep is already repairing it. MEDIA publishes its owed work this way through the operator media state: every class every time, healthy ones included, each with the age of its oldest member and the threshold it is measured against, and its readiness gate in the [media threat model](../security/10-media-threat-model.md) depends on those signals being alertable and owned. A class that reports only when unhealthy cannot be distinguished from a class whose signal stopped arriving.
+
 ## Ownership and dashboards
 
 Each domain owns service and business-process indicators for its contracts. Platform operations owns shared runtime/egress/queue/data infrastructure. ADMIN presents role-scoped health and operation links but does not become telemetry or domain truth. ANALYTICS product metrics remain separate from operational health and immutable audit.

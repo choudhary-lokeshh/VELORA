@@ -342,6 +342,18 @@ The correctness suites prove one worker behaves and that a second cannot take a 
 
 There are no sleeps in that file. Every ordering that matters is a database fact — a lease instant, a unique index, a claimed row — because a test that waits is a test that passes until the machine is busy, which is when concurrency defects surface.
 
+## What an operator is paged about
+
+The operator media state carries counts, and counts alone cannot tell a busy platform from a stuck one: a hundred purges owed in the last minute and one purge owed since Tuesday are the same number and opposite situations. So every class of owed work is also reported with the **age of its oldest member** and the threshold that age is measured against — the purges and deletions and inspections still owed, the purges asked for and never answered, the disagreements nobody closed, and the assets the platform took on and has not finished.
+
+Every class is reported every time, healthy ones included. A list that omitted what was fine could not distinguish "nothing is owed" from "the signal stopped arriving", which are opposite situations that page differently. A class with nothing in it reports no age at all rather than an age of zero, because zero reads as "waiting no time at all" and a rule written against it would be written against a lie.
+
+The thresholds are taken from the deadlines the platform already runs on rather than chosen for a dashboard. An owed duty is late at the same instant the stall sweep would call it stalled; an unanswered purge is late at the same instant reconciliation decides it was never answered. That is what stops the screen and the worker disagreeing — an operator cannot be told a thing is fine while reconciliation is already repairing it. The one exception is an outstanding drift finding, and it is deliberately measured against a person rather than a worker: what stays open is the class no automatic correction was safe for, so the only thing that closes it is somebody deciding.
+
+Two things are deliberately absent. A **dead-lettered** duty gets no age threshold, because it is not a backlog draining slowly — it is work the platform gave up on, actionable the instant it appears, and a threshold would imply there is an amount of it that is fine; it is surfaced by count instead. And an asset in `initiated` or `awaiting_upload` is not counted as stalled, because that is somebody choosing a file rather than the platform owing a move, and counting it would report every upload in progress as stuck.
+
+The whole set is answered from the partial indexes that hold only outstanding rows, so the cost is proportional to what is owed rather than to what has ever been done: measured against forty thousand discharged duties and forty thousand five hundred retained findings, five hundred outstanding findings cost five buffers and two thousand outstanding duties cost forty-one.
+
 ## What a hostile read found
 
 The adversarial suite is [`media-red-team`](../../apps/api/test/integration/media-red-team.test.ts), and the [media threat model](../security/10-media-threat-model.md) records what it attacks and what held. Two things it broke are worth carrying here, because both are the same kind of mistake.

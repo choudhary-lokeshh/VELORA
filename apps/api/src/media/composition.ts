@@ -126,6 +126,7 @@ export function createMediaRuntime(input: {
       storage,
     }),
     operations: new MediaOperations({
+      now,
       repository,
       scannerName: scanner.name,
       storageName: storage.name,

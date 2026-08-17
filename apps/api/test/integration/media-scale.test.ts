@@ -51,6 +51,27 @@ const openAssets = 20_000;
 const abandonedAssets = 2_000;
 /** One in fifty windows stranded with no capability, as a crash would leave. */
 const strandedEvery = 50;
+/**
+ * A backlog, against a platform that has discharged forty thousand duties.
+ *
+ * Small on purpose, and that is the property under test rather than a saving:
+ * what is owed at any moment is a tiny fraction of what has ever been done, so
+ * a read that answers "what is still outstanding, and since when" from a
+ * partial index costs the backlog and a read that does not costs the history.
+ * A seed with no backlog in it would let both look identical.
+ */
+const owedDuties = 2_000;
+const owedPurges = 2_000;
+const openFindings = 500;
+/** Assets the platform took on and has not finished, among the ones it has. */
+const stalledAssets = 500;
+/**
+ * Findings are retained rather than tidied — "this asset's derivative went
+ * missing twice last month" is an answer somebody will need — so the history
+ * outgrows the backlog by orders of magnitude, and a read of what is still
+ * outstanding must not pay for it.
+ */
+const resolvedFindings = 40_000;
 
 function uuidFor(prefix: string, index: number): string {
   const tail = index.toString(16).padStart(12, '0');
@@ -238,8 +259,85 @@ async function seed(): Promise<void> {
     })),
   );
 
+  // Work the platform took on and did not finish, sitting in a transient state
+  // long enough for the sweep to call it a stall. Few, as they should be, and
+  // hidden behind forty thousand finished ones.
+  await seedRows(
+    'media_assets',
+    Array.from({ length: stalledAssets }, (_unused, index) => ({
+      asset_class: 'consumer_profile_image',
+      byte_size: 1_000,
+      created_at: iso(-2 * 86_400_000),
+      detected_format: 'jpeg',
+      digest: 'a'.repeat(64),
+      frame_count: 1,
+      height: 100,
+      id: uuidFor('5aaaaaaa', index),
+      idempotency_key: `stuck-${String(index).padStart(8, '0')}`,
+      lifecycle: 'processing',
+      lifecycle_changed_at: iso(-2 * 86_400_000),
+      owner_domain: 'users',
+      owner_reference: uuidFor('8aaaaaaa', index),
+      updated_at: iso(-2 * 86_400_000),
+      width: 100,
+    })),
+  );
+
+  // What is owed right now, hiding behind everything above. Kinds that address
+  // the asset rather than one of its objects, one per asset, because the unique
+  // partial index allows exactly one outstanding duty of a kind per asset.
+  await seedRows(
+    'media_obligations',
+    Array.from({ length: owedDuties }, (_unused, index) => ({
+      asset_id: uuidFor('aaaaaaaa', index),
+      attempts: 0,
+      available_at: iso(index * 1_000),
+      created_at: iso(index * 1_000),
+      id: uuidFor('3aaaaaaa', index),
+      kind: index % 2 === 0 ? 'process' : 'reconcile',
+      state: 'pending',
+      updated_at: iso(index * 1_000),
+    })),
+  );
+
+  // Purges asked for and never answered. The outcome column is what keeps them
+  // visible, and the partial index is what keeps finding them cheap.
+  await execute(
+    database.sql.unsafe(
+      `update media_objects set purge_requested_at = created_at
+       where id in (select id from media_objects order by id limit ${String(owedPurges)})`,
+    ),
+  );
+
+  // Disagreements, mostly closed. The few still outstanding are what an
+  // operator is paged about, and the many resolved ones are the history that
+  // must cost the question nothing.
+  await seedRows(
+    'media_drift_findings',
+    Array.from(
+      { length: openFindings + resolvedFindings },
+      (_unused, index) => {
+        const open = index < openFindings;
+        const assetId = uuidFor('aaaaaaaa', index % readyAssets);
+        return {
+          asset_id: assetId,
+          created_at: iso(index * 1_000),
+          id: uuidFor('4aaaaaaa', index),
+          kind: 'variant_missing',
+          last_observed_at: iso(index * 1_000),
+          object_key: objectKeyFor(assetId, index),
+          occurrences: 1,
+          resolution: open ? null : 'repaired',
+          resolved_at: open ? null : iso(index * 1_000),
+          updated_at: iso(index * 1_000),
+        };
+      },
+    ),
+  );
+
   for (const table of [
     'media_assets',
+    'media_drift_findings',
     'media_objects',
     'media_obligations',
     'media_upload_sessions',
@@ -421,6 +519,86 @@ describe('the operator screen reads an index rather than the platform', () => {
     // different question from a fast claim, and both are needed.
     expect(plan).toContain('media_obligations_kind_state_idx');
     expect(plan).toContain('Index Only Scan');
+  });
+});
+
+describe('the backlog ages cost what is owed, not what has been done', () => {
+  /**
+   * Each of these is the query behind one class on the operator screen, and
+   * each asks a partial index that holds only the outstanding rows. That is
+   * the whole property: a platform with years of discharged work answers "how
+   * long has the oldest one been waiting" from an index the size of the
+   * backlog rather than of the history.
+   */
+  it('ages the purges nobody answered from the backlog index alone', async () => {
+    const plan = await planFor(
+      database.sql`explain analyze
+        select count(*)::int,
+               max(extract(epoch from (now() - purge_requested_at)))::int
+        from media_objects
+        where purge_requested_at is not null and purge_outcome is null`,
+    );
+
+    // Ninety-odd buffers for two thousand unanswered purges against forty
+    // thousand objects: an object whose purge was answered leaves the partial
+    // index and stops being paid for.
+    //
+    // The index is asserted and the *kind* of scan is not, deliberately.
+    // Whether PostgreSQL can answer it index-only depends on the visibility map
+    // and therefore on when the table was last vacuumed, which is a property of
+    // the machine rather than of the schema — and a suite that asserted it
+    // would fail for a reason no change caused.
+    expect(plan).toContain('media_objects_purge_pending_idx');
+    expect(plan).not.toContain('Seq Scan on media_objects');
+  });
+
+  it('ages the findings nobody closed from the open-findings index', async () => {
+    const plan = await planFor(
+      database.sql`explain analyze
+        select count(*)::int,
+               max(extract(epoch from (now() - created_at)))::int
+        from media_drift_findings
+        where resolved_at is null`,
+    );
+
+    // Five buffers for five hundred outstanding findings against forty thousand
+    // five hundred rows. Findings are retained rather than tidied, so the
+    // history is the thing this question must not be made to read.
+    expect(plan).toContain('media_drift_findings_open_idx');
+    expect(plan).not.toContain('Seq Scan on media_drift_findings');
+  });
+
+  it('ages owed duties without reading the ones already discharged', async () => {
+    const plan = await planFor(
+      database.sql`explain analyze
+        select kind, count(*)::int,
+               max(extract(epoch from (now() - created_at)))::int
+        from media_obligations
+        where state = 'pending'
+        group by kind`,
+    );
+
+    // Forty-one buffers for two thousand outstanding duties against forty-two
+    // thousand rows: the read is proportional to what is owed rather than to
+    // what has ever been discharged.
+    expect(plan).toContain('media_obligations_kind_state_idx');
+    expect(plan).not.toContain('Seq Scan on media_obligations');
+  });
+
+  it('ages the assets still owed a move from the transient index', async () => {
+    const plan = await planFor(
+      database.sql`explain analyze
+        select count(*)::int,
+               max(extract(epoch from (now() - lifecycle_changed_at)))::int
+        from media_assets
+        where lifecycle in ('uploaded', 'inspecting', 'inspected', 'processing', 'deleting')`,
+    );
+
+    // The narrow lifecycle index leads, as it does for the stall sweep and the
+    // operator's count — the third thing it earns its keep on. Twenty-one
+    // buffers for five hundred assets in flight against sixty-two thousand.
+    expect(plan).toContain('media_assets_lifecycle_idx');
+    expect(plan).not.toContain('Seq Scan on media_assets');
   });
 });
 

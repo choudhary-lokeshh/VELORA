@@ -69,6 +69,7 @@ export class AdminMediaRoutes {
         adapters: state.adapters,
         assets: state.assets,
         attention: state.attention,
+        backlogs: state.backlogs,
         drift: state.drift,
         // Derived from the adapters this process actually composed, not from
         // the configuration that was meant to select them. A screen reporting

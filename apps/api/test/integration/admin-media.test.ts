@@ -5,7 +5,13 @@ import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { mediaLiveAvailability } from '../../src/media/operations.js';
-import type { MediaAssetClass } from '../../src/media/policy.js';
+import {
+  mediaBacklogKinds,
+  mediaBacklogThresholdMilliseconds,
+  mediaStallMilliseconds,
+  type MediaAssetClass,
+  type MediaBacklogKind,
+} from '../../src/media/policy.js';
 import type { LocalTestMediaStorage } from '../../src/media/storage.js';
 import * as fixture from '../support/media-fixtures.js';
 import {
@@ -239,6 +245,42 @@ async function seedContentWithImage(assetId: string): Promise<string> {
       values (${contentId}, now(), ${crypto.randomUUID()}, ${assetId}, 0, now())`,
   );
   return contentId;
+}
+
+/** One backlog class as the operator screen reports it. */
+interface BacklogRow {
+  readonly breached: boolean;
+  readonly count: number;
+  readonly oldestAgeSeconds?: number;
+  readonly state: MediaBacklogKind;
+  readonly thresholdSeconds: number;
+}
+
+/**
+ * A purge duty owed for one of an asset's objects since a chosen instant.
+ *
+ * Written straight into the table because the age is the subject of the test:
+ * driving the ordinary path would produce a duty owed since now, which is the
+ * one age that cannot distinguish a healthy backlog from a stuck one. Purge is
+ * object-scoped, so two duties for one asset need two objects — the unique
+ * partial index sees to that, and asking for the same object twice would be
+ * testing the index rather than the screen.
+ */
+async function owePurge(
+  assetId: string,
+  createdAt: Date,
+  objectIndex = 0,
+): Promise<void> {
+  const objects = await rowsOf<{ readonly id: string }>(
+    database.sql`select id from media_objects
+                 where asset_id = ${assetId} order by role, variant_kind`,
+  );
+  await execute(
+    database.sql`insert into media_obligations
+      (asset_id, available_at, created_at, id, kind, object_id, state, updated_at)
+      values (${assetId}, ${createdAt}, ${createdAt}, ${crypto.randomUUID()},
+              'purge', ${objects[objectIndex]?.id ?? ''}, 'pending', ${createdAt})`,
+  );
 }
 
 async function purgesOwed(assetId: string): Promise<number> {
@@ -496,6 +538,201 @@ describe('the operator media screen', () => {
       count: 1,
       state: 'drift_original_missing',
     });
+  });
+});
+
+describe('what the operator screen says about work that is not moving', () => {
+  async function backlogsFor(operator: Operator): Promise<BacklogRow[]> {
+    const response = await handle(
+      operatorRequest('/v1/admin/media/state', operator),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { backlogs: BacklogRow[] };
+    return body.backlogs;
+  }
+
+  it('reports every class every time, healthy ones included', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    await readyAsset('creators', 'creator_avatar_image');
+
+    const backlogs = await backlogsFor(operator);
+
+    // A rule reading a list that omitted what was fine could not tell "nothing
+    // is owed" from "the signal stopped arriving", which are opposite
+    // situations and would page differently.
+    expect(backlogs.map((row) => row.state)).toEqual([...mediaBacklogKinds]);
+    for (const row of backlogs) {
+      expect(row.count, row.state).toBe(0);
+      expect(row.breached, row.state).toBe(false);
+      // Absent rather than zero. A zero would read as "something has been
+      // waiting no time at all", and an alert written against it would be
+      // written against a lie.
+      expect(row.oldestAgeSeconds, row.state).toBeUndefined();
+      expect(row.thresholdSeconds, row.state).toBe(
+        Math.floor(mediaBacklogThresholdMilliseconds[row.state] / 1_000),
+      );
+    }
+  });
+
+  it('separates a busy minute from a stuck hour by age rather than by count', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    const assetId = await readyAsset('creators', 'creator_avatar_image');
+    const threshold = mediaBacklogThresholdMilliseconds.purge_pending;
+
+    // Two duties of one kind: one owed a moment ago and one owed since before
+    // the threshold. The count cannot tell them apart and the age can.
+    await owePurge(assetId, new Date());
+    await owePurge(assetId, new Date(Date.now() - threshold - 60_000), 1);
+
+    const backlogs = await backlogsFor(operator);
+    const purges = backlogs.find((row) => row.state === 'purge_pending');
+
+    expect(purges?.count).toBe(2);
+    expect(purges?.breached).toBe(true);
+    expect(purges?.oldestAgeSeconds ?? 0).toBeGreaterThan(
+      Math.floor(threshold / 1_000),
+    );
+    // And the same fact reaches the list an operator is actually paged from.
+    const response = await handle(
+      operatorRequest('/v1/admin/media/state', operator),
+    );
+    const body = (await response.json()) as {
+      attention: { count: number; state: string }[];
+    };
+    expect(body.attention).toContainEqual({
+      count: 2,
+      state: 'late_purge_pending',
+    });
+  });
+
+  it('holds a young backlog under the threshold rather than paging on it', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    const assetId = await readyAsset('creators', 'creator_avatar_image');
+
+    // A minute inside the bound, which is the ordinary state of a platform
+    // doing its work. Alerting here would train an operator to ignore the page.
+    await owePurge(
+      assetId,
+      new Date(
+        Date.now() - mediaBacklogThresholdMilliseconds.purge_pending + 60_000,
+      ),
+    );
+
+    const purges = (await backlogsFor(operator)).find(
+      (row) => row.state === 'purge_pending',
+    );
+    expect(purges?.count).toBe(1);
+    expect(purges?.breached).toBe(false);
+    expect(purges?.oldestAgeSeconds ?? 0).toBeGreaterThan(0);
+  });
+
+  it('counts a purge asked for and never answered, and not one that was', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    const assetId = await readyAsset('creators', 'creator_avatar_image');
+    const objects = await rowsOf<{ readonly id: string }>(
+      database.sql`select id from media_objects where asset_id = ${assetId} order by role`,
+    );
+    const asked = new Date(
+      Date.now() - mediaBacklogThresholdMilliseconds.purge_unanswered - 60_000,
+    );
+
+    // One asked and unanswered, one asked and answered. Only the first is a
+    // backlog: the outcome column exists precisely so that a purge nobody
+    // answered stays visible instead of being assumed successful.
+    await execute(
+      database.sql`update media_objects set purge_requested_at = ${asked}
+                   where id = ${objects[0]?.id ?? ''}`,
+    );
+    await execute(
+      database.sql`update media_objects
+                   set purge_requested_at = ${asked}, purge_outcome = 'unsupported', purged_at = now()
+                   where id = ${objects[1]?.id ?? ''}`,
+    );
+
+    const unanswered = (await backlogsFor(operator)).find(
+      (row) => row.state === 'purge_unanswered',
+    );
+    expect(unanswered?.count).toBe(1);
+    expect(unanswered?.breached).toBe(true);
+  });
+
+  it('calls an asset stalled on the same bound the sweep does', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    const assetId = await readyAsset('creators', 'creator_avatar_image');
+    await execute(
+      database.sql`update media_assets
+                   set lifecycle = 'processing',
+                       lifecycle_changed_at = ${new Date(Date.now() - mediaStallMilliseconds - 60_000)}
+                   where id = ${assetId}`,
+    );
+
+    const stalled = (await backlogsFor(operator)).find(
+      (row) => row.state === 'lifecycle_stalled',
+    );
+
+    // The screen and the sweep read the same constant, so an operator cannot be
+    // told a thing is fine while reconciliation is already repairing it.
+    expect(stalled?.thresholdSeconds).toBe(
+      Math.floor(mediaStallMilliseconds / 1_000),
+    );
+    expect(stalled?.count).toBe(1);
+    expect(stalled?.breached).toBe(true);
+  });
+
+  it('does not call somebody still choosing a file a stall', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    operation += 1;
+    // An upload window nobody has used, opened long ago. The platform owes this
+    // asset nothing — a person does — and it has its own far longer sweep.
+    // Counting it would report every upload in progress as stuck.
+    const created = await mediaRuntime.service.createUpload({
+      assetClass: 'creator_avatar_image',
+      idempotencyKey: `admin-media-idle-${String(operation).padStart(4, '0')}`,
+      ownerDomain: 'creators',
+      ownerReference: creatorId,
+    });
+    if (created.kind !== 'upload_ready') throw new Error('expected an upload');
+    await execute(
+      database.sql`update media_assets
+                   set lifecycle_changed_at = ${new Date(Date.now() - mediaStallMilliseconds * 4)}
+                   where id = ${created.asset.id}`,
+    );
+
+    const stalled = (await backlogsFor(operator)).find(
+      (row) => row.state === 'lifecycle_stalled',
+    );
+    expect(stalled?.count).toBe(0);
+    expect(stalled?.breached).toBe(false);
+  });
+
+  it('carries no identifier in any of it', async () => {
+    const operator = await operatorSession();
+    await seedCreator();
+    const assetId = await readyAsset('creators', 'creator_avatar_image');
+    await owePurge(assetId, new Date(Date.now() - 86_400_000));
+    await execute(
+      database.sql`insert into media_drift_findings
+        (asset_id, created_at, id, kind, last_observed_at, occurrences, updated_at)
+        values (${assetId}, now(), ${crypto.randomUUID()}, 'original_missing', now(), 1, now())`,
+    );
+
+    const response = await handle(
+      operatorRequest('/v1/admin/media/state', operator),
+    );
+    const dump = await response.text();
+
+    // Ages and counts say how much is stuck without saying whose it is. A
+    // dashboard that also named the account is a dashboard somebody
+    // screenshots into an incident channel.
+    expect(dump).not.toContain(assetId);
+    expect(dump).not.toContain(creatorId);
+    expect(dump).not.toContain('media/');
   });
 });
 
