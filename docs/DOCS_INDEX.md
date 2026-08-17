@@ -31,6 +31,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [Money flow](architecture/10-money-flow.md) | End-to-end map of commercial, entitlement, earnings, payout, and reversal paths and the boundaries between them |
 | [Monetization freeze report](architecture/11-monetization-freeze-report.md) | What the money architecture froze with, what still blocks live money movement, and what unfreezes it |
 | [Trust and safety freeze report](architecture/12-trust-safety-freeze-report.md) | What the safety and mature-content architecture froze with, what still blocks production enforcement and mature content, and what unfreezes it |
+| [Media freeze report](architecture/13-media-freeze-report.md) | What the media platform froze with, what still blocks live production media, and what unfreezes it |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
@@ -213,7 +214,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - RTC: phases, REALTIME, RTC flow, surfaces, provider adapters, Trust & Safety, media/privacy, Design/Figma.
 - Billing: phases, monetisation, BILLING, payment lifecycle/security, jobs/concurrency, compliance, finance operations, Admin approval.
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
-- Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, media operations, ADR-0010, ADR-0022, ADR-0023.
+- Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, media operations, media freeze report, ADR-0010, ADR-0022, ADR-0023.
 - Moderation/Trust & Safety: phase, both domains, report flow, moderation operations, evidence/privacy, Admin/RBAC, ADR-0022, creator gates and surface/distribution eligibility where applicable.
 - Security/privacy: security baseline and every relevant specialized security/compliance/incident authority plus owning domain/flow.
 - Design/Figma: relevant product/surface/flow/security/phase, then all six Design/Figma documents and exact approved Figma handoff.
