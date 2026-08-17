@@ -4,7 +4,7 @@ packages:
 
 catalog:
   '@eslint/js': 9.39.5
-  '@expo/metro-runtime': 57.0.10
+  '@expo/metro-runtime': 57.0.11
   '@types/bun': 1.3.14
   '@opentelemetry/api': 1.9.1
   '@playwright/test': 1.62.1
@@ -21,11 +21,11 @@ catalog:
   drizzle-kit: 0.31.10
   drizzle-orm: 0.45.2
   eslint: 9.39.5
-  expo: 57.0.13
-  expo-constants: 57.0.11
+  expo: 57.0.14
+  expo-constants: 57.0.12
   expo-doctor: 1.20.1
   expo-linking: 57.0.6
-  expo-router: 57.0.13
+  expo-router: 57.0.14
   expo-secure-store: 57.0.1
   expo-status-bar: 57.0.1
   bullmq: 5.81.3
@@ -82,6 +82,21 @@ minimumReleaseAgeExclude:
   - expo-modules-core@57.0.11
   - expo-router@57.0.13
   - expo-server@57.0.3
+  # Expo SDK 57 patch line, DAB-2026-002. Second human-approved release-age
+  # override, exact versions only, authorized with this package list in front of
+  # the owner. The 1440-minute policy above is unchanged and no advisory was
+  # accepted. See docs/security/09-dependency-age-blockers.md for the
+  # authorization, the publication times, and the removal condition.
+  - '@expo/cli@57.0.16'
+  - '@expo/config@57.0.8'
+  - '@expo/fingerprint@0.20.8'
+  - '@expo/inline-modules@0.1.6'
+  - '@expo/log-box@57.0.3'
+  - '@expo/metro-runtime@57.0.11'
+  - expo@57.0.14
+  - expo-asset@57.0.12
+  - expo-constants@57.0.12
+  - expo-router@57.0.14
 
 allowBuilds:
   cpu-features: false
