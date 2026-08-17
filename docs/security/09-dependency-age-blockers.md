@@ -32,7 +32,7 @@ An override is recorded honestly. An entry cleared this way is never described a
 
 ## Current blockers
 
-None. `minimumReleaseAgeExclude` currently carries the exact-version exclusions from DAB-2026-002 and DAB-2026-001, both cleared by override and both pending removal under the conditions recorded below.
+None. `minimumReleaseAgeExclude` currently carries the exact-version exclusions from DAB-2026-002, which are pending removal under the condition recorded below. The sixteen exclusions DAB-2026-001 authorized were removed on 2026-08-17 once both of its stated conditions held, and that entry is deleted rather than archived — the register's rules are the durable part, and a cleared entry whose exclusions are gone has nothing left to govern. The `globals@17.11.0` exclusion is unrelated to either and stays.
 
 ## Cleared
 
@@ -98,72 +98,3 @@ Remove the ten Expo exclusions from `minimumReleaseAgeExclude` in a later mainte
 2. A normal `pnpm install --frozen-lockfile` succeeds with those entries deleted and the lockfile unchanged.
 
 Then delete this entry, leaving the register's rules in place.
-
-### DAB-2026-001: Expo SDK 57 patch line
-
-**Status: cleared 2026-08-14T18:19:37Z (2026-08-14 23:49:37 IST) by explicit human-approved exact-version release-age override.** The twenty-four-hour age policy was **not** allowed to elapse before installation. This entry is retained, rather than deleted, because the exclusions it authorizes are still in `pnpm-workspace.yaml` and their removal condition has not yet been met.
-
-#### The conflict
-
-`pnpm mobile:doctor` (`expo-doctor`) failed its "packages match versions required by installed Expo SDK" check. Five pinned catalog versions were one patch behind the SDK 57 line, and every required version was published on 2026-08-14, inside the twenty-four-hour window.
-
-The conflict was not caused by any change in this repository. `pnpm ci:verify` passed in full at **2026-08-14 19:45:51 IST**; the first of these releases appeared at **19:52:51 IST** and the last at **19:59:08 IST**, seven to fourteen minutes later.
-
-| Package | Was | Now | Published (UTC) |
-| --- | --- | --- | --- |
-| `expo` | 57.0.12 | 57.0.13 | 2026-08-14T14:25:27.591Z |
-| `expo-router` | 57.0.12 | 57.0.13 | 2026-08-14T14:29:08.543Z |
-| `expo-constants` | 57.0.10 | 57.0.11 | 2026-08-14T14:27:30.934Z |
-| `expo-linking` | 57.0.5 | 57.0.6 | 2026-08-14T14:24:35.534Z |
-| `@expo/metro-runtime` | 57.0.9 | 57.0.10 | 2026-08-14T14:27:27.566Z |
-
-Raising those five pins made the install newly resolve eleven more packages from the same release train, each subject to the same cutoff. pnpm refused all sixteen by name.
-
-| Transitive package | Version | Published (UTC) |
-| --- | --- | --- |
-| `@expo/cli` | 57.0.15 | 2026-08-14T14:26:53.784Z |
-| `@expo/config-plugins` | 57.0.8 | 2026-08-14T14:28:58.911Z |
-| `@expo/prebuild-config` | 57.0.12 | 2026-08-14T14:26:49.559Z |
-| `@expo/router-server` | 57.0.6 | 2026-08-14T14:24:44.617Z |
-| `@expo/ui` | 57.0.11 | 2026-08-14T14:26:40.385Z |
-| `babel-preset-expo` | 57.0.7 | 2026-08-14T14:26:42.501Z |
-| `expo-asset` | 57.0.11 | 2026-08-14T14:26:27.415Z |
-| `expo-file-system` | 57.0.4 | 2026-08-14T15:23:26.401Z |
-| `expo-modules-autolinking` | 57.0.10 | 2026-08-14T14:27:26.790Z |
-| `expo-modules-core` | 57.0.11 | 2026-08-14T14:27:25.544Z |
-| `expo-server` | 57.0.3 | 2026-08-14T14:22:51.084Z |
-
-The earlier revision of this entry named only three transitive packages. That list was produced before the pins were raised and was incomplete; the eleven above are what an actual resolution refused. The install also moved `multitars` 1.0.1 → 1.0.2 and added `sandbox-cli-detector` 0.2.0, both dependencies of `@expo/cli`. Neither needed an exclusion — they were published 2026-08-12 and 2026-07-18 and cleared the policy on their own.
-
-**Latest publication:** `expo-file-system@57.0.4`, 2026-08-14T15:23:26.401Z.
-
-**Normal eligibility, had the wait been taken:** **2026-08-15T15:23:26Z — 2026-08-15 20:53:26 IST.**
-
-#### The override
-
-The repository owner, with the package list above in front of them, declined to wait for that instant and authorized immediate clearance of these exact versions.
-
-What was authorized:
-
-- Exact-version entries in `minimumReleaseAgeExclude` for the sixteen versions named above, and only those.
-
-What was **not** authorized, and what did not change:
-
-- `minimumReleaseAge` remains **1440** repository-wide.
-- No wildcard, scope pattern, or bare package name was added. A future `expo@57.0.14` is refused by exactly the same control that refused `expo@57.0.13`.
-- No advisory, vulnerability, or audit finding was accepted, suppressed, or excluded. The dependency security gate is unchanged and still runs. This is a **release-age governance exception, not a vulnerability risk acceptance**; [dependency risk acceptance](08-dependency-risk-acceptance.md) remains the sole authority for advisories and gained no new record from this clearance.
-- No `expo-doctor` finding was ignored or added to `expo.install.exclude`.
-- No unrelated package was upgraded. The lockfile delta is eighteen package additions and sixteen removals, all of them the Expo SDK 57 patch train plus the two aged `@expo/cli` dependencies noted above.
-
-**Scope evidence.** The exclusions are version-scoped, not name-scoped. Replacing `expo@57.0.13` with a non-matching `expo@57.0.99` in the exclusion list and re-resolving produced `ERR_PNPM_NO_MATURE_MATCHING_VERSION: expo@57.0.13 was published at 2026-08-14T14:25:27.591Z, within the minimumReleaseAge cutoff` — the exclusion stopped applying the moment the version stopped matching.
-
-**Minimality evidence.** Sixteen versions were refused by pnpm; sixteen exclusions were added; all sixteen appear in the resulting lockfile. No package was excluded that the install did not name and then resolve.
-
-#### Removal condition
-
-Remove the sixteen Expo exclusions from `minimumReleaseAgeExclude` in a later maintenance change once **both** hold:
-
-1. Every excluded version is older than the 1440-minute policy — that is, after **2026-08-15T15:23:26Z**, which is the latest publication among them plus twenty-four hours.
-2. A normal `pnpm install --frozen-lockfile` succeeds with those entries deleted and the lockfile unchanged.
-
-Then delete this entry, leaving the register's rules in place. The `globals@17.11.0` exclusion is unrelated and stays.

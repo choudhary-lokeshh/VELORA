@@ -62,26 +62,6 @@ strictPeerDependencies: true
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - globals@17.11.0
-  # Expo SDK 57 patch line, DAB-2026-001. Human-approved release-age override,
-  # exact versions only. See docs/security/09-dependency-age-blockers.md for the
-  # authorization, the publication times, and the removal condition. Delete this
-  # block once every version below is past the 1440-minute policy on its own.
-  - '@expo/cli@57.0.15'
-  - '@expo/config-plugins@57.0.8'
-  - '@expo/metro-runtime@57.0.10'
-  - '@expo/prebuild-config@57.0.12'
-  - '@expo/router-server@57.0.6'
-  - '@expo/ui@57.0.11'
-  - babel-preset-expo@57.0.7
-  - expo@57.0.13
-  - expo-asset@57.0.11
-  - expo-constants@57.0.11
-  - expo-file-system@57.0.4
-  - expo-linking@57.0.6
-  - expo-modules-autolinking@57.0.10
-  - expo-modules-core@57.0.11
-  - expo-router@57.0.13
-  - expo-server@57.0.3
   # Expo SDK 57 patch line, DAB-2026-002. Second human-approved release-age
   # override, exact versions only, authorized with this package list in front of
   # the owner. The 1440-minute policy above is unchanged and no advisory was
