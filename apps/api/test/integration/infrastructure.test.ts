@@ -136,7 +136,7 @@ const redisContainerId = requiredEnvironment('TEST_REDIS_CONTAINER_ID');
 const redisHost = requiredEnvironment('TEST_REDIS_HOST');
 
 describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
-  it('runs actual migration command twice and creates only the AUTH domain tables', async () => {
+  it('runs actual migration command twice and creates only declared domain tables', async () => {
     const first = await runCommand(
       ['bun', 'run', 'scripts/migrate-database.ts'],
       {
@@ -201,6 +201,12 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'discovery_outbox',
         'discovery_passes',
         'discovery_presentations',
+        'identity_attempts',
+        'identity_evidence',
+        'identity_outbox',
+        'identity_provider_events',
+        'identity_reconciliation_findings',
+        'identity_subjects',
         'media_assets',
         'media_drift_findings',
         'media_objects',

@@ -95,6 +95,8 @@ Consumer and Creator attempt routes are Phase 2. Commercial/KYC and payout-readi
 
 V1 builds only the provider-neutral core, migration of existing verified evidence, fail-closed owner contracts, reconciliation, and read-only operations. Phase 2 owns consumer stronger-assurance and creator-verification workflows. Phase 3 owns commercial-KYC and payout-readiness exposure. Mature-content use remains conditional and blocked.
 
+Foundation status: migration `0046_identity-assurance-foundation` establishes the Identity-owned subjects, attempts, append-only evidence, verified-receipt inbox, reconciliation findings, and outbox. No provider adapter, orchestration route, owner migration, or product surface is enabled by that migration. Existing USERS and SAFETY compatibility storage remains authoritative until its separately tested backfill/cutover migration lands.
+
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: launch jurisdictions, accepted methods and assurance thresholds, alternatives/manual review, provider, biometric/legal basis and notices, residency, retention/deletion, re-verification triggers, appeal/correction, sanctions/PEP requirements, commercial-KYC scope, and production operations.
 
 See [verification flow](../flows/identity-assurance-verification.md), [threat model](../security/11-identity-verification-threat-model.md), [provider eligibility](../compliance/09-identity-verification-provider-eligibility.md), [operations](../operations/07-identity-verification-operations.md), and [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md).

@@ -109,6 +109,15 @@ const truncationRoots = [
   'discovery_outbox',
   'discovery_passes',
   'discovery_presentations',
+  // IDENTITY references owner domains only through opaque values, so its
+  // storage is an independent ownership root. Evidence and attempts are
+  // retained, and test reset uses TRUNCATE rather than row deletion.
+  'identity_outbox',
+  'identity_provider_events',
+  'identity_reconciliation_findings',
+  'identity_evidence',
+  'identity_attempts',
+  'identity_subjects',
   // MEDIA holds no foreign key to any other domain — an owner is an opaque
   // reference — so nothing cascades into it and the asset is its own root. Its
   // sessions, objects, and obligations follow by cascade.
