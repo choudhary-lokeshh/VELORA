@@ -11,6 +11,7 @@ flowchart TB
   CS[Creator Studio] --> API
   PA[Platform Admin] --> API
   API --> D[Owned domain modules]
+  D --> ID[Identity Assurance evidence domain]
   API --> AI[Isolated AI Gateway / Orchestrator]
   AI --> C[Registered domain contract tools]
   C --> D
@@ -25,6 +26,7 @@ flowchart TB
 - Creator Studio: creator business profile, club/content tools, club analytics, earnings views. It never grants platform-wide operational authority.
 - Platform Admin: audited operations across modules. It requests actions from domain services; it does not directly mutate arbitrary storage.
 - Shared API/domain: canonical identity, authorization, lifecycle rules, contracts, audits, and provider abstractions.
+- Identity Assurance: provider-neutral verification attempts and append-only assurance evidence. It links to AUTH principals and owner objects but is neither a second authentication system nor authority for creator, safety, entitlement, payment, payout, or enforcement decisions.
 - AI Gateway/Orchestrator: optional isolated capability using approved provider adapters and registered domain tools. It never owns or bypasses domain truth.
 
 Surface navigation and UI responsibility are authoritative in `docs/surfaces/`. Approved Figma owns visual/interaction specification only; it cannot change phase, permissions, domain state, or compliance gates.
@@ -43,7 +45,7 @@ Each record has one owning domain; other domains retain IDs or read through cont
 
 ## Dependencies and phase
 
-Depends on domain boundaries, contracts, data ownership, and security baseline. V1 establishes shared API/domain seam, consumer core, Trust & Safety, and Admin foundation. Creator clubs: Phase 2 baseline; AI product capabilities follow [product phases](../product/01-product-phases.md); explicit mature capability: Conditional / Compliance-Gated.
+Depends on domain boundaries, contracts, data ownership, and security baseline. V1 establishes shared API/domain seam, consumer core, Trust & Safety, Admin foundation, and the provider-neutral Identity Assurance core. Consumer stronger-assurance and Creator verification workflows remain Phase 2; commercial KYC/payout exposure remains Phase 3; AI product capabilities follow [product phases](../product/01-product-phases.md); explicit mature capability remains Conditional / Compliance-Gated.
 
 ## Open questions
 

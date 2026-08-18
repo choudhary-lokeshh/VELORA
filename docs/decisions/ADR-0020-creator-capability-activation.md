@@ -15,7 +15,7 @@
 
 Implementing them anyway would put states in the schema that no code could ever move a row out of, and a `verified` value that nothing is entitled to write is worse than no value at all: it invites a later change to set it for convenience.
 
-At the same time the platform does hold a real adult answer. USERS records adult assurance as append-only evidence with distinct classes, and V1 consumer core already runs on `self_declared` because no age-verification provider is approved.
+At the same time the platform does hold a real adult answer. [ADR-0024](ADR-0024-identity-assurance-architecture.md) subsequently moved verified assurance evidence into IDENTITY ASSURANCE while USERS retained self-declaration. V1 consumer core still admits `self_declared` because no age-verification provider is approved.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ Activation requires, at the time it is evaluated:
 3. its adult assurance is at least `self_declared`, read from USERS' published standing contract, and
 4. every currently required creator policy document is acknowledged at its current version.
 
-`under_review`, `verified`, and `declined` are **not** creator lifecycle states. Creator identity and business verification is a separate predicate with no approved provider, recorded as its own fact when one exists. It gates mature or explicit content and payout readiness — both already deferred — and never the ability to hold the capability.
+`under_review`, `verified`, and `declined` are **not** creator lifecycle states. Creator identity and business verification is a separate predicate with no approved provider, recorded by IDENTITY ASSURANCE as its own fact when one exists. It gates mature or explicit content and payout readiness — both already deferred — and never the ability to hold the capability.
 
 Required creator policy documents are `creator_terms` and `creator_content_policy`, both at version `0-unpublished`, matching how USERS records consumer policy versions.
 
@@ -78,7 +78,7 @@ There is deliberately no foreign key from `creators_accounts` to `auth_accounts`
 - Creator capability is reachable in development and test, and in any deployed environment where the adult declaration path works, without inventing verification.
 - Mature and explicit creator content stays `Conditional / Compliance-Gated` and payouts stay deferred; both now have a named predicate to depend on rather than an implied one.
 - When creator legal copy is approved, the version string changes in one place, every creator is asked again, and the evidence that they accepted the earlier version is preserved.
-- When a verification provider is approved, it lands as a new CREATORS-owned fact plus a gate on the capabilities that need it. The creator lifecycle, the activation code, and existing rows do not change.
+- When a verification provider is approved, it lands through IDENTITY ASSURANCE as a new creator-scoped evidence fact plus a gate re-evaluated by the capabilities that need it. The creator lifecycle and activation ladder do not change.
 - [The creator lifecycle flow](../flows/creator-lifecycle-content.md) and [CREATORS](../domains/creators.md) are updated to state this ladder and to name verification as a separate predicate.
 
 ## Cross-references

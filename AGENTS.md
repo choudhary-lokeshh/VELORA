@@ -13,6 +13,7 @@
 - Never expose Admin capabilities through consumer or creator clients. Admin is an operations layer, not owner of core domain truth.
 - Cross-domain work uses published contracts, services, or events. No direct imports into another domain's internals.
 - AI-related work must first read every authority in the dedicated AI path in `docs/DOCS_INDEX.md`. AI PLATFORM may orchestrate approved capabilities but is never source of truth for another domain and never accesses another domain's private persistence directly.
+- Identity-assurance or verification work must first read the dedicated Identity Assurance path in `docs/DOCS_INDEX.md`. IDENTITY ASSURANCE owns verified threshold, identity, creator-identity, depicted-person identity/adult, and commercial-KYC evidence; it does not authenticate principals or own consumer, creator, safety, billing, payout, entitlement, enforcement, or launch decisions. Consumers use published contracts and re-authorize from current owner truth; they never read `identity_*` persistence directly.
 
 ## Design and Figma
 
@@ -27,6 +28,7 @@
 
 - Do not bypass authorization, object/tenant checks, safety enforcement, entitlement checks, payment idempotency, webhook verification, audit logging, or secrets handling.
 - Never expose plaintext passwords, card data, encryption keys, private secrets, or unnecessary identity documents.
+- Never persist or log raw identity documents, exact dates of birth, names/addresses collected for verification, selfies/videos, biometric templates, tax IDs, bank data, raw provider callback bodies, or reusable hosted verification URLs. Identity provider results and assurance evidence are untrusted inputs to owner predicates, never authorization by themselves.
 - Do not promise paid access to another person. Paid actions can entitle a feature, content, or visibility mechanism only.
 - Conditional mature creator content is disabled until all documented compliance gates are approved for applicable country/channel/provider.
 - Any compliance-gated capability stays disabled until its exact country, actor, content type, provider, and distribution-channel gate has documented approval. Architecture support alone is not enablement.
@@ -48,6 +50,7 @@
 - Do not couple AI product code to one provider/model or enable an unevaluated provider/model route. Provider/model selection remains behind adapters and `DEFER UNTIL PROVIDER INTEGRATION` until approved.
 - Keep payment, RTC, storage, email, push, SMS/OTP, age/identity verification, moderation, analytics, AI, and creator-payout vendors behind owner-defined provider adapters. Domain logic must not embed vendor behavior. Local/mock/test adapters precede real integrations.
 - Do not connect a real provider until its technical ADR, security/privacy/compliance review, country/channel support, failure/reconciliation behavior, and operations ownership are approved.
+- Identity verification providers default to unavailable. The deterministic local-test adapter is forbidden in staging/production. No route, header, query, or client field may select provider or assurance strength; no Consumer/Creator/KYC surface ships before its product phase and approved Figma handoff.
 
 ## Technical implementation
 

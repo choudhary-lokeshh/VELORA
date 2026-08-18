@@ -10,7 +10,7 @@ Visitor views public creator surface subject to policy. Subscriber holds valid c
 
 ## Phase 2 baseline flow
 
-Creator satisfies required onboarding/verification gate, opens club if policy allows, publishes eligible content metadata, and offers a subscription or eligible individual unlock. Billing reports confirmed financial state; PRIVATE CLUBS grants/revokes creator-specific entitlement. Delivery authorization checks entitlement, country/channel policy, content status, enforcement, and signed-media permission every time before issuing access. Creator sees only authorized operational club-management views. Creator analytics and earnings views are Phase 3.
+Creator satisfies required onboarding and, where the capability requires it, Identity Assurance evidence; opens a club if policy allows; publishes eligible content metadata; and offers a subscription or eligible individual unlock. Identity evidence never activates the Creator capability or authorizes publication, commerce, or payout by itself. Billing reports confirmed financial state; PRIVATE CLUBS grants/revokes creator-specific entitlement. Delivery authorization checks entitlement, country/channel policy, content status, enforcement, and signed-media permission every time before issuing access. Creator sees only authorized operational club-management views. The Creator verification workflow is Phase 2; creator analytics, commercial KYC exposure, and earnings views are Phase 3.
 
 ## Non-goals and constraints
 

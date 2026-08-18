@@ -6,7 +6,7 @@ Define country/channel/provider gates before charging customers, granting paid a
 
 ## Ownership and separation
 
-BILLING owns customer money lifecycle and price snapshots. PRIVATE CLUBS or another product owner owns entitlement. PAYOUTS owns earnings, holds, and disbursement. CREATORS owns creator eligibility. ADMIN owns approved privileged workflows. Providers normalize external operations through adapters and never replace these sources of truth.
+BILLING owns customer money lifecycle and price snapshots. PRIVATE CLUBS or another product owner owns entitlement. PAYOUTS owns earnings, holds, and disbursement. CREATORS owns creator eligibility. IDENTITY ASSURANCE owns commercial-KYC evidence only. ADMIN owns approved privileged workflows. Providers normalize external operations through adapters and never replace these sources of truth.
 
 ## Payment launch gates
 
@@ -18,7 +18,7 @@ Every charge uses immutable offer/price/currency/tax snapshot, customer/country/
 
 Before accruing available earnings or payout, approve creator/country eligibility, identity/KYC and tax process, commission/fees, settlement and reversal windows, refund/dispute allocation, reserves/holds, negative balance, minimum/maximum payout, method/provider, currency conversion, statement, payout failure/retry, account changes, fraud/safety holds, support/appeal, reconciliation, and separation of duties.
 
-Creator-facing earnings may distinguish estimated, pending, available, reserved/held, reversed, paid, and failed. Estimated analytics is not ledger truth. Provider recipient readiness does not override creator/safety/country policy.
+Creator-facing earnings may distinguish estimated, pending, available, reserved/held, reversed, paid, and failed. Estimated analytics is not ledger truth. Identity evidence and provider recipient readiness do not override creator/safety/country/tax/payment/payout policy. Payout readiness is recomputed; it is never one stored KYC-ready or payout-allowed boolean.
 
 ## High-impact operations
 
@@ -32,6 +32,6 @@ Gate loss stops new commercial operations as defined while preserving lawful cus
 
 Balanced owner-specific financial journals are locked by [ADR-0011](../decisions/ADR-0011-payments-payouts.md). `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: launch currencies/countries, providers, PCI scope, tax calculation/remittance, receipts, renewal/cancellation/refund/dispute terms, app-store billing, journal posting/accounting mappings and recognition policy, creator commission, reserves, KYC/tax, payout countries, reconciliation, and finance approvals.
 
-Provider-by-provider findings against Velora's actual business model, with primary sources and retrieval dates, are in [provider eligibility](06-payment-provider-eligibility.md). No assessed provider is eligible today.
+Provider-by-provider findings against Velora's actual business model, with primary sources and retrieval dates, are in [payment/payout provider eligibility](06-payment-provider-eligibility.md) and [identity provider eligibility](09-identity-verification-provider-eligibility.md). No assessed provider is eligible today.
 
 See [monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [PAYOUTS](../domains/payouts.md), [finance operations](../operations/03-finance-payout-operations.md), and [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md).

@@ -26,7 +26,7 @@ Consumer can act only on own account and objects explicitly authorized by source
 
 ## Events and phase
 
-Track consent-aware product events such as onboarding completion, candidate shown, introduction outcome, message delivery, block/report submission, notification delivery. V1 as described. Phase 2: premium, RTC. Phase 3: coins/gifts/advanced controls, communities, and approved consumer AI assistance. See [phases](01-product-phases.md).
+Track consent-aware product events such as onboarding completion, candidate shown, introduction outcome, message delivery, block/report submission, notification delivery. V1 as described, including only the provider-neutral Identity Assurance platform seam and existing compatible self-declaration behavior. Phase 2: consumer stronger-assurance workflow, premium, RTC. Phase 3: coins/gifts/advanced controls, communities, and approved consumer AI assistance. See [phases](01-product-phases.md).
 
 ## Consumer AI boundary
 

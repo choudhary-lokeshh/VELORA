@@ -54,6 +54,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | Domain | Primary authority | Required companion reading |
 |---|---|---|
 | AUTH | [AUTH](domains/auth.md) | onboarding, RBAC, adult verification |
+| IDENTITY ASSURANCE | [Identity Assurance](domains/identity-assurance.md) | identity verification flow/threat model/provider eligibility/operations, ADR-0024, each evidence-consuming owner |
 | USERS | [USERS](domains/users.md) | account/profile flow, privacy, deletion |
 | DISCOVERY | [DISCOVERY](domains/discovery.md) | discovery/introduction flow, Trust & Safety, consumer product |
 | MESSAGING | [MESSAGING](domains/messaging.md) | messaging/blocks flow, media security, notifications |
@@ -69,6 +70,8 @@ These are one ecosystem, not four independent products. Surface documents never 
 | ADMIN | [ADMIN](domains/admin.md) | Admin surface/product, RBAC, Admin operation flow |
 | ANALYTICS | [ANALYTICS](domains/analytics.md) | privacy, observability, metric governance |
 | AI PLATFORM | [AI platform architecture](ai/01-ai-platform-architecture.md) | all documents in AI authority path plus each affected domain |
+
+For any Identity Assurance or verification work, read the Identity Assurance domain, identity verification flow, identity threat model, identity provider eligibility, identity operations, ADR-0024, product phases, AUTH, and every domain whose predicate consumes the evidence. Provider integration additionally requires provider adapters, privacy/retention, outbound networking, jobs/idempotency, observability, and open decisions. No client or consuming domain owns verification evidence.
 
 ## AI authority
 
@@ -90,6 +93,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | Document | Primary authority |
 |---|---|
 | [Onboarding](flows/onboarding.md) | Adult signup/sign-in/session-to-profile admission |
+| [Identity assurance verification](flows/identity-assurance-verification.md) | Provider-neutral start, callback, evidence, expiry/revocation, reconciliation, and owner consumption |
 | [Consumer account/profile](flows/consumer-account-profile.md) | Profile, verification, availability, restriction, account lifecycle |
 | [Discovery and introductions](flows/discovery-introductions.md) | Candidate, signal, decline/withdraw, mutual introduction |
 | [Messaging and blocks](flows/messaging-and-blocks.md) | Conversation/message authorization and block precedence |
@@ -112,6 +116,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | [Dependency risk acceptance](security/08-dependency-risk-acceptance.md) | Temporarily accepted supply-chain advisories, their bounds, and the CI gate contract |
 | [Dependency age blockers](security/09-dependency-age-blockers.md) | Upgrades a gate requires that the minimum release age forbids, when each becomes installable, and any owner-authorized exact-version override that cleared one early |
 | [Media threat model](security/10-media-threat-model.md) | The adversary the media platform is built against: upload, storage, inspection, processing, delivery, takedown, and reconciliation threats and their controls |
+| [Identity verification threat model](security/11-identity-verification-threat-model.md) | Provider callbacks, hosted-session, replay, subject binding, privacy, stale evidence, and operator threats and controls |
 
 ## Design and Figma authority
 
@@ -138,6 +143,7 @@ These are architecture/product gates, not legal advice:
 | [Provider eligibility](compliance/06-payment-provider-eligibility.md) | Dated primary-source findings on payment/payout provider and card-network eligibility for Velora's business model |
 | [Surface and distribution eligibility](compliance/07-surface-and-distribution-eligibility.md) | Dated primary-source findings on app-store, age-assurance, depicted-person, and notice/appeal requirements deciding which surfaces may carry which content |
 | [Media provider eligibility](compliance/08-media-provider-eligibility.md) | Dated primary-source findings on object-storage, CDN, image-processing, and scanning provider eligibility, and the delivery-capability facts that bound what revocation may claim |
+| [Identity verification provider eligibility](compliance/09-identity-verification-provider-eligibility.md) | Dated official-source findings and production-eligibility gaps for identity/age/KYC providers; silence is unapproved |
 
 ## Operations authority
 
@@ -149,6 +155,7 @@ These are architecture/product gates, not legal advice:
 | [Incident response](operations/04-incident-response.md) | Incident lifecycle, emergency authority, evidence and recovery |
 | [Platform health](operations/05-platform-health.md) | Health signals, degraded behavior, SLO/capacity direction |
 | [Media operations](operations/06-media-operations.md) | What each media backlog class means, what an operator may do about it, and what is deliberately not offered |
+| [Identity verification operations](operations/07-identity-verification-operations.md) | Privacy-minimized monitoring, callback backlog, reconciliation, expiry, incidents, and prohibited manual overrides |
 
 ## Engineering and decision authority
 
@@ -184,6 +191,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0021](decisions/ADR-0021-monetization-money-architecture.md) | How ADR-0011's locked money decisions become code: money value type, two owner journals, orchestration ordering, webhook inbox, entitlement bridge, fail-closed capability configuration |
 | [ADR-0022](decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) | One safety policy and eligibility authority, scoped append-only enforcement with supersession, report/case/evidence/decision/appeal separation, surface as a first-class closed vocabulary, depicted-person consent by reference, versioned deadline policy, and fail-closed mature-content enablement |
 | [ADR-0023](decisions/ADR-0023-media-platform-architecture.md) | MEDIA as a domain owning bytes only, a technical lifecycle disjoint from publication, opaque server-generated keys, capability-bound direct upload, byte-derived inspection ahead of the decoder, in-process image processing, the bounded private-delivery revocation window, four distinct removal concepts, and fail-closed media configuration |
+| [ADR-0024](decisions/ADR-0024-identity-assurance-architecture.md) | Separate Identity Assurance domain, append-only evidence, provider-neutral hosted verification, verified callback inbox, reconciliation, fail-closed jurisdiction policy, and owner re-authorization |
 
 ## Technical implementation reading paths
 
@@ -202,6 +210,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
 - Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, dependency risk acceptance, ADR-0016, ADR-0019, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
 - AUTH and privileged access: AUTH domain, onboarding, RBAC, security baseline, admin operations, incident response, ADR-0009, ADR-0017, then the affected surface and owning domain.
+- Identity assurance: Identity Assurance domain/flow/threat model/provider eligibility/operations, AUTH and every evidence-consuming domain, privacy/outbound/jobs/migrations/API/observability/testing, ADR-0006, ADR-0007, ADR-0009, ADR-0014, ADR-0016, ADR-0017, ADR-0019, ADR-0020, ADR-0022, and ADR-0024.
 
 ## Implementer reading paths
 
@@ -216,9 +225,10 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
 - Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, media operations, media freeze report, ADR-0010, ADR-0022, ADR-0023.
 - Moderation/Trust & Safety: phase, both domains, report flow, moderation operations, evidence/privacy, Admin/RBAC, ADR-0022, creator gates and surface/distribution eligibility where applicable.
+- Identity assurance: phases, Identity Assurance domain/flow, verification threat model/provider eligibility/operations, owner domain and surface, privacy/outbound/jobs/API/migrations/observability/testing, ADR-0024, and every owner ADR whose predicate consumes evidence.
 - Security/privacy: security baseline and every relevant specialized security/compliance/incident authority plus owning domain/flow.
 - Design/Figma: relevant product/surface/flow/security/phase, then all six Design/Figma documents and exact approved Figma handoff.
 - Provider integration: provider adapters, owner domain/flow/security, compliance gates, jobs/idempotency, observability/operations, open decisions, then provider-specific ADR. Start with local/mock/test adapter.
-- Compliance/market entry: all eight compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
+- Compliance/market entry: all nine compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
 - Operations: relevant operations document, Admin surface/domain/RBAC/flow, affected domain/flow, observability, security/privacy/compliance.
 - AI: every document in AI authority, AI action flow/integration docs, product phases/surface, provider/outbound/jobs/RBAC/privacy/testing/operations, and every domain/tool contract involved.

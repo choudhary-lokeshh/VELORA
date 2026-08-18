@@ -8,6 +8,7 @@ This document assigns durable domain ownership. Owning module validates state, w
 |---|---|---|
 | AUTH | credentials, sessions, authentication factors | profile, roles, payment state |
 | USERS | account basics, consumer profile, preferences | login/session, discovery ranking |
+| IDENTITY ASSURANCE | verification subjects, attempts, normalized assurance evidence, provider-event inbox, reconciliation, minimized evidence lifecycle facts | authentication/session, self-declaration, consent, product eligibility, enforcement, payment/payout authorization, raw documents/biometrics |
 | DISCOVERY | candidates, eligibility, introduction logic | messages, payments, creator entitlements |
 | MESSAGING | conversations, messages, delivery state | presence, moderation decisions |
 | REALTIME | presence, room/call orchestration, RTC lifecycle | long-term message/content records |
@@ -35,10 +36,12 @@ MEDIA owns bytes and nothing a binary means. Users, Creators, and Private Clubs 
 
 AI PLATFORM is never source of truth for AUTH, USERS, DISCOVERY, MESSAGING, REALTIME, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, TRUST & SAFETY, MODERATION, NOTIFICATIONS, ADMIN, or ANALYTICS. It accesses domain capabilities only through published, registered contracts/tools and never directly mutates private domain persistence. Model output is a proposal or derived artifact; owning domain re-authorizes and validates every effect. High-impact operations retain deterministic authorization and human approval/workflow rules.
 
+IDENTITY ASSURANCE is not a second authentication system and is never product authorization. AUTH owns principals/sessions; USERS owns self-declared adult status; CREATORS owns creator lifecycle; TRUST & SAFETY owns depicted-person relationship/consent and enforcement; BILLING/PAYOUTS own money and payout decisions. IDENTITY supplies current append-only evidence through published contracts, and every owner re-authorizes and recomputes its own predicate. It never reads or mutates another domain's private persistence. See [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md).
+
 ## Security, concurrency, phase
 
 Owner performs object authorization. Cross-domain cached projections are non-authoritative and revocable. Each state transition uses expected version/transactional guard as needed. V1 establishes all boundaries; later phases add modules only with ownership table update and ADR when architecture changes.
 
 ## Open questions and cross-references
 
-Event transport uses PostgreSQL transactional outbox/inbox plus BullMQ execution under [ADR-0016](../decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md). Owner state and outbox facts remain PostgreSQL truth; Redis queue delivery cannot define business completion. An external broker is deferred until measured scale requires it. See [contracts/events](04-contracts-events.md), [data ownership](05-data-ownership.md), [AI platform](../ai/01-ai-platform-architecture.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and each `docs/domains/` specification.
+Event transport uses PostgreSQL transactional outbox/inbox plus BullMQ execution under [ADR-0016](../decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md). Owner state and outbox facts remain PostgreSQL truth; Redis queue delivery cannot define business completion. An external broker is deferred until measured scale requires it. See [contracts/events](04-contracts-events.md), [data ownership](05-data-ownership.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [AI platform](../ai/01-ai-platform-architecture.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and each `docs/domains/` specification.

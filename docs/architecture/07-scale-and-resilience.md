@@ -26,6 +26,8 @@ Define system behavior under growth and partial failure. PostgreSQL, logically s
 
 Provider outage: record pending state, retry safe operation asynchronously, surface truthful pending/error result, and reconcile later. Event lag: use source-of-truth authorization for access-critical action, not stale projection. Job failure: alert, retain durable payload, retry/DLQ, then repair with auditable operator tool. Never silently grant access, charge twice, or erase state to hide failure.
 
+Identity-provider I/O never runs inside a database transaction. A committed attempt may remain unbound after a timeout or process crash; retrieval by provider idempotency key and reconciliation recover it. Provider-event leases are bounded and reclaimable, attempts and events are protected by database uniqueness, and stale callbacks cannot resurrect superseded evidence. Subject/evidence/admin reads use indexed exact lookup or keyset aggregation; the required 200,000-subject plans are release evidence, not an assumed future optimization.
+
 ## Observability and phase
 
 V1 needs correlation IDs, redacted logs, core SLO metrics, traces for high-risk flows, queue health, and audit separation. Initial deployment is one approved region. `DECISION REQUIRED`: SLO targets, RPO/RTO, recovery-region/failover posture, data residency, and incident response ownership before launch. See [observability](../engineering/04-observability.md), [jobs](../engineering/03-jobs-idempotency-concurrency.md), [platform health](../operations/05-platform-health.md), [incident response](../operations/04-incident-response.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).

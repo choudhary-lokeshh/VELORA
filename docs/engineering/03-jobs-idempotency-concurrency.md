@@ -16,6 +16,10 @@ The registry is bounded and contains only explicit versioned job names with atte
 
 Public mutation accepts stable client idempotency key scoped to actor/action; same key + same canonical input returns same result, mismatched input is conflict. Provider operation has separate unique external reference. Consumer records processed event IDs. Do not use a timestamp-only key. Store outcome long enough for client/provider retry window defined by policy.
 
+Identity start commits the attempt and platform provider key before external I/O. Fifty equivalent concurrent starts converge on one attempt and at most one external instruction; a changed canonical input under the same caller key is a conflict. Provider timeout is ambiguous and is resolved by lookup under the same provider key, never by issuing a fresh key.
+
+Identity callback processing is at-least-once and unordered. Fifty identical verified callbacks converge on one inbox row and one evidence transition. Workers claim verified receipts and reconciliation findings under PostgreSQL leases, count attempts on claim, settle only as lease owner, and dead-letter under a bounded budget. BullMQ or pollers only wake the work; losing queue state loses no receipt, attempt, evidence, or finding.
+
 ## Concurrency rules
 
 Choose owner transaction, unique constraint, optimistic version, lease, or serialized queue per aggregate. Re-read policy/authorization at transition. Explicitly model races: duplicate submit, reciprocal introduction, block/send, refund/entitlement, payout/chargeback, deletion/retention, role revocation/operation. Do not rely on process memory locks across replicas.

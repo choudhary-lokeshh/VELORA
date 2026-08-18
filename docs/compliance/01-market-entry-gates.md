@@ -8,6 +8,8 @@ Define architecture and product controls required before enabling Velora in a co
 
 ADMIN owns approved country/channel feature configuration and audit; business domains enforce it at action time. A launch record identifies country/region, channel, capability, audience, minimum age/adult proof, identity/creator requirements, content classes, payment/payout support, data region, provider routes, policy/legal versions, operational owner, approval, effective time, and rollback/disable plan.
 
+IDENTITY ASSURANCE consumes that approved launch context through a versioned jurisdiction policy. Missing or unpublished policy is `UNKNOWN` and fail-closed; a provider's country coverage is not legal approval, and an assurance result never turns the country/channel capability on. ADMIN may publish only an approved version and cannot manually manufacture evidence.
+
 Capability is enabled only when all applicable gates are approved:
 
 - product phase and product owner;
@@ -45,4 +47,4 @@ Collect minimum country/channel evidence needed for decision and audit. Location
 
 ## Cross-references
 
-See [adult verification](02-adult-age-verification.md), [creator content gates](03-creator-content-gates.md), [payments/tax/payout gates](04-payments-tax-payout-gates.md), [data residency/retention](05-data-residency-retention.md), and [product phases](../product/01-product-phases.md).
+See [adult verification](02-adult-age-verification.md), [creator content gates](03-creator-content-gates.md), [payments/tax/payout gates](04-payments-tax-payout-gates.md), [data residency/retention](05-data-residency-retention.md), [identity provider eligibility](09-identity-verification-provider-eligibility.md), and [product phases](../product/01-product-phases.md).

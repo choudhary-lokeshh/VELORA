@@ -18,11 +18,11 @@ Major workflows include application and activation, verification status, club cr
 
 ## Domains and dependencies
 
-CREATORS owns creator business identity and eligibility. PRIVATE CLUBS owns club/content metadata, memberships, and entitlements. BILLING owns customer money and commercial offers/price snapshots; PAYOUTS owns earnings/disbursement. MODERATION and TRUST & SAFETY constrain content and creator state. ANALYTICS owns metric definitions. ADMIN provides privileged workflows. AI may assist only in Phase 3 through registered capabilities.
+CREATORS owns creator business identity and eligibility. IDENTITY ASSURANCE owns creator-identity and commercial-KYC evidence but never activates a capability, enables content, or authorizes payout. PRIVATE CLUBS owns club/content metadata, memberships, and entitlements. BILLING owns customer money and commercial offers/price snapshots; PAYOUTS owns earnings/disbursement. MODERATION and TRUST & SAFETY constrain content and creator state. ANALYTICS owns metric definitions. ADMIN provides privileged workflows. AI may assist only in Phase 3 through registered capabilities.
 
 ## Authentication and permissions
 
-Studio requires valid Velora identity plus active, scope-limited creator access. Creator role, verification, club eligibility, payout readiness, and content-category eligibility are separate predicates. Every mutation authorizes creator entity/object and checks current phase/country/channel/provider/safety state. Sensitive payout/account changes require step-up as policy defines. Studio session lifetimes are shorter than consumer sessions and are locked in [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md).
+Studio requires valid Velora identity plus active, scope-limited creator access. Creator role, verification, club eligibility, payout readiness, and content-category eligibility are separate predicates. The verification workflow remains Phase 2; KYC/payout exposure remains Phase 3; neither receives UI before approved identity handoff. Every mutation authorizes creator entity/object and checks current phase/country/channel/provider/safety state. Sensitive payout/account changes require step-up as policy defines. Studio session lifetimes are shorter than consumer sessions and are locked in [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md).
 
 Team/delegated creator roles are not assumed; they are `DECISION REQUIRED`. Until approved, only explicitly authorized creator identity acts on its own entity. Consumer sessions cannot infer Studio permission from route visibility.
 

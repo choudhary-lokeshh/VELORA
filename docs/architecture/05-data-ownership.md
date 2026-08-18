@@ -7,11 +7,12 @@ Define source-of-truth, references, and lifecycle coordination. Detailed domain 
 ## Rules
 
 - One record class has one writing domain. Foreign references use stable IDs, never copied mutable authorization state as truth.
-- AUTH owns authentication identity, its `auth_`-prefixed tables, and its own security events; USERS owns the consumer account, profile, and its `users_`-prefixed tables; CREATORS owns creator business identity and its `creators_`-prefixed tables, linked to AUTH by an opaque account identifier alone; PRIVATE CLUBS owns the creator content catalog, club membership, and entitlement under its `clubs_`-prefixed tables, referencing a creator by opaque identifier alone; BILLING owns customer money state; PAYOUTS owns disbursement state; Trust & Safety owns block/enforcement state.
+- AUTH owns authentication identity, its `auth_`-prefixed tables, and its own security events; USERS owns the consumer account, profile, self-declared adult status, and its `users_`-prefixed tables; IDENTITY ASSURANCE owns verified assurance subjects/attempts/evidence/provider receipts/reconciliation under `identity_`, linked to owner domains by opaque references only; CREATORS owns creator business identity and its `creators_`-prefixed tables, linked to AUTH by an opaque account identifier alone; PRIVATE CLUBS owns the creator content catalog, club membership, and entitlement under its `clubs_`-prefixed tables, referencing a creator by opaque identifier alone; BILLING owns customer money state; PAYOUTS owns disbursement state; Trust & Safety owns block/enforcement, depicted-person relationship, and consent state.
 - A table prefix names its owning domain, and integration tests assert that a domain's migration creates only tables under its own prefix. A cross-domain reference is the other domain's identifier column with no database foreign key: a key would make one domain's deletion policy silently execute inside another domain's records, which the deletion flow below assigns to USERS to coordinate explicitly. Uniqueness and shape constraints on the reference still belong to the referencing domain and are enforced there.
 - A transactional outbox is owned by the domain that produces the fact and lives under that domain's prefix, because the fact and the state it describes must commit in one transaction. `messaging_outbox` is MESSAGING's; NOTIFICATIONS never reads it, and the relay that drains it publishes to consumers rather than granting anybody access to the table. Notification intents and attempts are NOTIFICATIONS' own truth under `notifications_`, and a queue entry is never truth for either.
 - Derived search, feeds, analytics, and notification projections are disposable/rebuildable. They minimize sensitive fields and honor revocations/deletion events.
 - AI short-term context, consent-based memory, embeddings, and RAG indexes are non-authoritative derived data. They retain provenance/access scope, expire or delete with source/consent/account lifecycle, and never override source-domain facts.
+- Identity evidence is append-only owner data, not a cached authorization projection. Owner domains may retain only opaque Identity references or a compatibility projection explicitly derived through the contract; they never copy raw provider facts or store a master eligibility boolean. Queue state and provider dashboards are not evidence truth.
 - All sensitive records have classification, purpose, retention category, access policy, and audit requirement.
 
 ## Deletion and retention flow
@@ -20,7 +21,7 @@ USERS coordinates account deletion request, checks legal/financial/safety holds 
 
 ## Concurrency and security
 
-Use immutable IDs, record versioning where conflicting edits matter, and transactional outbox for lifecycle events. Do not replicate raw verification documents, secrets, or payment credentials; retain token/reference and access through owning service only. AI PLATFORM has no direct private-store access; authorized context comes through owner contracts.
+Use immutable IDs, record versioning where conflicting edits matter, and transactional outbox for lifecycle events. Do not replicate raw verification documents, exact birth dates, names/addresses collected for verification, selfies/video, biometric templates, tax/bank identifiers, secrets, or payment credentials; retain minimum normalized evidence and opaque provider references through the owning service only. AI PLATFORM has no direct private-store access; authorized context comes through owner contracts.
 
 ## Phase/open questions
 

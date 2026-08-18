@@ -18,7 +18,7 @@ Screen/workflow authority comes from owning domain and operations documents. Exa
 
 ## Domains and cross-domain dependencies
 
-ADMIN owns role grants, privileged operation requests, approvals, and audit views. AUTH supplies assurance; every target domain owns its data and transition. MODERATION owns case workflow; TRUST & SAFETY owns enforcement; BILLING/PAYOUTS own financial state; CREATORS/PRIVATE CLUBS own creator/club state; ANALYTICS owns metrics; observability owns operational telemetry. AI may assist in Phase 3 but cannot approve or execute.
+ADMIN owns role grants, privileged operation requests, approvals, and audit views. AUTH supplies authentication assurance; IDENTITY ASSURANCE owns verification evidence and exposes only privacy-minimized aggregates plus exact-reference reads in V1. Every target domain owns its data and transition. MODERATION owns case workflow; TRUST & SAFETY owns enforcement; BILLING/PAYOUTS own financial state; CREATORS/PRIVATE CLUBS own creator/club state; ANALYTICS owns metrics; observability owns operational telemetry. AI may assist in Phase 3 but cannot approve or execute.
 
 ## Authentication, permissions, and approvals
 
@@ -38,7 +38,7 @@ Screens define initial/loading/skeleton, empty queue, stale data, permission den
 
 ## Security, phase, and authority
 
-Follow [Platform Admin product](../product/04-platform-admin.md), [Admin operations](../flows/admin-operations.md), [RBAC](../security/02-access-control-rbac.md), and [operations](../operations/01-support-operations.md). V1 includes minimum support/moderation/enforcement/country-flag/audit/health controls. Financial functions phase with BILLING/PAYOUTS; Admin AI is Phase 3.
+Follow [Platform Admin product](../product/04-platform-admin.md), [Admin operations](../flows/admin-operations.md), [RBAC](../security/02-access-control-rbac.md), and [operations](../operations/01-support-operations.md). V1 includes minimum support/moderation/enforcement/country-flag/audit/health controls and read-only Identity Assurance operations; no identity search, list, export, mutation, manual grant, refusal, revocation, or override exists. Financial functions phase with BILLING/PAYOUTS; Admin AI is Phase 3.
 
 ## Implemented: financial operations
 

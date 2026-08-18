@@ -2,11 +2,11 @@
 
 ## Purpose and scope
 
-PAYOUTS owns creator payable balance, holds/reserves, payout readiness, disbursement lifecycle, and payout reconciliation. It does not charge customers, decide club content entitlement, or validate creator identity itself.
+PAYOUTS owns creator payable balance, holds/reserves, payout readiness, disbursement lifecycle, and payout reconciliation. It does not charge customers, decide club content entitlement, validate creator identity/KYC itself, or treat Identity evidence as payout authorization.
 
 ## Flow and state
 
-Consume eligible settled/reversible revenue facts and produce balanced append-only creator-liability journal entries using integer minor units. Derived balance is `pending -> available -> reserved -> paid` or `held/reversed/failed`. Creator can request payout only when CREATORS verification, country, tax/compliance, risk/hold, and provider recipient readiness pass. Adapter execution is idempotent by payout instruction reference; verified callback/reconciliation finalizes state.
+Consume eligible settled/reversible revenue facts and produce balanced append-only creator-liability journal entries using integer minor units. Derived balance is `pending -> available -> reserved -> paid` or `held/reversed/failed`. In Phase 3, payout readiness composes current IDENTITY ASSURANCE commercial-KYC evidence with CREATORS, SAFETY, BILLING, tax/country policy, holds, and payout-provider recipient readiness. No stored KYC or payout-ready boolean replaces that conjunction. Adapter execution is idempotent by payout instruction reference; verified callback/reconciliation finalizes state.
 
 ## Failure/security/permissions
 
@@ -50,4 +50,4 @@ Whether a creator who has already been paid may be carried negative when a rever
 
 ## Phase/events/open questions
 
-Phase 3 and only after real payout infrastructure approval. Events: earnings eligibility, hold/release, payout state. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: payout countries, KYC/tax, commission, rolling reserve, negative balance, dispute window, provider. See [Creator Private Clubs](../product/03-creator-private-clubs.md), [BILLING](billing.md), [money flow](../architecture/10-money-flow.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment security](../security/05-payments-webhooks.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), and [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md).
+Phase 3 and only after real payout infrastructure approval. V1 may publish a fail-closed commercial-KYC evidence contract, but exposes no KYC or payout-readiness workflow. Events: earnings eligibility, hold/release, payout state. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: payout countries, KYC/tax, commission, rolling reserve, negative balance, dispute window, identity/KYC provider, payout provider. See [Creator Private Clubs](../product/03-creator-private-clubs.md), [IDENTITY ASSURANCE](identity-assurance.md), [BILLING](billing.md), [money flow](../architecture/10-money-flow.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [identity provider eligibility](../compliance/09-identity-verification-provider-eligibility.md), [payment provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment security](../security/05-payments-webhooks.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), and [identity ADR](../decisions/ADR-0024-identity-assurance-architecture.md).

@@ -24,6 +24,8 @@ Urgent risk may apply temporary restriction under documented emergency policy be
 
 Reporter sees own submission status where safe. Moderator sees assigned minimum evidence. Admin/Super Admin access is scoped/audited, no unrestricted exports. Maintain chain-of-custody, retention, policy references, and access logs. Do not place raw evidence in generic event/analytics pipeline.
 
+For depicted-person verification, TRUST & SAFETY owns relationship and scoped consent while IDENTITY ASSURANCE owns identity/adult evidence. Neither provider evidence nor a creator assertion decides enforcement or content eligibility by itself.
+
 ## Implemented V1 behaviour
 
 A report is recorded with its reporter, its subject, the reporting policy version in force, and a client identifier that makes submission retry-safe. The reporter, their narrative, and every internal rationale are absent from the published contract entirely, so no response the API can produce carries one; the person reported is told nothing and their state is unchanged, because a report is an allegation and not an action.

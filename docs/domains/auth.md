@@ -2,7 +2,7 @@
 
 ## Purpose, scope, non-goals
 
-AUTH owns authentication identity, credentials/factors, sessions, recovery, device/session security, and authentication assurance state. It does not own public profiles, adult/creator policy approval, application roles, payment state, or authorization to a product object.
+AUTH owns authentication identity, credentials/factors, sessions, recovery, device/session security, and authentication assurance state. It does not own public profiles, verified age/identity/creator/KYC evidence, adult/creator policy approval, application roles, payment state, or authorization to a product object. IDENTITY ASSURANCE links evidence to an AUTH principal by opaque reference without issuing credentials or sessions.
 
 ## Actors and flows
 
@@ -14,7 +14,7 @@ Store passwords only with approved adaptive hash; never log or expose plaintext 
 
 ## Data, permissions, phase
 
-AUTH owns identity/session records and exposes opaque subject ID plus assurance state. User manages own sessions/factors; Admin actions are scoped/audited and never disclose secrets. V1: account/session baseline. Phase 2: additional factors/device assurance as needed. `DECISION REQUIRED`: auth methods, adult/age verification policy boundary.
+AUTH owns identity/session records and exposes opaque principal ID plus authentication assurance state. User manages own sessions/factors; Admin actions are scoped/audited and never disclose secrets. V1: account/session baseline and the opaque link contract consumed by IDENTITY ASSURANCE. Phase 2: additional factors/device assurance as needed. `DECISION REQUIRED`: auth methods. Adult/identity evidence belongs to [IDENTITY ASSURANCE](identity-assurance.md); jurisdiction policy remains unresolved.
 
 ## Session, recovery, and privileged policy
 
@@ -88,4 +88,4 @@ Identity, access-token signing, recovery delivery, and phishing-resistant authen
 
 ## Cross-references
 
-[onboarding](../flows/onboarding.md), [consumer account/profile](../flows/consumer-account-profile.md), [adult verification](../compliance/02-adult-age-verification.md), [RBAC](../security/02-access-control-rbac.md), [privacy](../security/03-privacy-retention.md), [API contracts](../engineering/01-api-contracts.md), [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md), [USERS](users.md).
+[onboarding](../flows/onboarding.md), [consumer account/profile](../flows/consumer-account-profile.md), [adult verification](../compliance/02-adult-age-verification.md), [IDENTITY ASSURANCE](identity-assurance.md), [RBAC](../security/02-access-control-rbac.md), [privacy](../security/03-privacy-retention.md), [API contracts](../engineering/01-api-contracts.md), [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md), [USERS](users.md).

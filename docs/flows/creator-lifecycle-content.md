@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-Define creator application through activation, club/content operation, suspension, and appeal. CREATORS owns creator identity/eligibility; PRIVATE CLUBS owns club/content/entitlement state; MODERATION owns review case; TRUST & SAFETY owns enforcement; BILLING/PAYOUTS own money state.
+Define creator application through activation, club/content operation, suspension, and appeal. CREATORS owns creator lifecycle/business profile/eligibility; IDENTITY ASSURANCE owns creator-identity evidence; PRIVATE CLUBS owns club/content/entitlement state; MODERATION owns review case; TRUST & SAFETY owns enforcement; BILLING/PAYOUTS own money state.
 
 ## Creator lifecycle
 
@@ -23,7 +23,7 @@ stateDiagram-v2
 
 User explicitly requests creator capability; CREATORS records an idempotent application and applies current country/channel/creator policy. Activation requires a consumer account in good standing, adult assurance at least `self_declared` from the standing contract USERS publishes, and acknowledgement of every currently required creator policy document at its current version. Admission is derived from stored evidence on every read and reconciled in both directions, so a creator never stays active on evidence they no longer hold. Suspension and closure are set by decisions that reconciliation does not own and are never lifted by it.
 
-Verification result is one predicate, separate from the lifecycle. It gates mature/explicit content and payout readiness — both deferred — and never the ability to hold the capability. Full activation of those gated capabilities additionally requires product phase, age/identity, country, content category, safety, provider, and operations approval.
+Verification result is one predicate, separate from the lifecycle. In Phase 2, CREATORS reads creator-identity evidence from IDENTITY ASSURANCE and re-evaluates it with current policy. It gates mature/explicit content and payout readiness — both deferred — and never the ability to hold the capability. Full activation additionally requires product phase, country, content category, safety, provider, legal/privacy, and operations approval.
 
 Creator profile changes are versioned and publish only approved public fields. Creator role never grants Admin or ordinary consumer-discovery advantage.
 
@@ -55,4 +55,4 @@ Phase 2 covers web-first creator identity, club, subscription, locked content, a
 
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: creator criteria, reapplication/appeal, team roles, content taxonomy, pre/post moderation, offer/price changes, subscription/grace/cancellation, suspension impact, participant evidence, and payout readiness.
 
-See [Creator Studio](../surfaces/03-creator-studio.md), [creator product](../product/03-creator-private-clubs.md), [creator gates](../compliance/03-creator-content-gates.md), and [moderation operations](../operations/02-moderation-operations.md).
+See [Creator Studio](../surfaces/03-creator-studio.md), [creator product](../product/03-creator-private-clubs.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [identity verification](identity-assurance-verification.md), [creator gates](../compliance/03-creator-content-gates.md), and [moderation operations](../operations/02-moderation-operations.md).

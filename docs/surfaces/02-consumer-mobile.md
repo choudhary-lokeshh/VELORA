@@ -18,7 +18,7 @@ Major V1 screens cover launch/admission, signup/sign-in/recovery, adult/country/
 
 ## Domains and dependencies
 
-Domain ownership matches Consumer Web: AUTH, USERS, DISCOVERY, MESSAGING, TRUST & SAFETY, NOTIFICATIONS, and later REALTIME/BILLING/AI as approved. Mobile calls published API contracts only. Device push, camera, microphone, photo library, contacts, and location are platform capabilities, not automatic permissions or domain truth.
+Domain ownership matches Consumer Web: AUTH owns authentication; IDENTITY ASSURANCE owns verified evidence; USERS owns self-declaration/profile/account; DISCOVERY, MESSAGING, TRUST & SAFETY, and NOTIFICATIONS own their states; REALTIME/BILLING/AI remain phase-gated. Mobile calls published API contracts only. Device push, camera, microphone, photo library, contacts, and location are platform capabilities, not automatic permissions or domain truth.
 
 ## Authentication, permissions, and app lifecycle
 
@@ -50,4 +50,4 @@ Reads may show clearly labeled cached data with freshness and refresh. Mutations
 
 ## Security, phase, and authority
 
-Follow [consumer product](../product/02-consumer-product.md), [mobile responsive rules](../design/04-responsive-platform-rules.md), [accessibility/motion](../design/05-accessibility-motion.md), and [security baseline](../security/01-security-baseline.md). V1 includes consumer core. Phase 2/3 and Conditional features follow phase/channel authority; mobile distribution never silently broadens or narrows backend authorization.
+Follow [consumer product](../product/02-consumer-product.md), [mobile responsive rules](../design/04-responsive-platform-rules.md), [accessibility/motion](../design/05-accessibility-motion.md), and [security baseline](../security/01-security-baseline.md). V1 includes consumer core and no new verification workflow UI. Phase 2 may add approved provider handoff/resume while the server remains evidence authority; Phase 2/3 and Conditional features otherwise follow phase/channel authority. Mobile distribution never silently broadens or narrows backend authorization.

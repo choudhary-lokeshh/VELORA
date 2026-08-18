@@ -13,7 +13,7 @@ Authenticated subject passes re-authentication where risk policy requires. UI ex
 1. USERS records idempotent deletion request and transitions account to `deletion_pending`; consumer access is limited/removed under policy.
 2. USERS queries owner domains for documented holds and consequences; active commercial product cancellation follows BILLING terms.
 3. After grace/required processing, publish account deletion lifecycle event via outbox.
-4. Owners delete or irreversibly de-identify personal data, revoke sessions/media tokens/entitlements where appropriate, and clear projections/search/notifications.
+4. Owners delete or irreversibly de-identify personal data, revoke sessions/media tokens/entitlements where appropriate, and clear projections/search/notifications. IDENTITY ASSURANCE executes approved evidence/provider deletion obligations while preserving only explicitly lawful fraud/audit/legal-hold facts.
 5. USERS records completion plus retained-exception categories, not unnecessary copied data.
 
 ## Alternate/failure flow
@@ -26,4 +26,4 @@ Verify requester, prevent account enumeration, revoke sessions, suppress marketi
 
 ## Phase/open questions
 
-V1 baseline. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: grace period, export-before-delete, hold categories/durations, regional requirements, creator/payout consequences. See [USERS](../domains/users.md), [data ownership](../architecture/05-data-ownership.md), [privacy](../security/03-privacy-retention.md), [data residency/retention](../compliance/05-data-residency-retention.md).
+V1 baseline. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: grace period, export-before-delete, hold categories/durations, regional requirements, Identity/provider erasure proof, creator/payout consequences. See [USERS](../domains/users.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [data ownership](../architecture/05-data-ownership.md), [privacy](../security/03-privacy-retention.md), [data residency/retention](../compliance/05-data-residency-retention.md).

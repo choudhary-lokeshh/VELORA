@@ -23,7 +23,7 @@ Exact information architecture, labels, routes, layout, and visual design are `D
 
 ## Domains and dependencies
 
-AUTH owns identity/session; USERS owns profile/account; DISCOVERY owns candidate/introduction state; MESSAGING owns conversations/messages; TRUST & SAFETY owns blocks/reports/enforcement; NOTIFICATIONS owns delivery/preferences; BILLING owns consumer payment/subscription truth; PRIVATE CLUBS owns creator entitlements. AI, RTC, creator commerce, and monetisation are phase-gated dependencies, not Web-owned behavior.
+AUTH owns identity/session; IDENTITY ASSURANCE owns verified assurance evidence; USERS owns self-declaration/profile/account; DISCOVERY owns candidate/introduction state; MESSAGING owns conversations/messages; TRUST & SAFETY owns blocks/reports/enforcement; NOTIFICATIONS owns delivery/preferences; BILLING owns consumer payment/subscription truth; PRIVATE CLUBS owns creator entitlements. AI, RTC, verification workflow, creator commerce, and monetisation are phase-gated dependencies, not Web-owned behavior.
 
 ## Authentication and permissions
 
@@ -49,4 +49,4 @@ Every screen defines initial loading, refresh/loading-more, skeleton where usefu
 
 ## Security, phase, and authority
 
-Follow [security baseline](../security/01-security-baseline.md), [screen states](../design/06-screen-state-requirements.md), and [consumer product](../product/02-consumer-product.md). V1 includes consumer core only. Phase 2 may add premium and RTC; Phase 3 may add approved consumer AI and broader social features. Conditional creator content remains gate-controlled even on Web.
+Follow [security baseline](../security/01-security-baseline.md), [screen states](../design/06-screen-state-requirements.md), and [consumer product](../product/02-consumer-product.md). V1 includes consumer core and no new verification workflow UI. Phase 2 may add approved Identity Assurance handoff, premium, and RTC; Phase 3 may add approved consumer AI and broader social features. Conditional creator content remains gate-controlled even on Web.

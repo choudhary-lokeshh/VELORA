@@ -24,6 +24,8 @@ Expired session/role, missing approval, stale target, or limit breach denies saf
 
 Log privileged reads/writes, delegation, approvals, break-glass use, exports, role changes, and configuration changes. Redact secrets/payment/identity data; protect audit immutability and access. Segregate duties for roles/limits. Audit events are not generic analytics data.
 
+Identity operations are V1 read-only: aggregate health and exact opaque-reference lookup. No search, list, export, raw evidence, provider payload, manual grant, override, revocation, deletion, or force-retry is authorized. A future mutation needs a new operation contract and explicit ADR-0017 exact-action/approval policy.
+
 ## Phase/open questions
 
 The binding and execution-time re-authorization steps above are implemented in AUTH as a reusable primitive; the operations themselves belong to their owning domains and are not implemented. An authorization that names a different target, different arguments, or a different expected effect, or whose target state moved after it was issued, is refused at execution rather than proceeding.

@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-Define lifecycle after authentication for shared Consumer Web/Mobile account, profile, verification state, availability, restriction, and deactivation. AUTH owns identity/session; USERS owns account/profile/availability; country policy and TRUST & SAFETY supply independent eligibility predicates.
+Define lifecycle after authentication for shared Consumer Web/Mobile account, profile, verification state, availability, restriction, and deactivation. AUTH owns principal/session; USERS owns account/profile/availability/self-declaration; IDENTITY ASSURANCE owns verified evidence; country policy and TRUST & SAFETY supply independent eligibility predicates.
 
 ## Preconditions and states
 
@@ -14,7 +14,7 @@ Availability is a user-managed, bounded preference such as available/unavailable
 
 1. Create or return one USERS account for authenticated AUTH subject idempotently.
 2. Collect only required profile, consent/policy acknowledgements, country/channel, and adult/verification inputs.
-3. Start approved verification through adapter if current policy requires it; store normalized outcome/reference, not unnecessary raw evidence.
+3. In Phase 2, start approved stronger verification through IDENTITY ASSURANCE if current published policy requires it; the provider flow stores minimum normalized evidence, not raw identity data. V1 has no Consumer initiation route.
 4. Activate account only when required profile, adult/country, policy, and safety predicates pass.
 5. User edits permitted fields and visibility; owner validates version, content, and field-level rules, then updates projections/events.
 6. User changes availability; DISCOVERY consumes only current minimized projection and rechecks all eligibility at action time.
@@ -29,7 +29,7 @@ Profile removal or account restriction propagates to discovery/search/notificati
 
 ## Permissions, privacy, and events
 
-User manages only own permitted fields, visibility, and availability. Support/Admin uses scoped owner operation with reason/audit. Raw verification evidence, birth data, internal safety reason, or hidden fields are not public profile. Events contain minimized account/profile/availability/verification-eligibility facts with version and deletion handling.
+User manages only own permitted fields, visibility, and availability. Support/Admin uses scoped owner operation with reason/audit. Raw verification evidence, exact birth data, internal safety reason, or hidden fields are not public profile. Identity evidence events carry minimized class/result/reference/version facts only; USERS computes account eligibility and publishes its own minimized lifecycle facts.
 
 ## Implemented V1 profile and visibility
 
@@ -47,7 +47,7 @@ Availability is implemented as a separate bounded state. It always carries an en
 
 V1. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: required profile fields, visibility defaults, age/verification policy, availability model/expiry, content validation, re-verification triggers, restriction UX, and creator-account deletion linkage.
 
-See [onboarding](onboarding.md), [USERS](../domains/users.md), [AUTH](../domains/auth.md), [adult verification](../compliance/02-adult-age-verification.md), and [Consumer surfaces](../surfaces/01-consumer-web.md).
+See [onboarding](onboarding.md), [USERS](../domains/users.md), [AUTH](../domains/auth.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [identity verification](identity-assurance-verification.md), [adult verification](../compliance/02-adult-age-verification.md), and [Consumer surfaces](../surfaces/01-consumer-web.md).
 
 ## Implemented consumer surfaces
 

@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-USERS owns consumer account state, profile basics, self-managed preferences, availability, and account lifecycle coordination. It does not own credentials, discovery ranking, relationship state, reports/enforcement decisions, creator business identity, or billing.
+USERS owns consumer account state, profile basics, self-managed preferences, availability, self-declared adult status, and account lifecycle coordination. It does not own credentials, verified age/identity evidence, discovery ranking, relationship state, reports/enforcement decisions, creator business identity, or billing.
 
 ## Flows and state
 
@@ -34,9 +34,9 @@ Account creation is idempotent because [onboarding](../flows/onboarding.md) requ
 
 `users_policy_acknowledgements` records that an account accepted a named policy document at a named version, from a named consumer surface. A unique index over account, key, and version makes re-submission a no-op rather than a second contradictory record, and a new version produces a new row, so republishing terms never rewrites the evidence that someone accepted the earlier text.
 
-`users_adult_assurances` records every adult-eligibility assessment. The identifier is a sequence rather than a timestamp so two assessments recorded in the same instant still have one unambiguous winner: the current assurance is simply the most recent row. A later failure, expiry, or revocation is therefore its own visible event rather than the absence of an earlier pass. No raw evidence has a column at all; the only provider-linked field is an opaque digest an adapter can use to find its own record.
+`users_adult_assurances` records the legacy mixed adult-eligibility history. [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md) requires a reviewed migration: every `verified_adult` row becomes an AUTH-principal Identity subject, attempt, and append-only evidence chain; self-declarations move to a self-declaration-only USERS table; count/order/current-decision equivalence is proven before the mixed table is retired. Until that migration lands, no new provider or product workflow may write verified evidence here.
 
-The assurance classes are deliberately not interchangeable, as [adult verification](../compliance/02-adult-age-verification.md) requires. `self_declared` and `verified_adult` are separate values, a self-declaration is refused by CHECK constraint if it ever carries provider evidence, and identity proof and creator verification get their own values when their owning domains implement them rather than by widening either of these.
+The assurance classes remain deliberately non-interchangeable. After migration, USERS stores only self-declaration; verified threshold, identity, creator-identity, depicted-person, and commercial-KYC evidence live in IDENTITY ASSURANCE. USERS derives its current verified answer through that published contract and does not cache a master `verified` boolean.
 
 No birth date is collected. The minimum age per country is unresolved and `LEGAL REVIEW REQUIRED`, so collecting a date would be gathering sensitive data for a rule that does not exist. The declaration is a statement of adult status plus the region whose rules apply.
 
@@ -50,11 +50,11 @@ The ladder is `adult_declaration -> policy_acknowledgement -> profile -> complet
 
 Activation to `active` requires the minimum profile, which the profile model does not yet define. A fully declared and acknowledged account therefore stops honestly at the `profile` step and stays `pending_profile`, rather than reporting a completion that has not happened.
 
-## Adult assurance provider seam
+## Adult assurance provider seam (legacy transition)
 
-Verification sits behind a provider-neutral port carrying only a normalized outcome. Self-declaration deliberately does not pass through it: nothing external is consulted, so routing it through a verifier would misrepresent what happened.
+The existing USERS provider port is a legacy seam and remains fail-closed until the IDENTITY ASSURANCE migration replaces it. Self-declaration deliberately does not pass through a verifier: nothing external is consulted, so routing it through a provider would misrepresent what happened.
 
-`USERS_ADULT_ASSURANCE_VERIFIER` selects the adapter and defaults to `unavailable`, which refuses every request. Configuration rejects any other value in staging and production, so no deployed environment can grant verified adult status while age verification is unresolved in [open decisions](../decisions/DECISIONS_REQUIRED.md). A `local-test` adapter exists so the verified path is genuinely exercisable during development and in tests; it is named so no test using it reads as evidence about a real provider.
+`USERS_ADULT_ASSURANCE_VERIFIER` selects the legacy adapter and defaults to `unavailable`, which refuses every request. No real provider integration may target it. Once migrated, Identity owns provider selection and this configuration is removed; onboarding compatibility remains through an Identity reader contract.
 
 The policy versions the required documents carry are marked unpublished, because Velora has no approved terms, privacy notice, minimum age, or launch-country list and none is invented here. That marker is a real version whose content is unapproved, not a placeholder that behaves like one: publishing approved copy is a version bump, after which every account is asked again and the earlier evidence is preserved.
 
@@ -114,4 +114,4 @@ PostgreSQL is the only truth. A Redis projection would be a reasonable read acce
 
 ## Cross-references
 
-[consumer product](../product/02-consumer-product.md), [consumer account/profile](../flows/consumer-account-profile.md), [onboarding](../flows/onboarding.md), [account deletion](../flows/account-deletion.md), [data ownership](../architecture/05-data-ownership.md).
+[consumer product](../product/02-consumer-product.md), [consumer account/profile](../flows/consumer-account-profile.md), [onboarding](../flows/onboarding.md), [IDENTITY ASSURANCE](identity-assurance.md), [identity verification flow](../flows/identity-assurance-verification.md), [account deletion](../flows/account-deletion.md), [data ownership](../architecture/05-data-ownership.md).

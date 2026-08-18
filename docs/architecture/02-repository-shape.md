@@ -11,6 +11,7 @@ apps/
   creator-studio/  creator business client
   admin/           privileged operations client
   api/             shared API composition/runtime
+    src/identity/  IDENTITY ASSURANCE application/domain boundary and adapters
 packages/
   types/           stable shared value types, not domain behavior
   validation/      shared input/schema validation
@@ -36,6 +37,8 @@ docs/
 - `api` composes modules, authenticates requests, and maps transport errors; domain rules remain in owning modules.
 - One domain may import another only through its published application contract; it may not import another domain's repository, persistence model, entity, or provider implementation.
 - Provider adapters are injected behind ports owned by affected domain/platform capability, never called directly from UI.
+- IDENTITY ASSURANCE owns verification subjects, attempts, assurance evidence, verified callback receipts, and reconciliation. AUTH, USERS, CREATORS, TRUST & SAFETY, BILLING, and PAYOUTS use its published contracts; they never read `identity_*` tables or import provider adapters.
+- Identity provider SDKs and hosted-session URLs remain server-only. A client receives only the narrow, generated phase-approved contract and can never select a provider or requested assurance strength.
 - AI Gateway/Orchestrator belongs behind shared API/platform contracts; product clients never embed provider SDKs or direct model access.
 - Approved Figma, not repository scaffolding, is visual source of truth. Future code consumes approved design tokens/components without coupling surface permissions.
 
@@ -45,7 +48,7 @@ Configuration references secret identifiers only; secret values belong in contro
 
 ## Technical implementation
 
-[Technical stack](09-technical-stack.md) and ADR-0003 through ADR-0016 lock pnpm/Turborepo, Bun backend plus Node client/tooling runtimes, TypeScript, client/backend frameworks, REST/OpenAPI, PostgreSQL/Drizzle, logically separated Redis responsibilities, BullMQ, realtime, sessions, storage, AI, observability/testing, initial deployment, and the narrow shared design-token boundary. ADR-0016 is the active backend supersession authority. Provider and product/design/legal decisions remain in [open decisions](../decisions/DECISIONS_REQUIRED.md). No technical choice alters ownership or client separation.
+[Technical stack](09-technical-stack.md), ADR-0003 through ADR-0023, and [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md) lock pnpm/Turborepo, Bun backend plus Node client/tooling runtimes, TypeScript, client/backend frameworks, REST/OpenAPI, PostgreSQL/Drizzle, logically separated Redis responsibilities, BullMQ, realtime, sessions, storage, AI, identity-assurance, observability/testing, initial deployment, and the narrow shared design-token boundary. ADR-0016 is the active backend supersession authority. Provider and product/design/legal decisions remain in [open decisions](../decisions/DECISIONS_REQUIRED.md). No technical choice alters ownership or client separation.
 
 ## Cross-references
 

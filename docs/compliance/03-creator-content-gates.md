@@ -6,7 +6,7 @@ Define gates for creator operation, content publication, private delivery, and p
 
 ## Separate predicates
 
-Creator access requires independent current decisions for user adult eligibility, creator identity/business verification, creator status, country/channel eligibility, content-category eligibility, payment/payout readiness where relevant, safety/enforcement, and object authorization. Passing one predicate never implies another.
+Creator access requires independent current decisions for user adult eligibility, creator identity/business verification, creator status, country/channel eligibility, content-category eligibility, payment/payout readiness where relevant, safety/enforcement, and object authorization. IDENTITY ASSURANCE supplies verified evidence only; CREATORS and TRUST & SAFETY own their predicates. Passing one predicate never implies another.
 
 ## Creator activation gates
 
@@ -60,4 +60,4 @@ Restrict verification and consent evidence to justified roles. Never place raw e
 
 The dated primary-source findings that decide which surfaces and distribution channels may carry mature content at all, and what depicted-person evidence it requires, are in [surface and distribution eligibility](07-surface-and-distribution-eligibility.md). The architecture that keeps every gate above a separately revocable predicate rather than one flag is [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md).
 
-See [Creator Private Clubs](../product/03-creator-private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [media security](../security/04-media-upload-delivery.md), [entitlement flow](../flows/creator-entitlement.md), and [moderation operations](../operations/02-moderation-operations.md).
+See [Creator Private Clubs](../product/03-creator-private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [identity provider eligibility](09-identity-verification-provider-eligibility.md), [media security](../security/04-media-upload-delivery.md), [entitlement flow](../flows/creator-entitlement.md), and [moderation operations](../operations/02-moderation-operations.md).

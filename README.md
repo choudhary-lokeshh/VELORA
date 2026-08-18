@@ -1,6 +1,6 @@
 # VELORA
 
-Documentation-driven foundation for a globally scalable, adult social platform. The repository contains the production workspace bootstrap, shared contract/configuration/observability foundations, local PostgreSQL/Redis development infrastructure, the AUTH vertical slice, and the USERS consumer account it admits people into. It intentionally contains no further V1 product feature and no live provider integration.
+Documentation-driven foundation for a globally scalable, adult social platform. The repository contains the production workspace bootstrap, shared contract/configuration/observability foundations, local PostgreSQL/Redis development infrastructure, the AUTH vertical slice, and the USERS consumer account it admits people into. The approved V1 architecture now requires a provider-neutral Identity Assurance core; Consumer/Creator verification workflows and commercial KYC exposure remain phase-gated, and no live verification provider is integrated.
 
 Velora is one ecosystem with four separate product surfaces sharing backend/domain contracts:
 
@@ -29,7 +29,7 @@ docs/
 
 See [repository shape](docs/architecture/02-repository-shape.md) for dependency rules.
 
-Technical choices are locked in the [technical stack matrix](docs/architecture/09-technical-stack.md) and ADR-0003 through ADR-0018. ADR-0016 supersedes the backend-runtime portions of earlier ADRs; ADR-0017 locks the session, recovery, and privileged-access values ADR-0009 left open; ADR-0018 locks toolchain provisioning and the verification pipeline. Product phase, provider, security, compliance, and design gates remain authoritative.
+Technical choices are locked in the [technical stack matrix](docs/architecture/09-technical-stack.md) and accepted ADRs. ADR-0016 supersedes the backend-runtime portions of earlier ADRs; ADR-0017 locks session/recovery/privileged-access policy; ADR-0018 locks toolchain verification; ADR-0024 locks the provider-neutral Identity Assurance boundary. Product phase, provider, security, compliance, and design gates remain authoritative.
 
 ## Local bootstrap
 
@@ -50,6 +50,8 @@ CI is `.github/workflows/verify.yml`. It provisions the same pinned toolchain an
 `pnpm ci:verify` ends with the dependency security gate. It audits the complete dependency graph, prints raw advisory evidence, and reports `PASS`, `PASS WITH EXPLICIT TEMPORARY ACCEPTED RISK`, or `FAIL`. An audit that cannot run is a failure, never a pass. Accepted findings are the exact, expiring, owner-signed records in [dependency risk acceptance](docs/security/08-dependency-risk-acceptance.md); anything else at high or critical severity fails.
 
 AUTH runs only on development and test adapters. Staging and production refuse them at configuration load and fail to start, because no identity, signing, recovery-delivery, or phishing-resistant authenticator provider is approved; see [open decisions](docs/decisions/DECISIONS_REQUIRED.md). Session, recovery, and privileged-access values come from [ADR-0017](docs/decisions/ADR-0017-auth-session-recovery-security-policy.md) and are asserted by `pnpm auth:policy` against the ADR, the API's policy module, and every document.
+
+Identity Assurance is distinct from authentication. Its `unavailable` adapter is the deployable default; deterministic `local-test` behavior is local/test-only; staging and production have no live verification route until a provider ADR, jurisdiction policy, privacy/retention approval, and phase-approved design exist. Verification evidence is never itself authorization. Start with [Identity Assurance](docs/domains/identity-assurance.md) and its dedicated path in the [documentation index](docs/DOCS_INDEX.md).
 
 Browser AUTH end-to-end tests start a real API, PostgreSQL, and Redis before the browsers. The session cookie keeps its production attributes everywhere. WebKit does not store a `Secure` cookie delivered over plain-HTTP loopback, so the specs that need the browser to hold a session run on Chromium and Firefox; WebKit runs the transport, security-header, and surface-isolation specs. Access tokens are signed with Ed25519, so verifying one never requires material that could mint one.
 

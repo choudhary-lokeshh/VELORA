@@ -29,6 +29,8 @@ Each approved handoff records:
 
 Figma Starter limits each local variable collection to one mode and therefore prevents production multi-mode token implementation. This limitation does not block repository or product architecture. Coding agents may implement semantic code-level theme maps matching the approved Master through `packages/design-tokens`; they must not create fake Figma modes, redesign the direction, or invent unapproved colors/components/screens.
 
+Identity Assurance product surfaces have no approved handoff yet. A future checkpoint may add `01 — Identity Assurance Handoff` to this same authoritative file for Consumer Web, Consumer Mobile handoff/resume, Creator Studio, and read-only Platform Admin states. Until human visual/accessibility approval and the matching product-phase gate, this name is a planned handoff only: no screen, layout, component, route, or client workflow may be inferred from it.
+
 ## Source-of-truth precedence
 
 If Figma conflicts with product phase, authorization, domain ownership, payment/entitlement, privacy, or compliance documents, those authoritative documents prevail and design must be corrected before implementation. Figma cannot enable a future or gated capability.

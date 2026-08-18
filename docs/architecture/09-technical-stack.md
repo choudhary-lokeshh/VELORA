@@ -2,7 +2,7 @@
 
 ## Purpose and authority
 
-This is Velora's concise technical-platform matrix. It answers what is selected, what remains deferred, who owns each boundary, and where replacement may occur. ADR-0003 through ADR-0016 are authoritative for rationale, risks, and migration; ADR-0016 supersedes the active backend-runtime portions identified there. Product phase, domain, security, compliance, operations, and approved Figma authorities remain unchanged.
+This is Velora's concise technical-platform matrix. It answers what is selected, what remains deferred, who owns each boundary, and where replacement may occur. ADR-0003 through ADR-0024 are authoritative for rationale, risks, and migration; ADR-0016 supersedes the active backend-runtime portions identified there. Product phase, domain, security, compliance, operations, and approved Figma authorities remain unchanged.
 
 Every row uses exactly one classification: `LOCK NOW`, `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`, `DECISION REQUIRED BEFORE FEATURE`, or `REJECTED`.
 
@@ -47,6 +47,9 @@ Every row uses exactly one classification: `LOCK NOW`, `DEFER UNTIL PROVIDER INT
 | Authentication | One AUTH registry; opaque Web sessions; short-lived Mobile access plus rotating refresh token | LOCK NOW | Unified identity/revocation with platform-safe transports | AUTH | AUTH provider/session contracts |
 | Session/recovery/privileged policy | Exact per-surface lifetimes, cookie policy, refresh rotation/reuse response, recovery limits, Admin MFA/step-up, break-glass semantics per ADR-0017 | LOCK NOW | Security policy stays reviewable in one authority instead of implementation constants | AUTH; ADMIN for privileged operations | Versioned policy values and their conformance tests |
 | Authentication provider | Credential/social/OTP provider not selected; local/mock/test first | DEFER UNTIL PROVIDER INTEGRATION | Coverage, assurance, privacy, country, and recovery review needed | AUTH | Provider adapters and canonical subject IDs |
+| Identity assurance | Separate provider-neutral IDENTITY ASSURANCE domain; append-only evidence, hosted-session orchestration, verified callback inbox, reconciliation | LOCK NOW | Verification evidence is reusable without becoming authentication, creator, safety, or payout truth | IDENTITY ASSURANCE | Published owner contracts and opaque evidence references |
+| Identity verification provider | `unavailable` production default and deterministic local/test adapter; no vendor selected | DEFER UNTIL PROVIDER INTEGRATION | Country, hosted-flow, callback, biometrics, retention, residency, deletion, accessibility, and business-model approval remain unresolved | IDENTITY ASSURANCE / privacy / legal | Provider capability and normalization port |
+| Identity jurisdiction policy | Versioned `UNKNOWN`, `BLOCKED`, or `ALLOWED_WITH_REQUIREMENTS`; production unpublished and fail-closed | DECISION REQUIRED BEFORE FEATURE | Legal/provider requirements differ by country, purpose, actor, and channel | IDENTITY ASSURANCE / ADMIN / legal | Versioned policy port and audited configuration |
 | Authorization | Deny-by-default RBAC plus object/relationship/country/safety policy in owner domain | LOCK NOW | Current domain truth must authorize every action | Each domain; ADMIN owns grants | Versioned policy tests; external engine only after parity |
 | Privileged approval | Step-up, exact proposal binding, separation of duties, owner re-authorization | LOCK NOW | Human approval cannot replace deterministic authorization | ADMIN / owning workflow | Approval contract/reference |
 | Config | Typed Zod-validated `packages/config`; fail startup on invalid server config | LOCK NOW | Deterministic, reviewable environment behavior | Platform engineering | Config schema and composition root |
@@ -100,6 +103,10 @@ Client applications
         v
   apps/api (composition and transport)
         |
+        | identity owner contract; never provider selection from clients
+        v
+  apps/api/src/identity
+        |
         | owning application service / public domain port
         v
   packages/domain/<owner>
@@ -116,6 +123,7 @@ Forbidden dependencies:
 - Provider implementations define or leak business state; ports depend inward and implementations are injected outward.
 - Admin, AI, jobs, or migrations bypass owning application services for business mutation.
 - Shared `types`, `validation`, or `api-client` gains authorization, persistence, provider, or secret behavior.
+- A client or another domain imports an Identity repository/table/provider adapter, supplies provider choice or assurance strength, or treats evidence as authorization.
 - Circular package/domain dependencies. Resolve cycles through a published contract, owner transfer, or versioned event.
 
 ## Initial deployment topology

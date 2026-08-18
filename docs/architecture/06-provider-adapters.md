@@ -10,7 +10,7 @@ Keep product/domain logic vendor-neutral. Each owning domain defines a port, nor
 | RTC/video | REALTIME | issue scoped session credentials, room lifecycle, quality webhooks |
 | Storage/media | PRIVATE CLUBS or owning content domain | quarantine upload, scan, private object, signed delivery |
 | Email/push/SMS | NOTIFICATIONS / AUTH for OTP policy | send attempt, provider status, template capability |
-| Identity/age verification | CREATORS / AUTH policy | verification session, outcome reference, revocation |
+| Identity/age/creator/commercial verification | IDENTITY ASSURANCE; owner domains decide product predicates | capability declaration, hosted session, retrieval, raw callback verification/normalization, current-state reconciliation, declared cancellation/expiry |
 | Moderation | MODERATION | submit evidence, normalized signal, human review route |
 | Analytics | ANALYTICS | event export, consent-aware delivery |
 | Creator payouts | PAYOUTS | recipient readiness, transfer/disbursement, verified webhooks |
@@ -23,6 +23,8 @@ Initial development uses local/mock/test adapters for every integration. Real pr
 Adapters use timeouts, bounded retry only for safe/idempotent operations, circuit isolation, redacted structured logs, and provider event verification. Persist provider request/response references, never raw credentials/card data. A local/mock adapter supports deterministic tests and development without paid services. Real adapter selection is configuration injected at composition root.
 
 AI routing may select only evaluated adapters/models approved for capability, data class, country/residency, safety, latency, and cost policy. Fallback must preserve or strengthen these constraints. Provider/model identifiers and request shapes stay outside product/domain contracts; provider output remains untrusted and schema-validated.
+
+Identity routing is server-only. No route, header, query, or client field selects provider, provider workflow, assurance strength, or jurisdiction policy. `unavailable` is the default and `local-test` is network-free and rejected in staging/production. Raw callback authenticity is verified before parsing; the durable inbox stores a digest and normalized allow-list only. Hosted links are short-lived secrets and never become durable product data. See [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md) and [provider eligibility](../compliance/09-identity-verification-provider-eligibility.md).
 
 ## Preconditions and phase
 
