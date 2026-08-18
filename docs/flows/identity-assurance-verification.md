@@ -4,6 +4,8 @@
 
 This flow owns provider-neutral verification orchestration and failure recovery. V1 exposes only platform callback and read-only operations contracts. Consumer/Creator initiation is Phase 2; commercial-KYC/payout exposure is Phase 3; mature-content use is conditional and blocked.
 
+Current implementation exposes the start sequence only as an internal contract for an owner application service that already authorized actor, subject, purpose, and jurisdiction. There is no Consumer, Creator, Admin, or general-purpose HTTP start route. The default provider/policy configuration refuses before persistence; local/test fixtures exercise recovery without network access or legal/provider claims.
+
 ## Start and hosted handoff
 
 1. Owning domain authorizes the actor, subject, purpose, and jurisdiction through a published Identity contract.

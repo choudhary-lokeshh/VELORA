@@ -104,6 +104,19 @@ export const unavailableAdultAssuranceVerifier = 'unavailable';
 export const localTestAdultAssuranceVerifier = 'local-test';
 
 /**
+ * Provider-neutral Identity Assurance gates.
+ *
+ * Provider and jurisdiction policy are independent: an eligible provider does
+ * not publish legal policy, and a published policy does not approve a vendor.
+ * Both defaults refuse. `local-test` implementations are deterministic,
+ * network-free fixtures and are rejected in staging and production.
+ */
+export const unavailableIdentityVerificationProvider = 'unavailable';
+export const localTestIdentityVerificationProvider = 'local-test';
+export const unpublishedIdentityJurisdictionPolicy = 'unpublished';
+export const localTestIdentityJurisdictionPolicy = 'local-test';
+
+/**
  * Depicted-person evidence and consent, which are two gates rather than one.
  *
  * The **verifier** produces the references Velora holds about a depicted adult:
@@ -394,6 +407,18 @@ export const serverConfigSchema = z
     DATABASE_URL: postgresUrlSchema,
     EPHEMERAL_REDIS_URL: redisUrlSchema,
     HOST: z.string().min(1).optional(),
+    IDENTITY_JURISDICTION_POLICY: z
+      .enum([
+        unpublishedIdentityJurisdictionPolicy,
+        localTestIdentityJurisdictionPolicy,
+      ])
+      .default(unpublishedIdentityJurisdictionPolicy),
+    IDENTITY_VERIFICATION_PROVIDER: z
+      .enum([
+        unavailableIdentityVerificationProvider,
+        localTestIdentityVerificationProvider,
+      ])
+      .default(unavailableIdentityVerificationProvider),
     LOG_LEVEL: logLevelSchema.default('info'),
     MESSAGING_SAFETY_ELIGIBILITY: z
       .enum([unavailableSafetyEligibility, trustAndSafetyEligibility])
@@ -466,6 +491,26 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `USERS_ADULT_ASSURANCE_VERIFIER is not usable in ${config.APP_ENV}: no age or identity verification provider is approved; see DECISIONS_REQUIRED`,
         path: ['USERS_ADULT_ASSURANCE_VERIFIER'],
+      });
+    }
+    if (
+      config.IDENTITY_VERIFICATION_PROVIDER !==
+      unavailableIdentityVerificationProvider
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `IDENTITY_VERIFICATION_PROVIDER is not usable in ${config.APP_ENV}: no identity verification provider is approved; see the provider eligibility record and DECISIONS_REQUIRED`,
+        path: ['IDENTITY_VERIFICATION_PROVIDER'],
+      });
+    }
+    if (
+      config.IDENTITY_JURISDICTION_POLICY !==
+      unpublishedIdentityJurisdictionPolicy
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `IDENTITY_JURISDICTION_POLICY is not usable in ${config.APP_ENV}: no launch jurisdiction, assurance threshold, retention rule, or biometric basis is approved; see DECISIONS_REQUIRED`,
+        path: ['IDENTITY_JURISDICTION_POLICY'],
       });
     }
     if (
@@ -708,6 +753,8 @@ export function redactServerConfig(config: ServerConfig) {
     ephemeralRedisConfigured: config.EPHEMERAL_REDIS_URL.length > 0,
     host: config.HOST,
     identityProvider: config.AUTH_IDENTITY_PROVIDER,
+    identityJurisdictionPolicy: config.IDENTITY_JURISDICTION_POLICY,
+    identityVerificationProvider: config.IDENTITY_VERIFICATION_PROVIDER,
     logLevel: config.LOG_LEVEL,
     notificationDeliveryChannel: config.NOTIFICATIONS_DELIVERY_CHANNEL,
     port: config.PORT,

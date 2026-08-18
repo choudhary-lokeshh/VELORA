@@ -79,6 +79,31 @@ describe('server configuration', () => {
     ).toContain('USERS_ADULT_ASSURANCE_VERIFIER');
   });
 
+  it('keeps Identity provider and jurisdiction policy separately fail-closed', () => {
+    const defaults = loadServerConfig(validEnvironment);
+    expect(defaults.IDENTITY_VERIFICATION_PROVIDER).toBe('unavailable');
+    expect(defaults.IDENTITY_JURISDICTION_POLICY).toBe('unpublished');
+
+    const local = loadServerConfig({
+      ...validEnvironment,
+      IDENTITY_JURISDICTION_POLICY: 'local-test',
+      IDENTITY_VERIFICATION_PROVIDER: 'local-test',
+    });
+    expect(local.IDENTITY_VERIFICATION_PROVIDER).toBe('local-test');
+    expect(local.IDENTITY_JURISDICTION_POLICY).toBe('local-test');
+
+    for (const appEnvironment of ['staging', 'production']) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        IDENTITY_JURISDICTION_POLICY: 'local-test',
+        IDENTITY_VERIFICATION_PROVIDER: 'local-test',
+      });
+      expect(failure).toContain('IDENTITY_VERIFICATION_PROVIDER');
+      expect(failure).toContain('IDENTITY_JURISDICTION_POLICY');
+    }
+  });
+
   /**
    * Every seam that could move money, refused in every deployed environment.
    *
@@ -354,6 +379,18 @@ describe('server configuration', () => {
     expect(redacted.mediaDeliverySigningKeyConfigured).toBe(true);
     expect(redacted.mediaStorageProvider).toBe('local-test');
     expect(redacted.mediaMalwareScanner).toBe('unavailable');
+  });
+
+  it('reports only Identity adapter names when redacting configuration', () => {
+    const redacted = redactServerConfig(
+      loadServerConfig({
+        ...validEnvironment,
+        IDENTITY_JURISDICTION_POLICY: 'local-test',
+        IDENTITY_VERIFICATION_PROVIDER: 'local-test',
+      }),
+    );
+    expect(redacted.identityVerificationProvider).toBe('local-test');
+    expect(redacted.identityJurisdictionPolicy).toBe('local-test');
   });
 });
 
