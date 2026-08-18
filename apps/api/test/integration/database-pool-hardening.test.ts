@@ -41,6 +41,7 @@ import {
   testBillingRuntime,
   testPayoutsRuntime,
   testMediaRuntime,
+  testIdentityRuntime,
 } from '../support/harness.js';
 import {
   mediaEnvironment,
@@ -230,6 +231,11 @@ function createInstance(name: string): Instance {
       discovery,
       ephemeralRedis: healthy,
       logger,
+      identity: testIdentityRuntime({
+        config,
+        database: database.drizzle,
+        logger,
+      }),
       media: mediaRuntime,
       messaging,
       notifications: createNotificationsApiRuntime({

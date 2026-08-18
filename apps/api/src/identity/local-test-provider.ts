@@ -17,7 +17,8 @@ export const localTestIdentityCallbackSecret =
 export const localTestIdentitySignatureHeader =
   'x-velora-identity-test-signature';
 
-export type LocalTestIdentityProviderBehaviour = 'normal' | 'ambiguous';
+export type LocalTestIdentityProviderBehaviour =
+  'normal' | 'ambiguous' | 'retrieval-outage';
 
 /**
  * Deterministic, network-free provider fixture.
@@ -94,6 +95,9 @@ export class LocalTestIdentityVerificationProvider implements IdentityVerificati
   retrieveCurrentState(
     providerReference: string,
   ): Promise<IdentityProviderSnapshot> {
+    if (this.behaviour === 'retrieval-outage') {
+      return Promise.reject(new Error('local-test: identity retrieval outage'));
+    }
     const session = this.byReference.get(providerReference);
     if (session === undefined) {
       return Promise.reject(new Error('local-test: unknown identity session'));
@@ -154,7 +158,9 @@ export class LocalTestIdentityVerificationProvider implements IdentityVerificati
 
     let value: unknown;
     try {
-      value = JSON.parse(new TextDecoder().decode(input.rawBody));
+      value = JSON.parse(
+        new TextDecoder('utf-8', { fatal: true }).decode(input.rawBody),
+      );
     } catch {
       return Promise.reject(new Error('local-test: callback refused'));
     }

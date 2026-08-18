@@ -20,6 +20,7 @@ import {
   type TestDatabase,
 } from '../support/database.js';
 import { testServerConfig } from '../support/harness.js';
+import { silentLogger } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_identity_orchestration');
 const database: TestDatabase = connectDatabase(databaseUrl, { max: 60 });
@@ -30,6 +31,8 @@ const config = testServerConfig({
 const runtime = createIdentityRuntime({
   config,
   database: database.drizzle,
+  logger: silentLogger(),
+  owner: 'identity-orchestration-test',
 });
 const provider = runtime.provider as LocalTestIdentityVerificationProvider;
 
@@ -183,6 +186,8 @@ describe('authorized verification start', () => {
         IDENTITY_JURISDICTION_POLICY: 'local-test',
       }),
       database: database.drizzle,
+      logger: silentLogger(),
+      owner: 'identity-orchestration-unavailable-test',
     });
     expect(
       await unavailable.orchestrator.start(request('unavailable')),

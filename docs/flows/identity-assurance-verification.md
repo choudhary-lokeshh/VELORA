@@ -4,7 +4,7 @@
 
 This flow owns provider-neutral verification orchestration and failure recovery. V1 exposes only platform callback and read-only operations contracts. Consumer/Creator initiation is Phase 2; commercial-KYC/payout exposure is Phase 3; mature-content use is conditional and blocked.
 
-Current implementation exposes the start sequence only as an internal contract for an owner application service that already authorized actor, subject, purpose, and jurisdiction. There is no Consumer, Creator, Admin, or general-purpose HTTP start route. The default provider/policy configuration refuses before persistence; local/test fixtures exercise recovery without network access or legal/provider claims.
+Current implementation exposes the start sequence only as an internal contract for an owner application service that already authorized actor, subject, purpose, and jurisdiction. The provider callback route and leased worker sequence below are implemented; reconciliation and owner evidence consumption are not yet implemented. There is no Consumer, Creator, Admin, or general-purpose HTTP start route. The default provider/policy configuration refuses before persistence; local/test fixtures exercise recovery without network access or legal/provider claims.
 
 ## Start and hosted handoff
 
@@ -26,7 +26,7 @@ The callback sequence is:
 
 1. Enforce a strict body limit against raw bytes.
 2. Resolve configured provider/account/environment without a client-selected adapter.
-3. Verify authenticity and replay/freshness against the raw body before JSON parsing.
+3. Verify authenticity over the raw body before JSON parsing, apply any provider-supported freshness rule, and bind replay handling to the provider event identity.
 4. Normalize the minimal event identity and reference.
 5. Commit first or duplicate verified receipt and answer `202` quickly.
 6. A worker claims the inbox row under a lease, retrieves current provider state when required, verifies subject/reference/environment consistency, applies lifecycle precedence, appends evidence, writes minimized outbox facts, and settles the inbox row.

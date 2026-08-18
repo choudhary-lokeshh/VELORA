@@ -244,6 +244,7 @@ export const apiRoutePaths = {
   consumerSafetyStanding: '/v1/safety/standing',
   creatorMatureReadiness: '/v1/creator/safety/readiness',
   checkouts: '/v1/billing/checkouts',
+  identityProviderEvents: '/v1/identity/provider-events',
   providerEvents: '/v1/billing/provider-events',
   subscriptions: '/v1/billing/subscriptions',
   clubAccess: '/v1/clubs/access',
@@ -1601,6 +1602,27 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       "The provider's signature over the exact bytes is the entire credential: there is no session, no audience, and no CSRF token here. Size is bounded before the body is read as data, and the signature is checked before it is parsed as anything.",
+  },
+  {
+    method: 'post',
+    operationId: 'receiveIdentityProviderEvent',
+    path: apiRoutePaths.identityProviderEvents,
+    responses: {
+      '202': {
+        description:
+          'The identity-provider event was verified and its minimized durable receipt exists. Exact redeliveries receive the same acknowledgement. Assurance evidence is never applied on the request thread; a worker retrieves current provider state and applies it later.',
+        schemaName: 'ProviderEventAcknowledgement',
+      },
+      '401': {
+        description:
+          'The exact raw body could not be authenticated and normalized, or reused an event identity inconsistently. Nothing was written and the response does not reveal which check failed.',
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The configured provider signature over exact bytes is the credential. The endpoint stores only provider/account/environment identity, event metadata, a body digest, and a provider reference; never callback contents, documents, biometrics, or hosted URLs.',
   },
   {
     method: 'get',

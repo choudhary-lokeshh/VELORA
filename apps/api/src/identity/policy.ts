@@ -104,3 +104,8 @@ export const maximumIdentityProviderEventIdLength = 256;
 export const maximumIdentityProviderEventTypeLength = 128;
 export const maximumIdentityLeaseOwnerLength = 128;
 export const maximumIdentityFailureCodeLength = 128;
+/** Technical intake bound. Provider callbacks carry references, never files. */
+export const maximumIdentityProviderEventBodyBytes = 65_536;
+/** A malformed adapter cannot make one callback allocate unbounded work. */
+export const maximumIdentityProviderEvidenceFacts = 16;
+export const maximumIdentityProviderEventAttempts = 5;

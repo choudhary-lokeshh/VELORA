@@ -39,6 +39,10 @@ import {
   type DiscoveryRuntime,
 } from './discovery/composition.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
+import {
+  createIdentityRuntime,
+  type IdentityRuntime,
+} from './identity/composition.js';
 import { RoutedMediaAssociation } from './media/publication.js';
 import {
   RoutedMediaSafetySubjects,
@@ -112,6 +116,7 @@ export interface ApplicationDependencies {
   readonly discovery: DiscoveryRuntime;
   readonly ephemeralRedis: HealthDependency;
   readonly logger: SafeLogger;
+  readonly identity: IdentityRuntime;
   readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
@@ -176,6 +181,7 @@ export function createApplication(
   const injectedAdmin = options.dependencies?.admin;
   const injectedDiscovery = options.dependencies?.discovery;
   const injectedMedia = options.dependencies?.media;
+  const injectedIdentity = options.dependencies?.identity;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
@@ -191,6 +197,7 @@ export function createApplication(
   let admin: AdminRuntime;
   let discovery: DiscoveryRuntime;
   let media: MediaRuntime;
+  let identity: IdentityRuntime;
   let messaging: MessagingRuntime;
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
@@ -206,6 +213,14 @@ export function createApplication(
         config,
         database: ownedDatabase.database,
         logger,
+      });
+    identity =
+      injectedIdentity ??
+      createIdentityRuntime({
+        config,
+        database: ownedDatabase.database,
+        logger,
+        owner: `api-${crypto.randomUUID()}`,
       });
     // MEDIA before USERS, because USERS asks it for upload capabilities and
     // readiness. It asks nothing of USERS in return: the association answer it
@@ -430,6 +445,7 @@ export function createApplication(
       injectedAdmin === undefined ||
       injectedDiscovery === undefined ||
       injectedMedia === undefined ||
+      injectedIdentity === undefined ||
       injectedMessaging === undefined ||
       injectedNotifications === undefined ||
       injectedPayouts === undefined ||
@@ -437,7 +453,7 @@ export function createApplication(
       options.dependencies?.databaseAdmission === undefined
     ) {
       throw new Error(
-        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, ADMIN, DISCOVERY, MEDIA, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
+        'An injected database dependency requires injected AUTH, USERS, CREATORS, PRIVATE CLUBS, BILLING, PAYOUTS, ADMIN, DISCOVERY, MEDIA, IDENTITY, MESSAGING, NOTIFICATIONS, and SAFETY runtimes and a database admission bound',
       );
     }
     database = injectedDatabase;
@@ -449,6 +465,7 @@ export function createApplication(
     admin = injectedAdmin;
     discovery = injectedDiscovery;
     media = injectedMedia;
+    identity = injectedIdentity;
     messaging = injectedMessaging;
     notifications = injectedNotifications;
     payouts = injectedPayouts;
@@ -486,6 +503,7 @@ export function createApplication(
     discovery,
     ephemeralRedis,
     logger,
+    identity,
     media,
     messaging,
     notifications,
@@ -502,6 +520,9 @@ export function createApplication(
 
   const requestBodies = new WeakMap<Request, string>();
   const bodyFor = (request: Request) => requestBodies.get(request) ?? '';
+  const rawRequestBodies = new WeakMap<Request, Uint8Array>();
+  const rawBodyFor = (request: Request) =>
+    rawRequestBodies.get(request) ?? new Uint8Array();
 
   // Elysia emits one `Set-Cookie` header per array entry, which is what the
   // audience-scoped session and CSRF cookies require.
@@ -539,7 +560,12 @@ export function createApplication(
       const correlationId = correlationIdFor(request);
       try {
         const result = await dependencies.databaseAdmission.run(async () =>
-          route({ body: bodyFor(request), correlationId, request }),
+          route({
+            body: bodyFor(request),
+            correlationId,
+            rawBody: rawBodyFor(request),
+            request,
+          }),
         );
         return applyRouteResult(set, result);
       } catch (error) {
@@ -595,7 +621,9 @@ export function createApplication(
     // and answer malformed input with one contract-declared status instead of a
     // framework parse error.
     .onParse(async ({ request }) => {
-      const raw = await request.text();
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      rawRequestBodies.set(request, bytes);
+      const raw = new TextDecoder().decode(bytes);
       requestBodies.set(request, raw);
       return raw;
     })
@@ -903,6 +931,10 @@ export function createApplication(
       admitted(async (input) =>
         billing.webhookRoutes.receiveProviderEvent(input),
       ),
+    )
+    .post(
+      apiRoutePaths.identityProviderEvents,
+      admitted(async (input) => identity.providerEventRoutes.receive(input)),
     )
     .get(
       apiRoutePaths.subscriptions,

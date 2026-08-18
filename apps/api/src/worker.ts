@@ -34,6 +34,10 @@ import {
 import { Poller } from './jobs/poller.js';
 import { JobRegistry } from './jobs/registry.js';
 import { createQueue, createWorkerRuntime } from './jobs/runtime.js';
+import {
+  createIdentityRuntime,
+  type IdentityRuntime,
+} from './identity/composition.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import {
   mediaInspectionIntervalMilliseconds,
@@ -135,6 +139,10 @@ export function startBackgroundCycles(composition: WorkerComposition): void {
 export interface WorkerComposition {
   /** BILLING, composed here because this process drains its inbox and outbox. */
   readonly billing: BillingRuntime;
+  /** IDENTITY, composed here because this process drains its verified inbox. */
+  readonly identity: IdentityRuntime;
+  /** Applies verified identity-provider events outside request threads. */
+  readonly identityProviderEventDrain: Poller;
   /** MEDIA, composed here because this process owns its durable byte work. */
   readonly media: MediaRuntime;
   /** Derives what uploaded bytes actually are. Quarantines what fails. */
@@ -231,6 +239,14 @@ export function createWorkerComposition(input: {
     now,
   });
 
+  const identity = createIdentityRuntime({
+    config: input.config,
+    database: handle,
+    logger: input.logger,
+    now,
+    owner,
+  });
+
   const relay = new OutboxRelay({
     consumers: [
       ...notifications.intakes,
@@ -307,6 +323,12 @@ export function createWorkerComposition(input: {
     intervalMilliseconds: outboxRelayIntervalMilliseconds,
     logger: input.logger,
     name: 'billing-provider-events',
+  });
+  const identityProviderEventDrain = new Poller({
+    cycle: async () => admit(async () => identity.providerEvents.processOnce()),
+    intervalMilliseconds: outboxRelayIntervalMilliseconds,
+    logger: input.logger,
+    name: 'identity-provider-events',
   });
   // Reconciliation is what makes an ambiguous outcome a temporary state rather
   // than a permanent one. It asks providers what they hold under keys Velora
@@ -565,6 +587,8 @@ export function createWorkerComposition(input: {
   return {
     billing,
     financialReconciliation,
+    identity,
+    identityProviderEventDrain,
     media,
     mediaInspection,
     mediaProcessing,
@@ -577,6 +601,7 @@ export function createWorkerComposition(input: {
       await Promise.all([
         relayPoller.stop(),
         providerEventDrain.stop(),
+        identityProviderEventDrain.stop(),
         financialReconciliation.stop(),
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
@@ -594,6 +619,7 @@ export function createWorkerComposition(input: {
       // the relay then publishes, so draining in this order settles a payment
       // and its entitlement in a single pass.
       await providerEventDrain.runOnce();
+      await identityProviderEventDrain.runOnce();
       await relayPoller.runOnce();
       await financialReconciliation.runOnce();
       await safetyDeadlineSweep.runOnce();

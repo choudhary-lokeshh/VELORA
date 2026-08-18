@@ -32,6 +32,7 @@ import {
   testBillingRuntime,
   testPayoutsRuntime,
   testMediaRuntime,
+  testIdentityRuntime,
 } from '../support/harness.js';
 import {
   mediaEnvironment,
@@ -166,6 +167,12 @@ const application = createApplication({
     discovery,
     ephemeralRedis: healthy,
     logger,
+    identity: testIdentityRuntime({
+      config,
+      database: database.drizzle,
+      logger,
+      now,
+    }),
     media: mediaRuntime,
     messaging,
     notifications: testNotificationsApiRuntime({

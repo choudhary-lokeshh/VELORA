@@ -22,6 +22,8 @@ Alerts require an owner and runbook for:
 
 Exact thresholds and SLOs are `DECISION REQUIRED BEFORE FEATURE`.
 
+Current implementation provides the verified callback inbox, bounded lease/retry/dead-letter worker, redacted failure logging, and transactional evidence/outbox write. Aggregate Admin reads, alerts/dashboards, reconciliation, privileged repair, and privacy-obligation execution remain unavailable; this document does not imply that an operator can perform them yet.
+
 ## Allowed actions
 
 Before a privileged mutation workflow is approved, operators may:

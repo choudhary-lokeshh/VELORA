@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -14,10 +14,20 @@ import {
   type IdentityOwnerDomain,
   type IdentityPurpose,
 } from './policy.js';
-import { identityAttempts, identitySubjects } from './schema.js';
+import {
+  identityAttempts,
+  identityEvidence,
+  identitySubjects,
+} from './schema.js';
 
 export type IdentitySubjectRow = typeof identitySubjects.$inferSelect;
 export type IdentityAttemptRow = typeof identityAttempts.$inferSelect;
+export type IdentityEvidenceRow = typeof identityEvidence.$inferSelect;
+
+export type AppendIdentityEvidenceResult =
+  | { readonly evidence: IdentityEvidenceRow; readonly kind: 'inserted' }
+  | { readonly evidence: IdentityEvidenceRow; readonly kind: 'duplicate' }
+  | { readonly kind: 'mismatch' | 'stale' };
 
 export type EstablishIdentityAttemptResult =
   | {
@@ -180,6 +190,148 @@ export class IdentityRepository {
     return rows[0];
   }
 
+  async findByProviderIdentity(
+    executor: Executor,
+    input: {
+      readonly provider: string;
+      readonly providerIdempotencyKey: string;
+      readonly providerReference: string;
+    },
+  ): Promise<IdentityAttemptRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(identityAttempts)
+      .where(
+        and(
+          eq(identityAttempts.provider, input.provider),
+          or(
+            eq(identityAttempts.providerReference, input.providerReference),
+            eq(
+              identityAttempts.providerIdempotencyKey,
+              input.providerIdempotencyKey,
+            ),
+          ),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
+  async findByIdForUpdate(
+    executor: TransactionHandle,
+    attemptId: string,
+  ): Promise<IdentityAttemptRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(identityAttempts)
+      .where(eq(identityAttempts.id, attemptId))
+      .limit(1)
+      .for('update');
+    return rows[0];
+  }
+
+  async appendEvidence(
+    executor: TransactionHandle,
+    input: {
+      readonly attemptId: string;
+      readonly effectiveAt: Date;
+      readonly evidenceClass: IdentityEvidenceClass;
+      readonly expiresAt?: Date;
+      readonly normalizedResult: IdentityEvidenceRow['normalizedResult'];
+      readonly now: Date;
+      readonly policyVersion: string;
+      readonly provider: string;
+      readonly providerFactReference: string;
+      readonly subjectId: string;
+      readonly thresholdContext: string;
+    },
+  ): Promise<AppendIdentityEvidenceResult> {
+    await lockIdempotentOperation(
+      executor,
+      'identity_evidence',
+      input.subjectId,
+      input.evidenceClass,
+    );
+
+    const factRows = await executor
+      .select()
+      .from(identityEvidence)
+      .where(
+        and(
+          eq(identityEvidence.provider, input.provider),
+          eq(
+            identityEvidence.providerFactReference,
+            input.providerFactReference,
+          ),
+        ),
+      )
+      .limit(1);
+    const existingFact = factRows[0];
+    if (existingFact !== undefined) {
+      return sameEvidence(existingFact, input)
+        ? { evidence: existingFact, kind: 'duplicate' }
+        : { kind: 'mismatch' };
+    }
+
+    const current = await this.findCurrentEvidence(
+      executor,
+      input.subjectId,
+      input.evidenceClass,
+    );
+    if (
+      current !== undefined &&
+      input.effectiveAt.getTime() <= current.effectiveAt.getTime()
+    ) {
+      return { kind: 'stale' };
+    }
+
+    const inserted = await executor
+      .insert(identityEvidence)
+      .values({
+        attemptId: input.attemptId,
+        effectiveAt: input.effectiveAt,
+        evidenceClass: input.evidenceClass,
+        expiresAt: input.expiresAt ?? null,
+        id: crypto.randomUUID(),
+        normalizedResult: input.normalizedResult,
+        policyVersion: input.policyVersion,
+        provider: input.provider,
+        providerFactReference: input.providerFactReference,
+        recordedAt: input.now,
+        subjectId: input.subjectId,
+        supersedesId: current?.id ?? null,
+        thresholdContext: input.thresholdContext,
+      })
+      .returning();
+    const evidence = inserted[0];
+    if (evidence === undefined) {
+      throw new Error('identity evidence insert returned no row');
+    }
+    return { evidence, kind: 'inserted' };
+  }
+
+  async findCurrentEvidence(
+    executor: Executor,
+    subjectId: string,
+    evidenceClass: IdentityEvidenceClass,
+  ): Promise<IdentityEvidenceRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(identityEvidence)
+      .where(
+        and(
+          eq(identityEvidence.subjectId, subjectId),
+          eq(identityEvidence.evidenceClass, evidenceClass),
+          sql`not exists (
+            select 1 from identity_evidence as superseding
+            where superseding.supersedes_id = ${identityEvidence.id}
+          )`,
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
   async transitionAttempt(
     executor: Executor,
     input: {
@@ -258,4 +410,30 @@ export class IdentityRepository {
     }
     return existing;
   }
+}
+
+function sameEvidence(
+  row: IdentityEvidenceRow,
+  input: {
+    readonly attemptId: string;
+    readonly effectiveAt: Date;
+    readonly evidenceClass: IdentityEvidenceClass;
+    readonly expiresAt?: Date;
+    readonly normalizedResult: IdentityEvidenceRow['normalizedResult'];
+    readonly policyVersion: string;
+    readonly subjectId: string;
+    readonly thresholdContext: string;
+  },
+): boolean {
+  return (
+    row.attemptId === input.attemptId &&
+    row.effectiveAt.getTime() === input.effectiveAt.getTime() &&
+    row.evidenceClass === input.evidenceClass &&
+    (row.expiresAt?.getTime() ?? null) ===
+      (input.expiresAt?.getTime() ?? null) &&
+    row.normalizedResult === input.normalizedResult &&
+    row.policyVersion === input.policyVersion &&
+    row.subjectId === input.subjectId &&
+    row.thresholdContext === input.thresholdContext
+  );
 }

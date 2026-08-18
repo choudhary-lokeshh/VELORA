@@ -56,7 +56,7 @@ Three refusals are deliberately shaped. A creator who may not operate, a resourc
 
 ## Identity Assurance core surface
 
-V1 publishes only `POST /v1/identity/provider-events`, `GET /v1/admin/identity/state`, and `GET /v1/admin/identity/subject`. The callback consumes bounded raw bytes so provider authenticity can be verified before parsing; verified first and duplicate receipts return `202`, authentication failure is opaque `401`, oversized bodies return `413`, and an unconfigured provider returns `503 DEPENDENCY_UNAVAILABLE`. No callback body is returned or persisted.
+The V1 Identity contract scope is limited to `POST /v1/identity/provider-events`, `GET /v1/admin/identity/state`, and `GET /v1/admin/identity/subject`. The callback route is implemented now; the two Admin reads remain unimplemented until their planned operations batch. The callback consumes bounded raw bytes so provider authenticity can be verified before parsing; verified first and duplicate receipts return `202`, authentication failure is opaque `401`, oversized bodies return `413`, and an unconfigured provider returns `503 DEPENDENCY_UNAVAILABLE`. No callback body is returned or persisted.
 
 Admin state is aggregate and identifier-free. Subject read accepts one exact opaque reference and has no list/search/export/mutation counterpart. It requires Platform Admin audience plus the approved ADR-0017 exact action. Consumer and Creator initiation/read routes are absent until Phase 2; commercial-KYC/payout-readiness routes are absent until Phase 3. Provider, assurance, workflow, and policy selector fields are absent from every client contract.
 

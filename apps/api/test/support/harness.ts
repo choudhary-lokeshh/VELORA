@@ -54,6 +54,10 @@ import {
   type MediaRuntime,
 } from '../../src/media/composition.js';
 import {
+  createIdentityRuntime,
+  type IdentityRuntime,
+} from '../../src/identity/composition.js';
+import {
   createSafetyRuntime,
   type SafetyRuntime,
 } from '../../src/safety/composition.js';
@@ -434,6 +438,21 @@ export function testMediaRuntime(input: {
   });
 }
 
+export function testIdentityRuntime(input: {
+  readonly config: ServerConfig;
+  readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
+  readonly now?: () => Date;
+}): IdentityRuntime {
+  return createIdentityRuntime({
+    config: input.config,
+    database: input.database ?? drizzle.mock(),
+    logger: input.logger ?? silentLogger(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+    owner: 'identity-test-api',
+  });
+}
+
 export function testProductRuntimes(input: {
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
@@ -447,6 +466,7 @@ export function testProductRuntimes(input: {
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
+  readonly identity: IdentityRuntime;
   readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
@@ -469,6 +489,7 @@ export function testProductRuntimes(input: {
   // receives MEDIA's purge seam and its operational read rather than a media
   // database of its own.
   const media = testMediaRuntime(input);
+  const identity = testIdentityRuntime(input);
   return {
     admin: testAdminRuntime({
       ...input,
@@ -482,6 +503,7 @@ export function testProductRuntimes(input: {
     clubs,
     creators,
     discovery,
+    identity,
     media,
     messaging: testMessagingRuntime({
       ...input,

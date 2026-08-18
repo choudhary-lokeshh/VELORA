@@ -14,6 +14,7 @@ import {
 } from './policy.js';
 import {
   IdentityProviderUnavailableError,
+  isIdentityHostedSession,
   type IdentityHostedSession,
   type IdentityVerificationProviderPort,
 } from './provider.js';
@@ -236,7 +237,7 @@ export class IdentityOrchestrator {
     session: IdentityHostedSession,
   ): Promise<IdentityStartOutcome> {
     if (
-      !validSessionShape(session) ||
+      !isIdentityHostedSession(session) ||
       session.snapshot.platformSubjectReference !== subject.id ||
       session.snapshot.providerIdempotencyKey !==
         attempt.providerIdempotencyKey ||
@@ -314,20 +315,6 @@ function safeHandoff(
   } catch {
     return undefined;
   }
-}
-
-function validSessionShape(session: unknown): session is IdentityHostedSession {
-  if (typeof session !== 'object' || session === null) return false;
-  const candidate = session as Readonly<Record<string, unknown>>;
-  if (typeof candidate.snapshot !== 'object' || candidate.snapshot === null) {
-    return false;
-  }
-  const snapshot = candidate.snapshot as Readonly<Record<string, unknown>>;
-  return (
-    typeof snapshot.platformSubjectReference === 'string' &&
-    typeof snapshot.providerIdempotencyKey === 'string' &&
-    typeof snapshot.providerReference === 'string'
-  );
 }
 
 function refused(reason: IdentityStartRefusal): IdentityStartOutcome {

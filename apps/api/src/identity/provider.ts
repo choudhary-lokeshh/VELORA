@@ -1,7 +1,15 @@
-import type {
-  IdentityEvidenceClass,
-  IdentityEvidenceResult,
-  IdentityPurpose,
+import {
+  identityCodePattern,
+  identityEvidenceClasses,
+  identityEvidenceResults,
+  maximumIdentityProviderEvidenceFacts,
+  maximumIdentityProviderEventIdLength,
+  maximumIdentityProviderEventTypeLength,
+  maximumIdentityProviderReferenceLength,
+  maximumIdentityIdempotencyKeyLength,
+  type IdentityEvidenceClass,
+  type IdentityEvidenceResult,
+  type IdentityPurpose,
 } from './policy.js';
 
 export const identityProviderSnapshotStates = [
@@ -55,6 +63,18 @@ export interface IdentityHostedSession {
   readonly snapshot: IdentityProviderSnapshot;
 }
 
+export function isIdentityHostedSession(
+  value: unknown,
+): value is IdentityHostedSession {
+  if (typeof value !== 'object' || value === null) return false;
+  const session = value as Readonly<Record<string, unknown>>;
+  return (
+    finiteDate(session.expiresAt) &&
+    typeof session.hostedUrl === 'string' &&
+    isIdentityProviderSnapshot(session.snapshot)
+  );
+}
+
 export interface CreateIdentityHostedSessionRequest {
   readonly attemptReference: string;
   readonly correlationId: string;
@@ -72,6 +92,83 @@ export interface VerifiedIdentityProviderEvent {
   readonly eventType: string;
   readonly occurredAt: Date;
   readonly snapshot: IdentityProviderSnapshot;
+}
+
+/** Runtime guard at the provider trust boundary. Types do not validate SDKs. */
+export function isIdentityProviderSnapshot(
+  value: unknown,
+): value is IdentityProviderSnapshot {
+  if (typeof value !== 'object' || value === null) return false;
+  const snapshot = value as Readonly<Record<string, unknown>>;
+  if (
+    !Array.isArray(snapshot.evidence) ||
+    snapshot.evidence.length > maximumIdentityProviderEvidenceFacts ||
+    !boundedString(snapshot.platformSubjectReference, 36) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+      snapshot.platformSubjectReference,
+    ) ||
+    !boundedString(
+      snapshot.providerIdempotencyKey,
+      maximumIdentityIdempotencyKeyLength,
+    ) ||
+    !boundedString(
+      snapshot.providerReference,
+      maximumIdentityProviderReferenceLength,
+    ) ||
+    !identityProviderSnapshotStates.includes(
+      snapshot.state as IdentityProviderSnapshotState,
+    )
+  ) {
+    return false;
+  }
+  return snapshot.evidence.every(isIdentityProviderEvidenceFact);
+}
+
+export function isVerifiedIdentityProviderEvent(
+  value: unknown,
+): value is VerifiedIdentityProviderEvent {
+  if (typeof value !== 'object' || value === null) return false;
+  const event = value as Readonly<Record<string, unknown>>;
+  return (
+    boundedString(event.eventId, maximumIdentityProviderEventIdLength) &&
+    boundedString(event.eventType, maximumIdentityProviderEventTypeLength) &&
+    finiteDate(event.occurredAt) &&
+    isIdentityProviderSnapshot(event.snapshot)
+  );
+}
+
+function isIdentityProviderEvidenceFact(
+  value: unknown,
+): value is IdentityProviderEvidenceFact {
+  if (typeof value !== 'object' || value === null) return false;
+  const fact = value as Readonly<Record<string, unknown>>;
+  return (
+    finiteDate(fact.effectiveAt) &&
+    (fact.expiresAt === undefined ||
+      (finiteDate(fact.expiresAt) && fact.expiresAt >= fact.effectiveAt)) &&
+    identityEvidenceClasses.includes(
+      fact.evidenceClass as IdentityEvidenceClass,
+    ) &&
+    identityEvidenceResults.includes(
+      fact.normalizedResult as IdentityEvidenceResult,
+    ) &&
+    boundedString(
+      fact.providerFactReference,
+      maximumIdentityProviderReferenceLength,
+    ) &&
+    typeof fact.thresholdContext === 'string' &&
+    new RegExp(identityCodePattern, 'u').test(fact.thresholdContext)
+  );
+}
+
+function boundedString(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === 'string' && value.length >= 1 && value.length <= maximum
+  );
+}
+
+function finiteDate(value: unknown): value is Date {
+  return value instanceof Date && Number.isFinite(value.getTime());
 }
 
 /**

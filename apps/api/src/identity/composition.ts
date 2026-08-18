@@ -7,6 +7,9 @@ import {
 } from '@velora/config/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
+import { OutboxRepository } from '../events/outbox.js';
+import type { SafeLogger } from '@velora/observability/server';
+import { IdentityProviderEventRepository } from './event-repository.js';
 import {
   LocalTestIdentityJurisdictionPolicy,
   UnpublishedIdentityJurisdictionPolicy,
@@ -14,16 +17,23 @@ import {
 } from './jurisdiction.js';
 import { LocalTestIdentityVerificationProvider } from './local-test-provider.js';
 import { IdentityOrchestrator } from './orchestrator.js';
+import { IdentityProviderEventRoutes } from './provider-event-routes.js';
+import { IdentityProviderEventService } from './provider-events.js';
 import {
   UnavailableIdentityVerificationProvider,
   type IdentityVerificationProviderPort,
 } from './provider.js';
 import { IdentityRepository } from './repository.js';
+import { identityOutbox } from './schema.js';
 
 export interface IdentityRuntime {
+  readonly events: IdentityProviderEventRepository;
   readonly jurisdictionPolicy: IdentityJurisdictionPolicyPort;
   readonly orchestrator: IdentityOrchestrator;
+  readonly outbox: OutboxRepository;
   readonly provider: IdentityVerificationProviderPort;
+  readonly providerEventRoutes: IdentityProviderEventRoutes;
+  readonly providerEvents: IdentityProviderEventService;
   readonly repository: IdentityRepository;
 }
 
@@ -52,7 +62,9 @@ const jurisdictionPolicies: Readonly<
 export function createIdentityRuntime(input: {
   readonly config: ServerConfig;
   readonly database: DatabaseHandle;
+  readonly logger: SafeLogger;
   readonly now?: () => Date;
+  readonly owner: string;
 }): IdentityRuntime {
   const buildProvider =
     identityProviders[input.config.IDENTITY_VERIFICATION_PROVIDER];
@@ -73,7 +85,19 @@ export function createIdentityRuntime(input: {
   const provider = buildProvider(now);
   const jurisdictionPolicy = buildPolicy();
   const repository = new IdentityRepository(input.database);
+  const events = new IdentityProviderEventRepository(input.database);
+  const outbox = new OutboxRepository(input.database, identityOutbox);
+  const providerEvents = new IdentityProviderEventService({
+    events,
+    logger: input.logger,
+    now,
+    outbox,
+    owner: input.owner,
+    provider,
+    repository,
+  });
   return {
+    events,
     jurisdictionPolicy,
     orchestrator: new IdentityOrchestrator({
       jurisdictionPolicy,
@@ -81,7 +105,10 @@ export function createIdentityRuntime(input: {
       provider,
       repository,
     }),
+    outbox,
     provider,
+    providerEventRoutes: new IdentityProviderEventRoutes(providerEvents),
+    providerEvents,
     repository,
   };
 }

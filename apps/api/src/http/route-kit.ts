@@ -13,6 +13,8 @@ import {
 export interface RouteRequest {
   readonly body: string;
   readonly correlationId: string;
+  /** Exact bytes, for provider callbacks whose signature authenticates bytes. */
+  readonly rawBody: Uint8Array;
   readonly request: Request;
 }
 
