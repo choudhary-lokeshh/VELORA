@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -186,6 +186,47 @@ export class IdentityRepository {
       .select()
       .from(identityAttempts)
       .where(eq(identityAttempts.id, attemptId))
+      .limit(1);
+    return rows[0];
+  }
+
+  async findSubjectByOwner(
+    executor: Executor,
+    input: {
+      readonly ownerDomain: IdentityOwnerDomain;
+      readonly ownerReference: string;
+    },
+  ): Promise<IdentitySubjectRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(identitySubjects)
+      .where(
+        and(
+          eq(identitySubjects.ownerDomain, input.ownerDomain),
+          eq(identitySubjects.ownerReference, input.ownerReference),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
+  async findLatestAttempt(
+    executor: Executor,
+    input: {
+      readonly purpose: IdentityPurpose;
+      readonly subjectId: string;
+    },
+  ): Promise<IdentityAttemptRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(identityAttempts)
+      .where(
+        and(
+          eq(identityAttempts.subjectId, input.subjectId),
+          eq(identityAttempts.purpose, input.purpose),
+        ),
+      )
+      .orderBy(desc(identityAttempts.sequence))
       .limit(1);
     return rows[0];
   }

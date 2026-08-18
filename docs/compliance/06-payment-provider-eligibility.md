@@ -66,7 +66,7 @@ Four conclusions follow, and all four are enforced in code rather than merely wr
 
 **Eligibility is evaluated twice, and the second answer governs the architecture.** Building against a provider that is eligible only while mature content stays disabled would make a later product decision into a payments migration. The money architecture is therefore provider-neutral by construction, and the adapter boundary is where a provider swap lands.
 
-**Production activation is configuration that fails closed.** Every monetization capability is gated by a configuration value whose only deployable setting refuses, on the same pattern as `USERS_ADULT_ASSURANCE_VERIFIER`, `USERS_PROFILE_MEDIA_STORAGE`, and `CLUBS_BILLING_ENTITLEMENT`. Staging and production reject any other value, so no route, header, or environment string can reach a working payment path in a deployed environment before a provider is approved here.
+**Production activation is configuration that fails closed.** Every monetization capability is gated by a configuration value whose only deployable setting refuses, on the same pattern as `IDENTITY_VERIFICATION_PROVIDER`, `USERS_PROFILE_MEDIA_STORAGE`, and `CLUBS_BILLING_ENTITLEMENT`. Staging and production reject any other value, so no route, header, or environment string can reach a working payment path in a deployed environment before a provider is approved here.
 
 ## Review triggers
 

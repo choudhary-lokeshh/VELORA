@@ -286,6 +286,7 @@ export function createApplication(
         caller: auth.caller,
         config,
         database: ownedDatabase.database,
+        identityAdultAssurance: identity.adultAssurance,
         logger,
         media: media.service,
       });

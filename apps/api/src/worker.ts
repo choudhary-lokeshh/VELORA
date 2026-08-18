@@ -72,7 +72,6 @@ import { ProfileRepository } from './users/profile-repository.js';
 import { profileMediaReadinessIntervalMilliseconds } from './users/profile-policy.js';
 import { ProfileMediaReadinessSweep } from './users/profile-service.js';
 import { OnboardingService } from './users/onboarding.js';
-import { selectAdultAssuranceVerifier } from './users/composition.js';
 import { UsersRepository } from './users/repository.js';
 import {
   ConsumerAdultStandingDirectory,
@@ -200,6 +199,14 @@ export function createWorkerComposition(input: {
   const admit = async <T>(work: () => Promise<T>): Promise<T> =>
     input.database.admission.run(work);
 
+  const identity = createIdentityRuntime({
+    config: input.config,
+    database: handle,
+    logger: input.logger,
+    now,
+    owner,
+  });
+
   const notifications = createNotificationsRuntime({
     config: input.config,
     database: handle,
@@ -219,7 +226,10 @@ export function createWorkerComposition(input: {
   const billing = createBillingRuntime({
     config: input.config,
     consumerContext: undefined as never,
-    consumers: new ConsumerAdultStandingDirectory(new UsersRepository(handle)),
+    consumers: new ConsumerAdultStandingDirectory(
+      new UsersRepository(handle),
+      identity.adultAssurance,
+    ),
     creatorContext: undefined as never,
     creators: new CreatorDirectory(),
     database: handle,
@@ -237,14 +247,6 @@ export function createWorkerComposition(input: {
     database: handle,
     logger: input.logger,
     now,
-  });
-
-  const identity = createIdentityRuntime({
-    config: input.config,
-    database: handle,
-    logger: input.logger,
-    now,
-    owner,
   });
 
   const relay = new OutboxRelay({
@@ -489,7 +491,7 @@ export function createWorkerComposition(input: {
     media: media.service,
     now,
     onboarding: new OnboardingService({
-      adultAssuranceVerifier: selectAdultAssuranceVerifier(input.config),
+      identityAdultAssurance: identity.adultAssurance,
       now,
       profiles: profileRepository,
       repository: usersRepository,

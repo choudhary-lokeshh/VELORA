@@ -130,7 +130,7 @@ Five conclusions, each of which must be enforced in code rather than merely writ
 
 **Depicted-person evidence is a reference, never a document.** Velora records that evidence exists, what it covers, who attested it, when it expires, and where it can be re-obtained. It does not record the identity document, and a creator's assertion is stored as an assertion.
 
-**Mature-content enablement is configuration that fails closed.** On the same pattern as `USERS_ADULT_ASSURANCE_VERIFIER`, `BILLING_COMMERCE_POLICY`, and `USERS_PROFILE_MEDIA_STORAGE`: the only deployable value refuses, staging and production reject any other value, and no route, header, request field, client flag, or environment string reaches an enabled mature path in a deployed environment.
+**Mature-content enablement is configuration that fails closed.** On the same pattern as `IDENTITY_VERIFICATION_PROVIDER`, `BILLING_COMMERCE_POLICY`, and `USERS_PROFILE_MEDIA_STORAGE`: the only deployable value refuses, staging and production reject any other value, and no route, header, request field, client flag, or environment string reaches an enabled mature path in a deployed environment.
 
 ## Open decisions
 

@@ -166,7 +166,7 @@ describe('AUTH persistence and invariants', () => {
       'safety_reports',
       'safety_takedown_claims',
       'users_accounts',
-      'users_adult_assurances',
+      'users_adult_declarations',
       'users_availability',
       'users_policy_acknowledgements',
       'users_preferences',

@@ -416,7 +416,7 @@ describe('discovery eligibility', () => {
     expect((await feed(viewer)).body.candidates).toHaveLength(0);
   });
 
-  it('drops a candidate whose adult assurance has been revoked', async () => {
+  it('drops a candidate whose later adult declaration is refused', async () => {
     const viewer = await discoverableConsumer({
       subject: 'assurance-viewer@velora.test',
     });
@@ -425,12 +425,11 @@ describe('discovery eligibility', () => {
     });
     expect((await feed(viewer)).body.candidates).toHaveLength(1);
 
-    // Eligibility is read from the assurance evidence, not inferred from the
-    // account status column, so a revocation takes effect without any status
-    // write having happened.
+    // Eligibility is read from evidence, not inferred from the account status
+    // column, so a refusal takes effect without any status write happening.
     await execute(
-      database.sql`insert into users_adult_assurances (assurance_class, decided_at, method, outcome, policy_version, user_id)
-        values ('self_declared', now(), 'self_declaration', 'revoked', '0-unpublished', ${other.id})`,
+      database.sql`insert into users_adult_declarations (decided_at, outcome, policy_version, region, user_id)
+        values (now(), 'failed', '0-unpublished', 'DE', ${other.id})`,
     );
     expect((await feed(viewer)).body.candidates).toHaveLength(0);
   });

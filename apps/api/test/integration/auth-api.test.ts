@@ -3,6 +3,7 @@ import type { ServerConfig } from '@velora/config/server';
 import { apiRoutePaths, csrfHeader } from '@velora/validation';
 
 import { createApplication } from '../../src/application.js';
+import { EmptyIdentityAdultAssuranceReader } from '../../src/identity/assurance-reader.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
@@ -67,6 +68,7 @@ function harness(options?: {
     caller: auth.caller,
     config,
     database: database.drizzle,
+    identityAdultAssurance: new EmptyIdentityAdultAssuranceReader(),
     logger,
     media: mediaRuntime.service,
   });

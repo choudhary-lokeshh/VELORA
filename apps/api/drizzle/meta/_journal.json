@@ -330,6 +330,27 @@
       "when": 1787064663455,
       "tag": "0046_identity-assurance-foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1787073646293,
+      "tag": "0047_identity-assurance-users-cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1787074723528,
+      "tag": "0048_identity-attempt-ordering",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787074758725,
+      "tag": "0049_identity-attempt-sequence-constraint",
+      "breakpoints": true
     }
   ]
 }

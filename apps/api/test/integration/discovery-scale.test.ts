@@ -393,14 +393,12 @@ async function seedEligibleConsumers(
     })),
   );
   await insert(
-    'users_adult_assurances',
+    'users_adult_declarations',
     ids.map((id) => ({
-      assurance_class: 'self_declared',
-      created_at: since,
       decided_at: since,
-      method: 'self_declaration',
       outcome: 'passed',
       policy_version: 'v1',
+      recorded_at: since,
       region,
       user_id: id,
     })),

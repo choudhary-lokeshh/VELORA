@@ -100,8 +100,6 @@ export const unavailablePayoutProvider = 'unavailable';
 export const localTestPayoutProvider = 'local-test';
 export const unpublishedPayoutPolicy = 'unpublished';
 export const localTestPayoutPolicy = 'local-test';
-export const unavailableAdultAssuranceVerifier = 'unavailable';
-export const localTestAdultAssuranceVerifier = 'local-test';
 
 /**
  * Provider-neutral Identity Assurance gates.
@@ -455,12 +453,6 @@ export const serverConfigSchema = z
         localTestDepictedPersonVerifier,
       ])
       .default(unavailableDepictedPersonVerifier),
-    USERS_ADULT_ASSURANCE_VERIFIER: z
-      .enum([
-        unavailableAdultAssuranceVerifier,
-        localTestAdultAssuranceVerifier,
-      ])
-      .default(unavailableAdultAssuranceVerifier),
     MEDIA_STORAGE_PROVIDER: z
       .enum([unavailableMediaStorage, localTestMediaStorage])
       .default(unavailableMediaStorage),
@@ -483,16 +475,6 @@ export const serverConfigSchema = z
     // a test recovery sink, or an absent privileged authenticator verifier must
     // never carry real authentication authority, and no replacement provider is
     // approved yet, so these environments refuse to start at all.
-    if (
-      config.USERS_ADULT_ASSURANCE_VERIFIER !==
-      unavailableAdultAssuranceVerifier
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: `USERS_ADULT_ASSURANCE_VERIFIER is not usable in ${config.APP_ENV}: no age or identity verification provider is approved; see DECISIONS_REQUIRED`,
-        path: ['USERS_ADULT_ASSURANCE_VERIFIER'],
-      });
-    }
     if (
       config.IDENTITY_VERIFICATION_PROVIDER !==
       unavailableIdentityVerificationProvider
@@ -723,7 +705,6 @@ export function loadMigrationConfig(
 export function redactServerConfig(config: ServerConfig) {
   return {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
-    adultAssuranceVerifier: config.USERS_ADULT_ASSURANCE_VERIFIER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     consentPolicy: config.SAFETY_CONSENT_POLICY,
     depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,

@@ -1,10 +1,12 @@
 import type { ProfileRequirement } from '@velora/validation';
 
-import type { AdultAssuranceVerifier } from './adult-assurance.js';
+import type {
+  IdentityAdultAssuranceDecision,
+  IdentityAdultAssuranceReaderPort,
+} from '../identity/assurance-reader.js';
 import {
   adultEligibilityPolicyVersion,
   requiredPolicyDocuments,
-  selfDeclarationMethod,
   type AdultAssuranceLevel,
   type OnboardingStep,
   type PolicyDocumentRequirement,
@@ -16,7 +18,7 @@ import {
 } from './profile-repository.js';
 import type {
   UserAccountRow,
-  UserAdultAssuranceRow,
+  UserAdultDeclarationRow,
   UsersRepository,
 } from './repository.js';
 
@@ -44,11 +46,10 @@ export interface AdmissionState {
 export type OnboardingOutcome =
   | { readonly kind: 'advanced'; readonly eligibility: ConsumerEligibility }
   | { readonly kind: 'out_of_order'; readonly expected: OnboardingStep }
-  | { readonly kind: 'refused' }
-  | { readonly kind: 'assurance_unavailable' };
+  | { readonly kind: 'refused' };
 
 export interface OnboardingServiceDependencies {
-  readonly adultAssuranceVerifier: AdultAssuranceVerifier;
+  readonly identityAdultAssurance: IdentityAdultAssuranceReaderPort;
   readonly now: () => Date;
   readonly profiles: ProfileCompletenessReader;
   readonly repository: UsersRepository;
@@ -77,10 +78,16 @@ export class OnboardingService {
    */
   async evaluate(account: UserAccountRow): Promise<ConsumerEligibility> {
     const { repository } = this.dependencies;
-    const latest = await repository.findLatestAdultAssurance(
+    const latestDeclaration = await repository.findLatestAdultDeclaration(
       repository.transactionless,
       account.id,
     );
+    const identityDecision =
+      await this.dependencies.identityAdultAssurance.currentForAuthAccount({
+        authAccountId: account.authAccountId,
+        executor: repository.transactionless,
+        now: this.dependencies.now(),
+      });
     const acknowledgements = await repository.findPolicyAcknowledgements(
       repository.transactionless,
       {
@@ -95,20 +102,21 @@ export class OnboardingService {
       (document) => !held.has(`${document.key}@${document.version}`),
     );
 
-    const adultAssurance = assuranceLevelOf(latest, this.dependencies.now());
-    const adultAssuranceRefused =
-      latest?.outcome === 'failed' || latest?.outcome === 'revoked';
+    const decision = adultAssuranceDecisionOf(
+      latestDeclaration,
+      identityDecision,
+    );
     const completeness =
       await this.dependencies.profiles.readCompleteness(account);
     const outstandingProfile = outstandingProfileRequirements(completeness);
 
     return {
-      adultAssurance,
-      adultAssuranceRefused,
+      adultAssurance: decision.adultAssurance,
+      adultAssuranceRefused: decision.refused,
       outstandingPolicies,
       outstandingProfile,
       step: stepFor({
-        adultAssurance,
+        adultAssurance: decision.adultAssurance,
         outstandingPolicies,
         profileComplete: isProfileComplete(completeness),
       }),
@@ -174,12 +182,11 @@ export class OnboardingService {
     const now = this.dependencies.now();
 
     await repository.transaction(async (executor) => {
-      await repository.recordAdultAssurance(executor, {
-        assuranceClass: 'self_declared',
+      await repository.recordAdultDeclaration(executor, {
         decidedAt: now,
-        method: selfDeclarationMethod,
         outcome: input.declaresAdult ? 'passed' : 'failed',
         policyVersion: adultEligibilityPolicyVersion,
+        recordedAt: now,
         region: input.region,
         userId: input.account.id,
       });
@@ -251,54 +258,6 @@ export class OnboardingService {
     return { eligibility: reconciled.eligibility, kind: 'advanced' };
   }
 
-  /**
-   * Requests stronger assurance through the configured provider adapter.
-   *
-   * No provider is approved, so the configured verifier refuses in every
-   * environment and this reports that honestly instead of recording a pass.
-   */
-  async requestVerifiedAssurance(input: {
-    readonly account: UserAccountRow;
-    readonly correlationId: string;
-  }): Promise<OnboardingOutcome> {
-    const region = input.account.region;
-    if (region === null) {
-      return { expected: 'adult_declaration', kind: 'out_of_order' };
-    }
-
-    let result;
-    try {
-      result = await this.dependencies.adultAssuranceVerifier.verify({
-        correlationId: input.correlationId,
-        region,
-        userId: input.account.id,
-      });
-    } catch {
-      return { kind: 'assurance_unavailable' };
-    }
-
-    const { repository } = this.dependencies;
-    await repository.recordAdultAssurance(repository.transactionless, {
-      assuranceClass: result.assuranceClass,
-      decidedAt: this.dependencies.now(),
-      evidenceReference: result.evidenceReference,
-      expiresAt: result.expiresAt,
-      method: this.dependencies.adultAssuranceVerifier.method,
-      outcome: result.outcome,
-      policyVersion: adultEligibilityPolicyVersion,
-      region,
-      userId: input.account.id,
-    });
-    if (result.outcome === 'failed' || result.outcome === 'revoked') {
-      await this.restrict(input.account, 'eligibility_failed');
-      return { kind: 'refused' };
-    }
-    return {
-      eligibility: await this.evaluate(input.account),
-      kind: 'advanced',
-    };
-  }
-
   private async restrict(
     account: UserAccountRow,
     reason: 'eligibility_failed',
@@ -349,33 +308,59 @@ export class OnboardingService {
 }
 
 /**
- * The one definition of what a stored assurance row currently amounts to.
+ * The one definition of how current USERS declaration and Identity evidence
+ * combine into the consumer adult-assurance answer.
  *
  * Exported because the standing contract USERS publishes to CREATORS must
  * answer with the same rule the admission ladder uses. A second copy of "is
  * this assurance still a pass" is a security defect waiting to diverge from
  * this one.
  */
-export function adultAssuranceLevelOf(
-  latest: UserAdultAssuranceRow | undefined,
-  now: Date,
-): AdultAssuranceLevel {
-  return assuranceLevelOf(latest, now);
+export function adultAssuranceDecisionOf(
+  declaration:
+    Pick<UserAdultDeclarationRow, 'outcome' | 'recordedAt'> | undefined,
+  identity: IdentityAdultAssuranceDecision | undefined,
+): {
+  readonly adultAssurance: AdultAssuranceLevel;
+  readonly refused: boolean;
+} {
+  if (declaration === undefined && identity === undefined) {
+    return { adultAssurance: 'none', refused: false };
+  }
+  if (declaration === undefined) {
+    return {
+      adultAssurance: identity?.assurance ?? 'none',
+      refused: identity?.refused ?? false,
+    };
+  }
+  if (identity === undefined) return declarationDecision(declaration);
+  if (identity.recordedAt > declaration.recordedAt) {
+    return { adultAssurance: identity.assurance, refused: identity.refused };
+  }
+  if (identity.recordedAt < declaration.recordedAt) {
+    return declarationDecision(declaration);
+  }
+
+  // Separate domains can record in the same clock tick. With no shared
+  // sequence, a tie may strengthen only when both facts agree; otherwise the
+  // least-authorizing interpretation wins.
+  return {
+    adultAssurance:
+      identity.assurance === 'verified_adult' &&
+      declaration.outcome === 'passed'
+        ? 'verified_adult'
+        : 'none',
+    refused: identity.refused || declaration.outcome === 'failed',
+  };
 }
 
-function assuranceLevelOf(
-  latest: UserAdultAssuranceRow | undefined,
-  now: Date,
-): AdultAssuranceLevel {
-  if (latest?.outcome !== 'passed') return 'none';
-  if ((latest.expiresAt?.getTime() ?? Infinity) <= now.getTime()) {
-    // An expired pass is not a pass. It is deliberately not rewritten in the
-    // database either: expiry is a property of the record, not an event.
-    return 'none';
-  }
-  return latest.assuranceClass === 'verified_adult'
-    ? 'verified_adult'
-    : 'self_declared';
+function declarationDecision(
+  declaration: Pick<UserAdultDeclarationRow, 'outcome'>,
+): { readonly adultAssurance: AdultAssuranceLevel; readonly refused: boolean } {
+  return {
+    adultAssurance: declaration.outcome === 'passed' ? 'self_declared' : 'none',
+    refused: declaration.outcome === 'failed',
+  };
 }
 
 function stepFor(input: {

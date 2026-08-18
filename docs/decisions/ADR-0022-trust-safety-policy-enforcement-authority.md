@@ -68,7 +68,7 @@ A content item may have zero, one, or many depicted participants. For each, the 
 
 Velora stores no raw identity document, no biometric template, and builds no identity matching. A creator's assertion is stored as an assertion and is never presented as verified. Consent is scoped — to a publication, a distribution, a use, a duration — because "this person once consented to something" is not permission for anything else. Approved consent wording is legal copy and stays a human gate.
 
-The verification and consent provider is a port. Production and staging fail closed with no approved provider, on the same configuration pattern as `USERS_ADULT_ASSURANCE_VERIFIER`; a development and test adapter exists so the path is exercisable and is named so that no test using it reads as evidence about a real provider.
+The verification and consent provider is a port. Production and staging fail closed with no approved provider, on the same configuration pattern as `IDENTITY_VERIFICATION_PROVIDER`; a development and test adapter exists so the path is exercisable and is named so that no test using it reads as evidence about a real provider.
 
 ### Deadlines come from versioned policy and live in PostgreSQL
 
@@ -98,7 +98,7 @@ One configuration value gates the entire mature-content capability. Its default 
 
 **Deadlines from published policy, because inventing one is worse than having none.** A hard-coded seven days would look like compliance, would carry no authority, and would be the number an operator later defended in writing. The seven-business-day figure recorded from Mastercard is a card-network programme requirement; it is evidence about what a policy will need to say, not a value to compile in.
 
-**Fail-closed configuration, because it is the pattern that has held.** `USERS_ADULT_ASSURANCE_VERIFIER`, `BILLING_COMMERCE_POLICY`, `BILLING_PAYMENT_PROVIDER`, `PAYOUTS_PROVIDER`, `USERS_PROFILE_MEDIA_STORAGE`, and `MESSAGING_SAFETY_ELIGIBILITY` all refuse in deployed environments and all refuse for a reason written down next to them. Mature content joins that list rather than inventing a weaker mechanism.
+**Fail-closed configuration, because it is the pattern that has held.** `IDENTITY_VERIFICATION_PROVIDER`, `BILLING_COMMERCE_POLICY`, `BILLING_PAYMENT_PROVIDER`, `PAYOUTS_PROVIDER`, `USERS_PROFILE_MEDIA_STORAGE`, and `MESSAGING_SAFETY_ELIGIBILITY` all refuse in deployed environments and all refuse for a reason written down next to them. Mature content joins that list rather than inventing a weaker mechanism.
 
 ## Consequences
 

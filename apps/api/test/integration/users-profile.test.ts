@@ -43,7 +43,6 @@ const healthy = {
  * fails closed instead of accepting images.
  */
 const mediaConfig = testServerConfig({
-  USERS_ADULT_ASSURANCE_VERIFIER: 'unavailable',
   ...mediaEnvironment,
 });
 const defaultConfig = testServerConfig();

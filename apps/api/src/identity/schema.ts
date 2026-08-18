@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigserial,
   check,
   foreignKey,
   index,
@@ -106,6 +107,8 @@ export const identityAttempts = pgTable(
       .notNull()
       .$type<IdentityEvidenceClass>(),
     requiredThreshold: text('required_threshold').notNull(),
+    /** Durable total order; timestamps and random UUIDs can tie. */
+    sequence: bigserial('sequence', { mode: 'number' }).notNull(),
     state: text('state').notNull().$type<IdentityAttemptState>(),
     subjectId: uuid('subject_id')
       .notNull()
@@ -128,6 +131,7 @@ export const identityAttempts = pgTable(
     uniqueIndex('identity_attempts_provider_reference_uk')
       .on(table.provider, table.providerReference)
       .where(sql`${table.providerReference} is not null`),
+    uniqueIndex('identity_attempts_sequence_uk').on(table.sequence),
     uniqueIndex('identity_attempts_active_uk')
       .on(table.subjectId, table.purpose)
       .where(
@@ -142,8 +146,8 @@ export const identityAttempts = pgTable(
     ),
     index('identity_attempts_subject_history_idx').on(
       table.subjectId,
-      table.createdAt,
-      table.id,
+      table.purpose,
+      table.sequence,
     ),
     index('identity_attempts_recovery_idx')
       .on(table.updatedAt, table.id)

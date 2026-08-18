@@ -3,10 +3,9 @@ import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import {
   userAccounts,
-  userAdultAssurances,
+  userAdultDeclarations,
   userPolicyAcknowledgements,
-  type AdultAssuranceClass,
-  type AdultAssuranceOutcome,
+  type AdultDeclarationOutcome,
   type ConsumerPolicyKey,
   type UserAccountStatus,
   type UserAccountStatusReason,
@@ -19,7 +18,7 @@ export type UsersExecutor = Parameters<
 type AnyExecutor = UsersDatabase | UsersExecutor;
 
 export type UserAccountRow = typeof userAccounts.$inferSelect;
-export type UserAdultAssuranceRow = typeof userAdultAssurances.$inferSelect;
+export type UserAdultDeclarationRow = typeof userAdultDeclarations.$inferSelect;
 export type UserPolicyAcknowledgementRow =
   typeof userPolicyAcknowledgements.$inferSelect;
 
@@ -154,38 +153,31 @@ export class UsersRepository {
       );
   }
 
-  async recordAdultAssurance(
+  async recordAdultDeclaration(
     executor: AnyExecutor,
     input: {
-      readonly assuranceClass: AdultAssuranceClass;
       readonly decidedAt: Date;
-      readonly evidenceReference?: string | undefined;
-      readonly expiresAt?: Date | undefined;
-      readonly method: string;
-      readonly outcome: AdultAssuranceOutcome;
+      readonly outcome: AdultDeclarationOutcome;
       readonly policyVersion: string;
+      readonly recordedAt: Date;
       readonly region?: string | undefined;
       readonly userId: string;
     },
-  ): Promise<UserAdultAssuranceRow> {
+  ): Promise<UserAdultDeclarationRow> {
     const inserted = await executor
-      .insert(userAdultAssurances)
+      .insert(userAdultDeclarations)
       .values({
-        assuranceClass: input.assuranceClass,
-        createdAt: input.decidedAt,
         decidedAt: input.decidedAt,
-        evidenceReference: input.evidenceReference ?? null,
-        expiresAt: input.expiresAt ?? null,
-        method: input.method,
         outcome: input.outcome,
         policyVersion: input.policyVersion,
+        recordedAt: input.recordedAt,
         region: input.region ?? null,
         userId: input.userId,
       })
       .returning();
     const row = inserted[0];
     if (row === undefined) {
-      throw new Error('Adult assurance insert returned no row');
+      throw new Error('Adult declaration insert returned no row');
     }
     return row;
   }
@@ -195,15 +187,18 @@ export class UsersRepository {
    * sequence rather than the timestamp, so two assessments recorded in the same
    * instant still have one unambiguous winner.
    */
-  async findLatestAdultAssurance(
+  async findLatestAdultDeclaration(
     executor: AnyExecutor,
     userId: string,
-  ): Promise<UserAdultAssuranceRow | undefined> {
+  ): Promise<UserAdultDeclarationRow | undefined> {
     const rows = await executor
       .select()
-      .from(userAdultAssurances)
-      .where(eq(userAdultAssurances.userId, userId))
-      .orderBy(desc(userAdultAssurances.id))
+      .from(userAdultDeclarations)
+      .where(eq(userAdultDeclarations.userId, userId))
+      .orderBy(
+        desc(userAdultDeclarations.recordedAt),
+        desc(userAdultDeclarations.id),
+      )
       .limit(1);
     return rows[0];
   }

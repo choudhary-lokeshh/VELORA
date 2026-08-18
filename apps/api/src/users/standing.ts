@@ -1,5 +1,6 @@
 import type { Executor } from '../database/executor.js';
-import { adultAssuranceLevelOf } from './onboarding.js';
+import type { IdentityAdultAssuranceReaderPort } from '../identity/assurance-reader.js';
+import { adultAssuranceDecisionOf } from './onboarding.js';
 import type { AdultAssuranceLevel } from './onboarding-policy.js';
 import type { UsersRepository } from './repository.js';
 
@@ -149,7 +150,10 @@ export interface ConsumerAdultStandingPort {
 const operableStatuses = new Set(['pending_profile', 'active']);
 
 export class ConsumerAdultStandingDirectory implements ConsumerAdultStandingPort {
-  constructor(private readonly repository: UsersRepository) {}
+  constructor(
+    private readonly repository: UsersRepository,
+    private readonly identityAdultAssurance: IdentityAdultAssuranceReaderPort,
+  ) {}
 
   async standingForUser(input: {
     readonly executor: Executor;
@@ -187,12 +191,17 @@ export class ConsumerAdultStandingDirectory implements ConsumerAdultStandingPort
     // Read from the assurance evidence rather than inferred from account
     // status, which can be stale relative to an assurance that expired without
     // any write happening.
-    const latest = await this.repository.findLatestAdultAssurance(
-      executor,
-      account.id,
-    );
+    const [declaration, identity] = await Promise.all([
+      this.repository.findLatestAdultDeclaration(executor, account.id),
+      this.identityAdultAssurance.currentForAuthAccount({
+        authAccountId: account.authAccountId,
+        executor,
+        now,
+      }),
+    ]);
+    const decision = adultAssuranceDecisionOf(declaration, identity);
     return {
-      adultAssurance: adultAssuranceLevelOf(latest, now),
+      adultAssurance: decision.adultAssurance,
       inGoodStanding: operableStatuses.has(account.status),
       region: account.region ?? undefined,
       userId: account.id,

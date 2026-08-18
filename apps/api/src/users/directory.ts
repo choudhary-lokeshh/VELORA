@@ -1,21 +1,11 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNull,
-  ne,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, ne, sql } from 'drizzle-orm';
 
+import type { IdentityAdultAssuranceReaderPort } from '../identity/assurance-reader.js';
+import { adultAssuranceDecisionOf } from './onboarding.js';
 import type { UsersDatabase } from './repository.js';
 import {
   userAccounts,
-  userAdultAssurances,
+  userAdultDeclarations,
   userAvailability,
   userPreferences,
   userProfileLanguages,
@@ -103,7 +93,10 @@ export interface DirectoryCriteria {
 const column = (table: string, name: string) => sql.raw(`"${table}"."${name}"`);
 
 export class ConsumerDirectory {
-  constructor(private readonly database: UsersDatabase) {}
+  constructor(
+    private readonly database: UsersDatabase,
+    private readonly identityAdultAssurance: IdentityAdultAssuranceReaderPort,
+  ) {}
 
   /**
    * The end of the caller's own open availability window, if one is open.
@@ -169,18 +162,19 @@ export class ConsumerDirectory {
   ): Promise<DirectoryCandidate[]> {
     if (criteria.languages.length === 0) return [];
 
-    // The current adult assurance is the most recent row, so eligibility is
-    // read from the evidence rather than inferred from account status, which
-    // can be stale relative to an assurance that expired without any write.
-    const latestAssurance = this.database
-      .selectDistinctOn([userAdultAssurances.userId], {
-        expiresAt: userAdultAssurances.expiresAt,
-        outcome: userAdultAssurances.outcome,
-        userId: userAdultAssurances.userId,
+    const latestDeclaration = this.database
+      .selectDistinctOn([userAdultDeclarations.userId], {
+        outcome: userAdultDeclarations.outcome,
+        recordedAt: userAdultDeclarations.recordedAt,
+        userId: userAdultDeclarations.userId,
       })
-      .from(userAdultAssurances)
-      .orderBy(userAdultAssurances.userId, desc(userAdultAssurances.id))
-      .as('latest_assurance');
+      .from(userAdultDeclarations)
+      .orderBy(
+        userAdultDeclarations.userId,
+        desc(userAdultDeclarations.recordedAt),
+        desc(userAdultDeclarations.id),
+      )
+      .as('latest_declaration');
 
     const sortKey = sql<string>`concat(
       case when ${column('users_accounts', 'region')} is not distinct from ${criteria.viewerRegion} then '0' else '1' end,
@@ -196,7 +190,10 @@ export class ConsumerDirectory {
 
     const ranked = this.database
       .select({
+        authAccountId: userAccounts.authAccountId,
         bio: userProfiles.bio,
+        declarationOutcome: latestDeclaration.outcome,
+        declarationRecordedAt: latestDeclaration.recordedAt,
         displayName: userProfiles.displayName,
         id: userAccounts.id,
         region: userAccounts.region,
@@ -224,7 +221,10 @@ export class ConsumerDirectory {
           gt(userAvailability.availableUntil, criteria.now),
         ),
       )
-      .innerJoin(latestAssurance, eq(latestAssurance.userId, userAccounts.id))
+      .leftJoin(
+        latestDeclaration,
+        eq(latestDeclaration.userId, userAccounts.id),
+      )
       .innerJoin(
         userProfileLanguages,
         and(
@@ -236,11 +236,6 @@ export class ConsumerDirectory {
         and(
           ne(userAccounts.id, criteria.viewerId),
           eq(userAccounts.status, 'active'),
-          eq(latestAssurance.outcome, 'passed'),
-          or(
-            isNull(latestAssurance.expiresAt),
-            gt(latestAssurance.expiresAt, criteria.now),
-          ),
           exists(
             this.database
               .select({ present: userProfileMedia.id })
@@ -264,6 +259,8 @@ export class ConsumerDirectory {
       )
       .groupBy(
         userAccounts.id,
+        latestDeclaration.outcome,
+        latestDeclaration.recordedAt,
         userAccounts.region,
         userProfiles.displayName,
         userProfiles.bio,
@@ -271,22 +268,65 @@ export class ConsumerDirectory {
       )
       .as('ranked');
 
-    const page = this.database
-      .select({
-        bio: ranked.bio,
-        displayName: ranked.displayName,
-        id: ranked.id,
-        region: ranked.region,
-        sharedLanguages: ranked.sharedLanguages,
-        sortKey: ranked.sortKey,
-      })
-      .from(ranked)
-      .orderBy(asc(ranked.sortKey))
-      .limit(criteria.limit);
+    const accepted: DirectoryCandidate[] = [];
+    const batchSize = Math.max(criteria.limit, 50);
+    let after = criteria.after;
+    while (accepted.length < criteria.limit) {
+      const page = this.database
+        .select({
+          authAccountId: ranked.authAccountId,
+          bio: ranked.bio,
+          declarationOutcome: ranked.declarationOutcome,
+          declarationRecordedAt: ranked.declarationRecordedAt,
+          displayName: ranked.displayName,
+          id: ranked.id,
+          region: ranked.region,
+          sharedLanguages: ranked.sharedLanguages,
+          sortKey: ranked.sortKey,
+        })
+        .from(ranked)
+        .orderBy(asc(ranked.sortKey))
+        .limit(batchSize);
+      const rows = await (after === undefined
+        ? page
+        : page.where(gt(ranked.sortKey, after)));
+      if (rows.length === 0) break;
+      after = rows.at(-1)?.sortKey;
 
-    return criteria.after === undefined
-      ? page
-      : page.where(gt(ranked.sortKey, criteria.after));
+      const decisions = await Promise.all(
+        rows.map(async (row) => {
+          const identity =
+            await this.identityAdultAssurance.currentForAuthAccount({
+              authAccountId: row.authAccountId,
+              executor: this.database,
+              now: criteria.now,
+            });
+          const declaration =
+            row.declarationOutcome === null ||
+            row.declarationRecordedAt === null
+              ? undefined
+              : {
+                  outcome: row.declarationOutcome,
+                  recordedAt: row.declarationRecordedAt,
+                };
+          return adultAssuranceDecisionOf(declaration, identity);
+        }),
+      );
+      for (const [index, row] of rows.entries()) {
+        if (decisions[index]?.adultAssurance === 'none') continue;
+        accepted.push({
+          bio: row.bio,
+          displayName: row.displayName,
+          id: row.id,
+          region: row.region,
+          sharedLanguages: row.sharedLanguages,
+          sortKey: row.sortKey,
+        });
+        if (accepted.length === criteria.limit) break;
+      }
+      if (rows.length < batchSize || criteria.onlyId !== undefined) break;
+    }
+    return accepted;
   }
 
   /**

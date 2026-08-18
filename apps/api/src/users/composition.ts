@@ -1,17 +1,12 @@
-import {
-  localTestAdultAssuranceVerifier,
-  unavailableAdultAssuranceVerifier,
-  type ServerConfig,
-} from '@velora/config/server';
+import type { ServerConfig } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { CallerResolver } from '../auth/caller.js';
 
 import {
-  LocalTestAdultAssuranceVerifier,
-  UnavailableAdultAssuranceVerifier,
-  type AdultAssuranceVerifier,
-} from './adult-assurance.js';
+  EmptyIdentityAdultAssuranceReader,
+  type IdentityAdultAssuranceReaderPort,
+} from '../identity/assurance-reader.js';
 import {
   AvailabilityRepository,
   AvailabilityRoutes,
@@ -34,7 +29,6 @@ import {
 } from './standing.js';
 
 export interface UsersRuntime {
-  readonly adultAssuranceVerifier: AdultAssuranceVerifier;
   /** The adult standing this domain publishes for CREATORS. */
   readonly adultStanding: ConsumerAdultStandingDirectory;
   /** Whether an account exists at all, for TRUST & SAFETY's report targets. */
@@ -57,34 +51,9 @@ export interface UsersRuntime {
 }
 
 /**
- * Adult-assurance adapter registry. A configured name with no entry is an error
- * rather than a default, so adding a provider means registering it here
- * deliberately. Configuration already refuses anything but `unavailable` in
- * staging and production.
- */
-const adultAssuranceVerifiers: Readonly<
-  Record<string, () => AdultAssuranceVerifier>
-> = {
-  [localTestAdultAssuranceVerifier]: () =>
-    new LocalTestAdultAssuranceVerifier(),
-  [unavailableAdultAssuranceVerifier]: () =>
-    new UnavailableAdultAssuranceVerifier(),
-};
-
-/**
  * Profile media adapter registry, on the same rule as the verifier above: a
  * configured name with no entry is an error rather than a silent default.
  */
-
-export function selectAdultAssuranceVerifier(
-  config: ServerConfig,
-): AdultAssuranceVerifier {
-  const build = adultAssuranceVerifiers[config.USERS_ADULT_ASSURANCE_VERIFIER];
-  if (build === undefined) {
-    throw new Error('No approved adult assurance verifier is configured');
-  }
-  return build();
-}
 
 /**
  * USERS composition root. It receives AUTH's caller resolver rather than
@@ -96,6 +65,8 @@ export function createUsersRuntime(input: {
   readonly config: ServerConfig;
   readonly database: UsersDatabase;
   readonly logger: SafeLogger;
+  /** Identity's published current-evidence reader; never its repository. */
+  readonly identityAdultAssurance?: IdentityAdultAssuranceReaderPort;
   /**
    * The media platform, reached only through its published contracts.
    *
@@ -109,15 +80,22 @@ export function createUsersRuntime(input: {
 }): UsersRuntime {
   const now = input.now ?? (() => new Date());
   const repository = new UsersRepository(input.database);
+  const identityAdultAssurance =
+    input.identityAdultAssurance ??
+    (input.config.APP_ENV === 'test'
+      ? new EmptyIdentityAdultAssuranceReader()
+      : undefined);
+  if (identityAdultAssurance === undefined) {
+    throw new Error('USERS requires the Identity adult-assurance reader');
+  }
   const profileRepository = new ProfileRepository(input.database);
   const service = new UsersService({ now, repository });
   const consumerContext = new ConsumerContextResolver({
     caller: input.caller,
     users: service,
   });
-  const adultAssuranceVerifier = selectAdultAssuranceVerifier(input.config);
   const onboarding = new OnboardingService({
-    adultAssuranceVerifier,
+    identityAdultAssurance,
     now,
     profiles: profileRepository,
     repository,
@@ -136,8 +114,10 @@ export function createUsersRuntime(input: {
     repository: new AvailabilityRepository(input.database),
   });
   return {
-    adultAssuranceVerifier,
-    adultStanding: new ConsumerAdultStandingDirectory(repository),
+    adultStanding: new ConsumerAdultStandingDirectory(
+      repository,
+      identityAdultAssurance,
+    ),
     existence: new ConsumerExistenceDirectory(repository),
     availability,
     availabilityRoutes: new AvailabilityRoutes({
@@ -145,7 +125,7 @@ export function createUsersRuntime(input: {
       consumerContext,
     }),
     consumerContext,
-    directory: new ConsumerDirectory(input.database),
+    directory: new ConsumerDirectory(input.database, identityAdultAssurance),
     enforcement: new ConsumerEnforcement(repository),
     onboarding,
     profileRepository,

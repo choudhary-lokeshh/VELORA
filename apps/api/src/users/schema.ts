@@ -12,13 +12,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import {
-  digestColumn,
-  inList,
-  isHexDigest,
-  lengthBetween,
-  timestamptz,
-} from '../database/columns.js';
+import { inList, lengthBetween, timestamptz } from '../database/columns.js';
 import {
   languagePattern,
   maximumBioLength,
@@ -181,102 +175,53 @@ export const userPolicyAcknowledgements = pgTable(
   ],
 );
 
-/**
- * Assurance classes, kept deliberately distinct.
- *
- * `docs/compliance/02-adult-age-verification.md` forbids treating a declaration,
- * a verified adult check, an identity proof, and creator verification as
- * interchangeable. Only the first two exist today; the others get their own
- * values when their owning domain implements them, never by widening one of
- * these.
- */
-export const adultAssuranceClasses = [
-  'self_declared',
-  'verified_adult',
-] as const;
-export type AdultAssuranceClass = (typeof adultAssuranceClasses)[number];
+/** A declaration is a claim by the consumer, never provider evidence. */
+export const adultDeclarationOutcomes = ['passed', 'failed'] as const;
+export type AdultDeclarationOutcome = (typeof adultDeclarationOutcomes)[number];
 
 /**
- * Normalized outcomes an assurance method may report. An ambiguous provider
- * answer is `pending` or `review`; it is never assumed adult-eligible.
- */
-export const adultAssuranceOutcomes = [
-  'passed',
-  'failed',
-  'pending',
-  'review',
-  'revoked',
-] as const;
-export type AdultAssuranceOutcome = (typeof adultAssuranceOutcomes)[number];
-
-/**
- * Append-only adult assurance evidence.
+ * Append-only self-declarations owned by USERS.
  *
- * The current assurance is the most recent row, which is why the identifier is
- * a sequence: it gives a total order even when two assessments share a
- * timestamp. Nothing overwrites a prior assessment, so a later failure or
- * revocation is visible as its own event rather than as the absence of an
- * earlier pass.
- *
- * Raw evidence is never stored. `evidenceReference` is an opaque digest a
- * provider adapter can use to locate its own record; a document, selfie, or
- * birth date has no column here at all.
+ * Stronger evidence lives only in IDENTITY ASSURANCE. `recordedAt` orders the
+ * declaration against an Identity decision returned through its published
+ * reader contract; it is distinct from when the consumer says the declaration
+ * became effective. The migration assigns a stable monotonic recording time to
+ * the old mixed history, preserving its sequence-defined current decision.
  */
-export const userAdultAssurances = pgTable(
-  'users_adult_assurances',
+export const userAdultDeclarations = pgTable(
+  'users_adult_declarations',
   {
-    assuranceClass: text('assurance_class').notNull(),
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
     decidedAt: timestamptz('decided_at').notNull(),
-    evidenceReference: digestColumn('evidence_reference'),
-    expiresAt: timestamptz('expires_at'),
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    /** The adapter that produced the outcome, for audit and recheck routing. */
-    method: text('method').notNull(),
-    outcome: text('outcome').notNull(),
-    /** Version of the eligibility policy the outcome was evaluated against. */
+    outcome: text('outcome').notNull().$type<AdultDeclarationOutcome>(),
     policyVersion: text('policy_version').notNull(),
-    /** Declared at the gate, because adult age is a country-dependent rule. */
+    recordedAt: timestamptz('recorded_at').notNull().defaultNow(),
     region: text('region'),
     userId: uuid('user_id')
       .notNull()
       .references(() => userAccounts.id, { onDelete: 'cascade' }),
   },
   (table) => [
-    index('users_adult_assurances_user_idx').on(table.userId, table.id),
-    check(
-      'users_adult_assurances_class_check',
-      inList(table.assuranceClass, adultAssuranceClasses),
+    index('users_adult_declarations_user_idx').on(
+      table.userId,
+      table.recordedAt,
+      table.id,
     ),
     check(
-      'users_adult_assurances_outcome_check',
-      inList(table.outcome, adultAssuranceOutcomes),
+      'users_adult_declarations_outcome_check',
+      inList(table.outcome, adultDeclarationOutcomes),
     ),
     check(
-      'users_adult_assurances_method_length_check',
-      lengthBetween(table.method, 1, 64),
-    ),
-    check(
-      'users_adult_assurances_policy_version_length_check',
+      'users_adult_declarations_policy_version_length_check',
       lengthBetween(table.policyVersion, 1, 32),
     ),
     check(
-      'users_adult_assurances_region_check',
+      'users_adult_declarations_region_check',
       sql`${table.region} is null or ${table.region} ~ '^[A-Z]{2}$'`,
     ),
     check(
-      'users_adult_assurances_evidence_check',
-      sql`${table.evidenceReference} is null or ${isHexDigest(table.evidenceReference)}`,
-    ),
-    check(
-      'users_adult_assurances_expiry_after_decision_check',
-      sql`${table.expiresAt} is null or ${table.expiresAt} > ${table.decidedAt}`,
-    ),
-    // A self-declaration is the weakest class and can never carry an expiry a
-    // stronger method would need, nor provider evidence it never produced.
-    check(
-      'users_adult_assurances_self_declaration_shape_check',
-      sql`${table.assuranceClass} <> 'self_declared' or ${table.evidenceReference} is null`,
+      'users_adult_declarations_recording_order_check',
+      sql`${table.recordedAt} >= ${table.decidedAt}`,
     ),
   ],
 );

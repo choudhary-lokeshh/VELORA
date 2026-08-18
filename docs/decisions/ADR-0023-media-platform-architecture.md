@@ -129,7 +129,7 @@ The [ADR-0019](ADR-0019-database-connection-admission.md) admission architecture
 
 ### Configuration refuses, and the test adapter cannot become a backdoor
 
-`MEDIA_STORAGE_PROVIDER`, `MEDIA_DELIVERY_PROVIDER`, and `MEDIA_MALWARE_SCANNER` each default to `unavailable`, which refuses every operation, and staging and production reject any other value. Adapters are selected once at the composition root from a closed registry; no route, header, query parameter, or request field selects one. A startup assertion proves the refusal, following the pattern already holding `BILLING_PAYMENT_PROVIDER`, `PAYOUTS_PROVIDER`, `USERS_ADULT_ASSURANCE_VERIFIER`, and `MESSAGING_SAFETY_ELIGIBILITY`.
+`MEDIA_STORAGE_PROVIDER`, `MEDIA_DELIVERY_PROVIDER`, and `MEDIA_MALWARE_SCANNER` each default to `unavailable`, which refuses every operation, and staging and production reject any other value. Adapters are selected once at the composition root from a closed registry; no route, header, query parameter, or request field selects one. A startup assertion proves the refusal, following the pattern already holding `BILLING_PAYMENT_PROVIDER`, `PAYOUTS_PROVIDER`, `IDENTITY_VERIFICATION_PROVIDER`, and `MESSAGING_SAFETY_ELIGIBILITY`.
 
 The `local-test` storage adapter is filesystem-backed under a configured directory rather than process memory, because inspection and processing run in the worker process and an in-memory adapter would make the API and the worker disagree about whether an object exists. It is refused outside local and test, and its acceptance of an object is never evidence about real content.
 

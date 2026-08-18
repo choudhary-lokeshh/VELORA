@@ -4,7 +4,7 @@
 
 This flow owns provider-neutral verification orchestration and failure recovery. V1 exposes only platform callback and read-only operations contracts. Consumer/Creator initiation is Phase 2; commercial-KYC/payout exposure is Phase 3; mature-content use is conditional and blocked.
 
-Current implementation exposes the start sequence only as an internal contract for an owner application service that already authorized actor, subject, purpose, and jurisdiction. The provider callback route and leased worker sequence below are implemented; reconciliation and owner evidence consumption are not yet implemented. There is no Consumer, Creator, Admin, or general-purpose HTTP start route. The default provider/policy configuration refuses before persistence; local/test fixtures exercise recovery without network access or legal/provider claims.
+Current implementation exposes the start sequence only as an internal contract for an owner application service that already authorized actor, subject, purpose, and jurisdiction. The provider callback route and leased worker sequence below are implemented. USERS consumes current adult-threshold decisions through a published read contract after the transactional legacy cutover; Creator, SAFETY, commercial-KYC, reconciliation, and Admin consumption remain unimplemented. There is no Consumer, Creator, Admin, or general-purpose HTTP start route. The default provider/policy configuration refuses before persistence; local/test fixtures exercise recovery without network access or legal/provider claims.
 
 ## Start and hosted handoff
 

@@ -58,27 +58,6 @@ describe('server configuration', () => {
     }
   });
 
-  it('defaults adult assurance to the verifier that refuses everything', () => {
-    const config = loadServerConfig(validEnvironment);
-    expect(config.USERS_ADULT_ASSURANCE_VERIFIER).toBe('unavailable');
-  });
-
-  it('permits the local-test assurance adapter only outside deployed environments', () => {
-    expect(
-      loadServerConfig({
-        ...validEnvironment,
-        USERS_ADULT_ASSURANCE_VERIFIER: 'local-test',
-      }).USERS_ADULT_ASSURANCE_VERIFIER,
-    ).toBe('local-test');
-    expect(
-      loadServerConfigResult({
-        ...validEnvironment,
-        APP_ENV: 'production',
-        USERS_ADULT_ASSURANCE_VERIFIER: 'local-test',
-      }),
-    ).toContain('USERS_ADULT_ASSURANCE_VERIFIER');
-  });
-
   it('keeps Identity provider and jurisdiction policy separately fail-closed', () => {
     const defaults = loadServerConfig(validEnvironment);
     expect(defaults.IDENTITY_VERIFICATION_PROVIDER).toBe('unavailable');

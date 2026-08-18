@@ -30,11 +30,13 @@ Account creation is idempotent because [onboarding](../flows/onboarding.md) requ
 
 ## Implemented adult onboarding
 
-`0003_users_onboarding` adds two append-only evidence tables. Neither is ever updated and neither is deleted while the account exists, because both answer questions about the past.
+`0003_users_onboarding` originally added two append-only evidence tables. Migration `0047_identity-assurance-users-cutover` splits their ownership: policy acknowledgements remain as introduced, self-declarations move to `users_adult_declarations`, and verified evidence moves to IDENTITY ASSURANCE. Neither USERS table is updated or deleted while the account exists, because both answer questions about the past.
 
 `users_policy_acknowledgements` records that an account accepted a named policy document at a named version, from a named consumer surface. A unique index over account, key, and version makes re-submission a no-op rather than a second contradictory record, and a new version produces a new row, so republishing terms never rewrites the evidence that someone accepted the earlier text.
 
-`users_adult_assurances` records the legacy mixed adult-eligibility history. [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md) requires a reviewed migration: every `verified_adult` row becomes an AUTH-principal Identity subject, attempt, and append-only evidence chain; self-declarations move to a self-declaration-only USERS table; count/order/current-decision equivalence is proven before the mixed table is retired. Until that migration lands, no new provider or product workflow may write verified evidence here.
+`users_adult_declarations` records only the consumer's self-declaration, its region and policy version, and the decision/recording order. Database constraints admit only `passed` or `failed`, reject malformed policy/region/time ordering, and an append-only trigger refuses update or deletion. The retired `users_adult_assurances` table no longer exists in the current schema.
+
+Migration `0047_identity-assurance-users-cutover` moves every legacy `verified_adult` row into an AUTH-principal Identity subject, one terminal attempt, and an append-only evidence chain. A stable monotonic recording time preserves the former sequence order even when legacy timestamps tied or moved backward. Pending/review rows become terminal attempts without fabricated evidence; passes, failures, and revocations keep their normalized distinction. Transactional count, subject, and chain assertions run before the mixed table is dropped, and real PostgreSQL tests prove current-decision equivalence plus full rollback on conflict.
 
 The assurance classes remain deliberately non-interchangeable. After migration, USERS stores only self-declaration; verified threshold, identity, creator-identity, depicted-person, and commercial-KYC evidence live in IDENTITY ASSURANCE. USERS derives its current verified answer through that published contract and does not cache a master `verified` boolean.
 
@@ -50,11 +52,11 @@ The ladder is `adult_declaration -> policy_acknowledgement -> profile -> complet
 
 Activation to `active` requires the minimum profile, which the profile model does not yet define. A fully declared and acknowledged account therefore stops honestly at the `profile` step and stays `pending_profile`, rather than reporting a completion that has not happened.
 
-## Adult assurance provider seam (legacy transition)
+## Adult assurance contract
 
-The existing USERS provider port is a legacy seam and remains fail-closed until the IDENTITY ASSURANCE migration replaces it. Self-declaration deliberately does not pass through a verifier: nothing external is consulted, so routing it through a provider would misrepresent what happened.
+USERS has no verification provider port or provider configuration. Self-declaration deliberately does not pass through IDENTITY: nothing external is consulted, so routing it through a provider would misrepresent what happened.
 
-`USERS_ADULT_ASSURANCE_VERIFIER` selects the legacy adapter and defaults to `unavailable`, which refuses every request. No real provider integration may target it. Once migrated, Identity owns provider selection and this configuration is removed; onboarding compatibility remains through an Identity reader contract.
+For reads, USERS combines the latest declaration with the published Identity adult-assurance reader. That contract accepts an opaque AUTH principal reference and returns a minimized current decision; only the Identity implementation reads `identity_` persistence. A later attempt outranks earlier evidence, and the later of the Identity decision and USERS declaration determines the compatible onboarding answer. USERS does not cache a master `verified` boolean. There is no Consumer verification-start route in V1.
 
 The policy versions the required documents carry are marked unpublished, because Velora has no approved terms, privacy notice, minimum age, or launch-country list and none is invented here. That marker is a real version whose content is unapproved, not a placeholder that behaves like one: publishing approved copy is a version bump, after which every account is asked again and the earlier evidence is preserved.
 
