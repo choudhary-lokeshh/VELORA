@@ -26,7 +26,10 @@ jobs:
     # Docker is preinstalled, which Testcontainers requires for the real
     # PostgreSQL and Redis integration tests.
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Browser provisioning and the canonical real-container gate share this
+    # budget. Keep enough headroom for a slow first browser download without
+    # omitting or shortening any verification stage.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
