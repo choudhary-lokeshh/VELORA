@@ -38,7 +38,7 @@ Option 3 for provisioning and GitHub Actions for verification CI.
 
 `mise.toml` is the single provisioning authority and declares all three runtimes. Bootstrap is `mise install` followed by `pnpm install --frozen-lockfile`. `package.json#engines` remains the enforcement authority, and `.node-version` and `.bun-version` remain for editors and other tooling that read them. `pnpm toolchain:check` now fails when any of those four sources disagrees, so the pins cannot drift apart.
 
-Verification CI is `.github/workflows/verify.yml`, on the platform that already hosts the repository. It checks out, provisions from `mise.toml`, verifies the toolchain, installs frozen, installs browsers, and runs `pnpm ci:verify`. Its 90-minute whole-job budget accommodates a slow first browser download plus the unchanged real-container verification graph; it does not omit, shorten, or make any gate optional. It holds `contents: read` only, defines no secrets, cancels superseded runs for a ref, and deploys nothing. It also runs on a daily schedule so that the hard expiry on every dependency risk acceptance fires on time rather than waiting for a commit.
+Verification CI is `.github/workflows/verify.yml`, on the platform that already hosts the repository. It checks out, provisions from `mise.toml`, verifies the toolchain, installs frozen, installs browsers, and runs `pnpm ci:verify`. Browser provisioning is cached and separately time-boxed: the Ubuntu packages Playwright's browsers require are cached by pinned browser version, and the step that installs them holds its own 25-minute limit inside the 60-minute whole-job budget. The canonical gate therefore keeps a defensible share of that budget, and a slow distribution mirror fails provisioning by itself instead of cancelling verification mid-run. Neither mechanism omits, shortens, or makes any gate optional. It holds `contents: read` only, defines no secrets, cancels superseded runs for a ref, and deploys nothing. It also runs on a daily schedule so that the hard expiry on every dependency risk acceptance fires on time rather than waiting for a commit.
 
 This locks the verification CI vendor. It does not resolve ADR-0014's deferred cloud, container, registry, CDN, or DNS decisions, and it grants no deployment authority.
 
@@ -70,10 +70,11 @@ Contributors install mise once. `pnpm ci:verify` becomes runnable from a plain c
 - Action references by major tag can move under the repository.
 - The daily scheduled run consumes minutes without a code change and can be disabled by repository inactivity policies.
 - Testcontainers requires Docker on the runner, which couples verification to runner image contents.
+- Browser provisioning depends on a distribution package mirror nobody here operates, and mirror throughput has already collapsed far enough to exhaust an hour-long job budget.
 
 ## Mitigations
 
-Keep `engines` authoritative so an unmanaged but correct toolchain still passes, and keep `.node-version`/`.bun-version` readable by other tooling. Keep the workflow minimal so it can be reproduced on another platform if the vendor changes; the canonical graph lives in `package.json`, not in YAML. Review action major-tag updates as dependency changes. Treat a missing scheduled run as an incident for acceptance expiry, since the register's compensating controls depend on it. Pin the runner image explicitly rather than tracking `ubuntu-latest`.
+Keep `engines` authoritative so an unmanaged but correct toolchain still passes, and keep `.node-version`/`.bun-version` readable by other tooling. Keep the workflow minimal so it can be reproduced on another platform if the vendor changes; the canonical graph lives in `package.json`, not in YAML. Review action major-tag updates as dependency changes. Treat a missing scheduled run as an incident for acceptance expiry, since the register's compensating controls depend on it. Pin the runner image explicitly rather than tracking `ubuntu-latest`. Cache the browser system packages by pinned browser version and time-box the step that installs them, so mirror degradation is visible as a provisioning failure rather than as a cancelled gate; raising the whole-job budget instead would only buy a slower failure and call it a pass.
 
 ## Scaling path
 

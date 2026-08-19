@@ -26,10 +26,11 @@ jobs:
     # Docker is preinstalled, which Testcontainers requires for the real
     # PostgreSQL and Redis integration tests.
     runs-on: ubuntu-24.04
-    # Browser provisioning and the canonical real-container gate share this
-    # budget. Keep enough headroom for a slow first browser download without
-    # omitting or shortening any verification stage.
-    timeout-minutes: 90
+    # The canonical gate itself runs in roughly fifteen minutes. The rest of
+    # this budget is provisioning headroom, and provisioning carries its own
+    # limit below, so a slow package mirror cannot spend the gate's time and
+    # cancel verification mid-run.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -45,8 +46,46 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve the pinned browser version
+        id: browsers
+        run: |
+          version="$(pnpm exec playwright --version | awk '{ print $2 }')"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Playwright's system dependencies are ~114 MB of Ubuntu archive packages
+      # that every browser here needs. Fetching them from the distribution
+      # mirror on every run puts an external service Velora does not control on
+      # the critical path of the only gate, and a degraded mirror has already
+      # turned a two-minute step into an hour. Cache the packages themselves and
+      # the mirror stops mattering except when the pinned version moves.
+      - name: Restore the browser system-dependency cache
+        uses: actions/cache@v6
+        with:
+          key: playwright-apt-${{ runner.os }}-${{ runner.arch }}-${{ steps.browsers.outputs.version }}
+          path: ~/.cache/velora-playwright-apt
+          restore-keys: |
+            playwright-apt-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install browsers for end-to-end tests
-        run: pnpm exec playwright install --with-deps
+        # A cold cache against a degraded mirror fails here, loudly and by
+        # itself, rather than consuming the whole job budget. Nothing is
+        # skipped, shortened, or made optional: the same three browsers and the
+        # same system dependencies are installed either way.
+        timeout-minutes: 25
+        run: |
+          printf 'Binary::apt::APT::Keep-Downloaded-Packages "true";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-velora-keep-downloads > /dev/null
+          mkdir -p ~/.cache/velora-playwright-apt
+          sudo cp -a ~/.cache/velora-playwright-apt/. /var/cache/apt/archives/
+          pnpm exec playwright install --with-deps
+          # Rebuild the cache from what this run actually needed, so a package
+          # that a later Ubuntu image stops using does not live here forever.
+          rm -rf ~/.cache/velora-playwright-apt
+          mkdir -p ~/.cache/velora-playwright-apt
+          sudo find /var/cache/apt/archives -maxdepth 1 -name '*.deb' \
+            -exec cp -a {} ~/.cache/velora-playwright-apt/ ';'
+          sudo chown -R "$(id -u):$(id -g)" ~/.cache/velora-playwright-apt
 
       - name: Verify
         run: pnpm ci:verify
