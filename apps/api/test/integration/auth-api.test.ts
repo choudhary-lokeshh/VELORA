@@ -6,7 +6,10 @@ import { createApplication } from '../../src/application.js';
 import { EmptyIdentityAdultAssuranceReader } from '../../src/identity/assurance-reader.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
-import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
+import {
+  authAttemptLimits,
+  InMemoryRateLimiter,
+} from '../../src/auth/rate-limit.js';
 import { LocalTestRecoveryDelivery } from '../../src/auth/recovery.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
 import {
@@ -53,7 +56,7 @@ function harness(options?: {
     database: database.drizzle,
     logger,
     options: {
-      rateLimiter: new InMemoryRateLimiter(),
+      rateLimiter: new InMemoryRateLimiter(options?.now),
       ...(options?.now === undefined ? {} : { now: options.now }),
       requesterReference: (request) =>
         request.headers.get('x-velora-device') ?? 'api-test',
@@ -373,7 +376,13 @@ describe('AUTH API surface', () => {
   });
 
   it('rate limits repeated authentication attempts from one requester', async () => {
-    const application = harness();
+    // The counter window is fixed, so a burst that straddles a boundary is
+    // split across two windows and may never reach the limit. Holding the
+    // clock still is what makes this an assertion about the limit rather than
+    // about where the wall clock happened to be when the loop ran.
+    const application = harness({
+      now: () => new Date('2026-08-19T12:00:00.000Z'),
+    });
     try {
       const statuses: number[] = [];
       for (let attempt = 0; attempt < 25; attempt += 1) {
@@ -393,6 +402,17 @@ describe('AUTH API surface', () => {
         statuses.filter((status) => status === 429).length,
       ).toBeGreaterThan(0);
       expect(statuses.at(-1)).toBe(429);
+      // With the window held still the refusal lands exactly where the limit
+      // says it does, so this asserts the ceiling rather than merely that some
+      // request somewhere was refused.
+      expect(
+        statuses.slice(0, authAttemptLimits.authenticate.limit),
+      ).not.toContain(429);
+      expect(
+        statuses
+          .slice(authAttemptLimits.authenticate.limit)
+          .every((status) => status === 429),
+      ).toBe(true);
     } finally {
       await application.close();
     }

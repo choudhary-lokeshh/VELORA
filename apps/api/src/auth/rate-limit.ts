@@ -12,6 +12,12 @@ import { digestValue } from './tokens.js';
  * check happens against PostgreSQL. When Redis is unavailable the limiter says
  * so, and the caller records the degradation rather than turning an outage into
  * a lockout.
+ *
+ * The window is fixed rather than sliding, so a burst straddling a boundary may
+ * be allowed up to twice the limit before either side refuses. That is the
+ * accepted trade-off of a counter this cheap, and it is why the clock is
+ * injected: a test asserting which attempt is refused must be able to hold the
+ * window still rather than depend on where the wall clock happens to be.
  */
 
 export interface RateLimitDecision {
@@ -32,8 +38,10 @@ export interface RateLimiter {
 
 export class RedisRateLimiter implements RateLimiter {
   private readonly client: Redis;
+  private readonly now: () => Date;
 
-  constructor(url: string) {
+  constructor(url: string, now: () => Date = () => new Date()) {
+    this.now = now;
     this.client = new Redis(url, {
       connectionName: 'auth-rate-limit',
       connectTimeout: 1_000,
@@ -53,7 +61,9 @@ export class RedisRateLimiter implements RateLimiter {
   }): Promise<RateLimitDecision> {
     // The subject is digested so no address, device reference, or identity
     // subject is ever written to Redis in the clear.
-    const window = Math.floor(Date.now() / (input.windowSeconds * 1000));
+    const window = Math.floor(
+      this.now().getTime() / (input.windowSeconds * 1000),
+    );
     const key = `auth:rl:${input.bucket}:${digestValue(input.subject)}:${String(window)}`;
     try {
       if (this.client.status === 'wait' || this.client.status === 'end') {
@@ -80,13 +90,17 @@ export class RedisRateLimiter implements RateLimiter {
 export class InMemoryRateLimiter implements RateLimiter {
   private readonly counters = new Map<string, number>();
 
+  constructor(private readonly now: () => Date = () => new Date()) {}
+
   consume(input: {
     readonly bucket: string;
     readonly limit: number;
     readonly subject: string;
     readonly windowSeconds: number;
   }): Promise<RateLimitDecision> {
-    const window = Math.floor(Date.now() / (input.windowSeconds * 1000));
+    const window = Math.floor(
+      this.now().getTime() / (input.windowSeconds * 1000),
+    );
     const key = `${input.bucket}:${digestValue(input.subject)}:${String(window)}`;
     const used = (this.counters.get(key) ?? 0) + 1;
     if (this.counters.size > 10_000) this.counters.clear();

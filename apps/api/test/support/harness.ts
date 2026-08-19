@@ -139,7 +139,7 @@ export function testAuthRuntime(input: {
     database: input.database ?? drizzle.mock(),
     logger: input.logger ?? silentLogger(),
     options: {
-      rateLimiter: new InMemoryRateLimiter(),
+      rateLimiter: new InMemoryRateLimiter(input.now),
       ...(input.now === undefined ? {} : { now: input.now }),
       requesterReference: (request) =>
         request.headers.get('x-velora-device') ?? 'test-requester',
