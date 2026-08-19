@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -8,21 +8,26 @@ import type {
 import { lockIdempotentOperation } from '../database/idempotency-lock.js';
 import {
   activeIdentityAttemptStates,
+  reconciliationIdentityAttemptStates,
   terminalIdentityAttemptStates,
   type IdentityAttemptState,
   type IdentityEvidenceClass,
   type IdentityOwnerDomain,
   type IdentityPurpose,
+  type IdentityReconciliationKind,
 } from './policy.js';
 import {
   identityAttempts,
   identityEvidence,
+  identityReconciliationFindings,
   identitySubjects,
 } from './schema.js';
 
 export type IdentitySubjectRow = typeof identitySubjects.$inferSelect;
 export type IdentityAttemptRow = typeof identityAttempts.$inferSelect;
 export type IdentityEvidenceRow = typeof identityEvidence.$inferSelect;
+export type IdentityReconciliationFindingRow =
+  typeof identityReconciliationFindings.$inferSelect;
 
 export type AppendIdentityEvidenceResult =
   | { readonly evidence: IdentityEvidenceRow; readonly kind: 'inserted' }
@@ -269,6 +274,136 @@ export class IdentityRepository {
       .limit(1)
       .for('update');
     return rows[0];
+  }
+
+  /**
+   * Claims a bounded, fair page before provider I/O. The technical marker is
+   * deliberately separate from `updatedAt`: a provider read must not rewrite
+   * lifecycle order or make the newest attempt starve the rest of the queue.
+   */
+  async claimReconciliationAttempts(input: {
+    readonly dueBefore: Date;
+    readonly limit: number;
+    readonly now: Date;
+  }): Promise<readonly IdentityAttemptRow[]> {
+    return this.transaction(async (executor) => {
+      const claimed = await executor
+        .select()
+        .from(identityAttempts)
+        .where(
+          and(
+            inArray(
+              identityAttempts.state,
+              reconciliationIdentityAttemptStates,
+            ),
+            or(
+              isNull(identityAttempts.reconciliationCheckedAt),
+              lte(identityAttempts.reconciliationCheckedAt, input.dueBefore),
+            ),
+          ),
+        )
+        .orderBy(
+          sql`${identityAttempts.reconciliationCheckedAt} asc nulls first`,
+          asc(identityAttempts.id),
+        )
+        .limit(input.limit)
+        .for('update', { skipLocked: true });
+      if (claimed.length === 0) return [];
+
+      await executor
+        .update(identityAttempts)
+        .set({ reconciliationCheckedAt: input.now })
+        .where(
+          inArray(
+            identityAttempts.id,
+            claimed.map((row) => row.id),
+          ),
+        );
+      return claimed;
+    });
+  }
+
+  /**
+   * A fingerprint makes repeated observations one durable finding. Finding
+   * identity is immutable; only its settlement can later move.
+   */
+  async recordReconciliationFinding(input: {
+    readonly attemptId?: string;
+    readonly evidenceId?: string;
+    readonly fingerprint: string;
+    readonly kind: IdentityReconciliationKind;
+    readonly now: Date;
+    readonly provider: string;
+    readonly reasonCode: string;
+    readonly subjectId?: string;
+  }): Promise<{
+    readonly finding: IdentityReconciliationFindingRow;
+    readonly kind: 'existing' | 'recorded';
+  }> {
+    return this.transaction(async (executor) => {
+      const inserted = await executor
+        .insert(identityReconciliationFindings)
+        .values({
+          attemptId: input.attemptId ?? null,
+          detectedAt: input.now,
+          evidenceId: input.evidenceId ?? null,
+          fingerprint: input.fingerprint,
+          id: crypto.randomUUID(),
+          kind: input.kind,
+          provider: input.provider,
+          reasonCode: input.reasonCode,
+          resolvedAt: null,
+          state: 'open',
+          subjectId: input.subjectId ?? null,
+          updatedAt: input.now,
+        })
+        .onConflictDoNothing({
+          target: identityReconciliationFindings.fingerprint,
+        })
+        .returning();
+      const finding = inserted[0];
+      if (finding !== undefined) return { finding, kind: 'recorded' };
+
+      const existing = await executor
+        .select()
+        .from(identityReconciliationFindings)
+        .where(
+          eq(identityReconciliationFindings.fingerprint, input.fingerprint),
+        )
+        .limit(1);
+      const row = existing[0];
+      if (row === undefined) {
+        throw new Error(
+          'identity reconciliation finding conflict lost its row',
+        );
+      }
+      return { finding: row, kind: 'existing' };
+    });
+  }
+
+  async resolveReconciliationFinding(input: {
+    readonly findingId: string;
+    readonly now: Date;
+  }): Promise<boolean> {
+    const resolved = await this.database
+      .update(identityReconciliationFindings)
+      .set({ resolvedAt: input.now, state: 'resolved', updatedAt: input.now })
+      .where(
+        and(
+          eq(identityReconciliationFindings.id, input.findingId),
+          eq(identityReconciliationFindings.state, 'open'),
+        ),
+      )
+      .returning({ id: identityReconciliationFindings.id });
+    return resolved.length === 1;
+  }
+
+  async countOpenReconciliationFindings(): Promise<number> {
+    const rows = await this.database
+      .select({ total: sql<number>`count(*)::integer` })
+      .from(identityReconciliationFindings)
+      .where(eq(identityReconciliationFindings.state, 'open'));
+    return rows[0]?.total ?? 0;
   }
 
   async appendEvidence(

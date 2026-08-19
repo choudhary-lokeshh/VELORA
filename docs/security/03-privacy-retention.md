@@ -10,6 +10,8 @@ Classify data as public-profile, private account, sensitive safety/verification,
 
 IDENTITY ASSURANCE stores only explicit normalized evidence, policy/validity/supersession facts, digests, and opaque provider references. Provider-held documents/biometrics remain subject to separately approved controller/processor, residency, retention, deletion, subprocessor, training/secondary-use, and data-subject-rights terms. No production provider means no production collection.
 
+Identity reconciliation may re-read a configured provider's minimized current state, record a normalized drift finding, and append a later expiry/revocation fact. It does not erase, export, correct, or send a deletion request to either VELORA storage or a provider. Those operations remain unavailable until a legally approved class-by-class retention/rights policy, provider capability/contract, lawful hold rule, durable idempotent workflow, and named owner are in place. Evidence expiry is not a storage-retention deadline.
+
 AI contexts, prompts/completions, durable memory, embeddings, RAG indexes, evaluation datasets, human-review samples, and provider-retained data inherit source classification and purpose restrictions. Derived form does not remove sensitivity. AI memory/indexes must retain provenance and support consent/source/account deletion propagation.
 
 ## User rights and lifecycle

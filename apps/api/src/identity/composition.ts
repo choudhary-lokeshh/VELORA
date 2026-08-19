@@ -26,6 +26,7 @@ import { LocalTestIdentityVerificationProvider } from './local-test-provider.js'
 import { IdentityOrchestrator } from './orchestrator.js';
 import { IdentityProviderEventRoutes } from './provider-event-routes.js';
 import { IdentityProviderEventService } from './provider-events.js';
+import { IdentityReconciliationService } from './reconciliation.js';
 import {
   UnavailableIdentityVerificationProvider,
   type IdentityVerificationProviderPort,
@@ -45,6 +46,7 @@ export interface IdentityRuntime {
   readonly provider: IdentityVerificationProviderPort;
   readonly providerEventRoutes: IdentityProviderEventRoutes;
   readonly providerEvents: IdentityProviderEventService;
+  readonly reconciliation: IdentityReconciliationService;
   readonly reverificationPolicy: IdentityReverificationPolicy;
   readonly repository: IdentityRepository;
 }
@@ -127,6 +129,13 @@ export function createIdentityRuntime(input: {
     provider,
     providerEventRoutes: new IdentityProviderEventRoutes(providerEvents),
     providerEvents,
+    reconciliation: new IdentityReconciliationService({
+      logger: input.logger,
+      now,
+      provider,
+      providerEvents,
+      repository,
+    }),
     reverificationPolicy: new IdentityReverificationPolicy(jurisdictionPolicy),
     repository,
   };

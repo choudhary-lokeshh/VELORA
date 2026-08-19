@@ -93,7 +93,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | Document | Primary authority |
 |---|---|
 | [Onboarding](flows/onboarding.md) | Adult signup/sign-in/session-to-profile admission |
-| [Identity assurance verification](flows/identity-assurance-verification.md) | Provider-neutral start, callback, evidence, current-policy/re-verification assessment, expiry/revocation, reconciliation, and owner consumption |
+| [Identity assurance verification](flows/identity-assurance-verification.md) | Provider-neutral start, callback, evidence, current-policy/re-verification assessment, expiry/revocation, bounded provider-truth reconciliation, and owner consumption |
 | [Consumer account/profile](flows/consumer-account-profile.md) | Profile, verification, availability, restriction, account lifecycle |
 | [Discovery and introductions](flows/discovery-introductions.md) | Candidate, signal, decline/withdraw, mutual introduction |
 | [Messaging and blocks](flows/messaging-and-blocks.md) | Conversation/message authorization and block precedence |
@@ -155,7 +155,7 @@ These are architecture/product gates, not legal advice:
 | [Incident response](operations/04-incident-response.md) | Incident lifecycle, emergency authority, evidence and recovery |
 | [Platform health](operations/05-platform-health.md) | Health signals, degraded behavior, SLO/capacity direction |
 | [Media operations](operations/06-media-operations.md) | What each media backlog class means, what an operator may do about it, and what is deliberately not offered |
-| [Identity verification operations](operations/07-identity-verification-operations.md) | Privacy-minimized monitoring, callback backlog, reconciliation, expiry, incidents, and prohibited manual overrides |
+| [Identity verification operations](operations/07-identity-verification-operations.md) | Privacy-minimized monitoring, callback backlog, bounded reconciliation recovery, expiry, incidents, and prohibited manual overrides |
 
 ## Engineering and decision authority
 

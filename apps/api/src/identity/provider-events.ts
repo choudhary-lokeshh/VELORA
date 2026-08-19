@@ -206,7 +206,7 @@ export class IdentityProviderEventService {
   }
 
   private async apply(event: IdentityProviderEventRow): Promise<boolean> {
-    const { provider, repository } = this.dependencies;
+    const { provider } = this.dependencies;
     if (
       event.provider !== provider.provider ||
       event.providerAccount !== provider.account ||
@@ -226,6 +226,18 @@ export class IdentityProviderEventService {
     if (snapshot.providerReference !== event.providerReference) {
       return false;
     }
+
+    return this.applyRetrievedProviderSnapshot(snapshot);
+  }
+
+  /**
+   * Applies provider truth obtained by a verified receipt or the internal
+   * reconciliation worker. It has no route and accepts only a runtime-guarded
+   * normalized snapshot; provider I/O has already completed before this call.
+   */
+  async applyRetrievedProviderSnapshot(snapshot: unknown): Promise<boolean> {
+    const { provider, repository } = this.dependencies;
+    if (!isIdentityProviderSnapshot(snapshot)) return false;
     const attempt = await repository.findByProviderIdentity(
       repository.transactionless,
       {
@@ -265,7 +277,15 @@ export class IdentityProviderEventService {
     let attempt = original;
 
     if (attempt.providerReference === null) {
-      if (attempt.state !== 'provider_starting') return false;
+      // A revocation can supersede a recorded success, but it cannot be the
+      // first state for an unbound operation. Refuse before binding so an
+      // incompatible snapshot cannot leave a partial lifecycle mutation.
+      if (
+        attempt.state !== 'provider_starting' ||
+        snapshot.state === 'revoked'
+      ) {
+        return false;
+      }
       const bound = await repository.transitionAttempt(executor, {
         attemptId: attempt.id,
         from: ['provider_starting'],

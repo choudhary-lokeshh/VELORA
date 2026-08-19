@@ -29,7 +29,8 @@ The domain intentionally stores no raw identity documents, exact birth dates, na
 | Admin enumeration/export/override | Aggregate and exact-reference reads only; no list/search/export/mutation routes; Admin audience plus ADR-0017 exact action | Route inventory and negative-audience tests |
 | Log/audit leakage | Allow-listed structured fields; secrets, links, raw reasons, identity attributes, callback body redacted; audit separated from diagnostics | Canary-string log tests |
 | Policy rollback or unknown jurisdiction | Versioned policy; attempt pins version; `UNKNOWN`/unpublished is refusal; a read-only comparison detects expiry, policy-version, or requirement change without effect; later approved owners assess their current requirement | Policy-version/re-verification and no-side-effect tests |
-| Provider outage or ambiguous result | Recoverable lifecycle, lookup by provider key, bounded retry, reconciliation; never infer success | Timeout/crash/recovery tests |
+| Provider outage or ambiguous result | Recoverable lifecycle, lookup by provider key, bounded due-page reconciliation, normalized finding before repair; never infer success | Timeout/crash/recovery, missing-callback, retrieval-outage, and ambiguous-create tests |
+| Reconciliation race, stale state, or unsafe repair | Short PostgreSQL row-lock claim marks only due-scan metadata; provider read is outside transaction; identity/state binding is rechecked and the callback path atomically applies only compatible append-only facts | Concurrent reconciliation, revocation-successor, malformed/mismatched-state, and transaction-boundary tests |
 
 ## Privacy and deletion
 

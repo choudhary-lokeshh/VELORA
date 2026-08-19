@@ -22,7 +22,7 @@ Alerts require an owner and runbook for:
 
 Exact thresholds and SLOs are `DECISION REQUIRED BEFORE FEATURE`.
 
-Current implementation provides the verified callback inbox, bounded lease/retry/dead-letter worker, redacted failure logging, and transactional evidence/outbox write. Aggregate Admin reads, alerts/dashboards, reconciliation, privileged repair, and privacy-obligation execution remain unavailable; this document does not imply that an operator can perform them yet.
+Current implementation provides the verified callback inbox, bounded lease/retry/dead-letter worker, redacted failure logging, transactional evidence/outbox write, and a bounded provider-truth reconciliation worker. Reconciliation advances a technical due marker in PostgreSQL before its provider read, records normalized findings before repair, and uses the same append-only evidence/outbox path as callback processing. It records rather than autonomously starts a pre-provider attempt; it never retries a provider create, infers a result on retrieval failure, performs a manual repair, or carries out a privacy operation. Aggregate Admin reads, alerts/dashboards, privileged repair, and privacy-obligation execution remain unavailable; this document does not imply that an operator can perform them yet.
 
 ## Allowed actions
 

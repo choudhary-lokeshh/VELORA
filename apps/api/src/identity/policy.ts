@@ -70,6 +70,14 @@ export const activeIdentityAttemptStates: readonly IdentityAttemptState[] = [
   'processing',
 ];
 
+/**
+ * Bounded provider-truth reads cover recoverable work plus a completed grant,
+ * whose later provider revocation or expiry may need a new append-only fact.
+ * This is scheduling vocabulary only; it never decides an owner predicate.
+ */
+export const reconciliationIdentityAttemptStates: readonly IdentityAttemptState[] =
+  [...activeIdentityAttemptStates, 'succeeded'];
+
 export const terminalIdentityAttemptStates: readonly IdentityAttemptState[] = [
   'succeeded',
   'refused',
@@ -131,3 +139,7 @@ export const maximumIdentityProviderEventBodyBytes = 65_536;
 /** A malformed adapter cannot make one callback allocate unbounded work. */
 export const maximumIdentityProviderEvidenceFacts = 16;
 export const maximumIdentityProviderEventAttempts = 5;
+/** Bounded technical work; it is neither a legal deadline nor an SLO. */
+export const identityReconciliationBatchSize = 50;
+/** Provider reads are deliberately less frequent than callback receipt. */
+export const identityReconciliationIntervalMilliseconds = 60_000;

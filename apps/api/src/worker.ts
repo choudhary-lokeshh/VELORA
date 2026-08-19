@@ -38,6 +38,7 @@ import {
   createIdentityRuntime,
   type IdentityRuntime,
 } from './identity/composition.js';
+import { identityReconciliationIntervalMilliseconds } from './identity/policy.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import {
   mediaInspectionIntervalMilliseconds,
@@ -142,6 +143,8 @@ export interface WorkerComposition {
   readonly identity: IdentityRuntime;
   /** Applies verified identity-provider events outside request threads. */
   readonly identityProviderEventDrain: Poller;
+  /** Recovers missing identity callbacks from configured provider truth. */
+  readonly identityReconciliation: Poller;
   /** MEDIA, composed here because this process owns its durable byte work. */
   readonly media: MediaRuntime;
   /** Derives what uploaded bytes actually are. Quarantines what fails. */
@@ -331,6 +334,41 @@ export function createWorkerComposition(input: {
     intervalMilliseconds: outboxRelayIntervalMilliseconds,
     logger: input.logger,
     name: 'identity-provider-events',
+  });
+  // IDENTITY follows the same external-effect rule as financial recovery: a
+  // durable attempt is selected and marked first, provider truth is read with
+  // no transaction held, and any correction goes through append-only evidence.
+  const identityReconciliation = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const report = await identity.reconciliation.reconcileOnce();
+        if (
+          report.failed === 0 &&
+          report.found === 0 &&
+          report.outstanding === 0
+        ) {
+          return;
+        }
+        const details = {
+          examined: report.examined,
+          failed: report.failed,
+          found: report.found,
+          outstanding: report.outstanding,
+          provider: identity.provider.provider,
+          repaired: report.repaired,
+        };
+        if (report.failed === 0 && report.outstanding === 0) {
+          input.logger.info(details, 'identity reconciliation cycle');
+        } else {
+          input.logger.warn(
+            details,
+            'identity reconciliation requires attention',
+          );
+        }
+      }),
+    intervalMilliseconds: identityReconciliationIntervalMilliseconds,
+    logger: input.logger,
+    name: 'identity-reconciliation',
   });
   // Reconciliation is what makes an ambiguous outcome a temporary state rather
   // than a permanent one. It asks providers what they hold under keys Velora
@@ -591,6 +629,7 @@ export function createWorkerComposition(input: {
     financialReconciliation,
     identity,
     identityProviderEventDrain,
+    identityReconciliation,
     media,
     mediaInspection,
     mediaProcessing,
@@ -604,6 +643,7 @@ export function createWorkerComposition(input: {
         relayPoller.stop(),
         providerEventDrain.stop(),
         identityProviderEventDrain.stop(),
+        identityReconciliation.stop(),
         financialReconciliation.stop(),
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
@@ -622,6 +662,7 @@ export function createWorkerComposition(input: {
       // and its entitlement in a single pass.
       await providerEventDrain.runOnce();
       await identityProviderEventDrain.runOnce();
+      await identityReconciliation.runOnce();
       await relayPoller.runOnce();
       await financialReconciliation.runOnce();
       await safetyDeadlineSweep.runOnce();

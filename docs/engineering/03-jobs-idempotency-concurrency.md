@@ -18,7 +18,7 @@ Public mutation accepts stable client idempotency key scoped to actor/action; sa
 
 Identity start commits the attempt and platform provider key before external I/O. Fifty equivalent concurrent starts converge on one attempt and at most one external instruction; a changed canonical input under the same caller key is a conflict. Provider timeout is ambiguous and is resolved by lookup under the same provider key, never by issuing a fresh key.
 
-Identity callback processing is at-least-once and unordered. Fifty identical verified callbacks converge on one inbox row and one evidence transition. Workers claim verified receipts and reconciliation findings under PostgreSQL leases, count attempts on claim, settle only as lease owner, and dead-letter under a bounded budget. BullMQ or pollers only wake the work; losing queue state loses no receipt, attempt, evidence, or finding.
+Identity callback processing is at-least-once and unordered. Fifty identical verified callbacks converge on one inbox row and one evidence transition. Workers claim verified receipts under PostgreSQL leases, count attempts on claim, settle only as lease owner, and dead-letter under a bounded budget. Identity reconciliation is not a callback inbox: it selects a bounded due attempt page with `for update skip locked`, advances only `reconciliation_checked_at`, commits, then reads provider state outside a transaction. A unique normalized-finding fingerprint deduplicates repeated drift observation; any compatible repair calls the same append-only evidence/outbox transaction as callback processing. BullMQ or pollers only wake the work; losing queue state loses no receipt, attempt, evidence, or finding.
 
 ## Concurrency rules
 

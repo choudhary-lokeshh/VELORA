@@ -29,6 +29,7 @@ import {
   identityOwnerDomains,
   identityProviderEventStates,
   identityPurposes,
+  reconciliationIdentityAttemptStates,
   identityReconciliationKinds,
   identityReconciliationStates,
   jurisdictionCodePattern,
@@ -103,6 +104,8 @@ export const identityAttempts = pgTable(
     providerIdempotencyKey: text('provider_idempotency_key').notNull(),
     providerReference: text('provider_reference'),
     purpose: text('purpose').notNull().$type<IdentityPurpose>(),
+    /** Scheduling marker only; it never changes lifecycle or evidence truth. */
+    reconciliationCheckedAt: timestamptz('reconciliation_checked_at'),
     requiredEvidenceClass: text('required_evidence_class')
       .notNull()
       .$type<IdentityEvidenceClass>(),
@@ -153,6 +156,11 @@ export const identityAttempts = pgTable(
       .on(table.updatedAt, table.id)
       .where(
         sql`${table.state} in (${sql.raw(literals(activeIdentityAttemptStates))})`,
+      ),
+    index('identity_attempts_reconciliation_idx')
+      .on(table.reconciliationCheckedAt.nullsFirst(), table.id)
+      .where(
+        sql`${table.state} in (${sql.raw(literals(reconciliationIdentityAttemptStates))})`,
       ),
     check(
       'identity_attempts_purpose_check',
