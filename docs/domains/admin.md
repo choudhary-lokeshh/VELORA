@@ -26,7 +26,7 @@ The operational read itself lives in MEDIA rather than here, unlike the financia
 
 ADMIN owns privileged operation requests, role grants, scoped operational workflows, approvals, audit records, controlled support views, system configuration/feature/country controls, and health dashboards. It does not own user, payment, creator, moderation, or enforcement truth; it invokes their contracts.
 
-For IDENTITY ASSURANCE, V1 Admin capability is read-only: privacy-minimized aggregate health and one exact opaque-subject read when the operator already has the reference, holds the scoped permission, and satisfies current Admin assurance. There is no subject list, search, export, document view, provider-payload view, manual verification, override, revocation, deletion, or force-retry. Adding any mutation requires a separate product/legal/security decision defining evidence standard, actor, ADR-0017 exact-action authorization/approval, expiry, appeal, and audit.
+For IDENTITY ASSURANCE, V1 Admin capability is read-only: privacy-minimized aggregate health and one exact opaque-subject read when the operator already has the reference, satisfies current Admin assurance, and consumes a one-time ADR-0017 authorization bound to that subject and their executing session. No public route issues that authorization, and it does not resolve the `DECISION REQUIRED` granular permission matrix. There is no subject list, search, export, document view, provider-payload view, manual verification, override, revocation, deletion, or force-retry. Adding any mutation requires a separate product/legal/security decision defining evidence standard, actor, ADR-0017 exact-action authorization/approval, expiry, appeal, and audit.
 
 ## Main flow
 

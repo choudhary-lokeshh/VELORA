@@ -11,6 +11,7 @@ import {
   type AdminRuntime,
 } from '../../src/admin/composition.js';
 import type { CallerResolver } from '../../src/auth/caller.js';
+import type { PrivilegedAccessService } from '../../src/auth/privileged.js';
 import {
   createBillingRuntime,
   type BillingRuntime,
@@ -330,11 +331,18 @@ export function testAdminRuntime(input: {
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
+  readonly identity?: IdentityRuntime;
   readonly media: MediaRuntime;
   readonly now?: () => Date;
+  readonly privilegedAccess?: PrivilegedAccessService;
   readonly safety: SafetyRuntime;
 }): AdminRuntime {
   const database = input.database ?? drizzle.mock();
+  // ADMIN receives the public IDENTITY operations projection, never a
+  // repository or database handle. A direct Admin test may omit it when no
+  // Identity route is exercised, so the harness composes the local test seam.
+  const identity =
+    input.identity ?? testIdentityRuntime({ config: input.config, database });
   return createAdminRuntime({
     caller: input.caller,
     capabilities: {
@@ -349,11 +357,15 @@ export function testAdminRuntime(input: {
     content: input.clubs.repository,
     creators: input.creators.repository,
     database,
+    identity: identity.operations,
     media: {
       operations: input.media.operations,
       purge: input.media.service,
     },
     ...(input.now === undefined ? {} : { now: input.now }),
+    ...(input.privilegedAccess === undefined
+      ? {}
+      : { privilegedAccess: input.privilegedAccess }),
     profiles: input.creators.profileRepository,
     refunds: input.billing.refunds,
     appeals: input.safety.appeals,
@@ -464,6 +476,7 @@ export function testProductRuntimes(input: {
   readonly database?: UsersDatabase;
   readonly logger?: SafeLogger;
   readonly now?: () => Date;
+  readonly privilegedAccess?: PrivilegedAccessService;
   readonly users: UsersRuntime;
 }): {
   readonly admin: AdminRuntime;
@@ -502,6 +515,10 @@ export function testProductRuntimes(input: {
       clubs,
       creators,
       media,
+      identity,
+      ...(input.privilegedAccess === undefined
+        ? {}
+        : { privilegedAccess: input.privilegedAccess }),
       safety,
     }),
     billing,

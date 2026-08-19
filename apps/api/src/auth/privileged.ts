@@ -399,6 +399,8 @@ export class PrivilegedAccessService {
     readonly authorizationId: string;
     readonly binding: HighImpactBinding;
     readonly correlationId: string;
+    /** The live Admin session consuming its own exact-action authorization. */
+    readonly context: AuthContext;
     readonly currentStateDigest: string;
   }): Promise<HighImpactExecutionResult> {
     const { repository } = this.dependencies;
@@ -434,13 +436,30 @@ export class PrivilegedAccessService {
         if (authorization.beforeStateDigest !== input.currentStateDigest) {
           return { kind: 'rejected', reason: 'state_changed' };
         }
+        // An opaque authorization ID may traverse a browser request header, so
+        // possession cannot be its authority. It belongs to the Admin session
+        // that produced it as well as the exact action binding. Requiring the
+        // caller's resolved context here prevents a second privileged operator
+        // from consuming another operator's approval for the same target.
+        if (
+          input.context.audience !== 'platform_admin' ||
+          input.context.sessionId === undefined ||
+          authorization.actorAccountId !== input.context.accountId ||
+          authorization.actorSessionId !== input.context.sessionId
+        ) {
+          return { kind: 'rejected', reason: 'session_ended' };
+        }
 
         const session = await repository.findSessionById(
           executor,
           authorization.actorSessionId,
         );
+        if (session?.revokedAt !== null) {
+          return { kind: 'rejected', reason: 'session_ended' };
+        }
         if (
-          session?.revokedAt !== null ||
+          session.accountId !== input.context.accountId ||
+          session.audience !== 'platform_admin' ||
           session.absoluteExpiresAt.getTime() <= now.getTime() ||
           session.idleExpiresAt.getTime() <= now.getTime()
         ) {

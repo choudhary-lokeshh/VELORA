@@ -26,7 +26,11 @@ interface OpenApiResponse {
   readonly headers: Record<string, unknown>;
 }
 interface OpenApiOperation {
-  readonly parameters: { readonly in: string; readonly name: string }[];
+  readonly parameters: {
+    readonly in: string;
+    readonly name: string;
+    readonly required: boolean;
+  }[];
   readonly requestBody?: {
     readonly content: Record<string, { readonly schema: { $ref: string } }>;
     readonly required: boolean;
@@ -194,12 +198,23 @@ describe('AUTH contract publication', () => {
       const published = document.paths[operation.path]?.[operation.method];
       const declared =
         'requestHeaders' in operation ? [...operation.requestHeaders] : [];
+      const names = declared.map((header) =>
+        typeof header === 'string' ? header : header.name,
+      );
+      const headers = published?.parameters.filter(
+        (parameter) => parameter.in === 'header',
+      );
       expect(
-        published?.parameters
-          .filter((parameter) => parameter.in === 'header')
-          .map((parameter) => parameter.name),
+        headers?.map((parameter) => parameter.name),
         operation.operationId,
-      ).toEqual([correlationResponseHeader, ...declared]);
+      ).toEqual([correlationResponseHeader, ...names]);
+      for (const header of declared) {
+        const name = typeof header === 'string' ? header : header.name;
+        expect(
+          headers?.find((parameter) => parameter.name === name)?.required,
+          operation.operationId,
+        ).toBe(typeof header === 'string' ? false : header.required === true);
+      }
     }
   });
 
@@ -242,15 +257,22 @@ describe('AUTH contract publication', () => {
     for (const operation of apiOperations) {
       const published = document.paths[operation.path]?.[operation.method];
       const declared =
-        'requestQuery' in operation
-          ? operation.requestQuery.map((parameter) => parameter.name)
-          : [];
+        'requestQuery' in operation ? operation.requestQuery : [];
+      const query = published?.parameters.filter(
+        (parameter) => parameter.in === 'query',
+      );
       expect(
-        published?.parameters
-          .filter((parameter) => parameter.in === 'query')
-          .map((parameter) => parameter.name),
+        query?.map((parameter) => parameter.name),
         operation.operationId,
-      ).toEqual(declared);
+      ).toEqual(declared.map((parameter) => parameter.name));
+      for (const parameter of declared) {
+        expect(
+          query?.find(
+            (publishedParameter) => publishedParameter.name === parameter.name,
+          )?.required,
+          operation.operationId,
+        ).toBe('required' in parameter && parameter.required === true);
+      }
     }
   });
 

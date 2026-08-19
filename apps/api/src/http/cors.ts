@@ -1,4 +1,5 @@
 import {
+  adminExactActionAuthorizationHeader,
   correlationResponseHeader,
   csrfHeader,
   deviceHeader,
@@ -18,6 +19,7 @@ import {
 const allowedRequestHeaders = [
   'content-type',
   'authorization',
+  adminExactActionAuthorizationHeader,
   correlationResponseHeader,
   csrfHeader,
   deviceHeader,

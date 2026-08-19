@@ -171,6 +171,158 @@ export const adminFinancialTotalSchema = z
   .strict();
 
 /**
+ * The one-time exact-action record AUTH issues for a sensitive Admin read.
+ * It belongs in a header, never a URL that can reach browser history or proxy
+ * logs. The value is opaque and single use; it conveys no role by itself.
+ */
+export const adminExactActionAuthorizationHeader =
+  'x-velora-action-authorization';
+export const adminExactActionAuthorizationIdSchema = z.uuid();
+
+/** The only owner shapes IDENTITY ASSURANCE accepts internally. */
+export const adminIdentityOwnerDomainSchema = z.enum([
+  'auth',
+  'creators',
+  'safety',
+]);
+
+/** Exact-reference lookup only. There is intentionally no search schema. */
+export const adminIdentitySubjectQuerySchema = z
+  .object({
+    ownerDomain: adminIdentityOwnerDomainSchema,
+    ownerReference: z.uuid(),
+  })
+  .strict();
+export type AdminIdentitySubjectQuery = z.infer<
+  typeof adminIdentitySubjectQuerySchema
+>;
+
+export const adminIdentityCountSchema = z
+  .object({
+    count: z.number().int().min(0),
+    state: z.string().min(1).max(128),
+  })
+  .strict();
+
+export const adminIdentityAttemptCountSchema = adminIdentityCountSchema.extend({
+  purpose: z.enum([
+    'adult_assurance',
+    'creator_identity',
+    'depicted_person_identity',
+    'depicted_person_adult_assurance',
+    'commercial_kyc',
+  ]),
+});
+
+export const adminIdentityBacklogSchema = adminIdentityCountSchema.extend({
+  oldestAgeSeconds: z.number().int().min(0).optional(),
+});
+
+export const adminIdentityReconciliationCountSchema =
+  adminIdentityCountSchema.extend({
+    kind: z.enum([
+      'missing_provider_reference',
+      'provider_state_drift',
+      'stuck_attempt',
+      'evidence_expiry',
+      'callback_gap',
+      'deletion_obligation',
+      'retention_obligation',
+    ]),
+    oldestAgeSeconds: z.number().int().min(0).optional(),
+  });
+
+/**
+ * Platform health for IDENTITY ASSURANCE. Every value is an adapter name,
+ * count, lifecycle label, or age — never a subject, document, provider fact,
+ * hosted URL, jurisdiction, or callback payload.
+ */
+export const adminIdentityStateResponseSchema = z
+  .object({
+    attempts: z.array(adminIdentityAttemptCountSchema),
+    expiredEvidence: z.array(adminIdentityCountSchema),
+    outbox: z.array(adminIdentityCountSchema),
+    provider: z.string().min(1).max(128),
+    providerEventBacklog: z.array(adminIdentityBacklogSchema),
+    providerEvents: z.array(adminIdentityCountSchema),
+    reconciliation: z.array(adminIdentityReconciliationCountSchema),
+  })
+  .strict();
+export type AdminIdentityStateResponse = z.infer<
+  typeof adminIdentityStateResponseSchema
+>;
+
+const adminIdentityAttemptStateSchema = z.enum([
+  'created',
+  'provider_starting',
+  'provider_pending',
+  'processing',
+  'succeeded',
+  'refused',
+  'failed',
+  'expired',
+  'cancelled',
+  'unavailable',
+]);
+
+export const adminIdentitySubjectAttemptSchema = z
+  .object({
+    createdAt: z.iso.datetime(),
+    purpose: adminIdentityAttemptCountSchema.shape.purpose,
+    state: adminIdentityAttemptStateSchema,
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const adminIdentitySubjectEvidenceSchema = z
+  .object({
+    evidenceClass: z.enum([
+      'adult_threshold',
+      'identity',
+      'creator_identity',
+      'commercial_kyc',
+      'depicted_person_identity',
+      'depicted_person_adult_threshold',
+    ]),
+    expiresAt: z.iso.datetime().optional(),
+    recordedAt: z.iso.datetime(),
+    result: z.enum(['granted', 'refused', 'revoked', 'expired']),
+  })
+  .strict();
+
+export const adminIdentitySubjectFindingSchema = z
+  .object({
+    detectedAt: z.iso.datetime(),
+    kind: adminIdentityReconciliationCountSchema.shape.kind,
+    state: z.enum(['open', 'resolved', 'dead_letter']),
+  })
+  .strict();
+
+/**
+ * One subject whose opaque owner reference the operator already has. It does
+ * not echo that reference and carries only current evidence tips plus bounded
+ * technical history; provider facts, reason strings, and any identity attribute
+ * are deliberately absent.
+ */
+export const adminIdentitySubjectResponseSchema = z
+  .object({
+    subject: z
+      .object({
+        attempts: z.array(adminIdentitySubjectAttemptSchema).max(50),
+        attemptsTruncated: z.boolean(),
+        currentEvidence: z.array(adminIdentitySubjectEvidenceSchema),
+        findings: z.array(adminIdentitySubjectFindingSchema).max(50),
+        findingsTruncated: z.boolean(),
+        ownerDomain: adminIdentityOwnerDomainSchema,
+      })
+      .strict(),
+  })
+  .strict();
+export type AdminIdentitySubjectResponse = z.infer<
+  typeof adminIdentitySubjectResponseSchema
+>;
+
+/**
  * Which capability seams are open, reported as the names of the configured
  * adapters.
  *

@@ -73,6 +73,35 @@ interface ResponseDefinition {
   readonly schemaName: keyof typeof apiSchemas;
 }
 
+function requestHeaderParameter(
+  header: string | { readonly name: string; readonly required?: boolean },
+) {
+  const name = typeof header === 'string' ? header : header.name;
+  const required =
+    typeof header === 'string' ? false : header.required === true;
+  return {
+    description: `Contract header ${name}`,
+    in: 'header',
+    name,
+    required,
+    schema: { maxLength: 200, type: 'string' },
+  };
+}
+
+function requestQueryParameter(parameter: {
+  readonly description: string;
+  readonly name: keyof typeof apiQueryParameters;
+  readonly required?: boolean;
+}) {
+  return {
+    description: parameter.description,
+    in: 'query',
+    name: parameter.name,
+    required: parameter.required === true,
+    schema: schema(apiQueryParameters[parameter.name]),
+  };
+}
+
 function operation(operationDefinition: (typeof apiOperations)[number]) {
   const responses = Object.fromEntries(
     (
@@ -118,20 +147,8 @@ function operation(operationDefinition: (typeof apiOperations)[number]) {
       required: false,
       schema: { maxLength: 128, type: 'string' },
     },
-    ...declaredHeaders.map((name) => ({
-      description: `Contract header ${name}`,
-      in: 'header',
-      name,
-      required: false,
-      schema: { maxLength: 200, type: 'string' },
-    })),
-    ...declaredQuery.map((parameter) => ({
-      description: parameter.description,
-      in: 'query',
-      name: parameter.name,
-      required: false,
-      schema: schema(apiQueryParameters[parameter.name]),
-    })),
+    ...declaredHeaders.map(requestHeaderParameter),
+    ...declaredQuery.map(requestQueryParameter),
   ];
 
   const requestSchemaName =

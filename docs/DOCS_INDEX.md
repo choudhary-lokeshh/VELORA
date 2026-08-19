@@ -54,7 +54,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | Domain | Primary authority | Required companion reading |
 |---|---|---|
 | AUTH | [AUTH](domains/auth.md) | onboarding, RBAC, adult verification |
-| IDENTITY ASSURANCE | [Identity Assurance](domains/identity-assurance.md) | identity verification flow/threat model/provider eligibility/operations, ADR-0024, each evidence-consuming owner |
+| IDENTITY ASSURANCE | [Identity Assurance](domains/identity-assurance.md) | provider-neutral verification, callback/reconciliation, read-only Admin projections, flow/threat model/provider eligibility/operations, ADR-0024, each evidence-consuming owner |
 | USERS | [USERS](domains/users.md) | account/profile flow, privacy, deletion |
 | DISCOVERY | [DISCOVERY](domains/discovery.md) | discovery/introduction flow, Trust & Safety, consumer product |
 | MESSAGING | [MESSAGING](domains/messaging.md) | messaging/blocks flow, media security, notifications |

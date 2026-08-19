@@ -24,6 +24,7 @@ import {
 } from './jurisdiction.js';
 import { LocalTestIdentityVerificationProvider } from './local-test-provider.js';
 import { IdentityOrchestrator } from './orchestrator.js';
+import { IdentityOperations } from './operations.js';
 import { IdentityProviderEventRoutes } from './provider-event-routes.js';
 import { IdentityProviderEventService } from './provider-events.js';
 import { IdentityReconciliationService } from './reconciliation.js';
@@ -42,6 +43,8 @@ export interface IdentityRuntime {
   readonly events: IdentityProviderEventRepository;
   readonly jurisdictionPolicy: IdentityJurisdictionPolicyPort;
   readonly orchestrator: IdentityOrchestrator;
+  /** Read-only, privacy-minimized projection for privileged operations. */
+  readonly operations: IdentityOperations;
   readonly outbox: OutboxRepository;
   readonly provider: IdentityVerificationProviderPort;
   readonly providerEventRoutes: IdentityProviderEventRoutes;
@@ -124,6 +127,11 @@ export function createIdentityRuntime(input: {
       now,
       provider,
       repository,
+    }),
+    operations: new IdentityOperations({
+      database: input.database,
+      now,
+      provider,
     }),
     outbox,
     provider,

@@ -385,12 +385,16 @@ export function createApplication(
         content: clubs.repository,
         creators: creators.repository,
         database: ownedDatabase.database,
+        identity: identity.operations,
         // The operational read is MEDIA's own, because nothing outside that
         // domain queries a `media_` table. What ADMIN is handed beside it is a
         // single purge method: taking an object out of public view owes the
         // cache the news, and that is the whole of what a takedown may ask of
         // the bytes.
         media: { operations: media.operations, purge: media.service },
+        // A sensitive exact-subject read consumes AUTH's existing one-time
+        // binding. It is not a substitute for ADMIN role/scope policy.
+        privilegedAccess: auth.privilegedAccess,
         profiles: creators.profileRepository,
         // ADMIN authorizes a reversal and BILLING decides whether it is one it
         // can make. There is no path from an operator to a financial row that
@@ -1048,6 +1052,14 @@ export function createApplication(
     .get(
       apiRoutePaths.adminBillingState,
       admitted(async (input) => admin.billingRoutes.getFinancialState(input)),
+    )
+    .get(
+      apiRoutePaths.adminIdentityState,
+      admitted(async (input) => admin.identityRoutes.getIdentityState(input)),
+    )
+    .get(
+      apiRoutePaths.adminIdentitySubject,
+      admitted(async (input) => admin.identityRoutes.getIdentitySubject(input)),
     )
     .get(
       apiRoutePaths.adminMediaState,

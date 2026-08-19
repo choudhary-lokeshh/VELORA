@@ -722,6 +722,7 @@ describe('exact-action authorization for high-impact operations', () => {
         authorizationId: authorized.authorizationId,
         binding,
         correlationId: 'bind',
+        context: adminContext(account.context.accountId, sessionId),
         currentStateDigest: binding.beforeStateDigest,
       }),
     ).toEqual({ kind: 'executed' });
@@ -732,6 +733,7 @@ describe('exact-action authorization for high-impact operations', () => {
         authorizationId: authorized.authorizationId,
         binding,
         correlationId: 'bind',
+        context: adminContext(account.context.accountId, sessionId),
         currentStateDigest: binding.beforeStateDigest,
       }),
     ).toEqual({ kind: 'rejected', reason: 'already_consumed' });
@@ -760,6 +762,7 @@ describe('exact-action authorization for high-impact operations', () => {
           authorizationId: authorized.authorizationId,
           binding: altered,
           correlationId: 'mismatch',
+          context: adminContext(account.context.accountId, sessionId),
           currentStateDigest: binding.beforeStateDigest,
         }),
       ).toEqual({ kind: 'rejected', reason: 'state_changed' });
@@ -782,6 +785,7 @@ describe('exact-action authorization for high-impact operations', () => {
         authorizationId: authorized.authorizationId,
         binding,
         correlationId: 'drift',
+        context: adminContext(account.context.accountId, sessionId),
         currentStateDigest: bindHighImpactAction({
           argumentsValue: {},
           beforeState: { status: 'restricted' },
@@ -813,6 +817,7 @@ describe('exact-action authorization for high-impact operations', () => {
         authorizationId: authorized.authorizationId,
         binding,
         correlationId: 'stale',
+        context: adminContext(account.context.accountId, sessionId),
         currentStateDigest: binding.beforeStateDigest,
       }),
     ).toEqual({ kind: 'rejected', reason: 'assurance_stale' });
@@ -840,6 +845,7 @@ describe('exact-action authorization for high-impact operations', () => {
         authorizationId: authorized.authorizationId,
         binding,
         correlationId: 'revoked-session',
+        context: adminContext(account.context.accountId, sessionId),
         currentStateDigest: binding.beforeStateDigest,
       }),
     ).toEqual({ kind: 'rejected', reason: 'session_ended' });
@@ -865,6 +871,7 @@ describe('exact-action authorization for high-impact operations', () => {
         authorizationId: authorized.authorizationId,
         binding,
         correlationId: 'expiry',
+        context,
         currentStateDigest: binding.beforeStateDigest,
       }),
     ).toEqual({ kind: 'rejected', reason: 'expired' });

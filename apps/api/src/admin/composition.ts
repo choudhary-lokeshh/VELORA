@@ -1,4 +1,5 @@
 import type { CallerResolver } from '../auth/caller.js';
+import type { PrivilegedAccessService } from '../auth/privileged.js';
 import type { RefundService } from '../billing/refund-service.js';
 import type { ClubRepository } from '../clubs/club-repository.js';
 import type { ClubsRepository } from '../clubs/repository.js';
@@ -8,6 +9,7 @@ import type {
   CreatorsRepository,
 } from '../creators/repository.js';
 import type { MediaOperations } from '../media/operations.js';
+import type { IdentityOperations } from '../identity/operations.js';
 import type { AppealService } from '../safety/appeals.js';
 import type { EnforcementAuthority } from '../safety/enforcement.js';
 import type { ModerationService } from '../safety/moderation.js';
@@ -16,6 +18,7 @@ import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
 import { AdminMediaRoutes } from './media-routes.js';
+import { AdminIdentityRoutes } from './identity-routes.js';
 import { AdminModerationRoutes } from './moderation-routes.js';
 import { AdminRoutes } from './routes.js';
 import { AdminCreatorService, type AdminMediaPurgePort } from './service.js';
@@ -25,6 +28,8 @@ export interface AdminRuntime {
   /** Operator financial surface. Nothing here owns a financial row. */
   readonly billingRoutes: AdminBillingRoutes;
   readonly directory: AdminCreatorDirectory;
+  /** Privacy-minimized health and exact-action subject inspection only. */
+  readonly identityRoutes: AdminIdentityRoutes;
   /** Operator media surface. A read, a read, and one idempotent repair. */
   readonly mediaRoutes: AdminMediaRoutes;
   /** Operator moderation surface. Every route is an explicit command. */
@@ -43,6 +48,8 @@ export interface AdminRuntime {
  */
 export function createAdminRuntime(input: {
   readonly caller: CallerResolver;
+  /** AUTH exact-action execution, not an ADMIN role or permission store. */
+  readonly privilegedAccess?: PrivilegedAccessService;
   readonly clubs: ClubRepository;
   readonly content: ClubsRepository;
   readonly creators: CreatorsRepository;
@@ -73,6 +80,8 @@ export function createAdminRuntime(input: {
     readonly operations: MediaOperations;
     readonly purge: AdminMediaPurgePort;
   };
+  /** IDENTITY's published operations seam; ADMIN never sees `identity_` SQL. */
+  readonly identity: IdentityOperations;
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
   /** TRUST & SAFETY's complaint seam. */
@@ -104,6 +113,13 @@ export function createAdminRuntime(input: {
       refunds: input.refunds,
     }),
     directory,
+    identityRoutes: new AdminIdentityRoutes({
+      adminContext,
+      ...(input.privilegedAccess === undefined
+        ? {}
+        : { exactActions: input.privilegedAccess }),
+      identity: input.identity,
+    }),
     mediaRoutes: new AdminMediaRoutes({
       adminContext,
       media: input.media.purge,

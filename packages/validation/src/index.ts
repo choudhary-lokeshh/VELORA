@@ -35,7 +35,11 @@ import {
 } from './billing.js';
 import {
   adminCreatorListResponseSchema,
+  adminExactActionAuthorizationHeader,
   adminFinancialStateResponseSchema,
+  adminIdentityStateResponseSchema,
+  adminIdentityOwnerDomainSchema,
+  adminIdentitySubjectResponseSchema,
   adminCreatorSearchSchema,
   adminMediaAssetResponseSchema,
   adminMediaPurgeRequestSchema,
@@ -227,6 +231,8 @@ export const apiRoutePaths = {
   adminCreatorReinstatement: '/v1/admin/creators/reinstatement',
   adminCreatorSuspension: '/v1/admin/creators/suspension',
   adminCreators: '/v1/admin/creators',
+  adminIdentityState: '/v1/admin/identity/state',
+  adminIdentitySubject: '/v1/admin/identity/subject',
   adminMediaAsset: '/v1/admin/media/asset',
   adminMediaPurge: '/v1/admin/media/purge',
   adminMediaState: '/v1/admin/media/state',
@@ -455,6 +461,8 @@ export const apiSchemas = {
   ReadinessResponse: readinessResponseSchema,
   RecoveryCompletionRequest: recoveryCompletionRequestSchema,
   RecoveryStartRequest: recoveryStartRequestSchema,
+  AdminIdentityStateResponse: adminIdentityStateResponseSchema,
+  AdminIdentitySubjectResponse: adminIdentitySubjectResponseSchema,
 } as const;
 
 /**
@@ -469,6 +477,8 @@ export const apiQueryParameters = {
   assetId: z.uuid(),
   caseId: z.uuid(),
   moderationQueue: moderationQueueSchema,
+  ownerDomain: adminIdentityOwnerDomainSchema,
+  ownerReference: z.uuid(),
   clubId: clubIdSchema,
   contentId: contentIdSchema,
   currency: currencyCodeSchema,
@@ -2831,5 +2841,57 @@ export const apiOperations = [
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminIdentityState',
+    path: apiRoutePaths.adminIdentityState,
+    responses: {
+      '200': {
+        description:
+          'Identity Assurance platform health: configured adapter name and aggregate attempt, verified-inbox, current-expiry, reconciliation, and outbox state only. No subject identifier, owner reference, provider reference, provider payload, jurisdiction, document, biometric, or hosted URL appears here.',
+        schemaName: 'AdminIdentityStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A privacy-minimized read for operational health. It is not a provider dashboard, does not begin or repair a verification, and does not make a verification, authorization, privacy, or retention decision.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminIdentitySubject',
+    path: apiRoutePaths.adminIdentitySubject,
+    requestHeaders: [
+      { name: adminExactActionAuthorizationHeader, required: true },
+    ],
+    requestQuery: [
+      {
+        description:
+          'Identity subject owner domain; an exact opaque owner reference is required beside it.',
+        name: 'ownerDomain',
+        required: true,
+      },
+      {
+        description:
+          'Already-known opaque owner reference. This endpoint has no list, cursor, filter, or search parameter.',
+        name: 'ownerReference',
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One exact subject: owner domain, bounded attempt/finding lifecycle, and current normalized evidence tips. The request reference is not echoed; the response excludes subject IDs, provider facts/references, callback bodies, reasons, jurisdiction, policy/threshold detail, documents, biometrics, and hosted URLs.',
+        schemaName: 'AdminIdentitySubjectResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A one-time, ADR-0017 exact-action-authorized read. The header binds only this owner domain/reference and the read is consumed once. There is no counterpart for identity search, list, export, raw evidence/provider payload, grant, refusal, override, revocation, deletion, or retry.',
   },
 ] as const;
