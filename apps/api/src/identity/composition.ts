@@ -11,6 +11,7 @@ import { OutboxRepository } from '../events/outbox.js';
 import type { SafeLogger } from '@velora/observability/server';
 import {
   IdentityAdultAssuranceReader,
+  IdentityCommercialKycEvidenceReader,
   IdentityCreatorEvidenceReader,
   IdentityDepictedPersonEvidenceReader,
 } from './assurance-reader.js';
@@ -33,6 +34,7 @@ import { identityOutbox } from './schema.js';
 
 export interface IdentityRuntime {
   readonly adultAssurance: IdentityAdultAssuranceReader;
+  readonly commercialKyc: IdentityCommercialKycEvidenceReader;
   readonly creatorEvidence: IdentityCreatorEvidenceReader;
   readonly depictedPersonEvidence: IdentityDepictedPersonEvidenceReader;
   readonly events: IdentityProviderEventRepository;
@@ -106,6 +108,7 @@ export function createIdentityRuntime(input: {
   });
   return {
     adultAssurance: new IdentityAdultAssuranceReader(repository),
+    commercialKyc: new IdentityCommercialKycEvidenceReader(repository),
     creatorEvidence: new IdentityCreatorEvidenceReader(repository),
     depictedPersonEvidence: new IdentityDepictedPersonEvidenceReader(
       repository,

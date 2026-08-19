@@ -19,6 +19,11 @@ export interface IdentityCreatorEvidenceDecision {
   readonly standing: IdentityEvidenceStanding;
 }
 
+export interface IdentityCommercialKycEvidenceDecision {
+  readonly recordedAt: Date | undefined;
+  readonly standing: IdentityEvidenceStanding;
+}
+
 /** Published CREATORS contract. It exposes no provider or evidence handle. */
 export interface IdentityCreatorEvidenceReaderPort {
   currentForCreator(input: {
@@ -26,6 +31,15 @@ export interface IdentityCreatorEvidenceReaderPort {
     readonly executor: Executor;
     readonly now: Date;
   }): Promise<IdentityCreatorEvidenceDecision | undefined>;
+}
+
+/** Published PAYOUTS contract. Evidence is never payout authorization. */
+export interface IdentityCommercialKycEvidenceReaderPort {
+  currentForCreator(input: {
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<IdentityCommercialKycEvidenceDecision | undefined>;
 }
 
 export interface IdentityDepictedPersonEvidenceDecision {
@@ -129,6 +143,31 @@ export class IdentityCreatorEvidenceReader implements IdentityCreatorEvidenceRea
   }
 }
 
+export class IdentityCommercialKycEvidenceReader implements IdentityCommercialKycEvidenceReaderPort {
+  constructor(private readonly repository: IdentityRepository) {}
+
+  async currentForCreator(input: {
+    readonly creatorId: string;
+    readonly executor: Executor;
+    readonly now: Date;
+  }): Promise<IdentityCommercialKycEvidenceDecision | undefined> {
+    const subject = await this.repository.findSubjectByOwner(input.executor, {
+      ownerDomain: 'creators',
+      ownerReference: input.creatorId,
+    });
+    if (subject === undefined) return undefined;
+    const decision = await evidenceStandingFor({
+      evidenceClass: 'commercial_kyc',
+      executor: input.executor,
+      now: input.now,
+      purpose: 'commercial_kyc',
+      repository: this.repository,
+      subjectId: subject.id,
+    });
+    return { recordedAt: decision.recordedAt, standing: decision.standing };
+  }
+}
+
 export class IdentityDepictedPersonEvidenceReader implements IdentityDepictedPersonEvidenceReaderPort {
   constructor(private readonly repository: IdentityRepository) {}
 
@@ -214,12 +253,14 @@ function decisionFromEvidence(
 
 async function evidenceStandingFor(input: {
   readonly evidenceClass:
+    | 'commercial_kyc'
     | 'creator_identity'
     | 'depicted_person_adult_threshold'
     | 'depicted_person_identity';
   readonly executor: Executor;
   readonly now: Date;
   readonly purpose:
+    | 'commercial_kyc'
     | 'creator_identity'
     | 'depicted_person_adult_assurance'
     | 'depicted_person_identity';

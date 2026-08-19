@@ -1,6 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
-import { IdentityCreatorEvidenceReader } from '../../src/identity/assurance-reader.js';
+import {
+  IdentityCommercialKycEvidenceReader,
+  IdentityCreatorEvidenceReader,
+} from '../../src/identity/assurance-reader.js';
 import { IdentityRepository } from '../../src/identity/repository.js';
 
 import {
@@ -408,6 +411,39 @@ describe('published creator evidence contract', () => {
       threshold_context: 'creator-identity-match',
     });
     const reader = new IdentityCreatorEvidenceReader(
+      new IdentityRepository(database.drizzle),
+    );
+
+    expect(
+      await reader.currentForCreator({
+        creatorId: creator.ownerReference,
+        executor: database.drizzle,
+        now: new Date(grant.recordedAt.getTime() + 1),
+      }),
+    ).toEqual({ recordedAt: grant.recordedAt, standing: 'granted' });
+    expect(
+      await reader.currentForCreator({
+        creatorId: crypto.randomUUID(),
+        executor: database.drizzle,
+        now: new Date(),
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe('published commercial-KYC evidence contract', () => {
+  it('returns only the current coarse standing for the exact Creator subject', async () => {
+    const creator = await subject('creators');
+    const source = await attempt(creator.id, {
+      purpose: 'commercial_kyc',
+      required_evidence_class: 'commercial_kyc',
+      required_threshold: 'commercial-kyc',
+    });
+    const grant = await evidence(source, {
+      evidence_class: 'commercial_kyc',
+      threshold_context: 'commercial-kyc',
+    });
+    const reader = new IdentityCommercialKycEvidenceReader(
       new IdentityRepository(database.drizzle),
     );
 
