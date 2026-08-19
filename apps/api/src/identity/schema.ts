@@ -291,6 +291,14 @@ export const identityEvidence = pgTable(
     uniqueIndex('identity_evidence_supersedes_uk')
       .on(table.supersedesId)
       .where(sql`${table.supersedesId} is not null`),
+    // One chain per subject and class. The index above forbids a branch inside
+    // a chain but says nothing about a second root, and every root is a
+    // non-superseded tip. Two of them would make "the current answer" whichever
+    // row PostgreSQL happened to return first, so a revoked tip could be passed
+    // over for a granted one. A concurrent second first-fact loses here instead.
+    uniqueIndex('identity_evidence_root_uk')
+      .on(table.subjectId, table.evidenceClass)
+      .where(sql`${table.supersedesId} is null`),
     uniqueIndex('identity_evidence_provider_fact_uk').on(
       table.provider,
       table.providerFactReference,
