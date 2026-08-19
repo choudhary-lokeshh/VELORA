@@ -149,7 +149,6 @@ export const identityAttempts = pgTable(
     ),
     index('identity_attempts_subject_history_idx').on(
       table.subjectId,
-      table.purpose,
       table.sequence,
     ),
     index('identity_attempts_recovery_idx')
