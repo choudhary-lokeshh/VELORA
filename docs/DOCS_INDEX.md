@@ -32,6 +32,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [Monetization freeze report](architecture/11-monetization-freeze-report.md) | What the money architecture froze with, what still blocks live money movement, and what unfreezes it |
 | [Trust and safety freeze report](architecture/12-trust-safety-freeze-report.md) | What the safety and mature-content architecture froze with, what still blocks production enforcement and mature content, and what unfreezes it |
 | [Media freeze report](architecture/13-media-freeze-report.md) | What the media platform froze with, what still blocks live production media, and what unfreezes it |
+| [Identity assurance freeze report](architecture/14-identity-freeze-report.md) | What the Identity Assurance core froze with, what still blocks live identity, age, and KYC verification, and what unfreezes it |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
@@ -71,7 +72,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | ANALYTICS | [ANALYTICS](domains/analytics.md) | privacy, observability, metric governance |
 | AI PLATFORM | [AI platform architecture](ai/01-ai-platform-architecture.md) | all documents in AI authority path plus each affected domain |
 
-For any Identity Assurance or verification work, read the Identity Assurance domain, identity verification flow, identity threat model, identity provider eligibility, identity operations, ADR-0024, product phases, AUTH, and every domain whose predicate consumes the evidence. Provider integration additionally requires provider adapters, privacy/retention, outbound networking, jobs/idempotency, observability, and open decisions. No client or consuming domain owns verification evidence.
+For any Identity Assurance or verification work, read the Identity Assurance domain, identity verification flow, identity threat model, identity provider eligibility, identity operations, the identity assurance freeze report, ADR-0024, product phases, AUTH, and every domain whose predicate consumes the evidence. Provider integration additionally requires provider adapters, privacy/retention, outbound networking, jobs/idempotency, observability, and open decisions. No client or consuming domain owns verification evidence.
 
 ## AI authority
 
