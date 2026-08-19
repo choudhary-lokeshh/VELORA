@@ -599,7 +599,22 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
       // endpoint is resolved again rather than reusing the pre-restart URL.
       // In production the Redis address is stable; only this harness's port
       // mapping moves, and reusing the stale one tests nothing but Docker.
-      const restartedPort = await publishedPort(redisContainerId, 6379);
+      //
+      // The mapping is an eventual condition for the same reason the outage
+      // above is. `docker start` returning, and the server answering `PING`,
+      // prove only that Redis is up inside the container: `docker exec` never
+      // crosses the port binding. On a loaded machine Docker republishes that
+      // binding measurably later, and reading it too early fails with
+      // "publishes no host port" against a container that is already healthy.
+      let restartedPort = '';
+      await waitFor(
+        'restarted Redis to publish a host port again',
+        async () => {
+          restartedPort = await publishedPort(redisContainerId, 6379);
+          return restartedPort.length > 0;
+        },
+        containerLifecycleTimeoutMilliseconds,
+      );
       const restartedRedisUrl = `redis://${redisHost}:${restartedPort}`;
       const restartedHealth = new RedisHealthService(
         `${restartedRedisUrl}/0`,
