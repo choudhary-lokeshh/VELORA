@@ -17,6 +17,28 @@ export const identityPurposes = [
 ] as const;
 export type IdentityPurpose = (typeof identityPurposes)[number];
 
+/**
+ * A purpose is owned by exactly one domain. This constrains the internal
+ * start contract as well as policy fixtures; it is not client-selectable
+ * routing or authorization.
+ */
+const identityPurposeOwnerDomains: Readonly<
+  Record<IdentityPurpose, IdentityOwnerDomain>
+> = {
+  adult_assurance: 'auth',
+  commercial_kyc: 'creators',
+  creator_identity: 'creators',
+  depicted_person_adult_assurance: 'safety',
+  depicted_person_identity: 'safety',
+};
+
+export function identityPurposeBelongsToOwner(
+  ownerDomain: IdentityOwnerDomain,
+  purpose: IdentityPurpose,
+): boolean {
+  return identityPurposeOwnerDomains[purpose] === ownerDomain;
+}
+
 export const identityEvidenceClasses = [
   'adult_threshold',
   'identity',

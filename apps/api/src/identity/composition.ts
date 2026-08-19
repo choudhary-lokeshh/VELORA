@@ -18,6 +18,7 @@ import {
 import { IdentityProviderEventRepository } from './event-repository.js';
 import {
   LocalTestIdentityJurisdictionPolicy,
+  IdentityReverificationPolicy,
   UnpublishedIdentityJurisdictionPolicy,
   type IdentityJurisdictionPolicyPort,
 } from './jurisdiction.js';
@@ -44,6 +45,7 @@ export interface IdentityRuntime {
   readonly provider: IdentityVerificationProviderPort;
   readonly providerEventRoutes: IdentityProviderEventRoutes;
   readonly providerEvents: IdentityProviderEventService;
+  readonly reverificationPolicy: IdentityReverificationPolicy;
   readonly repository: IdentityRepository;
 }
 
@@ -125,6 +127,7 @@ export function createIdentityRuntime(input: {
     provider,
     providerEventRoutes: new IdentityProviderEventRoutes(providerEvents),
     providerEvents,
+    reverificationPolicy: new IdentityReverificationPolicy(jurisdictionPolicy),
     repository,
   };
 }

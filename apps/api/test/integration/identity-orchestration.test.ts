@@ -1,7 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
 import { createIdentityRuntime } from '../../src/identity/composition.js';
-import { LocalTestIdentityJurisdictionPolicy } from '../../src/identity/jurisdiction.js';
+import {
+  IdentityReverificationPolicy,
+  LocalTestIdentityJurisdictionPolicy,
+  type IdentityJurisdictionPolicyPort,
+} from '../../src/identity/jurisdiction.js';
 import { LocalTestIdentityVerificationProvider } from '../../src/identity/local-test-provider.js';
 import {
   IdentityOrchestrator,
@@ -180,6 +184,11 @@ describe('authorized verification start', () => {
         request('bad-correlation', { correlationId: 'bad\ncorrelation' }),
       ),
     ).toEqual({ kind: 'refused', reason: 'invalid_input' });
+    expect(
+      await runtime.orchestrator.start(
+        request('wrong-owner-purpose', { ownerDomain: 'creators' }),
+      ),
+    ).toEqual({ kind: 'refused', reason: 'invalid_input' });
 
     const unavailable = createIdentityRuntime({
       config: testServerConfig({
@@ -299,6 +308,102 @@ describe('authorized verification start', () => {
     if (outcome.kind !== 'started') throw new Error('setup failed');
     expect(outcome.attempt.state).toBe('provider_pending');
     expect(outcome.handoff).toBeUndefined();
+  });
+});
+
+describe('current-policy re-verification assessment', () => {
+  const now = new Date('2026-08-19T12:00:00.000Z');
+  const currentEvidence = {
+    evidenceClass: 'adult_threshold' as const,
+    expiresAt: new Date('2026-09-01T00:00:00.000Z'),
+    normalizedResult: 'granted' as const,
+    policyVersion: 'local-test-v1',
+    thresholdContext: 'adult-18-plus',
+  };
+  const input = {
+    jurisdiction: 'ES',
+    now,
+    ownerDomain: 'auth' as const,
+    purpose: 'adult_assurance' as const,
+  };
+
+  it('reports only a technical, current-policy comparison', () => {
+    const policy = new IdentityReverificationPolicy(
+      new LocalTestIdentityJurisdictionPolicy(),
+    );
+    expect(policy.assess({ ...input, currentEvidence })).toEqual({
+      kind: 'current',
+      policyVersion: 'local-test-v1',
+    });
+    expect(
+      policy.assess({
+        ...input,
+        currentEvidence: { ...currentEvidence, normalizedResult: 'revoked' },
+      }),
+    ).toEqual({ kind: 'no_current_grant', policyVersion: 'local-test-v1' });
+    expect(
+      policy.assess({
+        ...input,
+        currentEvidence: {
+          ...currentEvidence,
+          expiresAt: new Date('2026-08-19T11:59:59.999Z'),
+        },
+      }),
+    ).toEqual({
+      kind: 'reverification_due',
+      policyVersion: 'local-test-v1',
+      reason: 'evidence_expired',
+    });
+  });
+
+  it('fails closed for a changed or unavailable current policy', () => {
+    const changedVersion = new IdentityReverificationPolicy(
+      new LocalTestIdentityJurisdictionPolicy({ version: 'local-test-v2' }),
+    );
+    expect(changedVersion.assess({ ...input, currentEvidence })).toEqual({
+      kind: 'reverification_due',
+      policyVersion: 'local-test-v2',
+      reason: 'policy_version_changed',
+    });
+
+    const changedRequirement: IdentityJurisdictionPolicyPort = {
+      source: 'test',
+      evaluate: () => ({
+        kind: 'ALLOWED_WITH_REQUIREMENTS',
+        policyVersion: 'test-v2',
+        requiredEvidenceClass: 'adult_threshold',
+        requiredThreshold: 'test-threshold-v2',
+      }),
+    };
+    expect(
+      new IdentityReverificationPolicy(changedRequirement).assess({
+        ...input,
+        currentEvidence: { ...currentEvidence, policyVersion: 'test-v2' },
+      }),
+    ).toEqual({
+      kind: 'reverification_due',
+      policyVersion: 'test-v2',
+      reason: 'requirements_changed',
+    });
+    expect(
+      new IdentityReverificationPolicy(
+        new LocalTestIdentityJurisdictionPolicy(),
+      ).assess({ ...input, currentEvidence, jurisdiction: 'FR' }),
+    ).toEqual({ kind: 'policy_unknown', policyVersion: 'local-test-v1' });
+    expect(
+      new IdentityReverificationPolicy(
+        new LocalTestIdentityJurisdictionPolicy(),
+      ).assess({ ...input, currentEvidence, ownerDomain: 'creators' }),
+    ).toEqual({ kind: 'policy_unknown', policyVersion: 'local-test-v1' });
+    expect(
+      new IdentityReverificationPolicy(
+        new LocalTestIdentityJurisdictionPolicy(),
+      ).assess({ ...input, currentEvidence, jurisdiction: 'AQ' }),
+    ).toEqual({
+      kind: 'policy_blocked',
+      policyVersion: 'local-test-v1',
+      reasonCode: 'local-test-blocked',
+    });
   });
 });
 

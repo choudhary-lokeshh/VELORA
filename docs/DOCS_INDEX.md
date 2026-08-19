@@ -93,7 +93,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | Document | Primary authority |
 |---|---|
 | [Onboarding](flows/onboarding.md) | Adult signup/sign-in/session-to-profile admission |
-| [Identity assurance verification](flows/identity-assurance-verification.md) | Provider-neutral start, callback, evidence, expiry/revocation, reconciliation, and owner consumption |
+| [Identity assurance verification](flows/identity-assurance-verification.md) | Provider-neutral start, callback, evidence, current-policy/re-verification assessment, expiry/revocation, reconciliation, and owner consumption |
 | [Consumer account/profile](flows/consumer-account-profile.md) | Profile, verification, availability, restriction, account lifecycle |
 | [Discovery and introductions](flows/discovery-introductions.md) | Candidate, signal, decline/withdraw, mutual introduction |
 | [Messaging and blocks](flows/messaging-and-blocks.md) | Conversation/message authorization and block precedence |
@@ -191,7 +191,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0021](decisions/ADR-0021-monetization-money-architecture.md) | How ADR-0011's locked money decisions become code: money value type, two owner journals, orchestration ordering, webhook inbox, entitlement bridge, fail-closed capability configuration |
 | [ADR-0022](decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) | One safety policy and eligibility authority, scoped append-only enforcement with supersession, report/case/evidence/decision/appeal separation, surface as a first-class closed vocabulary, depicted-person consent by reference, versioned deadline policy, and fail-closed mature-content enablement |
 | [ADR-0023](decisions/ADR-0023-media-platform-architecture.md) | MEDIA as a domain owning bytes only, a technical lifecycle disjoint from publication, opaque server-generated keys, capability-bound direct upload, byte-derived inspection ahead of the decoder, in-process image processing, the bounded private-delivery revocation window, four distinct removal concepts, and fail-closed media configuration |
-| [ADR-0024](decisions/ADR-0024-identity-assurance-architecture.md) | Separate Identity Assurance domain, append-only evidence, provider-neutral hosted verification, verified callback inbox, reconciliation, fail-closed jurisdiction policy, and owner re-authorization |
+| [ADR-0024](decisions/ADR-0024-identity-assurance-architecture.md) | Separate Identity Assurance domain, append-only evidence, provider-neutral hosted verification, verified callback inbox, reconciliation, fail-closed jurisdiction/re-verification policy, and owner re-authorization |
 
 ## Technical implementation reading paths
 

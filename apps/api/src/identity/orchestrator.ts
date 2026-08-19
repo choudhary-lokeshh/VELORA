@@ -5,6 +5,7 @@ import {
   identityCodePattern,
   identityEvidenceClasses,
   identityOwnerDomains,
+  identityPurposeBelongsToOwner,
   identityPurposes,
   jurisdictionCodePattern,
   maximumIdentityIdempotencyKeyLength,
@@ -273,6 +274,7 @@ function validInput(input: AuthorizedIdentityStart): boolean {
   return (
     identityOwnerDomains.includes(input.ownerDomain) &&
     identityPurposes.includes(input.purpose) &&
+    identityPurposeBelongsToOwner(input.ownerDomain, input.purpose) &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
       input.ownerReference,
     ) &&

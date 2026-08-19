@@ -23,6 +23,8 @@ Do not treat self-declared adult status, authentication success, identity proof,
 
 Duplicate callbacks are deduplicated; concurrent outcomes use version and precedence rules. Ambiguous provider result remains pending/review, never assumed adult-eligible.
 
+The V1 core can only make a technical, side-effect-free comparison of existing evidence against a currently evaluated policy version, requirement, and expiry. It records no legal recheck window, does not select any trigger from the list above, and does not start a verification flow. Exact re-verification triggers, windows, notices, alternatives, and consequences remain `DECISION REQUIRED / LEGAL REVIEW REQUIRED`.
+
 ## Privacy, security, and user experience
 
 Use least-data provider and route eligible for country. Protect document/selfie/biometric or other sensitive evidence with restricted access, encryption, purpose, retention, deletion, audit, and provider-deletion rules. No raw evidence in analytics, AI, generic logs, notifications, or consumer/Admin views without justified role.

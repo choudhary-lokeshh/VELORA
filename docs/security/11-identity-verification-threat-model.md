@@ -28,7 +28,7 @@ The domain intentionally stores no raw identity documents, exact birth dates, na
 | Biometric/PII overcollection | Forbidden-column assertion, minimized contracts/outbox/audit, no provider DTO in domain model | Schema and serialization tests |
 | Admin enumeration/export/override | Aggregate and exact-reference reads only; no list/search/export/mutation routes; Admin audience plus ADR-0017 exact action | Route inventory and negative-audience tests |
 | Log/audit leakage | Allow-listed structured fields; secrets, links, raw reasons, identity attributes, callback body redacted; audit separated from diagnostics | Canary-string log tests |
-| Policy rollback or unknown jurisdiction | Versioned policy; attempt pins version; `UNKNOWN`/unpublished is refusal; later reads assess current requirement | Policy-version/re-verification tests |
+| Policy rollback or unknown jurisdiction | Versioned policy; attempt pins version; `UNKNOWN`/unpublished is refusal; a read-only comparison detects expiry, policy-version, or requirement change without effect; later approved owners assess their current requirement | Policy-version/re-verification and no-side-effect tests |
 | Provider outage or ambiguous result | Recoverable lifecycle, lookup by provider key, bounded retry, reconciliation; never infer success | Timeout/crash/recovery tests |
 
 ## Privacy and deletion

@@ -18,6 +18,12 @@ Current implementation exposes the start sequence only as an internal contract f
 
 Fifty equivalent concurrent starts converge on one attempt and at most one external instruction. Provider lookup by the platform idempotency key resolves an ambiguous create before any retry.
 
+## Current-policy and re-verification assessment
+
+IDENTITY can compare a minimized current evidence fact with the currently evaluated policy for the same documented owner/purpose pairing and jurisdiction. The comparison returns only `current`, `no_current_grant`, `policy_unknown`, `policy_blocked`, or `reverification_due` because an evidence expiry, policy-version change, or requirement change is observed. Unknown and blocked are fail-closed.
+
+This comparison is not an authorization decision and has no side effect: it does not start a provider session, append evidence, revoke evidence, change an attempt state, enqueue a job, or expose a route. It records no re-verification window or country rule. V1 owner predicates do not consume it. A later approved owner workflow must re-authorize its actor, apply an approved jurisdiction/legal policy, and create an idempotent start through the normal internal contract; no automatic re-verification is implied.
+
 ## Return, callback, and reconciliation
 
 Browser/app redirect return performs an authorized read of the attempt. Redirect parameters never constitute completion or evidence.
@@ -50,7 +56,7 @@ No owner stores a master `verified`, `kycReady`, `commercialEligible`, or `payou
 
 Required states for later approved surfaces are required, starting, provider handoff, pending, verified, failed, refused, expired, revoked, re-verification, unavailable, offline, stale return, and session loss. Exact copy/layout remains `DESIGN REQUIRED` until the approved Identity Assurance Figma handoff.
 
-Provider outage, policy uncertainty, callback authentication failure, inconsistent subject, and ambiguous result fail closed. A retriable technical failure is not a refusal; a refusal does not reveal fraud thresholds or raw provider reasons. Alternate/manual routes exist only when a published jurisdiction policy and approved operation define them.
+Provider outage, policy uncertainty, callback authentication failure, inconsistent subject, and ambiguous result fail closed. A current-policy comparison may make a future approved workflow re-evaluate evidence, but never initiates it itself. A retriable technical failure is not a refusal; a refusal does not reveal fraud thresholds or raw provider reasons. Alternate/manual routes exist only when a published jurisdiction policy and approved operation define them.
 
 ## Authorization and approvals
 
