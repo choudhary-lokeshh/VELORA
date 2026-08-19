@@ -148,11 +148,11 @@ A case that has been decided is distinguishable from one that was closed without
 
 ### Depicted-person evidence and consent
 
-`0032_safety_depicted_person_consent` currently holds both kinds of record, but [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md) separates them. *Who is depicted, and did anybody check?* becomes identity/adult evidence owned by IDENTITY ASSURANCE. *What did that person agree to?* remains participant relationship and consent owned by TRUST & SAFETY.
+`0032_safety_depicted_person_consent` established the participant/consent records; `0050_identity-safety-cutover` retires its local provider, subject, identity, and adult-evidence fields. *Who is depicted, and did anybody check?* is now identity/adult evidence owned by IDENTITY ASSURANCE. *What did that person agree to?* remains participant relationship and consent owned by TRUST & SAFETY.
 
 **Velora holds no identification document, no image, and no biometric template, and there is no column one could be put in.** IDENTITY ASSURANCE holds a normalized evidence fact and opaque approved-verifier reference. SAFETY holds only an opaque Identity reference with the participant relationship and consent. [Surface and distribution eligibility](../compliance/07-surface-and-distribution-eligibility.md) records the legal question; architecture support does not answer it.
 
-**A creator's word is stored as a creator's word.** An `asserted` participant carries no Identity evidence reference. A verified participant references one Identity subject and the required current evidence classes; SAFETY never copies provider, subject-handle, identity, or adult-evidence facts. Verification supersedes the assertion rather than editing it, so what the creator originally said stays exactly as said.
+**A creator's word is stored as a creator's word.** An `asserted` participant carries no Identity evidence reference. An `identity_referenced` participant references one Identity subject and the required current evidence classes; SAFETY never copies provider, subject-handle, identity, or adult-evidence facts. Linking supersedes the assertion rather than editing it, so what the creator originally said stays exactly as said.
 
 Two people on one item are distinguished only once IDENTITY ASSURANCE has issued an opaque subject for each. Before that they are two declarations, and the platform invents no name, handle, or hash to tell them apart.
 
@@ -160,9 +160,9 @@ Two people on one item are distinguished only once IDENTITY ASSURANCE has issued
 
 **Absence is not permission.** A content item with no declaration means nobody has been asked or nobody has replied, which is a different fact from "nobody is depicted here"; the gate reports `undeclared` rather than treating silence as compliance. An item declared to depict nobody is the one satisfied answer that needs no verifier at all.
 
-**Two independent gates, and neither is enough alone.** IDENTITY ASSURANCE selects/validates the verifier; `SAFETY_CONSENT_POLICY` publishes the wording a person would be agreeing to. Both default to refusal in deployed environments. A verifier with no approved wording may produce evidence and grants no consent, which is exactly the behaviour a half-satisfied gate should have.
+**Two independent gates, and neither is enough alone.** IDENTITY ASSURANCE selects/validates the verification provider and publishes current identity/adult evidence; `SAFETY_CONSENT_POLICY` publishes the wording a person would be agreeing to. Both default to refusal in deployed environments. Identity evidence with no approved wording grants no consent, which is exactly the behaviour a half-satisfied gate should have.
 
-The declaration is the one mutable SAFETY record here. A creator who adds a person to a shoot has changed the answer rather than falsified the old one; Identity evidence and scoped consent are append-only in their respective owning domains. Migration of current verifier/subject/identity/adult fields must preserve participant linkage and current-decision equivalence before those fields are retired from SAFETY.
+The declaration is the one mutable SAFETY record here. A creator who adds a person to a shoot has changed the answer rather than falsified the old one; Identity evidence and scoped consent are append-only in their respective owning domains. The completed cutover proves participant/consent linkage, evidence counts, current facts, rollback safety, and retirement of local verifier/subject/identity/adult fields with real PostgreSQL tests.
 
 ### The content gate, and the surfaces it decides for
 

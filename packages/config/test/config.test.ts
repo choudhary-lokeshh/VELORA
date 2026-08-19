@@ -243,23 +243,13 @@ describe('server configuration', () => {
   });
 
   it('holds depicted-person evidence and consent wording as two gates', () => {
-    // They fail for different reasons and are lifted by different people: one
-    // is a vendor assessment, the other is legal copy. Satisfying either alone
-    // must enable nothing, which is why they are separate values rather than
-    // one "mature content ready" switch.
+    // Provider availability and legal copy fail for different reasons. Neither
+    // alone enables a mature-content path, and SAFETY configures only wording.
     const config = loadServerConfig(validEnvironment);
-    expect(config.SAFETY_DEPICTED_PERSON_VERIFIER).toBe('unavailable');
+    expect(config.IDENTITY_VERIFICATION_PROVIDER).toBe('unavailable');
     expect(config.SAFETY_CONSENT_POLICY).toBe('unpublished');
 
     for (const appEnvironment of ['staging', 'production']) {
-      const verifier = loadServerConfigResult({
-        ...validEnvironment,
-        APP_ENV: appEnvironment,
-        SAFETY_DEPICTED_PERSON_VERIFIER: 'local-test',
-      });
-      expect(verifier).toContain('SAFETY_DEPICTED_PERSON_VERIFIER');
-      expect(verifier).toContain('DECISIONS_REQUIRED');
-
       const policy = loadServerConfigResult({
         ...validEnvironment,
         APP_ENV: appEnvironment,

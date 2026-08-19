@@ -55,7 +55,6 @@ import { ConsumerProfileMediaAssociation } from './users/profile-media-associati
 import { ContentSafetyGate } from './safety/content-safety.js';
 import {
   DepictedPersonConsentService,
-  UnavailableDepictedPersonVerifier,
   UnpublishedConsentPolicy,
 } from './safety/consent.js';
 import { SafetyEligibility } from './safety/eligibility.js';
@@ -266,9 +265,9 @@ export function createApplication(
             new ContentSafetyGate({
               consent: new DepictedPersonConsentService({
                 copy: new UnpublishedConsentPolicy(),
+                identityEvidence: identity.depictedPersonEvidence,
                 now: () => new Date(),
                 repository: safetyRepositoryForMedia,
-                verifier: new UnavailableDepictedPersonVerifier(),
               }),
               eligibility: safetyEligibilityForMedia,
               matureContentEnabled: matureContentEnabled(config),
@@ -336,6 +335,7 @@ export function createApplication(
         conversationTargets: new ConversationParticipation(),
         creators: creators.directory,
         database: ownedDatabase.database,
+        identityEvidence: identity.depictedPersonEvidence,
         users: users.service,
       });
     // BILLING depends on CREATORS' eligibility answer and on PRIVATE CLUBS'
@@ -605,7 +605,7 @@ export function createApplication(
   const creatorSafetyRoutes = new CreatorSafetyRoutes({
     capabilities: {
       consentPolicy: config.SAFETY_CONSENT_POLICY,
-      depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
+      identityVerificationProvider: config.IDENTITY_VERIFICATION_PROVIDER,
       matureContent: config.SAFETY_MATURE_CONTENT,
     },
     creatorContext: creators.creatorContext,

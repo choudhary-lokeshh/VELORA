@@ -50,7 +50,7 @@ The column layout enforces that rather than a convention. A reference kind carri
 
 Every report becomes evidence at intake, in the same transaction that records it. A case's evidence is therefore a complete record of what was known, in the order it was known, rather than only what a reviewer thought to cite.
 
-Depicted-person consent and external verification are declared and **refused**. Both are references to an approved verifier's outcome and Velora has no approved verifier, so recording one would be an assertion dressed as evidence. The vocabulary exists so the model is whole; the capability fails closed, which is correct rather than a gap.
+Depicted-person consent and Identity evidence are declared and **refused** as moderation evidence. TRUST & SAFETY owns the participant/consent relationship and IDENTITY ASSURANCE owns verification evidence; neither is a moderation signal, and no approved provider/policy can establish live evidence. The vocabulary exists so the model is whole; the capability fails closed, which is correct rather than a gap.
 
 ### A decision is explicit, closed, and append-only
 

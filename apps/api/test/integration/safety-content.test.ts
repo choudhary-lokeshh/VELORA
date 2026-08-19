@@ -3,8 +3,9 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import {
   DepictedPersonConsentService,
   LocalTestConsentPolicy,
-  LocalTestDepictedPersonVerifier,
 } from '../../src/safety/consent.js';
+import { IdentityDepictedPersonEvidenceReader } from '../../src/identity/assurance-reader.js';
+import { IdentityRepository } from '../../src/identity/repository.js';
 import { ContentSafetyGate } from '../../src/safety/content-safety.js';
 import { SafetyEligibility } from '../../src/safety/eligibility.js';
 import { EnforcementAuthority } from '../../src/safety/enforcement.js';
@@ -22,6 +23,10 @@ import {
   type TestDatabase,
 } from '../support/database.js';
 import { testServerConfig } from '../support/harness.js';
+import {
+  consentEvidenceFor,
+  grantDepictedPersonEvidence,
+} from '../support/identity-evidence.js';
 
 /**
  * The composed content safety answer against real PostgreSQL.
@@ -45,9 +50,11 @@ const authority = new EnforcementAuthority({ now, repository });
 const eligibility = new SafetyEligibility(repository);
 const consent = new DepictedPersonConsentService({
   copy: new LocalTestConsentPolicy(),
+  identityEvidence: new IdentityDepictedPersonEvidenceReader(
+    new IdentityRepository(database.drizzle),
+  ),
   now,
   repository,
-  verifier: new LocalTestDepictedPersonVerifier(),
 });
 
 /** The deployed shape. The only shape configuration can produce. */
@@ -111,12 +118,23 @@ async function consented(
     creatorId: item.creatorId,
   });
   if (declared.kind !== 'declared') throw new Error('declaration failed');
-  const verified = await consent.verifyParticipant({
+  const subject = await grantDepictedPersonEvidence({
+    database,
+    now: now(),
+    participantReference: declared.participant.id,
+  });
+  const verified = await consent.linkParticipant({
     actorReference: operator,
+    consentEvidenceReferences: consentEvidenceFor(declared.participant.id, [
+      'publication',
+      'distribution',
+      'commercial_use',
+    ]),
+    identitySubjectReference: subject,
     participantId: declared.participant.id,
     scopes: ['publication', 'distribution', 'commercial_use'],
   });
-  if (verified.kind !== 'verified') throw new Error('verification failed');
+  if (verified.kind !== 'linked') throw new Error('Identity linkage failed');
   return item;
 }
 
@@ -258,8 +276,17 @@ describe('a mature class is refused everywhere, however much is satisfied', () =
       creatorId: item.creatorId,
     });
     if (declared.kind !== 'declared') throw new Error('declaration failed');
-    await consent.verifyParticipant({
+    const subject = await grantDepictedPersonEvidence({
+      database,
+      now: now(),
+      participantReference: declared.participant.id,
+    });
+    await consent.linkParticipant({
       actorReference: operator,
+      consentEvidenceReferences: consentEvidenceFor(declared.participant.id, [
+        'publication',
+      ]),
+      identitySubjectReference: subject,
       participantId: declared.participant.id,
       // Publication only. Publishing a depiction is not permission to
       // monetise it, and the gate asks the scope the capability needs.

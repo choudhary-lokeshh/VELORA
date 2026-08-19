@@ -6,7 +6,7 @@
 
 ## Context
 
-VELORA has three partial verification concepts with different owners: USERS stores self-declaration and verified-adult assessments together, CREATORS describes a future creator-verification predicate, and TRUST & SAFETY stores depicted-person identity/adult verifier references beside consent. Phase 3 also needs commercial-KYC evidence without letting PAYOUTS or a provider become the authority for payout permission.
+At decision time, VELORA had three partial verification concepts with different owners: USERS stored self-declaration and verified-adult assessments together, CREATORS described a future creator-verification predicate, and TRUST & SAFETY stored depicted-person identity/adult verifier references beside consent. The subsequent `0047` and `0050` owner cutovers enact this ADR; Phase 3 still needs commercial-KYC evidence without letting PAYOUTS or a provider become the authority for payout permission.
 
 Leaving these as owner-specific provider integrations would create multiple raw-document surfaces, incompatible callback handling, duplicated subject records, and several booleans called `verified` that mean different things. Moving them into AUTH would create a second error: authentication success and product/commercial identity evidence are not interchangeable, and AUTH must not become a general KYC store.
 

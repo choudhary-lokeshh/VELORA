@@ -331,7 +331,7 @@ export const creatorMatureReadinessResponseSchema = z
     /** Which mature-content capability value is configured. `disabled` everywhere. */
     matureContentSource: z.string().min(1).max(64),
     surfaces: z.array(matureSurfaceEligibilitySchema),
-    /** Which depicted-person verifier is configured. `unavailable` everywhere. */
+    /** Which IDENTITY provider is configured. `unavailable` everywhere. */
     verifierSource: z.string().min(1).max(64),
   })
   .strict();

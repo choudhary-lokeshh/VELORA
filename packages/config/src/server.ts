@@ -115,28 +115,20 @@ export const unpublishedIdentityJurisdictionPolicy = 'unpublished';
 export const localTestIdentityJurisdictionPolicy = 'local-test';
 
 /**
- * Depicted-person evidence and consent, which are two gates rather than one.
+ * Depicted-person consent is a separate gate from IDENTITY evidence.
  *
- * The **verifier** produces the references Velora holds about a depicted adult:
- * that somebody examined an identification document, that the person is an
- * adult, and that they consented. Velora holds no document, image, or biometric
- * template — [surface and distribution eligibility](../../../docs/compliance/07-surface-and-distribution-eligibility.md)
- * records why a table of identity documents is the highest-value breach target
- * the platform could build in exchange for evidence Velora is probably not the
- * right party to hold. No provider is approved, so `unavailable` refuses every
- * request.
+ * IDENTITY ASSURANCE independently owns the referenced depicted-person
+ * identity/adult evidence. This domain never configures an identity provider
+ * and never stores provider evidence or a provider subject handle.
  *
  * The **policy** carries the approved consent wording and its version. A
  * recorded grant is a claim that a person agreed to specific words, so
  * recording one under wording nobody approved would be manufacturing consent.
  * `unpublished` publishes no wording and refuses every grant.
  *
- * They are separate because they fail for different reasons and are lifted by
- * different people: one is a vendor assessment, the other is legal copy.
- * Satisfying either alone enables nothing.
+ * Satisfying wording alone enables nothing. Current Identity evidence and every
+ * other mature-content gate remain independently required.
  */
-export const unavailableDepictedPersonVerifier = 'unavailable';
-export const localTestDepictedPersonVerifier = 'local-test';
 export const unpublishedConsentPolicy = 'unpublished';
 export const localTestConsentPolicy = 'local-test';
 
@@ -447,12 +439,6 @@ export const serverConfigSchema = z
     SAFETY_TAKEDOWN_POLICY: z
       .enum([unpublishedTakedownPolicy, localTestTakedownPolicy])
       .default(unpublishedTakedownPolicy),
-    SAFETY_DEPICTED_PERSON_VERIFIER: z
-      .enum([
-        unavailableDepictedPersonVerifier,
-        localTestDepictedPersonVerifier,
-      ])
-      .default(unavailableDepictedPersonVerifier),
     MEDIA_STORAGE_PROVIDER: z
       .enum([unavailableMediaStorage, localTestMediaStorage])
       .default(unavailableMediaStorage),
@@ -493,16 +479,6 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `IDENTITY_JURISDICTION_POLICY is not usable in ${config.APP_ENV}: no launch jurisdiction, assurance threshold, retention rule, or biometric basis is approved; see DECISIONS_REQUIRED`,
         path: ['IDENTITY_JURISDICTION_POLICY'],
-      });
-    }
-    if (
-      config.SAFETY_DEPICTED_PERSON_VERIFIER !==
-      unavailableDepictedPersonVerifier
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: `SAFETY_DEPICTED_PERSON_VERIFIER is not usable in ${config.APP_ENV}: no identity, age, or consent verification provider is approved, and whether Velora is the party obliged to hold depicted-person records at all is unresolved; see DECISIONS_REQUIRED`,
-        path: ['SAFETY_DEPICTED_PERSON_VERIFIER'],
       });
     }
     if (config.SAFETY_APPEAL_POLICY !== unpublishedAppealPolicy) {
@@ -707,7 +683,6 @@ export function redactServerConfig(config: ServerConfig) {
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     consentPolicy: config.SAFETY_CONSENT_POLICY,
-    depictedPersonVerifier: config.SAFETY_DEPICTED_PERSON_VERIFIER,
     matureContent: config.SAFETY_MATURE_CONTENT,
     appealPolicy: config.SAFETY_APPEAL_POLICY,
     takedownPolicy: config.SAFETY_TAKEDOWN_POLICY,

@@ -14,7 +14,10 @@ import { describe, expect, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import { migrate } from 'drizzle-orm/bun-sql/migrator';
 
-import { IdentityAdultAssuranceReader } from '../../src/identity/assurance-reader.js';
+import {
+  IdentityAdultAssuranceReader,
+  IdentityDepictedPersonEvidenceReader,
+} from '../../src/identity/assurance-reader.js';
 import { IdentityRepository } from '../../src/identity/repository.js';
 import type { DatabaseHandle } from '../../src/database/executor.js';
 import { adultAssuranceDecisionOf } from '../../src/users/onboarding.js';
@@ -63,6 +66,7 @@ async function withLegacyDatabase(
     migrateLatest(): Promise<void>;
     readonly sql: Bun.SQL;
   }) => Promise<void>,
+  through = 46,
 ): Promise<void> {
   const administrativeUrl = requiredEnvironment('TEST_DATABASE_URL');
   const target = new URL(administrativeUrl);
@@ -77,7 +81,7 @@ async function withLegacyDatabase(
   const sql = new Bun.SQL(target.toString(), { max: 5 });
   const database = drizzle(sql) as DatabaseHandle;
   try {
-    await stageMigrations(migrationsFolder, 46);
+    await stageMigrations(migrationsFolder, through);
     await migrate(database, { migrationsFolder });
     await work({
       database,
@@ -398,6 +402,193 @@ describe('USERS adult-assurance ownership cutover', () => {
           source_count: '1',
         });
       },
+    );
+  });
+});
+
+describe('SAFETY depicted-person ownership cutover', () => {
+  it('preserves participant/consent linkage and moves both evidence classes', async () => {
+    await withLegacyDatabase(
+      'velora_identity_safety_cutover',
+      async (input) => {
+        const verifiedAt = new Date('2026-02-01T00:00:00.000Z');
+        const expiresAt = new Date('2040-02-01T00:00:00.000Z');
+        const contentId = crypto.randomUUID();
+        const creatorId = crypto.randomUUID();
+        const assertionId = crypto.randomUUID();
+        const verifiedId = crypto.randomUUID();
+        const consentId = crypto.randomUUID();
+        await input.sql`insert into safety_content_depictions
+          (content_id, creator_id, declaration, declared_at, policy_version, updated_at, version)
+          values (${contentId}, ${creatorId}, 'depicted_persons', ${verifiedAt},
+            'v1-provisional', ${verifiedAt}, 1)`;
+        await input.sql`insert into safety_depicted_participants
+          (adult_assurance_evidence_reference, content_id, creator_id, declared_at,
+            evidence_state, expires_at, id, identity_evidence_reference,
+            policy_version, supersedes_id, verifier, verified_at,
+            verifier_subject_reference)
+          values (null, ${contentId}, ${creatorId}, ${verifiedAt}, 'asserted', null,
+            ${assertionId}, null, 'v1-provisional', null, null, null, null),
+          ('adult-fact-1', ${contentId}, ${creatorId}, ${verifiedAt}, 'verified',
+            ${expiresAt}, ${verifiedId}, 'identity-fact-1', 'v1-provisional',
+            ${assertionId}, 'legacy-verifier', ${verifiedAt}, 'subject-1')`;
+        await input.sql`insert into safety_consent_records
+          (actor_reference, consent_evidence_reference, content_id, copy_version,
+            disposition, expires_at, id, participant_id, policy_version,
+            recorded_at, scope, supersedes_id)
+          values ('session:test', 'consent-fact-1', ${contentId},
+            'local-test-publication-v1', 'grant', ${expiresAt}, ${consentId},
+            ${verifiedId}, 'v1-provisional', ${verifiedAt}, 'publication', null)`;
+
+        await input.migrateLatest();
+        await input.migrateLatest();
+
+        const participants = await rowsOf<{
+          evidence_state: string;
+          id: string;
+          identity_subject_reference: string | null;
+          supersedes_id: string | null;
+        }>(input.sql`select id::text, evidence_state,
+            identity_subject_reference::text, supersedes_id::text
+          from safety_depicted_participants order by supersedes_id nulls first`);
+        expect(participants).toHaveLength(2);
+        const linked = participants.find(
+          (participant) => participant.id === verifiedId,
+        );
+        expect(linked).toMatchObject({
+          evidence_state: 'identity_referenced',
+          supersedes_id: assertionId,
+        });
+        expect(linked?.identity_subject_reference).not.toBeNull();
+
+        const counts = await rowsOf<{
+          attempts: string;
+          consent: string;
+          evidence: string;
+          subjects: string;
+        }>(input.sql`select
+          (select count(*)::text from identity_subjects
+            where owner_domain = 'safety' and owner_reference = ${assertionId}) as subjects,
+          (select count(*)::text from identity_attempts
+            where subject_id = ${linked?.identity_subject_reference ?? null}) as attempts,
+          (select count(*)::text from identity_evidence
+            where subject_id = ${linked?.identity_subject_reference ?? null}) as evidence,
+          (select count(*)::text from safety_consent_records
+            where id = ${consentId} and participant_id = ${verifiedId}
+              and content_id = ${contentId}) as consent`);
+        expect(counts[0]).toEqual({
+          attempts: '2',
+          consent: '1',
+          evidence: '2',
+          subjects: '1',
+        });
+
+        const columns = await rowsOf<{ column_name: string }>(
+          input.sql`select column_name from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'safety_depicted_participants'
+            order by column_name`,
+        );
+        const names = columns.map((column) => column.column_name);
+        expect(names).toContain('identity_subject_reference');
+        for (const retired of [
+          'adult_assurance_evidence_reference',
+          'expires_at',
+          'identity_evidence_reference',
+          'verifier',
+          'verified_at',
+          'verifier_subject_reference',
+        ]) {
+          expect(names).not.toContain(retired);
+        }
+
+        const reader = new IdentityDepictedPersonEvidenceReader(
+          new IdentityRepository(input.database),
+        );
+        expect(
+          await reader.currentForSafetyParticipant({
+            executor: input.database,
+            now: verifiedAt,
+            participantReference: assertionId,
+            subjectReference: linked?.identity_subject_reference ?? '',
+          }),
+        ).toMatchObject({
+          adultStanding: 'granted',
+          identityStanding: 'granted',
+        });
+      },
+      49,
+    );
+  });
+
+  it('rolls back linkage and leaves legacy facts when the cutover conflicts', async () => {
+    await withLegacyDatabase(
+      'velora_identity_safety_cutover_rollback',
+      async (input) => {
+        const now = new Date('2026-02-01T00:00:00.000Z');
+        const contentId = crypto.randomUUID();
+        const creatorId = crypto.randomUUID();
+        const assertionId = crypto.randomUUID();
+        const verifiedId = crypto.randomUUID();
+        await input.sql`insert into safety_content_depictions
+          (content_id, creator_id, declaration, declared_at, policy_version, updated_at, version)
+          values (${contentId}, ${creatorId}, 'depicted_persons', ${now},
+            'v1-provisional', ${now}, 1)`;
+        await input.sql`insert into safety_depicted_participants
+          (adult_assurance_evidence_reference, content_id, creator_id, declared_at,
+            evidence_state, expires_at, id, identity_evidence_reference,
+            policy_version, supersedes_id, verifier, verified_at,
+            verifier_subject_reference)
+          values (null, ${contentId}, ${creatorId}, ${now}, 'asserted', null,
+            ${assertionId}, null, 'v1-provisional', null, null, null, null),
+          ('adult-fact-2', ${contentId}, ${creatorId}, ${now}, 'verified', null,
+            ${verifiedId}, 'identity-fact-2', 'v1-provisional', ${assertionId},
+            'legacy-verifier', ${now}, 'subject-2')`;
+
+        const collisionSubject = crypto.randomUUID();
+        await input.sql`insert into identity_subjects
+          (created_at, id, owner_domain, owner_reference)
+          values (${now}, ${collisionSubject}, 'auth', ${crypto.randomUUID()})`;
+        await input.sql`insert into identity_attempts
+          (caller_idempotency_key, completed_at, created_at, id, input_digest,
+            jurisdiction, policy_version, provider, provider_bound_at,
+            provider_idempotency_key, provider_reference, purpose,
+            required_evidence_class, required_threshold, state, subject_id, updated_at)
+          values ('collision-safety', ${now}, ${now}, ${crypto.randomUUID()},
+            ${'b'.repeat(64)}, 'XX', 'v1-provisional', 'legacy-verifier', ${now},
+            ${`legacy-safety-identity-${verifiedId}`}, 'existing-safety-reference',
+            'depicted_person_identity', 'depicted_person_identity',
+            'legacy-depicted-identity', 'succeeded', ${collisionSubject}, ${now})`;
+
+        let rejected = false;
+        try {
+          await input.migrateLatest();
+        } catch {
+          rejected = true;
+        }
+        expect(rejected).toBe(true);
+        const state = await rowsOf<{
+          identity_column: string | null;
+          legacy_column: string | null;
+          legacy_rows: string;
+        }>(input.sql`select
+          (select column_name from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'safety_depicted_participants'
+              and column_name = 'identity_subject_reference') as identity_column,
+          (select column_name from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'safety_depicted_participants'
+              and column_name = 'verifier') as legacy_column,
+          (select count(*)::text from safety_depicted_participants
+            where evidence_state = 'verified') as legacy_rows`);
+        expect(state[0]).toEqual({
+          identity_column: null,
+          legacy_column: 'verifier',
+          legacy_rows: '1',
+        });
+      },
+      49,
     );
   });
 });

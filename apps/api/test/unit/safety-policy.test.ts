@@ -428,7 +428,10 @@ describe('safety vocabularies stay provisional and separate', () => {
     // same reason: 18 U.S.C. 2257 requires identity and age to be ascertained
     // by examining an identification document, so a creator's word cannot
     // satisfy it and must never be recorded as though it had.
-    expect([...depictedPersonEvidenceStates]).toEqual(['asserted', 'verified']);
+    expect([...depictedPersonEvidenceStates]).toEqual([
+      'asserted',
+      'identity_referenced',
+    ]);
     expect([...depictionDeclarations]).toEqual([
       'no_depicted_persons',
       'depicted_persons',

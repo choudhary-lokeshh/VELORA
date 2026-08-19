@@ -1253,36 +1253,26 @@ export class SafetyRepository {
   async insertParticipant(
     executor: Executor,
     input: {
-      readonly adultAssuranceEvidenceReference: string | null;
       readonly contentId: string;
       readonly creatorId: string;
       readonly evidenceState: DepictedPersonEvidenceState;
-      readonly expiresAt: Date | null;
-      readonly identityEvidenceReference: string | null;
+      readonly identitySubjectReference: string | null;
       readonly now: Date;
       readonly policyVersion: string;
       readonly supersedesId: string | null;
-      readonly verifiedAt: Date | null;
-      readonly verifier: string | null;
-      readonly verifierSubjectReference: string | null;
     },
   ): Promise<DepictedParticipantRow> {
     const rows = await executor
       .insert(safetyDepictedParticipants)
       .values({
-        adultAssuranceEvidenceReference: input.adultAssuranceEvidenceReference,
         contentId: input.contentId,
         creatorId: input.creatorId,
         declaredAt: input.now,
         evidenceState: input.evidenceState,
-        expiresAt: input.expiresAt,
         id: crypto.randomUUID(),
-        identityEvidenceReference: input.identityEvidenceReference,
+        identitySubjectReference: input.identitySubjectReference,
         policyVersion: input.policyVersion,
         supersedesId: input.supersedesId,
-        verifiedAt: input.verifiedAt,
-        verifier: input.verifier,
-        verifierSubjectReference: input.verifierSubjectReference,
       })
       .returning();
     const row = rows[0];

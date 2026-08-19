@@ -35,7 +35,7 @@ Creator identity, creator age, consumer adult access, payout KYC, and content-pe
 
 ## Implemented assurance seam
 
-Adult assurance currently exists in a legacy mixed USERS table. [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md) requires verified rows to migrate into Identity subjects, attempts, and append-only evidence chains while USERS keeps self-declarations only. Count, order, current-decision equivalence, and rollback safety must be proven before the mixed table is retired.
+Migration `0047_identity-assurance-users-cutover` moved verified rows from the legacy mixed USERS table into Identity subjects, attempts, and append-only evidence chains while USERS retains self-declarations only. Real PostgreSQL tests prove count, order, current-decision equivalence, and rollback safety before the mixed table is retired.
 
 Classes stay separate and no code widens one into another. Identity evidence uses one-successor supersession so a refusal, expiry, or revocation is a visible fact and stale approval cannot resurrect access. No raw document, image, biometric template, or birth date has a column.
 
@@ -43,7 +43,7 @@ The Identity provider is an adapter selected at the composition root, and the de
 
 ## Implemented depicted-person seam
 
-The same shape applies to another person depicted in creator content. TRUST & SAFETY owns the participant link, declaration, and scoped consent; IDENTITY ASSURANCE owns the referenced identity/adult evidence. The migration from the current mixed SAFETY record must prove participant linkage and evidence equivalence while moving verifier/subject/evidence facts behind opaque Identity references. No document, image, biometric template, name, or birth date receives a column, and a creator's assertion is never widened into verification.
+The same shape applies to another person depicted in creator content. TRUST & SAFETY owns the participant link, declaration, and scoped consent; IDENTITY ASSURANCE owns the referenced identity/adult evidence. Migration `0050_identity-safety-cutover` proves participant/consent linkage, Identity evidence counts, current facts, rollback safety, and retirement of local verifier/subject/evidence fields while moving the facts behind opaque Identity references. No document, image, biometric template, name, or birth date receives a column, and a creator's assertion is never widened into verification.
 
 Provider availability and published consent wording remain independent gates and both refuse in staging and production. A verifier with no approved wording may produce Identity evidence and grants no consent, because identity proof is not agreement. The details are in [TRUST & SAFETY](../domains/trust-safety.md); the primary-source findings behind them are in [surface and distribution eligibility](07-surface-and-distribution-eligibility.md).
 

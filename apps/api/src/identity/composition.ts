@@ -9,7 +9,11 @@ import {
 import type { DatabaseHandle } from '../database/executor.js';
 import { OutboxRepository } from '../events/outbox.js';
 import type { SafeLogger } from '@velora/observability/server';
-import { IdentityAdultAssuranceReader } from './assurance-reader.js';
+import {
+  IdentityAdultAssuranceReader,
+  IdentityCreatorEvidenceReader,
+  IdentityDepictedPersonEvidenceReader,
+} from './assurance-reader.js';
 import { IdentityProviderEventRepository } from './event-repository.js';
 import {
   LocalTestIdentityJurisdictionPolicy,
@@ -29,6 +33,8 @@ import { identityOutbox } from './schema.js';
 
 export interface IdentityRuntime {
   readonly adultAssurance: IdentityAdultAssuranceReader;
+  readonly creatorEvidence: IdentityCreatorEvidenceReader;
+  readonly depictedPersonEvidence: IdentityDepictedPersonEvidenceReader;
   readonly events: IdentityProviderEventRepository;
   readonly jurisdictionPolicy: IdentityJurisdictionPolicyPort;
   readonly orchestrator: IdentityOrchestrator;
@@ -100,6 +106,10 @@ export function createIdentityRuntime(input: {
   });
   return {
     adultAssurance: new IdentityAdultAssuranceReader(repository),
+    creatorEvidence: new IdentityCreatorEvidenceReader(repository),
+    depictedPersonEvidence: new IdentityDepictedPersonEvidenceReader(
+      repository,
+    ),
     events,
     jurisdictionPolicy,
     orchestrator: new IdentityOrchestrator({

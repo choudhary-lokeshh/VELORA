@@ -57,6 +57,7 @@ import {
   createIdentityRuntime,
   type IdentityRuntime,
 } from '../../src/identity/composition.js';
+import { EmptyIdentityDepictedPersonEvidenceReader } from '../../src/identity/assurance-reader.js';
 import {
   createSafetyRuntime,
   type SafetyRuntime,
@@ -216,6 +217,10 @@ export function testSafetyRuntime(input: {
     conversationTargets: new ConversationParticipation(),
     creators: input.creators.directory,
     database,
+    // The harness composes SAFETY in isolation. Production composition passes
+    // IDENTITY's published reader; this explicit empty fixture preserves the
+    // fail-closed answer without making a test environment a production seam.
+    identityEvidence: new EmptyIdentityDepictedPersonEvidenceReader(),
     ...(input.now === undefined ? {} : { now: input.now }),
     users: input.users.service,
   });

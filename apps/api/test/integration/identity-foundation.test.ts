@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
+import { IdentityCreatorEvidenceReader } from '../../src/identity/assurance-reader.js';
+import { IdentityRepository } from '../../src/identity/repository.js';
+
 import {
   connectDatabase,
   execute,
@@ -389,6 +392,39 @@ describe('append-only assurance evidence', () => {
         }),
       ),
     ).toBe(true);
+  });
+});
+
+describe('published creator evidence contract', () => {
+  it('returns only the current coarse standing for the exact Creator subject', async () => {
+    const creator = await subject('creators');
+    const source = await attempt(creator.id, {
+      purpose: 'creator_identity',
+      required_evidence_class: 'creator_identity',
+      required_threshold: 'creator-identity-match',
+    });
+    const grant = await evidence(source, {
+      evidence_class: 'creator_identity',
+      threshold_context: 'creator-identity-match',
+    });
+    const reader = new IdentityCreatorEvidenceReader(
+      new IdentityRepository(database.drizzle),
+    );
+
+    expect(
+      await reader.currentForCreator({
+        creatorId: creator.ownerReference,
+        executor: database.drizzle,
+        now: new Date(grant.recordedAt.getTime() + 1),
+      }),
+    ).toEqual({ recordedAt: grant.recordedAt, standing: 'granted' });
+    expect(
+      await reader.currentForCreator({
+        creatorId: crypto.randomUUID(),
+        executor: database.drizzle,
+        now: new Date(),
+      }),
+    ).toBeUndefined();
   });
 });
 

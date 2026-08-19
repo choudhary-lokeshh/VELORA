@@ -13,9 +13,10 @@ import {
 import { ContentSafetyGate } from '../../src/safety/content-safety.js';
 import {
   DepictedPersonConsentService,
-  LocalTestDepictedPersonVerifier,
   UnpublishedConsentPolicy,
 } from '../../src/safety/consent.js';
+import { IdentityDepictedPersonEvidenceReader } from '../../src/identity/assurance-reader.js';
+import { IdentityRepository } from '../../src/identity/repository.js';
 import { SafetyEligibility } from '../../src/safety/eligibility.js';
 import { SafetyRepository } from '../../src/safety/repository.js';
 import type { LocalTestMediaStorage } from '../../src/media/storage.js';
@@ -65,9 +66,11 @@ const media = createMediaRuntime({
       new ContentSafetyGate({
         consent: new DepictedPersonConsentService({
           copy: new UnpublishedConsentPolicy(),
+          identityEvidence: new IdentityDepictedPersonEvidenceReader(
+            new IdentityRepository(database.drizzle),
+          ),
           now: () => new Date(),
           repository: safetyRepository,
-          verifier: new LocalTestDepictedPersonVerifier(),
         }),
         eligibility,
         matureContentEnabled: false,

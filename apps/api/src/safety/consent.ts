@@ -1,5 +1,6 @@
 import type { Executor } from '../database/executor.js';
 import { lockSubject } from '../database/subject-lock.js';
+import type { IdentityDepictedPersonEvidenceReaderPort } from '../identity/assurance-reader.js';
 import {
   consentPolicyVersion,
   maximumConsentRecordsPerContent,
@@ -23,118 +24,21 @@ import type {
  * anybody check?* is identity and age evidence. *What did that person agree
  * to?* is consent, and it is scoped rather than universal.
  *
- * Both are held as **references to an approved verifier's outcome**. Velora
- * stores no identification document, no image, and no biometric template, and
- * builds no identity matching: [surface and distribution
+ * Identity/adult evidence is held by IDENTITY ASSURANCE. SAFETY stores one
+ * opaque subject reference plus its own scoped consent records. Velora stores
+ * no identification document, image, or biometric template here, and builds no
+ * identity matching: [surface and distribution
  * eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
  * records the reasoning, which is that such a table would be the highest-value
  * breach target the platform could build in exchange for evidence Velora is
  * probably not the right party to hold. Whether Velora is that party at all is
  * a legal question recorded as unresolved rather than answered here.
  *
- * Two independent gates guard all of it and neither is enough alone. The
- * **verifier** produces evidence; with none approved, nothing can be verified
- * and nothing can be consented to. The **wording policy** publishes what a
- * depicted person would actually be agreeing to; with none approved, a recorded
- * grant would be a claim that somebody agreed to words that do not exist, so no
- * grant is recorded at all. Both refuse in every deployed environment.
+ * Two independent gates guard all of it and neither is enough alone. IDENTITY
+ * must publish current identity and adult-threshold grants for the exact SAFETY
+ * assertion. The wording policy must publish what the depicted person agreed
+ * to. Both remain unavailable in deployed environments.
  */
-
-export interface DepictedPersonVerificationRequest {
-  readonly contentId: string;
-  readonly creatorId: string;
-  readonly participantId: string;
-  /** What the creator is asking this person to agree to. */
-  readonly scopes: readonly ConsentScope[];
-}
-
-/**
- * What an approved verifier hands back.
- *
- * References and a subject handle. There is no field for a document, an image,
- * a name, or a date of birth, so nothing a provider SDK might carry can reach
- * this domain through the port.
- */
-export interface DepictedPersonVerification {
-  readonly adultAssuranceEvidenceReference: string;
-  /** One reference per scope the person actually agreed to. */
-  readonly consentEvidenceReferences: Readonly<
-    Partial<Record<ConsentScope, string>>
-  >;
-  /** When the verification lapses and must be taken again. */
-  readonly expiresAt?: Date | undefined;
-  readonly identityEvidenceReference: string;
-  /** The verifier's own opaque handle for this person. */
-  readonly subjectReference: string;
-}
-
-export interface DepictedPersonVerifier {
-  /** Adapter name recorded on the participant row for audit and re-checks. */
-  readonly provider: string;
-  verify(
-    request: DepictedPersonVerificationRequest,
-  ): Promise<DepictedPersonVerification>;
-}
-
-/**
- * The configured verifier everywhere, because no provider is approved.
- *
- * It refuses rather than returning a weak pass, so a depicted person can never
- * be recorded as verified in any environment until a real adapter is chosen.
- */
-export class UnavailableDepictedPersonVerifier implements DepictedPersonVerifier {
-  readonly provider = 'unavailable';
-
-  verify(): Promise<DepictedPersonVerification> {
-    return Promise.reject(
-      new Error(
-        'No approved depicted-person verification provider is configured',
-      ),
-    );
-  }
-}
-
-/**
- * Development and test adapter.
- *
- * It exists so the verified path is genuinely exercisable, and it is named so
- * no test using it can be read as evidence about a real provider. Configuration
- * refuses it outside the local and test environments, so it can never record a
- * verified depicted person in a deployed one.
- */
-export class LocalTestDepictedPersonVerifier implements DepictedPersonVerifier {
-  readonly provider = 'local-test';
-
-  constructor(
-    private readonly validity?: {
-      readonly milliseconds: number;
-      /** Shares the caller's clock, so an expiry is never before its outcome. */
-      readonly now: () => Date;
-    },
-  ) {}
-
-  verify(
-    request: DepictedPersonVerificationRequest,
-  ): Promise<DepictedPersonVerification> {
-    const digest = (purpose: string) =>
-      Bun.SHA256.hash(`${purpose}:${request.participantId}`, 'hex');
-    return Promise.resolve({
-      adultAssuranceEvidenceReference: digest('adult-assurance'),
-      consentEvidenceReferences: Object.fromEntries(
-        request.scopes.map((scope) => [scope, digest(`consent:${scope}`)]),
-      ),
-      ...(this.validity === undefined
-        ? {}
-        : {
-            expiresAt: new Date(
-              this.validity.now().getTime() + this.validity.milliseconds,
-            ),
-          }),
-      identityEvidenceReference: digest('identity'),
-      subjectReference: digest('subject'),
-    });
-  }
-}
 
 /**
  * The approved wording a depicted person agrees to, per scope.
@@ -202,11 +106,10 @@ export interface DepictedPersonConsentPort {
 export interface DepictedParticipantView {
   readonly contentId: string;
   readonly declaredAt: Date;
-  readonly evidenceState: 'asserted' | 'verified';
-  readonly expiresAt: Date | null;
+  readonly evidenceState: 'asserted' | 'identity_referenced';
   readonly id: string;
+  readonly identitySubjectReference: string | null;
   readonly supersedesId: string | null;
-  readonly verifier: string | null;
 }
 
 export interface ConsentRecordView {
@@ -235,16 +138,16 @@ export type ParticipantOutcome =
   /** The item is at the bound that keeps the gate query complete. */
   | { readonly kind: 'too_many' };
 
-export type VerificationOutcome =
+export type IdentityLinkOutcome =
   | {
-      readonly kind: 'verified';
+      readonly kind: 'linked';
       readonly grantedScopes: readonly ConsentScope[];
       readonly participant: DepictedParticipantView;
     }
   | { readonly kind: 'not_found' }
-  /** No approved verifier, so nothing can be examined and nothing recorded. */
-  | { readonly kind: 'unavailable' }
-  /** Already verified, already replaced, or at the record bound. */
+  /** The exact Identity subject lacks one of the two current grants. */
+  | { readonly kind: 'not_verified' }
+  /** Already linked, already replaced, invalid evidence, or at the bound. */
   | { readonly kind: 'conflict' };
 
 export type RevocationOutcome =
@@ -255,20 +158,15 @@ export type RevocationOutcome =
 
 export interface DepictedPersonConsentDependencies {
   readonly copy: ConsentCopyPolicy;
+  readonly identityEvidence: IdentityDepictedPersonEvidenceReaderPort;
   readonly now: () => Date;
   readonly repository: SafetyRepository;
-  readonly verifier: DepictedPersonVerifier;
 }
 
 export class DepictedPersonConsentService implements DepictedPersonConsentPort {
   constructor(
     private readonly dependencies: DepictedPersonConsentDependencies,
   ) {}
-
-  /** Whether an approved verifier exists at all. */
-  get verificationAvailable(): boolean {
-    return this.dependencies.verifier.provider !== 'unavailable';
-  }
 
   /**
    * Records what the creator says about who appears in an item.
@@ -356,18 +254,13 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
         return { kind: 'too_many' as const };
       }
       const participant = await repository.insertParticipant(executor, {
-        adultAssuranceEvidenceReference: null,
         contentId: input.contentId,
         creatorId: input.creatorId,
         evidenceState: 'asserted',
-        expiresAt: null,
-        identityEvidenceReference: null,
+        identitySubjectReference: null,
         now,
         policyVersion: consentPolicyVersion,
         supersedesId: null,
-        verifiedAt: null,
-        verifier: null,
-        verifierSubjectReference: null,
       });
       return {
         kind: 'declared' as const,
@@ -377,25 +270,32 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
   }
 
   /**
-   * Asks the approved verifier to examine a declared person, and records what
-   * comes back along with whatever consent the wording policy can carry.
+   * Links an assertion to an already-established IDENTITY subject and records
+   * only normalized consent-capture references whose wording is approved.
    *
-   * The verification and the consent it captured are one transaction. An
-   * approved provider establishes identity, adult age, and consent in one
-   * interaction, and splitting them here would allow a verified person with no
-   * path to consent — which is a record that looks complete and is not.
+   * This is an internal owner-service contract, not an HTTP request. The caller
+   * has already authorized the SAFETY assertion and normalized any consent
+   * capture. IDENTITY independently proves that the supplied subject belongs to
+   * this assertion and currently holds both required grants.
    *
-   * The verification supersedes the assertion rather than editing it, so what
-   * the creator originally said stays exactly as they said it.
+   * Linkage supersedes the assertion rather than editing it, so what the creator
+   * originally said stays exactly as they said it.
    */
-  async verifyParticipant(input: {
+  async linkParticipant(input: {
     readonly actorReference: string;
+    readonly consentEvidenceReferences: Readonly<
+      Partial<Record<ConsentScope, string>>
+    >;
+    readonly consentExpiresAt?: Date | undefined;
+    readonly identitySubjectReference: string;
     readonly participantId: string;
     readonly scopes: readonly ConsentScope[];
-  }): Promise<VerificationOutcome> {
-    const { copy, repository, verifier } = this.dependencies;
-    if (!this.verificationAvailable) return { kind: 'unavailable' };
+  }): Promise<IdentityLinkOutcome> {
+    const { copy, identityEvidence, repository } = this.dependencies;
     const now = this.dependencies.now();
+    if (input.consentExpiresAt !== undefined && input.consentExpiresAt <= now) {
+      return { kind: 'conflict' };
+    }
     const asserted = await repository.findParticipant(
       repository.transactionless,
       input.participantId,
@@ -403,12 +303,24 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
     if (asserted === undefined) return { kind: 'not_found' };
     if (asserted.evidenceState !== 'asserted') return { kind: 'conflict' };
 
-    const verification = await verifier.verify({
-      contentId: asserted.contentId,
-      creatorId: asserted.creatorId,
-      participantId: asserted.id,
-      scopes: input.scopes,
+    const identity = await identityEvidence.currentForSafetyParticipant({
+      executor: repository.transactionless,
+      now,
+      participantReference: asserted.id,
+      subjectReference: input.identitySubjectReference,
     });
+    if (
+      identity?.identityStanding !== 'granted' ||
+      identity.adultStanding !== 'granted'
+    ) {
+      return { kind: 'not_verified' };
+    }
+    const requestedScopes = [...new Set(input.scopes)];
+    const grantableScopes = requestedScopes.filter(
+      (scope) =>
+        copy.approvedCopyVersion(scope) !== undefined &&
+        input.consentEvidenceReferences[scope] !== undefined,
+    );
 
     return repository
       .transaction(async (executor) => {
@@ -418,32 +330,27 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
           asserted.contentId,
         );
         if (
-          recorded + input.scopes.length >= maximumConsentRecordsPerContent ||
+          recorded + grantableScopes.length >=
+            maximumConsentRecordsPerContent ||
           (await repository.countParticipants(executor, asserted.contentId)) >=
             maximumDepictedPersonPageSize
         ) {
           return { kind: 'conflict' as const };
         }
         const participant = await repository.insertParticipant(executor, {
-          adultAssuranceEvidenceReference:
-            verification.adultAssuranceEvidenceReference,
           contentId: asserted.contentId,
           creatorId: asserted.creatorId,
-          evidenceState: 'verified',
-          expiresAt: verification.expiresAt ?? null,
-          identityEvidenceReference: verification.identityEvidenceReference,
+          evidenceState: 'identity_referenced',
+          identitySubjectReference: identity.subjectReference,
           now,
           policyVersion: consentPolicyVersion,
           supersedesId: asserted.id,
-          verifiedAt: now,
-          verifier: verifier.provider,
-          verifierSubjectReference: verification.subjectReference,
         });
 
         const grantedScopes: ConsentScope[] = [];
-        for (const scope of input.scopes) {
+        for (const scope of grantableScopes) {
           const copyVersion = copy.approvedCopyVersion(scope);
-          const evidence = verification.consentEvidenceReferences[scope];
+          const evidence = input.consentEvidenceReferences[scope];
           // Two independent gates. No approved wording means no grant, however
           // willing the person was, because a record would claim they agreed to
           // words that do not exist. No captured evidence means the verifier did
@@ -455,7 +362,7 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
             contentId: asserted.contentId,
             copyVersion,
             disposition: 'grant',
-            expiresAt: verification.expiresAt ?? null,
+            expiresAt: input.consentExpiresAt ?? null,
             now,
             participantId: participant.id,
             policyVersion: consentPolicyVersion,
@@ -466,14 +373,13 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
         }
         return {
           grantedScopes,
-          kind: 'verified' as const,
+          kind: 'linked' as const,
           participant: participantView(participant),
         };
       })
       .catch((error: unknown) => {
-        // Two verifications of the same assertion, or of the same person on the
-        // same item. The partial unique indexes decide, and the loser is told
-        // rather than leaving a second record of one person.
+        // Two links of the same assertion or Identity subject. PostgreSQL
+        // decides, and the loser is told rather than creating a fork.
         if (isUniqueViolation(error)) return { kind: 'conflict' as const };
         throw error;
       });
@@ -581,15 +487,38 @@ export class DepictedPersonConsentService implements DepictedPersonConsentPort {
       await repository.listParticipants(input.executor, input.contentId),
     );
     if (participants.length === 0) return denied('participants_missing');
-    if (participants.some((row) => row.evidenceState !== 'verified')) {
+    if (
+      participants.some((row) => row.evidenceState !== 'identity_referenced')
+    ) {
       return denied('assertion_only');
     }
+    const identityDecisions = await Promise.all(
+      participants.map((participant) =>
+        this.dependencies.identityEvidence.currentForSafetyParticipant({
+          executor: input.executor,
+          now: input.now,
+          participantReference: participant.supersedesId ?? participant.id,
+          subjectReference: participant.identitySubjectReference ?? '',
+        }),
+      ),
+    );
     if (
-      participants.some(
-        (row) => row.expiresAt !== null && row.expiresAt <= input.now,
+      identityDecisions.some(
+        (decision) =>
+          decision?.adultStanding === 'expired' ||
+          decision?.identityStanding === 'expired',
       )
     ) {
       return denied('evidence_expired');
+    }
+    if (
+      identityDecisions.some(
+        (decision) =>
+          decision?.adultStanding !== 'granted' ||
+          decision.identityStanding !== 'granted',
+      )
+    ) {
+      return denied('assertion_only');
     }
     if (this.dependencies.copy.approvedCopyVersion(input.scope) === undefined) {
       // Even a stored grant could not be relied on: nobody has approved what a
@@ -659,10 +588,9 @@ function participantView(row: DepictedParticipantRow): DepictedParticipantView {
     contentId: row.contentId,
     declaredAt: row.declaredAt,
     evidenceState: row.evidenceState,
-    expiresAt: row.expiresAt,
     id: row.id,
+    identitySubjectReference: row.identitySubjectReference,
     supersedesId: row.supersedesId,
-    verifier: row.verifier,
   };
 }
 

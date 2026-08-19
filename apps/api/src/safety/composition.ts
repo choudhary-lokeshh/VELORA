@@ -1,9 +1,7 @@
 import {
   localTestAppealPolicy,
   localTestConsentPolicy,
-  localTestDepictedPersonVerifier,
   localTestTakedownPolicy,
-  unavailableDepictedPersonVerifier,
   matureContentEnabled,
   unpublishedAppealPolicy,
   unpublishedConsentPolicy,
@@ -12,6 +10,10 @@ import {
 } from '@velora/config/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
+import {
+  EmptyIdentityDepictedPersonEvidenceReader,
+  type IdentityDepictedPersonEvidenceReaderPort,
+} from '../identity/assurance-reader.js';
 import type { ConversationEnforcementPort } from '../messaging/enforcement.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import type { ConsumerEnforcementPort } from '../users/enforcement.js';
@@ -19,11 +21,8 @@ import type { UsersService } from '../users/service.js';
 import {
   DepictedPersonConsentService,
   LocalTestConsentPolicy,
-  LocalTestDepictedPersonVerifier,
-  UnavailableDepictedPersonVerifier,
   UnpublishedConsentPolicy,
   type ConsentCopyPolicy,
-  type DepictedPersonVerifier,
 } from './consent.js';
 import {
   AppealService,
@@ -86,7 +85,7 @@ export function createSafetyRuntime(input: {
   readonly accounts: ConsumerEnforcementPort;
   /** PRIVATE CLUBS' answer about what a visitor could have been looking at. */
   readonly catalog: SafetyCatalogTargetPort;
-  /** Chooses the depicted-person verifier and the consent wording policy. */
+  /** Chooses the consent wording policy; Identity owns verification. */
   readonly config: ServerConfig;
   readonly consumerContext: ConsumerContextResolver;
   /** USERS' answer about whether an account exists at all. */
@@ -97,11 +96,20 @@ export function createSafetyRuntime(input: {
   /** CREATORS' answer resolving a public handle. */
   readonly creators: SafetyCreatorTargetPort;
   readonly database: DatabaseHandle;
+  readonly identityEvidence?: IdentityDepictedPersonEvidenceReaderPort;
   readonly now?: () => Date;
   readonly users: UsersService;
 }): SafetyRuntime {
   const now = input.now ?? (() => new Date());
   const repository = new SafetyRepository(input.database);
+  const identityEvidence =
+    input.identityEvidence ??
+    (input.config.APP_ENV === 'test'
+      ? new EmptyIdentityDepictedPersonEvidenceReader()
+      : undefined);
+  if (identityEvidence === undefined) {
+    throw new Error('SAFETY requires the Identity depicted-person reader');
+  }
   const targets = new ReportTargetResolver({
     catalog: input.catalog,
     consumers: input.consumers,
@@ -117,9 +125,9 @@ export function createSafetyRuntime(input: {
   const authority = new EnforcementAuthority({ now, repository });
   const consent = new DepictedPersonConsentService({
     copy: selectConsentPolicy(input.config),
+    identityEvidence,
     now,
     repository,
-    verifier: selectDepictedPersonVerifier(input.config),
   });
   const eligibility = new SafetyEligibility(repository);
   const appeals = new AppealService({
@@ -164,40 +172,10 @@ export function createSafetyRuntime(input: {
   };
 }
 
-/**
- * The two depicted-person adapters, chosen the way every other provider is.
- *
- * A registry rather than a conditional, so adding an approved provider is a
- * table entry with a configuration value beside it, and so the set of things
- * that can be selected is visible in one place. Both default to the adapter
- * that refuses, and configuration rejects anything else in a deployed
- * environment — satisfying one of them enables nothing on its own.
- */
-const depictedPersonVerifiers: Readonly<
-  Record<string, () => DepictedPersonVerifier>
-> = {
-  [localTestDepictedPersonVerifier]: () =>
-    new LocalTestDepictedPersonVerifier(),
-  [unavailableDepictedPersonVerifier]: () =>
-    new UnavailableDepictedPersonVerifier(),
-};
-
 const consentPolicies: Readonly<Record<string, () => ConsentCopyPolicy>> = {
   [localTestConsentPolicy]: () => new LocalTestConsentPolicy(),
   [unpublishedConsentPolicy]: () => new UnpublishedConsentPolicy(),
 };
-
-function selectDepictedPersonVerifier(
-  config: ServerConfig,
-): DepictedPersonVerifier {
-  const build = depictedPersonVerifiers[config.SAFETY_DEPICTED_PERSON_VERIFIER];
-  if (build === undefined) {
-    throw new Error(
-      `Unsupported depicted-person verifier: ${config.SAFETY_DEPICTED_PERSON_VERIFIER}`,
-    );
-  }
-  return build();
-}
 
 function selectConsentPolicy(config: ServerConfig): ConsentCopyPolicy {
   const build = consentPolicies[config.SAFETY_CONSENT_POLICY];

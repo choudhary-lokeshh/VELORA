@@ -39,7 +39,7 @@ export interface CreatorSafetyRoutesDependencies {
   /** The configured sources, reported by name rather than as booleans. */
   readonly capabilities: {
     readonly consentPolicy: string;
-    readonly depictedPersonVerifier: string;
+    readonly identityVerificationProvider: string;
     readonly matureContent: string;
   };
   readonly creatorContext: CreatorContextResolver;
@@ -68,7 +68,7 @@ export class CreatorSafetyRoutes {
         eligible: !matureIneligibleSurfaces.includes(surface),
         surface,
       })),
-      verifierSource: capabilities.depictedPersonVerifier,
+      verifierSource: capabilities.identityVerificationProvider,
     };
     return {
       body: creatorMatureReadinessResponseSchema.parse(body),

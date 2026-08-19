@@ -864,30 +864,25 @@ export const safetyContentDepictions = pgTable(
  * One person depicted in one content item, append-only.
  *
  * **Velora holds no identity document, no image, and no biometric template**,
- * and there is no column here one could be put in. What it holds is a reference
- * to an approved verifier's outcome: that somebody examined an identification
- * document, that the person is an adult, and which provider says so. The
+ * and there is no column here one could be put in. What it holds is one opaque
+ * IDENTITY ASSURANCE subject reference. Provider, identity, adult-threshold,
+ * validity, and supersession facts stay behind that domain's contract. The
  * reasoning is recorded in [surface and distribution eligibility](../../../../docs/compliance/07-surface-and-distribution-eligibility.md)
  * — a table of government identity documents is the highest-value breach target
  * the platform could build, in exchange for evidence Velora is probably not the
  * right party to hold.
  *
- * A creator's word is stored as a creator's word. `asserted` carries no
- * evidence reference at all and a constraint refuses one, so an assertion
- * cannot be dressed as verification by a caller filling in a field. Nothing in
- * the request shape a creator uses carries an evidence reference either: those
- * columns are written only from a verifier's result.
+ * A creator's word is stored as a creator's word. `asserted` carries no Identity
+ * reference at all and a constraint refuses one, so an assertion cannot be
+ * dressed as verification by a caller filling in a field.
  *
- * Two people are distinguished only when a verifier has issued a subject
- * reference for each, which is the only identifier Velora legitimately holds
- * for a depicted person. Before that they are simply two declarations, and the
- * platform does not invent a name, a handle, or a hash to tell them apart.
+ * Two people are distinguished only when IDENTITY has established a separate
+ * subject for each SAFETY assertion. Before that they are simply two
+ * declarations, and the platform does not invent a name, handle, or hash.
  */
 export const safetyDepictedParticipants = pgTable(
   'safety_depicted_participants',
   {
-    /** Opaque verifier reference to the adult-assurance outcome. */
-    adultAssuranceEvidenceReference: text('adult_assurance_evidence_reference'),
     contentId: uuid('content_id')
       .notNull()
       .references(() => safetyContentDepictions.contentId),
@@ -896,21 +891,14 @@ export const safetyDepictedParticipants = pgTable(
     evidenceState: text('evidence_state')
       .notNull()
       .$type<DepictedPersonEvidenceState>(),
-    /** When the verification lapses and must be taken again. */
-    expiresAt: timestamptz('expires_at'),
     id: uuid('id').primaryKey(),
-    /** Opaque verifier reference to the identity-examination outcome. */
-    identityEvidenceReference: text('identity_evidence_reference'),
+    /** Opaque IDENTITY subject. Current evidence is never copied here. */
+    identitySubjectReference: uuid('identity_subject_reference'),
     policyVersion: text('policy_version').notNull(),
     /** The record this one replaces, when an assertion becomes verified. */
     supersedesId: uuid('supersedes_id').references(
       (): AnyPgColumn => safetyDepictedParticipants.id,
     ),
-    /** Which approved adapter produced the evidence. */
-    verifier: text('verifier'),
-    verifiedAt: timestamptz('verified_at'),
-    /** The verifier's own opaque handle for this person. Never a name. */
-    verifierSubjectReference: text('verifier_subject_reference'),
   },
   (table) => [
     index('safety_depicted_participants_content_idx').on(
@@ -925,12 +913,11 @@ export const safetyDepictedParticipants = pgTable(
       table.id,
       table.contentId,
     ),
-    // One verified person appears once on one item. Before verification there
-    // is no identifier to deduplicate on, and inventing one would mean deriving
-    // a stable handle for a person from something the platform must not hold.
+    // One linked Identity subject appears once on one item. Before linkage there
+    // is no identifier to deduplicate on, and SAFETY invents none.
     uniqueIndex('safety_depicted_participants_subject_uk')
-      .on(table.contentId, table.verifierSubjectReference)
-      .where(sql`${table.verifierSubjectReference} is not null`),
+      .on(table.contentId, table.identitySubjectReference)
+      .where(sql`${table.identitySubjectReference} is not null`),
     uniqueIndex('safety_depicted_participants_supersedes_uk')
       .on(table.supersedesId)
       .where(sql`${table.supersedesId} is not null`),
@@ -938,28 +925,10 @@ export const safetyDepictedParticipants = pgTable(
       'safety_depicted_participants_state_check',
       inList(table.evidenceState, depictedPersonEvidenceStates),
     ),
-    // Verified means all four references and a moment; asserted means none of
-    // them. There is no half-verified participant, because a record carrying
-    // some evidence and not the rest is one a reader would have to interpret.
+    // SAFETY records only linkage. Current evidence is an IDENTITY answer.
     check(
       'safety_depicted_participants_evidence_shape_check',
-      sql`(${table.evidenceState} = 'verified') = (${table.verifier} is not null)
-        and (${table.evidenceState} = 'verified') = (${table.verifierSubjectReference} is not null)
-        and (${table.evidenceState} = 'verified') = (${table.identityEvidenceReference} is not null)
-        and (${table.evidenceState} = 'verified') = (${table.adultAssuranceEvidenceReference} is not null)
-        and (${table.evidenceState} = 'verified') = (${table.verifiedAt} is not null)`,
-    ),
-    // An assertion cannot expire, because there is nothing to renew.
-    check(
-      'safety_depicted_participants_expiry_check',
-      sql`${table.expiresAt} is null
-        or (${table.verifiedAt} is not null and ${table.expiresAt} > ${table.verifiedAt})`,
-    ),
-    check(
-      'safety_depicted_participants_reference_shape_check',
-      sql`(${table.identityEvidenceReference} is null or ${table.identityEvidenceReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)})
-        and (${table.adultAssuranceEvidenceReference} is null or ${table.adultAssuranceEvidenceReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)})
-        and (${table.verifierSubjectReference} is null or ${table.verifierSubjectReference} ~ ${sql.raw(`'${verifierReferencePattern}'`)})`,
+      sql`(${table.evidenceState} = 'identity_referenced') = (${table.identitySubjectReference} is not null)`,
     ),
     check(
       'safety_depicted_participants_supersedes_self_check',

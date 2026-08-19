@@ -3,10 +3,10 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import {
   DepictedPersonConsentService,
   LocalTestConsentPolicy,
-  LocalTestDepictedPersonVerifier,
-  UnavailableDepictedPersonVerifier,
   UnpublishedConsentPolicy,
 } from '../../src/safety/consent.js';
+import { IdentityDepictedPersonEvidenceReader } from '../../src/identity/assurance-reader.js';
+import { IdentityRepository } from '../../src/identity/repository.js';
 import { SafetyRepository } from '../../src/safety/repository.js';
 import {
   connectDatabase,
@@ -17,6 +17,10 @@ import {
   type TestDatabase,
 } from '../support/database.js';
 import { testServerConfig } from '../support/harness.js';
+import {
+  consentEvidenceFor,
+  grantDepictedPersonEvidence,
+} from '../support/identity-evidence.js';
 
 /**
  * Depicted-person evidence and consent against real PostgreSQL.
@@ -43,41 +47,27 @@ let clockOffsetMilliseconds = 0;
 const now = () => new Date(Date.now() + clockOffsetMilliseconds);
 
 const repository = new SafetyRepository(database.drizzle);
+const identityEvidence = new IdentityDepictedPersonEvidenceReader(
+  new IdentityRepository(database.drizzle),
+);
 
 /** The deployed shape: no verifier, no wording. */
 const refusing = new DepictedPersonConsentService({
   copy: new UnpublishedConsentPolicy(),
+  identityEvidence,
   now,
   repository,
-  verifier: new UnavailableDepictedPersonVerifier(),
-});
-
-/** A verifier and no approved wording. One gate lifted, which enables nothing. */
-const verifierOnly = new DepictedPersonConsentService({
-  copy: new UnpublishedConsentPolicy(),
-  now,
-  repository,
-  verifier: new LocalTestDepictedPersonVerifier(),
 });
 
 /** Both development gates lifted, so the whole path is exercisable. */
 const consent = new DepictedPersonConsentService({
   copy: new LocalTestConsentPolicy(),
+  identityEvidence,
   now,
   repository,
-  verifier: new LocalTestDepictedPersonVerifier(),
 });
 
-/** The same, with verification that lapses, so expiry is observable. */
-const expiring = new DepictedPersonConsentService({
-  copy: new LocalTestConsentPolicy(),
-  now,
-  repository,
-  verifier: new LocalTestDepictedPersonVerifier({
-    milliseconds: 60_000,
-    now,
-  }),
-});
+const expiring = consent;
 
 const creatorId = crypto.randomUUID();
 const operator = 'session:creator-under-test';
@@ -104,6 +94,28 @@ async function asserted(
   return { contentId: item, participantId: declared.participant.id };
 }
 
+async function link(
+  service: DepictedPersonConsentService,
+  participantId: string,
+  scopes: readonly ('publication' | 'distribution' | 'commercial_use')[],
+  expiresAt?: Date,
+) {
+  const subject = await grantDepictedPersonEvidence({
+    database,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    now: now(),
+    participantReference: participantId,
+  });
+  return service.linkParticipant({
+    actorReference: operator,
+    consentEvidenceReferences: consentEvidenceFor(participantId, scopes),
+    ...(expiresAt === undefined ? {} : { consentExpiresAt: expiresAt }),
+    identitySubjectReference: subject,
+    participantId,
+    scopes,
+  });
+}
+
 function satisfied(
   item: string,
   scope: 'publication' | 'distribution' | 'commercial_use',
@@ -126,41 +138,41 @@ afterAll(async () => {
 });
 
 describe('nothing is verified while nothing is approved', () => {
-  it('refuses to verify anybody with no approved provider', async () => {
+  it('refuses to link anybody with no Identity evidence', async () => {
     const item = await asserted(refusing);
 
-    const outcome = await refusing.verifyParticipant({
+    const outcome = await refusing.linkParticipant({
       actorReference: operator,
+      consentEvidenceReferences: {},
+      identitySubjectReference: crypto.randomUUID(),
       participantId: item.participantId,
       scopes: ['publication'],
     });
 
-    expect(outcome.kind).toBe('unavailable');
-    expect(refusing.verificationAvailable).toBe(false);
+    expect(outcome.kind).toBe('not_verified');
     const rows = await rowsOf<{ evidence_state: string }>(
       database.sql`select evidence_state from safety_depicted_participants`,
     );
     expect(rows.map((row) => row.evidence_state)).toEqual(['asserted']);
   });
 
-  it('records identity and age without consent when no wording is approved', async () => {
-    const item = await asserted(verifierOnly);
+  it('links Identity evidence without consent when no wording is approved', async () => {
+    const item = await asserted(refusing);
 
-    const outcome = await verifierOnly.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication', 'distribution'],
-    });
+    const outcome = await link(refusing, item.participantId, [
+      'publication',
+      'distribution',
+    ]);
 
-    expect(outcome.kind).toBe('verified');
-    if (outcome.kind !== 'verified') return;
+    expect(outcome.kind).toBe('linked');
+    if (outcome.kind !== 'linked') return;
     // The two gates are independent. A provider can establish who somebody is
     // and that they are an adult; it cannot make them agree to words nobody has
     // written, so no grant is recorded at all.
     expect(outcome.grantedScopes).toEqual([]);
     expect(await countOf('safety_consent_records')).toBe(0);
 
-    const decision = await verifierOnly.consentSatisfied({
+    const decision = await refusing.consentSatisfied({
       contentId: item.contentId,
       executor: database.drizzle,
       now: now(),
@@ -174,7 +186,7 @@ describe('nothing is verified while nothing is approved', () => {
 
   it('defaults both gates to the value that refuses', () => {
     const config = testServerConfig();
-    expect(config.SAFETY_DEPICTED_PERSON_VERIFIER).toBe('unavailable');
+    expect(config.IDENTITY_VERIFICATION_PROVIDER).toBe('unavailable');
     expect(config.SAFETY_CONSENT_POLICY).toBe('unpublished');
   });
 });
@@ -295,16 +307,12 @@ describe("a creator's word is stored as a creator's word", () => {
         where id = ${item.participantId}`,
     );
 
-    const verified = await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication'],
-    });
+    const verified = await link(consent, item.participantId, ['publication']);
 
-    expect(verified.kind).toBe('verified');
-    if (verified.kind !== 'verified') return;
+    expect(verified.kind).toBe('linked');
+    if (verified.kind !== 'linked') return;
     expect(verified.participant.supersedesId).toBe(item.participantId);
-    expect(verified.participant.evidenceState).toBe('verified');
+    expect(verified.participant.evidenceState).toBe('identity_referenced');
     // What the creator originally said is exactly what they said.
     const after = await rowsOf<Record<string, unknown>>(
       database.sql`select * from safety_depicted_participants
@@ -314,23 +322,15 @@ describe("a creator's word is stored as a creator's word", () => {
     // And the person is counted once, by the record nothing replaces.
     const live = await consent.participantsFor(item.contentId);
     expect(live).toHaveLength(1);
-    expect(live[0]?.evidenceState).toBe('verified');
+    expect(live[0]?.evidenceState).toBe('identity_referenced');
   });
 
   it('refuses to verify the same assertion twice', async () => {
     const item = await asserted();
-    const first = await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication'],
-    });
-    const second = await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication'],
-    });
+    const first = await link(consent, item.participantId, ['publication']);
+    const second = await link(consent, item.participantId, ['publication']);
 
-    expect(first.kind).toBe('verified');
+    expect(first.kind).toBe('linked');
     // The chain does not fork, and the same person is not counted twice.
     expect(second.kind).toBe('conflict');
     expect(await consent.participantsFor(item.contentId)).toHaveLength(1);
@@ -342,12 +342,8 @@ describe('consent is scoped, and a withdrawal withdraws one scope', () => {
     scopes: readonly ('publication' | 'distribution' | 'commercial_use')[],
   ): Promise<{ readonly contentId: string; readonly participantId: string }> {
     const item = await asserted();
-    const outcome = await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes,
-    });
-    if (outcome.kind !== 'verified') throw new Error('verification failed');
+    const outcome = await link(consent, item.participantId, scopes);
+    if (outcome.kind !== 'linked') throw new Error('Identity linkage failed');
     return { contentId: item.contentId, participantId: outcome.participant.id };
   }
 
@@ -401,12 +397,13 @@ describe('consent is scoped, and a withdrawal withdraws one scope', () => {
 
   it('stops relying on evidence once it lapses', async () => {
     const item = await asserted(expiring);
-    const outcome = await expiring.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication'],
-    });
-    if (outcome.kind !== 'verified') throw new Error('verification failed');
+    const outcome = await link(
+      expiring,
+      item.participantId,
+      ['publication'],
+      new Date(now().getTime() + 60_000),
+    );
+    if (outcome.kind !== 'linked') throw new Error('Identity linkage failed');
     expect((await satisfied(item.contentId, 'publication')).satisfied).toBe(
       true,
     );
@@ -436,11 +433,7 @@ describe('consent is scoped, and a withdrawal withdraws one scope', () => {
       satisfied: false,
     });
 
-    await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: second.participant.id,
-      scopes: ['distribution'],
-    });
+    await link(consent, second.participant.id, ['distribution']);
     expect(await satisfied(item.contentId, 'publication')).toMatchObject({
       reasonCode: 'consent_missing',
       satisfied: false,
@@ -488,19 +481,14 @@ describe('the database holds no identity evidence, and refuses to be edited', ()
     const insert = (values: Record<string, unknown>) =>
       execute(
         database.sql`insert into safety_depicted_participants ${database.sql({
-          adult_assurance_evidence_reference: null,
           content_id: item.contentId,
           creator_id: creatorId,
           declared_at: new Date(),
           evidence_state: 'asserted',
-          expires_at: null,
           id: crypto.randomUUID(),
-          identity_evidence_reference: null,
+          identity_subject_reference: null,
           policy_version: 'v1-provisional',
           supersedes_id: null,
-          verified_at: null,
-          verifier: null,
-          verifier_subject_reference: null,
           ...values,
         })}`,
       );
@@ -509,7 +497,7 @@ describe('the database holds no identity evidence, and refuses to be edited', ()
     // confusion this model exists to prevent.
     expect(
       await refused(() =>
-        insert({ identity_evidence_reference: 'somebody-said-so' }),
+        insert({ identity_subject_reference: crypto.randomUUID() }),
       ),
     ).toBe(true);
     // And a verification missing any part of its evidence is not a
@@ -517,24 +505,16 @@ describe('the database holds no identity evidence, and refuses to be edited', ()
     expect(
       await refused(() =>
         insert({
-          evidence_state: 'verified',
-          identity_evidence_reference: 'identity-0001',
-          verified_at: new Date(),
-          verifier: 'local-test',
+          evidence_state: 'identity_referenced',
         }),
       ),
     ).toBe(true);
-    // A reference shaped like prose is refused: an opaque provider handle has
-    // no spaces, and a column that accepted one would accept a name.
+    // The only cross-domain reference is UUID-typed, so it cannot hold prose.
     expect(
       await refused(() =>
         insert({
-          adult_assurance_evidence_reference: 'age 34',
-          evidence_state: 'verified',
-          identity_evidence_reference: 'Jane Smith, passport 12345',
-          verified_at: new Date(),
-          verifier: 'local-test',
-          verifier_subject_reference: 'subject 1',
+          evidence_state: 'identity_referenced',
+          identity_subject_reference: 'Jane Smith, passport 12345',
         }),
       ),
     ).toBe(true);
@@ -542,12 +522,8 @@ describe('the database holds no identity evidence, and refuses to be edited', ()
 
   it('refuses a grant nobody captured', async () => {
     const item = await asserted();
-    const verified = await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication'],
-    });
-    if (verified.kind !== 'verified') throw new Error('setup failed');
+    const verified = await link(consent, item.participantId, ['publication']);
+    if (verified.kind !== 'linked') throw new Error('setup failed');
 
     // A grant with no evidence behind it would be the creator asserting consent
     // on another person's behalf.
@@ -575,17 +551,13 @@ describe('the database holds no identity evidence, and refuses to be edited', ()
 
   it('refuses to edit or remove evidence and consent', async () => {
     const item = await asserted();
-    await consent.verifyParticipant({
-      actorReference: operator,
-      participantId: item.participantId,
-      scopes: ['publication'],
-    });
+    await link(consent, item.participantId, ['publication']);
 
     const refusals = await Promise.all([
       refused(() =>
         execute(
           database.sql`update safety_depicted_participants
-            set evidence_state = 'verified'`,
+            set evidence_state = 'identity_referenced'`,
         ),
       ),
       refused(() =>
@@ -609,19 +581,14 @@ describe('the database holds no identity evidence, and refuses to be edited', ()
       await refused(() =>
         execute(
           database.sql`insert into safety_depicted_participants ${database.sql({
-            adult_assurance_evidence_reference: null,
             content_id: crypto.randomUUID(),
             creator_id: creatorId,
             declared_at: new Date(),
             evidence_state: 'asserted',
-            expires_at: null,
             id: crypto.randomUUID(),
-            identity_evidence_reference: null,
+            identity_subject_reference: null,
             policy_version: 'v1-provisional',
             supersedes_id: null,
-            verified_at: null,
-            verifier: null,
-            verifier_subject_reference: null,
           })}`,
         ),
       ),

@@ -3,8 +3,9 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import {
   DepictedPersonConsentService,
   LocalTestConsentPolicy,
-  LocalTestDepictedPersonVerifier,
 } from '../../src/safety/consent.js';
+import { IdentityDepictedPersonEvidenceReader } from '../../src/identity/assurance-reader.js';
+import { IdentityRepository } from '../../src/identity/repository.js';
 import { takedownRateLimitCount } from '../../src/safety/policy.js';
 import { SafetyRepository } from '../../src/safety/repository.js';
 import {
@@ -21,6 +22,10 @@ import {
   type TestDatabase,
 } from '../support/database.js';
 import { testServerConfig } from '../support/harness.js';
+import {
+  consentEvidenceFor,
+  grantDepictedPersonEvidence,
+} from '../support/identity-evidence.js';
 
 /**
  * Takedown claims and their deadlines against real PostgreSQL.
@@ -59,9 +64,11 @@ const takedown = new TakedownService({
 
 const consent = new DepictedPersonConsentService({
   copy: new LocalTestConsentPolicy(),
+  identityEvidence: new IdentityDepictedPersonEvidenceReader(
+    new IdentityRepository(database.drizzle),
+  ),
   now,
   repository,
-  verifier: new LocalTestDepictedPersonVerifier(),
 });
 
 const hour = 60 * 60 * 1_000;
@@ -281,12 +288,21 @@ describe('a claim is reviewed, and decides nothing by existing', () => {
     await consent.declare({ ...target, declaration: 'depicted_persons' });
     const declared = await consent.declareParticipant(target);
     if (declared.kind !== 'declared') throw new Error('setup failed');
-    const verified = await consent.verifyParticipant({
+    const subject = await grantDepictedPersonEvidence({
+      database,
+      now: now(),
+      participantReference: declared.participant.id,
+    });
+    const verified = await consent.linkParticipant({
       actorReference: 'session:operator',
+      consentEvidenceReferences: consentEvidenceFor(declared.participant.id, [
+        'publication',
+      ]),
+      identitySubjectReference: subject,
       participantId: declared.participant.id,
       scopes: ['publication'],
     });
-    if (verified.kind !== 'verified') throw new Error('setup failed');
+    if (verified.kind !== 'linked') throw new Error('setup failed');
     const [grant] = await consent.consentRecordsFor(target.contentId);
     if (grant === undefined) throw new Error('setup failed');
     const revoked = await consent.revokeConsent({

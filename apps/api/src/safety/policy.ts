@@ -646,10 +646,10 @@ export type DepictionDeclaration = (typeof depictionDeclarations)[number];
 /**
  * How much is actually known about a depicted person.
  *
- * `asserted` is the creator's word and nothing more. `verified` means an
- * approved verifier examined an identification document and returned a
- * normalized outcome, and the platform holds a reference to that outcome rather
- * than the document.
+ * `asserted` is the creator's word and nothing more. `identity_referenced`
+ * means SAFETY has linked the participant to one IDENTITY ASSURANCE subject.
+ * It is deliberately not named `verified`: whether that subject currently has
+ * both required evidence classes is re-read from IDENTITY on every gate.
  *
  * The two are separate values that no code widens into each other, for the same
  * reason `self_declared` and `verified_adult` are separate adult-assurance
@@ -659,7 +659,10 @@ export type DepictionDeclaration = (typeof depictionDeclarations)[number];
  * adult cannot satisfy it, and recording an assertion as verification would be
  * the platform stating something nobody checked.
  */
-export const depictedPersonEvidenceStates = ['asserted', 'verified'] as const;
+export const depictedPersonEvidenceStates = [
+  'asserted',
+  'identity_referenced',
+] as const;
 export type DepictedPersonEvidenceState =
   (typeof depictedPersonEvidenceStates)[number];
 
