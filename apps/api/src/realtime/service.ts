@@ -1,0 +1,458 @@
+import { lockPair } from '../database/pair-lock.js';
+import type { ConnectionDirectoryPort } from '../discovery/connections.js';
+import type { OnboardingService } from '../users/onboarding.js';
+import type { UserAccountRow } from '../users/repository.js';
+import type { RtcCallEligibilityPort } from './eligibility.js';
+import {
+  isTerminalRtcSessionState,
+  rtcInvitationTimeoutMilliseconds,
+  type RtcCallMedium,
+  type RtcEndReason,
+} from './policy.js';
+import {
+  participantRoleOf,
+  type RtcRepository,
+  type RtcSessionRow,
+  type RtcSessionWithParticipants,
+} from './repository.js';
+
+export interface CallView {
+  readonly acceptedAt: Date | undefined;
+  readonly connectedAt: Date | undefined;
+  readonly counterpartId: string;
+  readonly createdAt: Date;
+  readonly endReason: RtcEndReason | undefined;
+  readonly endedAt: Date | undefined;
+  readonly id: string;
+  readonly invitationExpiresAt: Date;
+  readonly medium: RtcCallMedium;
+  /** Which side the caller of this API is on. Derived, never claimed. */
+  readonly role: 'caller' | 'recipient';
+  readonly state: string;
+}
+
+export type CallOutcome =
+  | { readonly kind: 'call'; readonly view: CallView }
+  /** The actor's own account does not currently permit calling. */
+  | { readonly kind: 'not_eligible' }
+  /** Deliberately indistinguishable from a call that does not exist. */
+  | { readonly kind: 'not_found' }
+  /** The pair may not talk, or the transition is not available now. */
+  | { readonly kind: 'not_permitted' };
+
+export interface RtcServiceDependencies {
+  readonly connections: ConnectionDirectoryPort;
+  readonly eligibility: RtcCallEligibilityPort;
+  readonly now: () => Date;
+  readonly onboarding: OnboardingService;
+  readonly repository: RtcRepository;
+}
+
+/**
+ * Call sessions.
+ *
+ * Four rules shape everything here.
+ *
+ * A call exists only because two people are already authorized to contact each
+ * other, and REALTIME never decides that: it asks DISCOVERY's published
+ * connection contract and the composed eligibility answer. There is no other
+ * route into calling somebody, and no request body can assert one.
+ *
+ * Authorization is taken at the moment of the action and never from the state a
+ * client is holding. Membership, the session's own state, the relationship, and
+ * current eligibility are all re-read when somebody invites or accepts — inside
+ * the transaction that writes, under the pair lock, so a block landing
+ * mid-request either precedes the call or follows it and never straddles it.
+ *
+ * A transition is decided by the database, not by a prior read. Every mutation
+ * restates the state it expects in its `where` clause, so two people hanging up
+ * at the same instant produce one ending and the loser observes it.
+ *
+ * Ending is idempotent and terminal. A call that has finished answers the same
+ * way however many times it is asked, because a retried hang-up is the ordinary
+ * case rather than an error.
+ */
+export class RtcService {
+  constructor(private readonly dependencies: RtcServiceDependencies) {}
+
+  /**
+   * Invites somebody to a call, or returns the live call the pair already has.
+   *
+   * The target is named through the relationship rather than through a
+   * participant field: the caller supplies an introduction they are part of,
+   * and the server derives who the other person is. A request cannot name a
+   * participant, a session, a provider, a scope, or a state.
+   */
+  async invite(
+    actor: UserAccountRow,
+    input: {
+      readonly introductionId: string;
+      readonly medium: RtcCallMedium;
+    },
+  ): Promise<CallOutcome> {
+    if (!(await this.mayUseRtc(actor))) return { kind: 'not_eligible' };
+
+    const now = this.dependencies.now();
+    // One transaction, one pooled connection, for the whole decision. Reading
+    // the relationship on a separate handle first would make every invitation
+    // want two connections in sequence, and a burst of them against one pair
+    // would then queue for a connection while holding none — which is how a
+    // busy pool becomes a stalled one. It also makes the relationship the write
+    // is authorized against the one that is true when the write happens.
+    const outcome = await this.dependencies.repository.transaction(
+      async (
+        executor,
+      ): Promise<
+        | { readonly counterpartId: string; readonly session: RtcSessionRow }
+        | 'denied'
+        | 'unknown'
+      > => {
+        const connection =
+          await this.dependencies.connections.mutualConnectionFor({
+            actorId: actor.id,
+            executor,
+            introductionId: input.introductionId,
+          });
+        // A pending, expired, closed, or someone else's introduction answers
+        // exactly as one that does not exist, so probing discloses nothing.
+        if (connection === undefined) return 'unknown';
+
+        await lockPair(executor, actor.id, connection.counterpartId);
+        if (
+          !(await this.dependencies.eligibility.mayCall({
+            executor,
+            first: actor.id,
+            now,
+            second: connection.counterpartId,
+          }))
+        ) {
+          return 'denied';
+        }
+
+        const created = await this.dependencies.repository.insertSession(
+          executor,
+          {
+            id: crypto.randomUUID(),
+            initiatorId: actor.id,
+            invitationExpiresAt: new Date(
+              now.getTime() + rtcInvitationTimeoutMilliseconds,
+            ),
+            medium: input.medium,
+            now,
+            originIntroductionId: connection.introductionId,
+            recipientId: connection.counterpartId,
+          },
+        );
+        if (created !== undefined) {
+          return { counterpartId: connection.counterpartId, session: created };
+        }
+
+        // The pair already holds a live call. The loser of the unique index
+        // reads the winner's rather than creating a second one, which is what
+        // makes two people calling each other at the same instant produce one
+        // call.
+        const existing = await this.dependencies.repository.findLiveForPair(
+          executor,
+          { first: actor.id, second: connection.counterpartId },
+        );
+        if (existing === undefined) {
+          throw new Error('Live call vanished between insert and read');
+        }
+        return { counterpartId: connection.counterpartId, session: existing };
+      },
+    );
+    if (outcome === 'unknown') return { kind: 'not_found' };
+    if (outcome === 'denied') return { kind: 'not_permitted' };
+    return this.viewOf(actor.id, outcome.session, outcome.counterpartId);
+  }
+
+  /**
+   * Answers an invitation.
+   *
+   * Eligibility is composed again rather than inherited from the invitation. A
+   * block that commits between the invitation and this moment means the call is
+   * refused and the invitation is ended, which is the whole reason acceptance
+   * is not simply a state change.
+   */
+  async accept(actor: UserAccountRow, sessionId: string): Promise<CallOutcome> {
+    if (!(await this.mayUseRtc(actor))) return { kind: 'not_eligible' };
+    return this.actOnCall(actor, sessionId, async (context) => {
+      const { executor, held, role } = context;
+      if (role !== 'recipient') return { kind: 'not_permitted' };
+      if (held.state !== 'invited') return { kind: 'not_permitted' };
+      const now = this.dependencies.now();
+      if (held.invitationExpiresAt <= now) {
+        // The deadline passed while this request was in flight. It expires
+        // rather than being answered, so a late acceptance can never revive an
+        // invitation the other person has already stopped waiting on.
+        await this.dependencies.repository.terminateSession(executor, {
+          expected: 'invited',
+          id: held.id,
+          now,
+          reason: 'invitation_expired',
+          terminal: 'expired',
+        });
+        return { kind: 'not_permitted' };
+      }
+
+      if (
+        !(await this.dependencies.eligibility.mayCall({
+          executor,
+          first: held.pairLowId,
+          now,
+          second: held.pairHighId,
+        }))
+      ) {
+        await this.dependencies.repository.terminateSession(executor, {
+          expected: 'invited',
+          id: held.id,
+          now,
+          reason: 'safety_block',
+          terminal: 'ended',
+        });
+        return { kind: 'not_permitted' };
+      }
+
+      const accepted = await this.dependencies.repository.transitionSession(
+        executor,
+        {
+          acceptedAt: now,
+          expected: 'invited',
+          id: held.id,
+          next: 'accepted',
+          now,
+        },
+      );
+      if (accepted === undefined) return { kind: 'not_permitted' };
+      await this.dependencies.repository.markParticipantAccepted(executor, {
+        now,
+        sessionId: held.id,
+        userId: actor.id,
+      });
+      return { kind: 'session', session: accepted };
+    });
+  }
+
+  /** Declines an invitation. Only the recipient may. */
+  async reject(actor: UserAccountRow, sessionId: string): Promise<CallOutcome> {
+    return this.finish(actor, sessionId, {
+      allowedRole: 'recipient',
+      from: ['invited'],
+      reason: 'declined',
+      terminal: 'rejected',
+    });
+  }
+
+  /** Withdraws an invitation before it is answered. Only the caller may. */
+  async cancel(actor: UserAccountRow, sessionId: string): Promise<CallOutcome> {
+    return this.finish(actor, sessionId, {
+      allowedRole: 'caller',
+      from: ['invited'],
+      reason: 'withdrawn',
+      terminal: 'cancelled',
+    });
+  }
+
+  /** Hangs up. Either participant may, from any state after acceptance. */
+  async end(actor: UserAccountRow, sessionId: string): Promise<CallOutcome> {
+    return this.finish(actor, sessionId, {
+      allowedRole: undefined,
+      from: ['accepted', 'connecting', 'active', 'reconnecting', 'ending'],
+      reason: 'hung_up',
+      terminal: 'ended',
+    });
+  }
+
+  /** One call the actor is a participant of. */
+  async read(actor: UserAccountRow, sessionId: string): Promise<CallOutcome> {
+    const found = await this.dependencies.repository.findById(
+      this.dependencies.repository.transactionless,
+      sessionId,
+    );
+    if (found === undefined) return { kind: 'not_found' };
+    const role = participantRoleOf(found.participants, actor.id);
+    // A call somebody is not in is reported exactly as one that does not
+    // exist, so an identifier cannot be used to learn that two other people
+    // are talking.
+    if (role === undefined) return { kind: 'not_found' };
+    return this.viewOf(actor.id, found.session, counterpartOf(found, actor.id));
+  }
+
+  /**
+   * Expires invitations whose deadline has passed.
+   *
+   * Recovery rather than a timer: the deadline is already stored on the row, so
+   * this discovers facts that are true rather than firing an alarm at the
+   * instant one becomes true. A missed sweep delays the record and changes no
+   * decision, because acceptance independently refuses a passed deadline.
+   */
+  async expireDueInvitations(limit = 100): Promise<number> {
+    const now = this.dependencies.now();
+    const due = await this.dependencies.repository.claimExpiredInvitations(
+      this.dependencies.repository.transactionless,
+      { limit, now },
+    );
+    let expired = 0;
+    for (const session of due) {
+      const settled = await this.dependencies.repository.transaction(
+        async (executor) =>
+          this.dependencies.repository.terminateSession(executor, {
+            expected: 'invited',
+            id: session.id,
+            now,
+            reason: 'invitation_expired',
+            terminal: 'expired',
+          }),
+      );
+      if (settled !== undefined) expired += 1;
+    }
+    return expired;
+  }
+
+  private async finish(
+    actor: UserAccountRow,
+    sessionId: string,
+    rule: {
+      readonly allowedRole: 'caller' | 'recipient' | undefined;
+      readonly from: readonly string[];
+      readonly reason: RtcEndReason;
+      readonly terminal: 'rejected' | 'cancelled' | 'ended';
+    },
+  ): Promise<CallOutcome> {
+    return this.actOnCall(actor, sessionId, async (context) => {
+      const { executor, held, role } = context;
+      if (rule.allowedRole !== undefined && role !== rule.allowedRole) {
+        return { kind: 'not_permitted' };
+      }
+      // Already finished. Answering with the call rather than an error is what
+      // makes a retried hang-up harmless.
+      if (isTerminalRtcSessionState(held.state)) {
+        return { kind: 'session', session: held };
+      }
+      if (!rule.from.includes(held.state)) return { kind: 'not_permitted' };
+
+      const now = this.dependencies.now();
+      const settled = await this.dependencies.repository.terminateSession(
+        executor,
+        {
+          expected: held.state,
+          id: held.id,
+          now,
+          reason: rule.reason,
+          terminal: rule.terminal,
+        },
+      );
+      if (settled === undefined) return { kind: 'not_permitted' };
+      return { kind: 'session', session: settled };
+    });
+  }
+
+  /**
+   * Resolves the actor against the call, locks it, and runs one guarded
+   * transition inside that transaction.
+   *
+   * The participant check happens after the row lock rather than before it, so
+   * the membership a decision is taken against is the membership that is true
+   * when the write happens.
+   */
+  private async actOnCall(
+    actor: UserAccountRow,
+    sessionId: string,
+    run: (context: {
+      readonly executor: Parameters<
+        Parameters<RtcRepository['transaction']>[0]
+      >[0];
+      readonly held: RtcSessionRow;
+      readonly role: 'caller' | 'recipient';
+    }) => Promise<
+      | { readonly kind: 'session'; readonly session: RtcSessionRow }
+      | { readonly kind: 'not_permitted' }
+    >,
+  ): Promise<CallOutcome> {
+    const outcome = await this.dependencies.repository.transaction(
+      async (executor) => {
+        const found = await this.dependencies.repository.findById(
+          executor,
+          sessionId,
+        );
+        if (found === undefined) return { kind: 'not_found' } as const;
+        const role = participantRoleOf(found.participants, actor.id);
+        if (role === undefined) return { kind: 'not_found' } as const;
+
+        // Pair lock before the row lock, in the order `pair-lock.ts` requires,
+        // so a concurrent safety decision about these two people either
+        // precedes this transition or waits for it.
+        await lockPair(
+          executor,
+          found.session.pairLowId,
+          found.session.pairHighId,
+        );
+        const held = await this.dependencies.repository.lockById(
+          executor,
+          sessionId,
+        );
+        if (held === undefined) return { kind: 'not_found' } as const;
+
+        const result = await run({ executor, held, role });
+        if (result.kind === 'not_permitted') {
+          return { kind: 'not_permitted' } as const;
+        }
+        return {
+          counterpartId: counterpartOf(found, actor.id),
+          kind: 'session',
+          session: result.session,
+        } as const;
+      },
+    );
+    if (outcome.kind === 'not_found') return { kind: 'not_found' };
+    if (outcome.kind === 'not_permitted') return { kind: 'not_permitted' };
+    return this.viewOf(actor.id, outcome.session, outcome.counterpartId);
+  }
+
+  /**
+   * Whether this account may take part in RTC at all, before any pair check.
+   *
+   * The same admission standard MESSAGING applies, taken from the same derived
+   * eligibility rather than from a second copy of the rule. An account that may
+   * not send a message may not place a call either.
+   */
+  private async mayUseRtc(actor: UserAccountRow): Promise<boolean> {
+    if (actor.status !== 'active') return false;
+    const eligibility = await this.dependencies.onboarding.evaluate(actor);
+    return eligibility.step === 'completed';
+  }
+
+  private viewOf(
+    actorId: string,
+    session: RtcSessionRow,
+    counterpartId: string,
+  ): CallOutcome {
+    return {
+      kind: 'call',
+      view: {
+        acceptedAt: session.acceptedAt ?? undefined,
+        connectedAt: session.connectedAt ?? undefined,
+        counterpartId,
+        createdAt: session.createdAt,
+        endReason: session.endReason ?? undefined,
+        endedAt: session.endedAt ?? undefined,
+        id: session.id,
+        invitationExpiresAt: session.invitationExpiresAt,
+        medium: session.medium,
+        role: session.initiatorId === actorId ? 'caller' : 'recipient',
+        state: session.state,
+      },
+    };
+  }
+}
+
+function counterpartOf(
+  found: RtcSessionWithParticipants,
+  actorId: string,
+): string {
+  const other = found.participants.find((row) => row.userId !== actorId);
+  if (other === undefined) {
+    throw new Error('A call is missing its second participant');
+  }
+  return other.userId;
+}

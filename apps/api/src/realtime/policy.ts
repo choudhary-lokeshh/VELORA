@@ -1,0 +1,284 @@
+/**
+ * Approved V1 RTC policy.
+ *
+ * Every value an RTC decision depends on is defined once, here, for the same
+ * reason the messaging and discovery policy modules exist: a limit restated in
+ * two places is a limit that can be changed in one of them.
+ *
+ * [ADR-0025](../../../../docs/decisions/ADR-0025-rtc-live-communications-architecture.md)
+ * is the architecture authority and `docs/domains/realtime.md` describes what
+ * this domain owns.
+ */
+
+/**
+ * What a call carries.
+ *
+ * Two values rather than a boolean, because "video" is not "voice plus a
+ * camera flag": the two differ in what a provider is asked to create, what a
+ * participant grants permission for, and what a client renders when a track is
+ * absent. A closed vocabulary also means a third medium arrives as a migration
+ * and a decision rather than as a new boolean nobody validated.
+ */
+export const rtcCallMediums = ['voice', 'video'] as const;
+export type RtcCallMedium = (typeof rtcCallMediums)[number];
+
+/**
+ * Where a call is in its life.
+ *
+ * `invited` is the only entry state, and every path out of it is explicit. The
+ * separation that matters is between `accepted` and `active`: acceptance is a
+ * platform fact taken from an authenticated request, and activity is an
+ * observation of media that grants nothing. A design with one state covering
+ * both would let a provider event move a call somebody never answered.
+ */
+export const rtcSessionStates = [
+  /** Somebody asked to talk. Expires on its own if nobody acts. */
+  'invited',
+  /** The recipient answered. No credential has been issued yet. */
+  'accepted',
+  /** Authorization issued; endpoints are joining. */
+  'connecting',
+  /** A provider has observed media. */
+  'active',
+  /** Transport interrupted, inside a bounded grace period. */
+  'reconnecting',
+  /** Terminating: revocation and teardown obligations are being discharged. */
+  'ending',
+  /** Terminal. The call happened, or was established and then finished. */
+  'ended',
+  /** Terminal. The invitation's own deadline passed with no answer. */
+  'expired',
+  /** Terminal. The recipient declined. */
+  'rejected',
+  /** Terminal. The caller withdrew before it was answered. */
+  'cancelled',
+  /** Terminal. It could not be established at all. */
+  'failed',
+] as const;
+export type RtcSessionState = (typeof rtcSessionStates)[number];
+
+/**
+ * States from which nothing further happens.
+ *
+ * A terminal session stays terminal. Every later attempt to transition one
+ * answers idempotently rather than erroring, because a retried hang-up is the
+ * ordinary case and not an exception.
+ */
+export const terminalRtcSessionStates: readonly RtcSessionState[] = [
+  'ended',
+  'expired',
+  'rejected',
+  'cancelled',
+  'failed',
+];
+
+/** States in which a call still exists and occupies its pair. */
+export const liveRtcSessionStates: readonly RtcSessionState[] = [
+  'invited',
+  'accepted',
+  'connecting',
+  'active',
+  'reconnecting',
+  'ending',
+];
+
+export function isTerminalRtcSessionState(state: RtcSessionState): boolean {
+  return terminalRtcSessionStates.includes(state);
+}
+
+/**
+ * Which states may follow which.
+ *
+ * A map rather than a chain of conditionals at each call site, so a transition
+ * nobody intended cannot be reached by a path nobody reviewed, and so adding a
+ * state is one edit here rather than an edit everywhere. Every terminal state
+ * maps to nothing, which is what makes "terminal" a property of this table
+ * rather than a convention.
+ */
+const allowedRtcTransitions: Readonly<
+  Record<RtcSessionState, readonly RtcSessionState[]>
+> = {
+  accepted: ['connecting', 'ending', 'ended', 'failed'],
+  active: ['reconnecting', 'ending', 'ended'],
+  cancelled: [],
+  connecting: ['active', 'ending', 'ended', 'failed'],
+  ended: [],
+  ending: ['ended'],
+  expired: [],
+  failed: [],
+  // `ended` is reachable from `invited` for one reason: safety. A block or an
+  // enforcement landing on a ringing call has to end it there and then, and
+  // routing that through `rejected` or `cancelled` would record it as one of
+  // the two people deciding when neither did. Only the safety path takes it —
+  // a participant hanging up a call nobody has answered cancels or declines —
+  // and the service, not this map, is what holds them to that.
+  invited: ['accepted', 'rejected', 'cancelled', 'expired', 'ended'],
+  reconnecting: ['active', 'ending', 'ended'],
+  rejected: [],
+};
+
+export function mayTransitionRtcSession(
+  from: RtcSessionState,
+  to: RtcSessionState,
+): boolean {
+  return allowedRtcTransitions[from].includes(to);
+}
+
+/**
+ * Why a call is in the terminal state it is in.
+ *
+ * Coarse and disclosable. A participant may be told that a call ended because
+ * the other person hung up; they may never be told that it ended because
+ * somebody blocked them, because that would publish another person's safety
+ * decision. `safety_block` and `safety_enforcement` are separate values because
+ * they are separate decisions with separate owners, and both stay inside the
+ * platform rather than reaching a peer.
+ */
+export const rtcEndReasons = [
+  /** A participant hung up. */
+  'hung_up',
+  /** The recipient declined the invitation. */
+  'declined',
+  /** The caller withdrew before it was answered. */
+  'withdrawn',
+  /** Nobody answered before the invitation's deadline. */
+  'invitation_expired',
+  /** A block landed on the pair. */
+  'safety_block',
+  /** A live TRUST & SAFETY enforcement denied it. */
+  'safety_enforcement',
+  /** The reconnect grace period ran out. */
+  'reconnect_expired',
+  /** No provider was available to create or carry the session. */
+  'provider_unavailable',
+  /** A provider accepted the session and then failed it. */
+  'provider_failed',
+  /** Endpoints never joined within the join deadline. */
+  'join_timeout',
+  /** An operator terminated it under audited authority. */
+  'operator_terminated',
+] as const;
+export type RtcEndReason = (typeof rtcEndReasons)[number];
+
+/**
+ * Which reason may accompany which terminal state.
+ *
+ * A terminal state and its reason are written together and have to agree: a
+ * session `rejected` for `provider_failed` would be a record of something that
+ * did not happen. Deriving the legal pairs here means the database can enforce
+ * the pairing and a caller cannot invent one.
+ */
+const reasonsByTerminalState: Readonly<
+  Record<string, readonly RtcEndReason[]>
+> = {
+  cancelled: ['withdrawn'],
+  ended: [
+    'hung_up',
+    'safety_block',
+    'safety_enforcement',
+    'reconnect_expired',
+    'provider_failed',
+    'operator_terminated',
+  ],
+  expired: ['invitation_expired'],
+  failed: ['provider_unavailable', 'provider_failed', 'join_timeout'],
+  rejected: ['declined'],
+};
+
+export function endReasonsFor(state: RtcSessionState): readonly RtcEndReason[] {
+  return reasonsByTerminalState[state] ?? [];
+}
+
+export function isEndReasonValidFor(
+  state: RtcSessionState,
+  reason: RtcEndReason,
+): boolean {
+  return endReasonsFor(state).includes(reason);
+}
+
+/**
+ * The two sides of a one-to-one call.
+ *
+ * Fixed at creation and never exchanged. Which side somebody is on decides
+ * which transitions they may take — only a caller cancels, only a recipient
+ * rejects — so it is a stored fact rather than something derived from who
+ * happens to be asking.
+ */
+export const rtcParticipantRoles = ['caller', 'recipient'] as const;
+export type RtcParticipantRole = (typeof rtcParticipantRoles)[number];
+
+/**
+ * How long an unanswered invitation stands.
+ *
+ * A product constant rather than a technical one, and deliberately short: a
+ * call invitation that outlives the moment somebody was free to take it is an
+ * interruption rather than an offer, and a long one would leave a pair unable
+ * to start a fresh call because the stale one still occupies them.
+ *
+ * The exact value is provisional and named in `DECISIONS_REQUIRED` as pending
+ * product review. Nothing derives correctness from its size: expiry is decided
+ * by comparing against the deadline stored on the row, so changing it changes
+ * new invitations and rewrites none.
+ */
+export const rtcInvitationTimeoutMilliseconds = 45_000;
+
+/**
+ * How long a call may sit in `connecting` before it is a failure.
+ *
+ * Endpoints that have not established media by now are not going to, and a
+ * session left in `connecting` forever would hold its pair against a call that
+ * never happened.
+ */
+export const rtcJoinTimeoutMilliseconds = 30_000;
+
+/**
+ * How long a transport interruption is treated as an interruption.
+ *
+ * A network drop is not a hang-up. Past this bound it is treated as one,
+ * because a call nobody is connected to cannot be distinguished from a call
+ * everybody has left.
+ */
+export const rtcReconnectGraceMilliseconds = 30_000;
+
+/**
+ * What has to be decided or built before calling may be enabled in a deployed
+ * environment. Each entry is a real blocker, not a caution.
+ *
+ * The runtime enforces this rather than merely documenting it: the eligibility
+ * adapter that permits a call is refused outside development and test, and no
+ * RTC provider adapter is approved, so a deployed environment denies every
+ * invitation instead of running RTC with no provider and no Trust & Safety
+ * authority behind it.
+ */
+export const productionBlockers = [
+  'no-approved-rtc-provider',
+  'call-retention-duration-undecided',
+  'regional-availability-undecided',
+  'recording-posture-undecided',
+  'rtc-operations-ownership-unassigned',
+  'native-mobile-rtc-feasibility-undecided',
+] as const;
+
+/**
+ * Recording posture, stated so it cannot be quietly misdescribed.
+ *
+ * **No call is recorded, stored, transcoded, or transcribed**, no code path
+ * does any of those things, and no configuration value turns one on. No surface
+ * may claim or imply that a call is recorded, and none may imply that it could
+ * be. Enabling recording is a separate architecture with its own consent,
+ * indication, retention, moderation, and jurisdiction decisions, none of which
+ * exists.
+ */
+export const callRecordingImplemented = false;
+
+/**
+ * Call retention.
+ *
+ * **No retention duration is approved.** It is
+ * `DECISION REQUIRED / LEGAL REVIEW REQUIRED`, and nothing in this codebase may
+ * invent one. Nothing expires, there is no sweep, and no correctness rule
+ * depends on a row being physically gone — lifecycle, authorization, and
+ * ordering are all decided from state that is present — so applying an approved
+ * duration later removes data without changing how any of this behaves.
+ */
+export const callRetentionDuration = undefined;

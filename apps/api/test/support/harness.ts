@@ -51,6 +51,11 @@ import {
   type PayoutsRuntime,
 } from '../../src/payouts/composition.js';
 import {
+  createRealtimeRuntime,
+  type RealtimeRuntime,
+} from '../../src/realtime/composition.js';
+import type { RtcCallEligibilityPort } from '../../src/realtime/eligibility.js';
+import {
   createMediaRuntime,
   type MediaRuntime,
 } from '../../src/media/composition.js';
@@ -452,6 +457,35 @@ export function testMediaRuntime(input: {
     logger: input.logger ?? silentLogger(),
     performsByteWork: input.performsByteWork ?? true,
     ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
+
+/**
+ * REALTIME wired to the same database, USERS runtime, and DISCOVERY connection
+ * contract the caller is using.
+ *
+ * The eligibility adapter comes from configuration, exactly as it does in
+ * production. A suite that wants a pair who may call supplies its own port
+ * rather than reaching past the registry, so no test can accidentally exercise
+ * a combination configuration would refuse.
+ */
+export function testRealtimeRuntime(input: {
+  readonly config: ServerConfig;
+  readonly database?: UsersDatabase;
+  readonly discovery: DiscoveryRuntime;
+  readonly eligibility?: RtcCallEligibilityPort;
+  readonly now?: () => Date;
+  readonly users: UsersRuntime;
+}): RealtimeRuntime {
+  return createRealtimeRuntime({
+    config: input.config,
+    connections: input.discovery.connections,
+    database: input.database ?? drizzle.mock(),
+    ...(input.eligibility === undefined
+      ? {}
+      : { eligibility: input.eligibility }),
+    ...(input.now === undefined ? {} : { now: input.now }),
+    onboarding: input.users.onboarding,
   });
 }
 

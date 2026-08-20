@@ -240,6 +240,37 @@ export const unavailableSafetyEligibility = 'unavailable';
 export const trustAndSafetyEligibility = 'trust-and-safety';
 
 /**
+ * Whether anybody may place a call, and which provider would carry it.
+ *
+ * Two values because they refuse for independent reasons, and either alone is
+ * enough to stop a call.
+ *
+ * `REALTIME_CALL_ELIGIBILITY` gates the *product*. `unavailable` refuses every
+ * pair, which is the only behaviour a deployed environment may have while call
+ * retention duration, regional availability, recording posture, and operations
+ * ownership are undecided. `composed` is the real answer built from DISCOVERY's
+ * relationship contract and TRUST & SAFETY's block and enforcement contracts.
+ *
+ * `REALTIME_RTC_PROVIDER` gates the *transport*. `unavailable` refuses every
+ * provider operation: [RTC provider eligibility](../../../docs/compliance/10-rtc-provider-eligibility.md)
+ * records, from official sources dated 2026-08-20, that no assessed provider is
+ * eligible — one prohibits adult content outright, one offers no media
+ * isolation between unrelated calls, two published terms that could not be
+ * retrieved, and the rest carry unresolved written-approval gaps. `local-test`
+ * is a deterministic in-process adapter that reaches no network and carries no
+ * media; it exists so the orchestration around a provider is exercisable before
+ * one is approved, and it is named so no passing test can be read as evidence
+ * about a real one.
+ *
+ * Neither value can be reached by a route, header, query parameter, or request
+ * field, and both are rejected outside local and test by the guard below.
+ */
+export const unavailableCallEligibility = 'unavailable';
+export const composedCallEligibility = 'composed';
+export const unavailableRtcProvider = 'unavailable';
+export const localTestRtcProvider = 'local-test';
+
+/**
  * Notification delivery channels. No email, push, or SMS provider is approved —
  * country coverage, consent, deliverability, and privacy review are all pending
  * in `docs/decisions/DECISIONS_REQUIRED.md` — so `unavailable` is the only
@@ -427,6 +458,12 @@ export const serverConfigSchema = z
       .default(unavailablePayoutProvider),
     PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
     QUEUE_REDIS_URL: redisUrlSchema,
+    REALTIME_CALL_ELIGIBILITY: z
+      .enum([unavailableCallEligibility, composedCallEligibility])
+      .default(unavailableCallEligibility),
+    REALTIME_RTC_PROVIDER: z
+      .enum([unavailableRtcProvider, localTestRtcProvider])
+      .default(unavailableRtcProvider),
     SAFETY_CONSENT_POLICY: z
       .enum([unpublishedConsentPolicy, localTestConsentPolicy])
       .default(unpublishedConsentPolicy),
@@ -558,6 +595,20 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `MESSAGING_SAFETY_ELIGIBILITY is not usable in ${config.APP_ENV}: message retention duration and post-block history visibility are undecided; see DECISIONS_REQUIRED`,
         path: ['MESSAGING_SAFETY_ELIGIBILITY'],
+      });
+    }
+    if (config.REALTIME_CALL_ELIGIBILITY !== unavailableCallEligibility) {
+      context.addIssue({
+        code: 'custom',
+        message: `REALTIME_CALL_ELIGIBILITY is not usable in ${config.APP_ENV}: call retention duration, regional availability, recording posture, and RTC operations ownership are all undecided; see DECISIONS_REQUIRED`,
+        path: ['REALTIME_CALL_ELIGIBILITY'],
+      });
+    }
+    if (config.REALTIME_RTC_PROVIDER !== unavailableRtcProvider) {
+      context.addIssue({
+        code: 'custom',
+        message: `REALTIME_RTC_PROVIDER is not usable in ${config.APP_ENV}: no RTC provider is approved, and a provider whose terms prohibit what Velora is, offers no isolation between unrelated calls, or cannot be read at all has given no answer rather than permission; see the RTC provider eligibility record and DECISIONS_REQUIRED`,
+        path: ['REALTIME_RTC_PROVIDER'],
       });
     }
     if (
@@ -714,6 +765,8 @@ export function redactServerConfig(config: ServerConfig) {
     logLevel: config.LOG_LEVEL,
     notificationDeliveryChannel: config.NOTIFICATIONS_DELIVERY_CHANNEL,
     port: config.PORT,
+    rtcCallEligibility: config.REALTIME_CALL_ELIGIBILITY,
+    rtcProvider: config.REALTIME_RTC_PROVIDER,
     safetyEligibility: config.MESSAGING_SAFETY_ELIGIBILITY,
     privilegedAuthenticatorVerifier:
       config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,

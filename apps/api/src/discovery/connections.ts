@@ -29,8 +29,18 @@ export interface ConnectionDirectoryPort {
    * two people. A pending, expired, closed, or someone else's introduction is
    * reported identically to one that does not exist.
    */
+  /**
+   * The executor is optional for the same reason it is mandatory below. A
+   * caller that only wants to read may omit it and be served from the handle.
+   * A caller that is about to write inside a transaction passes its own, so the
+   * relationship it authorizes against is the one that is true at the moment of
+   * the write — and so it does not need a second pooled connection to ask,
+   * which is what turns one request into two connections and a busy pool into a
+   * stalled one.
+   */
   mutualConnectionFor(input: {
     readonly actorId: string;
+    readonly executor?: Executor;
     readonly introductionId: string;
   }): Promise<MutualConnection | undefined>;
 
@@ -60,12 +70,16 @@ export class ConnectionDirectory implements ConnectionDirectoryPort {
 
   async mutualConnectionFor(input: {
     readonly actorId: string;
+    readonly executor?: Executor;
     readonly introductionId: string;
   }): Promise<MutualConnection | undefined> {
-    const row = await this.introductions.findForActor(this.database, {
-      actorId: input.actorId,
-      id: input.introductionId,
-    });
+    const row = await this.introductions.findForActor(
+      input.executor ?? this.database,
+      {
+        actorId: input.actorId,
+        id: input.introductionId,
+      },
+    );
     if (row?.state !== 'mutual' || row.mutualAt === null) return undefined;
     return {
       counterpartId:
