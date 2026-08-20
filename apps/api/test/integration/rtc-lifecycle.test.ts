@@ -10,7 +10,6 @@ import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
 import { createMessagingRuntime } from '../../src/messaging/composition.js';
 import { ConversationParticipation } from '../../src/messaging/participation.js';
 import { createRealtimeRuntime } from '../../src/realtime/composition.js';
-import type { RtcCallEligibilityPort } from '../../src/realtime/eligibility.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
@@ -123,44 +122,20 @@ const messaging = createMessagingRuntime({
   safety: safety.directory,
 });
 
-/**
- * The composed answer, wired exactly as the eligibility phase will wire it in
- * production: DISCOVERY's relationship contract and TRUST & SAFETY's pairwise
- * answer, both asked on the caller's executor so the recheck and the write are
- * one transaction.
- *
- * It lives in the test for now because REALTIME's own composition of it lands
- * with the eligibility phase. What matters here is that the lifecycle is
- * exercised against a real contract rather than a permissive stub, so a
- * lifecycle test cannot pass on a pair production would refuse.
- */
-const composedEligibility: RtcCallEligibilityPort = {
-  async mayCall(input) {
-    if (
-      !(await safety.directory.mayInteract({
-        executor: input.executor,
-        first: input.first,
-        now: input.now,
-        second: input.second,
-      }))
-    ) {
-      return false;
-    }
-    return discovery.connections.isMutuallyIntroduced({
-      executor: input.executor,
-      first: input.first,
-      second: input.second,
-    });
-  },
-};
-
+// REALTIME composed exactly as production composes it: DISCOVERY's
+// relationship contract, TRUST & SAFETY's pairwise and enforcement answers,
+// and USERS' account standing, all selected by configuration. Nothing here is
+// a permissive stub, so a lifecycle test cannot pass on a pair production
+// would refuse.
 const realtime = createRealtimeRuntime({
   config,
   connections: discovery.connections,
   database: database.drizzle,
-  eligibility: composedEligibility,
+  enforcement: safety.eligibility,
   now,
   onboarding: users.onboarding,
+  safety: safety.directory,
+  standing: users.standing,
 });
 
 const creators = testCreatorsRuntime({
@@ -729,6 +704,92 @@ describe('safety and the relationship decide, at the moment of the action', () =
         })
       ).kind,
     ).toBe('not_eligible');
+  });
+});
+
+describe('both people have to be callable, not just the one calling', () => {
+  it('refuses a call to an account whose standing does not permit contact', async () => {
+    const pair = await introducedPair();
+    // The asymmetry a check on the actor alone would miss: the caller is in
+    // perfect standing and the person being called is not.
+    await execute(
+      database.sql`update users_accounts
+        set status = 'restricted', status_reason = 'safety_enforcement'
+        where id = ${pair.b.id}`,
+    );
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('not_permitted');
+  });
+
+  it('refuses a call when a live enforcement denies either party', async () => {
+    const pair = await introducedPair();
+    await realtime.repository.transaction(async (executor) =>
+      safety.authority.impose(executor, {
+        actorReference: 'rtc-test-operator',
+        reasonCode: 'harassment',
+        scope: 'account_restriction',
+        subjectId: pair.b.id,
+      }),
+    );
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('not_permitted');
+  });
+
+  it('refuses a call once the introduction that authorized it has closed', async () => {
+    const pair = await introducedPair();
+    await execute(
+      database.sql`update discovery_introductions
+        set state = 'closed', closed_at = now(), closed_reason = 'enforcement'
+        where id = ${pair.introductionId}`,
+    );
+    // A mutual introduction that has since closed is not standing permission
+    // to call, and the relationship is re-read rather than remembered.
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('not_found');
+  });
+
+  it('refuses every pair when the eligibility contract is unavailable', async () => {
+    const pair = await introducedPair();
+    const refusing = createRealtimeRuntime({
+      config: testServerConfig({
+        MESSAGING_SAFETY_ELIGIBILITY: 'trust-and-safety',
+        ...mediaEnvironment,
+      }),
+      connections: discovery.connections,
+      database: database.drizzle,
+      enforcement: safety.eligibility,
+      now,
+      onboarding: users.onboarding,
+      safety: safety.directory,
+      standing: users.standing,
+    });
+    // The default in every environment, and what a deployed one gets.
+    expect(
+      (
+        await refusing.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('not_permitted');
   });
 });
 

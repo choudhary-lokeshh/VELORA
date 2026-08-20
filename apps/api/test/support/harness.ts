@@ -475,6 +475,7 @@ export function testRealtimeRuntime(input: {
   readonly discovery: DiscoveryRuntime;
   readonly eligibility?: RtcCallEligibilityPort;
   readonly now?: () => Date;
+  readonly safety: SafetyRuntime;
   readonly users: UsersRuntime;
 }): RealtimeRuntime {
   return createRealtimeRuntime({
@@ -484,8 +485,11 @@ export function testRealtimeRuntime(input: {
     ...(input.eligibility === undefined
       ? {}
       : { eligibility: input.eligibility }),
+    enforcement: input.safety.eligibility,
     ...(input.now === undefined ? {} : { now: input.now }),
     onboarding: input.users.onboarding,
+    safety: input.safety.directory,
+    standing: input.users.standing,
   });
 }
 

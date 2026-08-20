@@ -53,3 +53,139 @@ export class UnavailableRtcCallEligibility implements RtcCallEligibilityPort {
     return Promise.resolve(false);
   }
 }
+
+/**
+ * The four facts a call is composed from, each declared as the narrowest
+ * question REALTIME needs answered.
+ *
+ * They are declared here rather than imported from the domains that implement
+ * them, on the rule `docs/architecture/03-domain-boundaries.md` sets: a
+ * consumer declares the contract it needs and the owner supplies it at the
+ * composition root. That is also what keeps this domain from acquiring an
+ * import of another domain's internals in order to borrow a type.
+ *
+ * Every one of them takes the caller's executor, because every one of them is
+ * asked as part of deciding whether to durably accept a write.
+ */
+export interface RtcRelationshipPort {
+  isMutuallyIntroduced(input: {
+    readonly executor: Executor;
+    readonly first: string;
+    readonly second: string;
+  }): Promise<boolean>;
+}
+
+export interface RtcPairSafetyPort {
+  mayInteract(input: {
+    readonly executor: Executor;
+    readonly first: string;
+    readonly now: Date;
+    readonly second: string;
+  }): Promise<boolean>;
+}
+
+export interface RtcEnforcementPort {
+  decide(input: {
+    readonly capability: 'consumer_interaction';
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly subjectId: string;
+  }): Promise<{ readonly allowed: boolean }>;
+}
+
+export interface RtcStandingPort {
+  isDeliverable(input: {
+    readonly executor: Executor;
+    readonly userId: string;
+  }): Promise<boolean>;
+}
+
+/**
+ * The real answer: every owner asked, at the moment of the action.
+ *
+ * Order matters only for cost, not for correctness — every predicate has to
+ * pass — so the cheapest and most decisive are asked first and the composition
+ * stops at the first refusal. What matters for correctness is that all four are
+ * asked on the caller's executor, inside the transaction that is about to
+ * write, under the pair lock the caller already holds.
+ *
+ * Both people are checked, not just the one acting. A call has a person on the
+ * other end of it, and an account that has been restricted is not made
+ * contactable by somebody else being in good standing — which is the asymmetry
+ * a check on the actor alone would miss.
+ *
+ * The answer is a boolean and nothing more. A caller learns that a call is not
+ * permitted; it never learns which predicate refused, because "blocked" and
+ * "restricted" and "no longer introduced" are three different disclosures about
+ * another person and none of them is this caller's to receive.
+ */
+export class ComposedRtcCallEligibility implements RtcCallEligibilityPort {
+  constructor(
+    private readonly dependencies: {
+      readonly enforcement: RtcEnforcementPort;
+      readonly relationship: RtcRelationshipPort;
+      readonly safety: RtcPairSafetyPort;
+      readonly standing: RtcStandingPort;
+    },
+  ) {}
+
+  async mayCall(input: {
+    readonly executor: Executor;
+    readonly first: string;
+    readonly now: Date;
+    readonly second: string;
+  }): Promise<boolean> {
+    // Nobody calls themselves, and no pair lock or relationship makes that
+    // sensible. Refused before anything is read.
+    if (input.first === input.second) return false;
+
+    // A block is the most common refusal and the cheapest to establish.
+    if (
+      !(await this.dependencies.safety.mayInteract({
+        executor: input.executor,
+        first: input.first,
+        now: input.now,
+        second: input.second,
+      }))
+    ) {
+      return false;
+    }
+
+    // Both accounts have to be in a standing that permits contact. Asked
+    // through USERS' published answer rather than by reading a status column,
+    // so a future standing that is active-but-uncontactable is decided once,
+    // by its owner, rather than in every domain that contacts somebody.
+    for (const userId of [input.first, input.second]) {
+      if (
+        !(await this.dependencies.standing.isDeliverable({
+          executor: input.executor,
+          userId,
+        }))
+      ) {
+        return false;
+      }
+    }
+
+    // A live enforcement denying consumer interaction denies a call, for either
+    // party. TRUST & SAFETY composes that answer; this domain does not
+    // re-derive which scopes deny which capability.
+    for (const subjectId of [input.first, input.second]) {
+      const decision = await this.dependencies.enforcement.decide({
+        capability: 'consumer_interaction',
+        executor: input.executor,
+        now: input.now,
+        subjectId,
+      });
+      if (!decision.allowed) return false;
+    }
+
+    // Last, because it is the fact most likely to still hold: the relationship
+    // that authorized contact in the first place is still current. A mutual
+    // introduction that has since closed is not a standing permission to call.
+    return this.dependencies.relationship.isMutuallyIntroduced({
+      executor: input.executor,
+      first: input.first,
+      second: input.second,
+    });
+  }
+}
