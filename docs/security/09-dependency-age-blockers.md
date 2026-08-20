@@ -30,9 +30,17 @@ An override is recorded honestly. An entry cleared this way is never described a
 
 - An entry is removed once the upgrade is installed and the gate is green again. Where an override was used, the exclusions are removed separately, under the removal condition stated in the entry.
 
+## What changed on 2026-08-20, and why this register gets quieter
+
+This register recorded two overrides in three days, and warned that a third occurrence should prompt a decision about the cadence rather than another exception. The third occurrence arrived on 2026-08-20: Expo published five SDK-57 patches between 10:47Z and 10:55Z, and `pnpm ci:verify` went red on a commit nobody had made.
+
+The decision was taken rather than the exception, and it is recorded as an [amendment to ADR-0018](../decisions/ADR-0018-toolchain-provisioning-verification-ci.md#amendment-2026-08-20-bounding-the-mobile-dependency-currency-check). `pnpm mobile:doctor` now runs through `scripts/check-mobile-doctor.mjs`, which defers `expo-doctor`'s dependency-currency check **only** while every version it demands is younger than the policy window — that is, only while this repository is forbidden to install the thing the check is asking for — and blocks in every other case, including when a version carries an authorized exclusion.
+
+Nothing in this register's authority changed. `minimumReleaseAge` is still 1440, exclusions are still exact-version and still need a named human's written authorization, and the dependency security gate is untouched. What changed is the trigger: an entry belongs here when a genuine upgrade is due and the age policy blocks it, not every time an upstream patch ships. An Expo patch alone no longer produces a red gate to be waited out or overridden.
+
 ## Current blockers
 
-None. `minimumReleaseAgeExclude` currently carries the exact-version exclusions from DAB-2026-002, which are pending removal under the condition recorded below. The sixteen exclusions DAB-2026-001 authorized were removed on 2026-08-17 once both of its stated conditions held, and that entry is deleted rather than archived — the register's rules are the durable part, and a cleared entry whose exclusions are gone has nothing left to govern. The `globals@17.11.0` exclusion is unrelated to either and stays.
+None. `minimumReleaseAgeExclude` currently carries the exact-version exclusions from DAB-2026-002, which are pending removal under the condition recorded below. That condition became satisfiable on 2026-08-18T10:54:46Z; the removal is outstanding maintenance and is deliberately not bundled into the ADR-0018 amendment, because deleting exclusions re-runs dependency resolution and belongs in a change whose gate result is about resolution rather than about the pipeline. The sixteen exclusions DAB-2026-001 authorized were removed on 2026-08-17 once both of its stated conditions held, and that entry is deleted rather than archived — the register's rules are the durable part, and a cleared entry whose exclusions are gone has nothing left to govern. The `globals@17.11.0` exclusion is unrelated to either and stays.
 
 ## Cleared
 

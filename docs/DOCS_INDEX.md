@@ -186,7 +186,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0015](decisions/ADR-0015-shared-design-token-boundary.md) | Shared client-safe design-token package and visual-authority boundary |
 | [ADR-0016](decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md) | Active Bun/Elysia/PostgreSQL/Drizzle/Redis/BullMQ backend foundation and prior-decision supersession |
 | [ADR-0017](decisions/ADR-0017-auth-session-recovery-security-policy.md) | Exact session, recovery, privileged-access, and break-glass policy values inside ADR-0009 architecture |
-| [ADR-0018](decisions/ADR-0018-toolchain-provisioning-verification-ci.md) | mise toolchain provisioning, four-source pin agreement, and the GitHub Actions verification pipeline |
+| [ADR-0018](decisions/ADR-0018-toolchain-provisioning-verification-ci.md) | mise toolchain provisioning, four-source pin agreement, the GitHub Actions verification pipeline, and the bounded mobile dependency-currency check |
 | [ADR-0019](decisions/ADR-0019-database-connection-admission.md) | Bounded database admission, pool warm-up, and the capacity refusal contract; resolves the pair-lock contention decision |
 | [ADR-0020](decisions/ADR-0020-creator-capability-activation.md) | Creator capability lifecycle, its activation gates, and identity verification as a separate predicate |
 | [ADR-0021](decisions/ADR-0021-monetization-money-architecture.md) | How ADR-0011's locked money decisions become code: money value type, two owner journals, orchestration ordering, webhook inbox, entitlement bridge, fail-closed capability configuration |

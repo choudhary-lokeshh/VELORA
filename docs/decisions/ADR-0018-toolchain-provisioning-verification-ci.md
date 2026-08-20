@@ -1,8 +1,14 @@
 # ADR-0018: Toolchain provisioning and verification CI
 
 - Decision date: 2026-08-13
-- ADR status: Accepted
+- ADR status: Accepted; amended 2026-08-20 to bound the mobile dependency-currency check
 - Owners: Founder (decision owner), platform operations, security
+
+> Amendment (2026-08-20): the mobile project check is now invoked through
+> `scripts/check-mobile-doctor.mjs` rather than directly, so that one external
+> package release cannot turn the only gate red on its own while the
+> repository's own release-age policy forbids the fix. See
+> [the amendment below](#amendment-2026-08-20-bounding-the-mobile-dependency-currency-check).
 
 ## Context
 
@@ -92,6 +98,39 @@ The workflow holds `contents: read`, defines no secrets, and performs no write, 
 
 Removing mise leaves `engines`, `.node-version`, and `.bun-version` intact, so reverting means restoring manual provisioning, not rewriting the pins. Replacing the CI vendor means rewriting one workflow file, because no verification logic lives in it.
 
+## Amendment 2026-08-20: bounding the mobile dependency-currency check
+
+### What went wrong three times
+
+`pnpm mobile:doctor` invoked `expo-doctor` directly. Nineteen of its twenty checks are static properties of this repository. The twentieth — "Check that packages match versions required by installed Expo SDK" — compares the pinned versions against a version map fetched at run time, so publishing a patch to npm changes its answer with no commit here.
+
+On its own that would be an ordinary flaky external dependency. What made it a defect is that its remedy was forbidden by another control in this same repository. `minimumReleaseAge: 1440` refuses any package published inside the policy window, so from the moment Expo publishes a patch until twenty-four hours later, the gate demanded an install that the workspace simultaneously refused. Every commit in that window fails, on a repository nobody touched.
+
+It happened on 2026-08-14, on 2026-08-17, and again on 2026-08-20, each time on the Expo SDK 57 patch line. The first two were cleared by human-approved exact-version release-age overrides, recorded as DAB-2026-001 and DAB-2026-002 in [dependency age blockers](../security/09-dependency-age-blockers.md). That register named the pattern itself and said what should happen if it recurred: *"If this recurs a third time, the repository should decide whether the mobile surface's Expo pins belong on the same gate cadence as everything else, rather than reaching for another exception."* This is that decision.
+
+The third occurrence is the reason it is being taken rather than waited out: at 2026-08-20T10:47–10:55Z Expo published five SDK-57 patches, the hosted run that had been green on `c015b11` at 06:26Z would now be red on the same commit, and the alternative on the table was a third override in six days — buying time by reducing the observation window on real packages.
+
+### The decision
+
+`pnpm mobile:doctor` invokes `scripts/check-mobile-doctor.mjs`. It runs `expo-doctor` and resolves the contradiction in favour of the stricter control, for exactly as long as the contradiction exists:
+
+- The other nineteen checks block unconditionally. If any of them fails, the gate fails, and nothing about them is deferred, sampled, or made advisory. The script proves this by isolation rather than by parsing: on any failure it re-runs with `EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK`, and a failure that survives that is a project defect that blocks immediately.
+- The dependency-version check **blocks** whenever the versions it wants are installable — old enough under the policy, or carrying an owner-authorized exact-version exclusion. An upgrade that is merely inconvenient still fails the gate.
+- It **defers** only while every version it wants is younger than `minimumReleaseAge`, reporting each package, its publication instant, and the exact instant it becomes installable.
+- Anything it cannot attribute fails closed: an unparseable report, a version the registry does not know, an unreachable registry, or a version-check failure with no readable mismatch.
+
+The policy window is read from `pnpm-workspace.yaml` rather than restated, so the gate cannot keep deferring against a window the policy no longer has.
+
+### What this costs, stated plainly
+
+This is a real narrowing and is not described as anything else. For up to twenty-four hours after an Expo patch, the gate does not enforce currency with that patch. Three things bound it. The window is the release-age policy's own, so it cannot exceed the period during which installing was forbidden anyway. It self-heals without a commit: the check resumes blocking the moment the versions age past the cutoff, and then forces the upgrade. And it is strictly narrower than the alternative it replaces, because an override reduces the observation window on packages that are actually installed, while this defers a currency assertion about packages that are not.
+
+It does not touch `minimumReleaseAge`, add any `minimumReleaseAgeExclude` entry, use `expo.install.exclude`, suppress an `expo-doctor` finding, or alter the dependency security gate, which remains the sole authority for advisories and fails closed on an execution failure exactly as before.
+
+### Consequences for the register
+
+[Dependency age blockers](../security/09-dependency-age-blockers.md) keeps its rules and its authority. What changes is that an ordinary Expo patch no longer produces a gate failure that has to be waited out or overridden, so that register should receive an entry only when a genuine upgrade is due and blocked — not once a week because a patch shipped.
+
 ## Status
 
 | Decision | Classification |
@@ -101,6 +140,7 @@ Removing mise leaves `engines`, `.node-version`, and `.bun-version` intact, so r
 | Four-source pin agreement enforced by `toolchain:check` | LOCK NOW |
 | GitHub Actions as the verification CI platform | LOCK NOW |
 | CI invokes canonical `pnpm ci:verify` and never restates it | LOCK NOW |
+| Mobile dependency-currency deferred only while `minimumReleaseAge` forbids the fix, failing closed otherwise | LOCK NOW |
 | Scheduled run so acceptance expiry fires without a commit | LOCK NOW |
 | Deployment, release, and publish pipelines | DEFER UNTIL PROVIDER INTEGRATION |
 | Cloud, container, registry, CDN, and DNS vendors | DEFER UNTIL PROVIDER INTEGRATION |

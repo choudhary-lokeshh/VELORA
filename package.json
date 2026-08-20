@@ -29,7 +29,7 @@
     "whitespace:check": "git diff --check && pnpm hygiene:check",
     "contracts:generate": "pnpm --filter @velora/validation generate && pnpm --filter @velora/api-client generate",
     "contracts:check": "pnpm --filter @velora/validation generate:check && pnpm --filter @velora/api-client generate:check",
-    "mobile:doctor": "pnpm --filter @velora/mobile run doctor",
+    "mobile:doctor": "node scripts/check-mobile-doctor.mjs",
     "infra:config": "docker compose config --quiet",
     "infra:up": "docker compose up --detach --wait",
     "infra:down": "docker compose down",
