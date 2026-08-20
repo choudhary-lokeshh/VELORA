@@ -7,7 +7,7 @@ Keep product/domain logic vendor-neutral. Each owning domain defines a port, nor
 | Capability | Owning domain | Port responsibility |
 |---|---|---|
 | Payments | BILLING | intent/reserve, confirm, refund, verified webhook normalization |
-| RTC/video | REALTIME | issue scoped session credentials, room lifecycle, quality webhooks |
+| RTC/video | REALTIME | create an isolated session, issue participant-scoped short-lived join grants, revoke a participant, end a session, read current state for reconciliation, normalize verified events |
 | Storage/media | PRIVATE CLUBS or owning content domain | quarantine upload, scan, private object, signed delivery |
 | Email/push/SMS | NOTIFICATIONS / AUTH for OTP policy | send attempt, provider status, template capability |
 | Identity/age/creator/commercial verification | IDENTITY ASSURANCE; owner domains decide product predicates | capability declaration, hosted session, retrieval, raw callback verification/normalization, current-state reconciliation, declared cancellation/expiry |

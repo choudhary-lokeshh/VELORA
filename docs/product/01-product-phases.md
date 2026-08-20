@@ -20,11 +20,12 @@ Every product capability has exactly one classification below. This document is 
 | Discovery eligibility, mutual introductions, text chat, blocks/reports | V1 | DISCOVERY / MESSAGING / TRUST & SAFETY |
 | Notifications, baseline Admin, audit trail, moderation workflow | V1 | NOTIFICATIONS / ADMIN / MODERATION |
 | Provider-neutral Identity Assurance platform core, fail-closed evidence contracts, migration/reconciliation, and read-only operations | V1 | IDENTITY ASSURANCE plus evidence-consuming owners |
+| Provider-neutral one-to-one RTC platform core: call session lifecycle, composed call eligibility, fail-closed provider/signalling/credential seams, safety enforcement, abuse limits, consumer call surfaces that refuse without an approved provider, reconciliation, and read-only operations | V1 | REALTIME plus AUTH / USERS / DISCOVERY / TRUST & SAFETY / NOTIFICATIONS / ADMIN |
 | Additional authentication assurance and push notification expansion | Phase 2 | AUTH / NOTIFICATIONS |
 | Consumer stronger-assurance and Creator identity verification workflows | Phase 2 | IDENTITY ASSURANCE / USERS / CREATORS |
 | AI-assisted moderation triage, classification, summarization and policy retrieval with human decision | Phase 2 | AI PLATFORM / MODERATION; TRUST & SAFETY remains enforcement authority |
 | Consumer premium plan and non-person-guaranteeing boosts | Phase 2 | BILLING / DISCOVERY |
-| Presence and voice/video lifecycle | Phase 2 | REALTIME |
+| Presence, and live enablement of voice/video calling in a launch country behind an approved provider | Phase 2 | REALTIME |
 | Creator identity/business profile and web-first club pilot | Phase 2 | CREATORS / PRIVATE CLUBS |
 | Creator subscriptions, locked posts/media, PPV entitlement | Phase 2 | PRIVATE CLUBS / BILLING |
 | Creator analytics, earnings/payout operations | Phase 3 | ANALYTICS / PAYOUTS |
@@ -40,11 +41,17 @@ Every product capability has exactly one classification below. This document is 
 
 ## V1 scope and non-goals
 
-V1 proves safe, useful social discovery: adults-only account path, profiles, availability, candidate selection, mutual introductions, text communication, blocks/reports, notifications, moderation/admin foundation, auditability and provider seams. V1 also includes the provider-neutral Identity Assurance platform core because moving existing verified evidence behind one isolated, fail-closed authority is platform risk reduction, not a consumer verification feature. It adds no Consumer/Creator verification initiation UI or live provider. V1 excludes AI product capabilities, creator paid clubs, payouts, RTC, communities/rooms/events/posts, coins/gifts, guaranteed paid introductions, live identity/KYC providers, and any globally enabled explicit content.
+V1 proves safe, useful social discovery: adults-only account path, profiles, availability, candidate selection, mutual introductions, text communication, blocks/reports, notifications, moderation/admin foundation, auditability and provider seams. V1 also includes the provider-neutral Identity Assurance platform core because moving existing verified evidence behind one isolated, fail-closed authority is platform risk reduction, not a consumer verification feature. It adds no Consumer/Creator verification initiation UI or live provider.
+
+V1 also includes the provider-neutral one-to-one RTC platform core, moved forward from Phase 2 under the change control below. The reasoning matches the Identity core rather than the usual feature case: what makes a call dangerous is the authorization model — who may call whom, how a join credential is scoped, what a provider callback may change, and how a block reaches a call already in progress — and that model is cheaper and safer to build before a vendor exists than to retrofit around one. Unlike the Identity core it does ship consumer call surfaces, because a call-control API with no client is an untested claim about a lifecycle whose hardest cases are device permissions, reconnects, and interruptions. Those surfaces are built against a provider port that refuses in every deployed environment, so the capability is complete and unusable rather than partially enabled.
+
+V1 excludes AI product capabilities, creator paid clubs, payouts, live calling in any deployed environment, presence, group calls, rooms, livestreaming, call recording or transcription, communities/events/posts, coins/gifts, guaranteed paid introductions, live identity/KYC providers, and any globally enabled explicit content.
 
 ## Change control
 
 Moving scope to an earlier phase requires product rationale, owning-domain capacity, safety/security review, dependencies, tests, rollout/rollback plan, and update to this document plus a decision/ADR if architectural. Conditional features additionally require all listed gates in their authoritative product document.
+
+One such move has been made. The provider-neutral RTC platform core was Phase 2 and is now V1, decided by the Founder on 2026-08-20 and recorded architecturally in [ADR-0025](../decisions/ADR-0025-rtc-live-communications-architecture.md), with its adversary model in the [RTC threat model](../security/12-rtc-threat-model.md) and its vendor findings in [RTC provider eligibility](../compliance/10-rtc-provider-eligibility.md). What moved is the platform core and its refusing surfaces. What did not move is the product: no provider is approved, live calling is blocked in every deployed environment by configuration that refuses at startup, and presence remains Phase 2 and unbuilt. Rollback is the configuration that is already the default — an environment that never enables an eligibility contract or a provider adapter has no calling capability to withdraw.
 
 Surface documents, Figma designs, technical ADRs, provider capability, and AI architecture do not change phase. A product capability absent from this map is unclassified and must not be implemented until added through change control.
 

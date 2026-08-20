@@ -1,42 +1,73 @@
-# Realtime voice/video lifecycle
+# Realtime voice and video lifecycle
 
 ## Purpose
 
-Define future RTC session orchestration. No RTC implementation, recording, or provider is selected.
+Define how a one-to-one consumer call is invited, authorized, established, recovered, and ended, and which domain decides each step. [REALTIME](../domains/realtime.md) owns the session; [ADR-0025](../decisions/ADR-0025-rtc-live-communications-architecture.md) is the architecture authority. No RTC provider is selected and live calling is blocked.
 
 ## Preconditions
 
-Feature is enabled for country/channel; both participants qualify under product policy; caller is session-authenticated; current block/enforcement and connection eligibility pass. Presence alone is not consent to contact.
+The caller holds an authenticated Consumer session on the Consumer audience and an account in a standing that permits interaction. DISCOVERY reports a current mutual introduction between caller and target. TRUST & SAFETY reports no pairwise block and no live enforcement denying consumer interaction to either party. The composed eligibility contract is available in this environment; by default it is not, and every pair is refused.
+
+Presence is not consent to contact, and an accepted introduction is not standing permission to call. Both are re-derived at every step below.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Invited
-  Invited --> Declined: callee declines
-  Invited --> TimedOut: invitation expires
-  Invited --> Authorized: callee accepts and eligibility passes
-  Invited --> Rejected: caller cancels or policy denies
-  Authorized --> Joining: issue short-lived credentials
-  Joining --> Active: provider/client join
-  Joining --> Failed: join timeout/provider error
-  Active --> Reconnecting: network interruption
-  Reconnecting --> Active: bounded reconnect succeeds
-  Reconnecting --> Ending: reconnect expires
-  Active --> Ending: hangup/block/enforcement/abuse action
-  Ending --> Ended
-  Declined --> Ended
-  TimedOut --> Ended
-  Rejected --> Ended
-  Failed --> Ended
+  [*] --> Invited: caller invites, eligibility passes
+  Invited --> Rejected: callee declines
+  Invited --> Cancelled: caller withdraws
+  Invited --> Expired: invitation deadline passes
+  Invited --> Accepted: callee accepts and eligibility passes again
+  Accepted --> Connecting: join authorization issued
+  Connecting --> Active: provider observes media
+  Connecting --> Failed: join timeout or provider error
+  Active --> Reconnecting: transport interruption
+  Reconnecting --> Active: bounded grace, re-authorized
+  Reconnecting --> Ending: grace expires
+  Active --> Ending: hang-up, block, or enforcement
+  Ending --> Ended: revocation and teardown discharged
+  Rejected --> [*]
+  Cancelled --> [*]
+  Expired --> [*]
+  Failed --> [*]
+  Ended --> [*]
 ```
 
-## Main/alternate flow
+## Main flow
 
-REALTIME creates an invitation only after caller and target eligibility/rate checks. Callee explicitly accepts or declines; invitation expires after bounded timeout. On accept, REALTIME revalidates both participants, then creates ephemeral session and short-lived scoped credentials. Provider/client lifecycle signals are verified and reconciled idempotently. Bounded reconnect rechecks credential/session/safety state; expiry closes safely. Block, enforcement, or in-call abuse action causes revocation/end attempt, preserves permitted report evidence references, and denies future join. No lifecycle event asserts recording or message persistence.
+**Invite.** The caller names a target through the relationship, never through a participant field. REALTIME composes eligibility inside the writing transaction under the pair lock, writes the session, its two participants, and its outbox fact together, and commits. The invitation is durable before anybody is told about it, so a notification that never arrives loses a ring rather than a call.
 
-## Security/concurrency/data
+**Ring.** NOTIFICATIONS delivers from the committed fact. Delivery is at-least-once and may reach several devices. Duplicate rings never become duplicate acceptances, because acceptance is one guarded transition on the session and later devices observe the accepted session rather than accepting again.
 
-Credentials bind room, participant, role, expiry, and limited permissions. Do not expose IP/address/provider secrets. Use unique session ID, state version and provider event dedupe. Store minimal session/quality metadata; analytics is consent/minimization governed. Rate-limit calls and room creation to mitigate abuse.
+**Accept or refuse.** The recipient accepts, rejects, or lets the invitation expire; the caller may cancel until one of those happens. Acceptance re-composes eligibility. A block that commits between the invitation and the acceptance means the acceptance is refused and the invitation is invalidated.
 
-## Phase/open questions
+**Authorize.** Each participant requests join authorization for itself. Issuance re-composes eligibility, checks the session is accepted and not terminal, and returns a single-participant, single-session, capability-scoped, minutes-scale credential carrying the session's current authorization generation. Nothing reusable is stored.
 
-Phase 2. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: provider, invitation/consent design, participant limits, reconnect/timeout values, abuse-report capture, recording policy, regional availability and accessibility. See [REALTIME](../domains/realtime.md), [provider adapters](../architecture/06-provider-adapters.md), [Trust & Safety](../domains/trust-safety.md), [Consumer surfaces](../DOCS_INDEX.md#product-surface-authority).
+**Connect.** Endpoints join through the provider. The platform learns that media exists from verified provider events, and treats that as an observation of technical state rather than as a grant of anything.
+
+**End.** Either participant hangs up; a block or enforcement ends the call without either of them acting. Ending advances the authorization generation, records revocation and teardown obligations, and commits. A worker discharges them against the provider outside any transaction; reconciliation verifies the outcome and repairs drift.
+
+## Alternate and failure paths
+
+**Invitation expiry** produces a missed-call fact exactly once, derived from the session's own lifecycle rather than from any delivery outcome.
+
+**Reconnect** is bounded. A transport interruption does not mean a call ended, and a reconnect obtains fresh authorization rather than reusing a credential: eligibility is re-composed, the generation is re-checked, and a session that was ended, revoked, or blocked in the meantime refuses. When the grace period expires, the call ends safely.
+
+**Provider outage** fails closed and visibly. Sessions that cannot be created are `failed` with a normalized reason, not silently retried into existence, and no path infers success from a timeout.
+
+**Ambiguous provider creation** is recovered by idempotent lookup against the provider-operation identity committed before the call, then by reconciliation. Crashes between any two boundaries are recoverable in the same way.
+
+**Divergence** — a provider room alive after the platform ended a call, a participant still connected after revocation, a session pending creation too long, a callback never delivered — is detected by bounded reconciliation, which records a finding before it repairs and may only move toward termination. It never resurrects an ended call and never overrides safety.
+
+## Security, concurrency, and data
+
+Every mutating route re-resolves the acting principal against the session's participant rows; a non-participant is answered exactly as a session that does not exist. No request field names a participant, session, provider, room, scope, duration, or state. Mutating calls are idempotent. Concurrency is decided by the session's own guarded transitions and the pair lock, so accept-versus-cancel, accept-versus-block, end-versus-reconnect, and duplicate invitations resolve to one outcome under any interleaving.
+
+Durable state is lifecycle only: who invited whom, under which relationship, at which times, in which state, against which provider reference, and why it ended. No media, recording, transcript, SDP, ICE candidate, TURN credential, reusable join credential, or participant IP address is stored anywhere, so a report about a call carries the session, its participants, and its timestamps and nothing else.
+
+Realtime fanout carries hints. Clients recover authoritative state by reading it, and a fanout outage degrades the interface rather than the call's record.
+
+## Phase and open questions
+
+The provider-neutral core is V1 by [product phases](../product/01-product-phases.md); live calling is blocked. `DECISION REQUIRED`: provider and hosting mode, invitation and reconnect durations pending product review, regional availability, in-call safety intervention authority, native mobile RTC feasibility, emergency-calling posture, and operations ownership. `LEGAL REVIEW REQUIRED`: recording, transcription, and call retention.
+
+See [REALTIME](../domains/realtime.md), [RTC threat model](../security/12-rtc-threat-model.md), [RTC provider eligibility](../compliance/10-rtc-provider-eligibility.md), [TRUST & SAFETY](../domains/trust-safety.md), [notification delivery](notification-delivery.md), and [provider adapters](../architecture/06-provider-adapters.md).

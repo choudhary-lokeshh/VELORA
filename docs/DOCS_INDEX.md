@@ -59,7 +59,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | USERS | [USERS](domains/users.md) | account/profile flow, privacy, deletion |
 | DISCOVERY | [DISCOVERY](domains/discovery.md) | discovery/introduction flow, Trust & Safety, consumer product |
 | MESSAGING | [MESSAGING](domains/messaging.md) | messaging/blocks flow, media security, notifications |
-| REALTIME | [REALTIME](domains/realtime.md) | RTC flow, provider adapters, Trust & Safety |
+| REALTIME | [REALTIME](domains/realtime.md) | RTC flow, RTC threat model, RTC provider eligibility, provider adapters, Trust & Safety, ADR-0008, ADR-0025 |
 | CREATORS | [CREATORS](domains/creators.md) | creator lifecycle, Creator Studio, creator compliance |
 | PRIVATE CLUBS | [PRIVATE CLUBS](domains/private-clubs.md) | creator product, entitlement, media, content gates |
 | MEDIA | [MEDIA](domains/media.md) | media upload/delivery security, media threat model, media provider eligibility, ADR-0010, ADR-0023 |
@@ -118,6 +118,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | [Dependency age blockers](security/09-dependency-age-blockers.md) | Upgrades a gate requires that the minimum release age forbids, when each becomes installable, and any owner-authorized exact-version override that cleared one early |
 | [Media threat model](security/10-media-threat-model.md) | The adversary the media platform is built against: upload, storage, inspection, processing, delivery, takedown, and reconciliation threats and their controls |
 | [Identity verification threat model](security/11-identity-verification-threat-model.md) | Provider callbacks, hosted-session, replay, subject binding, privacy, stale evidence, and operator threats and controls |
+| [RTC threat model](security/12-rtc-threat-model.md) | The adversary live communications is built against: forged call control, cross-user join credentials, stale-token replay, safety races, provider callback abuse, transport-detail leakage, call abuse, and operator threats and controls |
 
 ## Design and Figma authority
 
@@ -145,6 +146,7 @@ These are architecture/product gates, not legal advice:
 | [Surface and distribution eligibility](compliance/07-surface-and-distribution-eligibility.md) | Dated primary-source findings on app-store, age-assurance, depicted-person, and notice/appeal requirements deciding which surfaces may carry which content |
 | [Media provider eligibility](compliance/08-media-provider-eligibility.md) | Dated primary-source findings on object-storage, CDN, image-processing, and scanning provider eligibility, and the delivery-capability facts that bound what revocation may claim |
 | [Identity verification provider eligibility](compliance/09-identity-verification-provider-eligibility.md) | Dated official-source findings and production-eligibility gaps for identity/age/KYC providers; silence is unapproved |
+| [RTC provider eligibility](compliance/10-rtc-provider-eligibility.md) | Dated official-source findings on RTC, SFU, and TURN providers: session isolation, credential scope, callback authentication, revocation, and adult-business posture; silence and unreadable terms are unapproved |
 
 ## Operations authority
 
@@ -193,6 +195,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0022](decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) | One safety policy and eligibility authority, scoped append-only enforcement with supersession, report/case/evidence/decision/appeal separation, surface as a first-class closed vocabulary, depicted-person consent by reference, versioned deadline policy, and fail-closed mature-content enablement |
 | [ADR-0023](decisions/ADR-0023-media-platform-architecture.md) | MEDIA as a domain owning bytes only, a technical lifecycle disjoint from publication, opaque server-generated keys, capability-bound direct upload, byte-derived inspection ahead of the decoder, in-process image processing, the bounded private-delivery revocation window, four distinct removal concepts, and fail-closed media configuration |
 | [ADR-0024](decisions/ADR-0024-identity-assurance-architecture.md) | Separate Identity Assurance domain, append-only evidence, provider-neutral hosted verification, verified callback inbox, reconciliation, fail-closed jurisdiction/re-verification policy, and owner re-authorization |
+| [ADR-0025](decisions/ADR-0025-rtc-live-communications-architecture.md) | REALTIME as owner of call sessions only, invitation/acceptance/authorization/connection as four separate facts, eligibility composed from owners at every step, participant-scoped short-lived join credentials bound to an authorization generation, provider events as verified observations that never grant permission, ephemeral signalling over durable lifecycle, no recorded media, and fail-closed RTC configuration |
 
 ## Technical implementation reading paths
 
@@ -205,7 +208,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Platform Admin bootstrap: Platform Admin surface/domain/flow, RBAC, operations authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Database and migrations: data ownership, data/migrations, jobs/concurrency, ADR-0016, ADR-0019, unaffected portions of ADR-0006 and ADR-0007, affected domain/flow.
 - Jobs and events: contracts/events, jobs/idempotency, scale/resilience, ADR-0016, ADR-0019, unaffected portions of ADR-0007, observability/testing, affected domain/flow.
-- Realtime and RTC: REALTIME, RTC flow, provider adapters, Trust & Safety, ADR-0007, ADR-0008, ADR-0009, ADR-0013, ADR-0014.
+- Realtime and RTC: REALTIME, RTC flow, RTC threat model, RTC provider eligibility, provider adapters, Trust & Safety, DISCOVERY and MESSAGING for the communication relationship RTC composes rather than re-derives, NOTIFICATIONS, jobs/idempotency, data/migrations, observability, ADR-0007, ADR-0008, ADR-0009, ADR-0013, ADR-0014, ADR-0016, ADR-0019, ADR-0022, ADR-0025.
 - Media/storage: MEDIA, media upload/delivery security, media threat model, media provider eligibility, content owner/flow, outbound networking, jobs/idempotency, data ownership, provider adapters, ADR-0007, ADR-0010, ADR-0014, ADR-0019, ADR-0022, ADR-0023.
 - Billing and payouts: monetisation, BILLING/PAYOUTS, money flow, payment flow/security/compliance/operations, provider eligibility, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0019, ADR-0021.
 - AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
@@ -221,7 +224,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Platform Admin: phases, Admin product/surface/domain, RBAC, Admin flow, relevant operations document, target domain, audit/observability, Design/Figma.
 - Discovery: phases, consumer product/surface, DISCOVERY, discovery flow, TRUST & SAFETY, privacy, API/testing.
 - Messaging: phases, consumer surface, MESSAGING, messaging/blocks, TRUST & SAFETY, NOTIFICATIONS/notification flow, media/privacy.
-- RTC: phases, REALTIME, RTC flow, surfaces, provider adapters, Trust & Safety, media/privacy, Design/Figma.
+- RTC: phases, REALTIME, RTC flow, RTC threat model, RTC provider eligibility, surfaces, provider adapters, Trust & Safety, DISCOVERY and MESSAGING for the relationship authority, NOTIFICATIONS, privacy, ADR-0008, ADR-0025, Design/Figma.
 - Billing: phases, monetisation, BILLING, payment lifecycle/security, jobs/concurrency, compliance, finance operations, Admin approval.
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
 - Media: phases, MEDIA, media threat model, media upload/delivery security, media provider eligibility, the owning domain for the association being served, TRUST & SAFETY, jobs/idempotency, data ownership, observability, media operations, media freeze report, ADR-0010, ADR-0022, ADR-0023.
