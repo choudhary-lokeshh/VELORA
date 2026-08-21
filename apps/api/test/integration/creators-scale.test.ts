@@ -240,10 +240,18 @@ describe('creator paging is stable while the catalog is being written', () => {
     const first = await page();
     // Something newer arrives between pages. A forward-only keyset reader is
     // already past it, so it cannot be inserted into a page they have had.
+    //
+    // Its instant comes from the same clock as the rows above rather than from
+    // the database's `now()`. "Newer" is the whole premise of this test, and
+    // taking the two sides of that comparison from two different clocks makes
+    // it an assumption that the container's clock has not drifted behind the
+    // host's — which under load it does, and then this fails as a paging
+    // defect that never happened.
+    const arrival = new Date(now.getTime() + 1_000);
     await execute(
       database.sql`insert into clubs_content
         (created_at, creator_id, id, lifecycle, published_at, title, updated_at, version, visibility)
-        values (now(), ${creatorId}, ${uuidFor('eeeeeeee', 1)}, 'published', now(), 'Arrived mid-read', now(), 1, 'public')`,
+        values (${arrival}, ${creatorId}, ${uuidFor('eeeeeeee', 1)}, 'published', ${arrival}, 'Arrived mid-read', ${arrival}, 1, 'public')`,
     );
     const firstLast = first.at(-1);
     if (firstLast === undefined) throw new Error('first page was empty');
