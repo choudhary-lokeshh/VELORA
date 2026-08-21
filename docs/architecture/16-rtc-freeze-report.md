@@ -4,7 +4,7 @@
 
 What the one-to-one voice and video core froze with, what still blocks a real call, and what would unfreeze it. It is written so that somebody arriving later can tell what was built from what was decided, and can find no permission here that nobody granted.
 
-Dated 2026-08-22. The frozen tip is `bf56127`.
+Dated 2026-08-22. The frozen tip is `86c3b1a`.
 
 ## What is frozen
 
@@ -40,8 +40,14 @@ Eighteen modules under `apps/api/src/realtime`, seven migrations (`0054`–`0060
 | 16 | `7e18e68` | Access paths held to a query plan at volume |
 | 17 | `496bfe3` | Adversarial pass; closed the end-reason-to-state gap it found |
 | 18 | `bf56127` | Twenty repeated runs of the non-deterministic stages |
+| 19 | `88060d2` | This report — **red at its own SHA**, see below |
+| — | `86c3b1a` | Corrected a scale-suite seed the freeze commit failed hosted on |
 
-Every commit from `19bd1dc` onward is hosted-green at its own SHA. `0f9f3b3` is **red at its own SHA** and is recorded that way: it was pushed after the Expo release-age cutoff passed but before the pin raise that follows it, so `mobile:doctor` correctly blocked on an upgrade nothing forbade any more. It is green as part of the branch from `19bd1dc` onward. `8499065` was cancelled mid-run by pushing the next phase before it finished, and was re-run at its own SHA to green. Neither is described as a first-attempt pass.
+Three commits in this history are not hosted-green at their own SHA, and each is recorded rather than smoothed over. `0f9f3b3` is **red at its own SHA** and is recorded that way: it was pushed after the Expo release-age cutoff passed but before the pin raise that follows it, so `mobile:doctor` correctly blocked on an upgrade nothing forbade any more. It is green as part of the branch from `19bd1dc` onward. `8499065` was cancelled mid-run by pushing the next phase before it finished, and was re-run at its own SHA to green.
+
+`88060d2` — the commit adding this report — **failed hosted and stays red**. It failed on a query-plan assertion written in Phase 16 that had passed twenty consecutive times locally: the seed left the live-side indexes and the partial deadline index at nearly the same size, so the planner's choice between them turned on cost differences smaller than the variation between machines. The local planner chose one way every time and the hosted runner chose the other. Correcting the seed then exposed, through the typecheck, that the invitation-deadline assertion had been matching zero rows since it was written — passing and proving nothing. `86c3b1a` fixes both and is hosted-green, and is the tip this freeze refers to.
+
+None of the three is described as a first-attempt pass. A freeze report that smoothed them over would be the one document here nobody could check against reality — and the third one is the most useful of the three, because it is the case where twenty green runs were not evidence of what they appeared to be.
 
 ## What is not frozen, and why
 
