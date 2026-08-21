@@ -103,6 +103,12 @@ import {
   sendMessageRequestSchema,
 } from './messaging.js';
 import {
+  callActionRequestSchema,
+  callSchema,
+  createCallRequestSchema,
+  joinAuthorizationSchema,
+} from './realtime.js';
+import {
   markNotificationsReadRequestSchema,
   notificationListResponseSchema,
   notificationReadResponseSchema,
@@ -165,6 +171,7 @@ export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
 export * from './messaging.js';
+export * from './realtime.js';
 export * from './money.js';
 export * from './notifications.js';
 export * from './product.js';
@@ -285,6 +292,12 @@ export const apiRoutePaths = {
   messagingConversationRead: '/v1/messaging/conversations/read',
   messagingConversations: '/v1/messaging/conversations',
   messagingMessages: '/v1/messaging/messages',
+  rtcCallAcceptance: '/v1/rtc/calls/acceptance',
+  rtcCallCancellation: '/v1/rtc/calls/cancellation',
+  rtcCallJoinAuthorization: '/v1/rtc/calls/join-authorization',
+  rtcCallRejection: '/v1/rtc/calls/rejection',
+  rtcCallTermination: '/v1/rtc/calls/termination',
+  rtcCalls: '/v1/rtc/calls',
   notifications: '/v1/notifications',
   notificationsRead: '/v1/notifications/read',
   safetyBlockRemoval: '/v1/safety/blocks/removal',
@@ -422,7 +435,11 @@ export const apiSchemas = {
   Introduction: introductionSchema,
   IntroductionListResponse: introductionListResponseSchema,
   IntroductionReferenceRequest: introductionReferenceRequestSchema,
+  Call: callSchema,
+  CallActionRequest: callActionRequestSchema,
   Conversation: conversationSchema,
+  CreateCallRequest: createCallRequestSchema,
+  JoinAuthorization: joinAuthorizationSchema,
   ConversationListResponse: conversationListResponseSchema,
   ConversationReadResponse: conversationReadResponseSchema,
   CreateConversationRequest: createConversationRequestSchema,
@@ -471,6 +488,7 @@ export const apiSchemas = {
  * filters only; a credential never appears in a URL.
  */
 export const apiQueryParameters = {
+  callId: z.uuid(),
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
   adminSearch: adminCreatorSearchSchema,
@@ -2409,6 +2427,192 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'A mutual introduction requires both people to opt in independently. Two simultaneous reciprocal signals produce exactly one introduction.',
+  },
+  {
+    method: 'post',
+    operationId: 'createCall',
+    path: apiRoutePaths.rtcCalls,
+    requestSchemaName: 'CreateCallRequest',
+    responses: {
+      '200': {
+        description:
+          'The call this invitation opened, or the live call the pair already had. A second invitation while one is live returns that one rather than opening a second.',
+        schemaName: 'Call',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The pair may not talk right now, or the caller\u2019s own standing does not permit calling. Which of those it is, is deliberately not disclosed.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description:
+          'No mutual introduction of the caller matches that identifier. A pending, closed, expired, or someone else\u2019s introduction is indistinguishable from one that does not exist.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'A call is placed against a mutual introduction and against nothing else. The request names the relationship; the server decides who the other person is, so no caller can choose whom it calls.',
+  },
+  {
+    method: 'get',
+    operationId: 'getCall',
+    path: apiRoutePaths.rtcCalls,
+    requestQuery: [
+      { description: 'The call to read', name: 'callId', required: true },
+    ],
+    responses: {
+      '200': {
+        description: 'The call, as one of its two participants sees it.',
+        schemaName: 'Call',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description:
+          'No call of the caller\u2019s matches that identifier. A call between two other people is indistinguishable from one that does not exist.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary: 'Reads one call the caller is a participant of.',
+  },
+  {
+    method: 'post',
+    operationId: 'acceptCall',
+    path: apiRoutePaths.rtcCallAcceptance,
+    requestSchemaName: 'CallActionRequest',
+    responses: {
+      '200': {
+        description: 'The answered call.',
+        schemaName: 'Call',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The invitation is no longer answerable: it expired, it was withdrawn, the caller is not its recipient, or the pair may no longer talk. Eligibility is composed again at this moment rather than inherited from the invitation.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description: 'No call of the caller\u2019s matches that identifier.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Answers a ringing call. Only its recipient may, and only while the invitation stands.',
+  },
+  {
+    method: 'post',
+    operationId: 'rejectCall',
+    path: apiRoutePaths.rtcCallRejection,
+    requestSchemaName: 'CallActionRequest',
+    responses: {
+      '200': { description: 'The declined call.', schemaName: 'Call' },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The invitation is no longer answerable, or the caller is not its recipient.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description: 'No call of the caller\u2019s matches that identifier.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary: 'Declines a ringing call. Only its recipient may.',
+  },
+  {
+    method: 'post',
+    operationId: 'cancelCall',
+    path: apiRoutePaths.rtcCallCancellation,
+    requestSchemaName: 'CallActionRequest',
+    responses: {
+      '200': { description: 'The withdrawn call.', schemaName: 'Call' },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The call has already been answered or ended, or the caller did not place it.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description: 'No call of the caller\u2019s matches that identifier.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Withdraws an invitation before it is answered. Only the person who placed it may.',
+  },
+  {
+    method: 'post',
+    operationId: 'endCall',
+    path: apiRoutePaths.rtcCallTermination,
+    requestSchemaName: 'CallActionRequest',
+    responses: {
+      '200': {
+        description:
+          'The ended call. Repeating the call returns the same ending rather than an error, because a retried hang-up is the ordinary case.',
+        schemaName: 'Call',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: 'The call was never answered, so there is nothing to end.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description: 'No call of the caller\u2019s matches that identifier.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary: 'Hangs up. Either participant may, and doing it twice is safe.',
+  },
+  {
+    method: 'post',
+    operationId: 'issueJoinAuthorization',
+    path: apiRoutePaths.rtcCallJoinAuthorization,
+    requestSchemaName: 'CallActionRequest',
+    responses: {
+      '200': {
+        description:
+          'This participant\u2019s means of joining, for this call only, expiring in minutes. It is a secret: it is not stored by the server, must not be persisted by a client beyond the call, and must never be logged.',
+        schemaName: 'JoinAuthorization',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The call does not admit anybody right now: it was never answered, it has ended, it is not bound to a provider session, or the pair may no longer talk. Eligibility is composed again at issuance rather than inherited from the acceptance.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description: 'No call of the caller\u2019s matches that identifier.',
+        schemaName: 'ApiError',
+      },
+      '503': {
+        description:
+          'No RTC provider is approved, so there is nothing to join. Nothing about the caller or the call is wrong, and the answer may differ later.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Issues one participant\u2019s short-lived means of joining. The participant is derived from the authenticated principal, so nobody can obtain another person\u2019s credential.',
   },
   {
     method: 'post',

@@ -9,6 +9,8 @@ import type { SafeLogger } from '@velora/observability/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
 import type { ConnectionDirectoryPort } from '../discovery/connections.js';
+import type { ConsumerContextResolver } from '../users/context.js';
+import type { ConsumerDirectory } from '../users/directory.js';
 import type { OnboardingService } from '../users/onboarding.js';
 import {
   ComposedRtcCallEligibility,
@@ -23,6 +25,7 @@ import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { UnavailableRtcProvider, type RtcProviderPort } from './provider.js';
 import { RtcRepository } from './repository.js';
+import { RtcRoutes } from './routes.js';
 import { RtcService } from './service.js';
 
 export interface RealtimeRuntime {
@@ -31,6 +34,7 @@ export interface RealtimeRuntime {
   readonly orchestrator: RtcProviderOrchestrator;
   readonly provider: RtcProviderPort;
   readonly repository: RtcRepository;
+  readonly routes: RtcRoutes;
   readonly service: RtcService;
 }
 
@@ -121,7 +125,10 @@ function selectCallEligibility(input: {
 export function createRealtimeRuntime(input: {
   readonly config: ServerConfig;
   readonly connections: ConnectionDirectoryPort;
+  /** Present when this composition publishes routes. */
+  readonly consumerContext?: ConsumerContextResolver;
   readonly database: DatabaseHandle;
+  readonly directory?: ConsumerDirectory;
   readonly logger?: SafeLogger;
   /** A finished contract, for a caller that has one. */
   readonly eligibility?: RtcCallEligibilityPort;
@@ -153,25 +160,35 @@ export function createRealtimeRuntime(input: {
     ...(input.safety === undefined ? {} : { safety: input.safety }),
     ...(input.standing === undefined ? {} : { standing: input.standing }),
   });
+  const authorization = new RtcJoinAuthorizationService({
+    eligibility,
+    now,
+    provider,
+    repository,
+  });
+  const service = new RtcService({
+    connections: input.connections,
+    eligibility,
+    now,
+    onboarding: input.onboarding,
+    orchestrator,
+    repository,
+  });
   return {
-    authorization: new RtcJoinAuthorizationService({
-      eligibility,
-      now,
-      provider,
-      repository,
-    }),
+    authorization,
     eligibility,
     orchestrator,
     provider,
     repository,
-    service: new RtcService({
-      connections: input.connections,
-      eligibility,
-      now,
-      onboarding: input.onboarding,
-      orchestrator,
-      repository,
+    routes: new RtcRoutes({
+      authorization,
+      // Routes are only reachable when a composition supplies the consumer
+      // seam; a worker composition has no use for them and supplies neither.
+      consumerContext: input.consumerContext as never,
+      directory: input.directory as never,
+      realtime: service,
     }),
+    service,
   };
 }
 

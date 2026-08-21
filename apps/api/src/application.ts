@@ -10,6 +10,7 @@ import {
   apiRoutePaths,
   livenessResponseSchema,
   maximumRequestBodyBytes,
+  productErrorCodes,
   readinessResponseSchema,
   retryAfterResponseHeader,
   retryAfterSeconds,
@@ -63,6 +64,11 @@ import {
   createMessagingRuntime,
   type MessagingRuntime,
 } from './messaging/composition.js';
+import {
+  createRealtimeRuntime,
+  type RealtimeRuntime,
+} from './realtime/composition.js';
+import type { RtcRoutes } from './realtime/routes.js';
 import { ConversationEnforcement } from './messaging/enforcement.js';
 import { ConversationParticipation } from './messaging/participation.js';
 import {
@@ -89,7 +95,11 @@ import {
   type HealthDependency,
 } from './database/database.service.js';
 import { normalizeCorrelationId } from './http/correlation.js';
-import type { RouteRequest, RouteResult } from './http/route-kit.js';
+import {
+  routeFailure,
+  type RouteRequest,
+  type RouteResult,
+} from './http/route-kit.js';
 import { corsHeadersFor, isPreflight, preflightResponse } from './http/cors.js';
 import { apiSecurityHeaders } from './http/security-headers.js';
 import {
@@ -118,6 +128,13 @@ export interface ApplicationDependencies {
   readonly identity: IdentityRuntime;
   readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
+  /**
+   * Present in every composition that owns its database, which is every
+   * production one. A test that injects its own runtimes may omit it, and then
+   * publishes no RTC routes rather than publishing ones wired to a database it
+   * did not supply.
+   */
+  readonly realtime?: RealtimeRuntime;
   readonly notifications: NotificationsApiRuntime;
   readonly outboundHttp: OutboundHttpPort;
   readonly payouts: PayoutsRuntime;
@@ -182,6 +199,7 @@ export function createApplication(
   const injectedMedia = options.dependencies?.media;
   const injectedIdentity = options.dependencies?.identity;
   const injectedMessaging = options.dependencies?.messaging;
+  const injectedRealtime = options.dependencies?.realtime;
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
@@ -198,6 +216,7 @@ export function createApplication(
   let media: MediaRuntime;
   let identity: IdentityRuntime;
   let messaging: MessagingRuntime;
+  let realtime: RealtimeRuntime | undefined;
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
@@ -427,6 +446,20 @@ export function createApplication(
       });
     // The in-app read surface only. Delivery lives in the worker, so this
     // process composes no channel and holds no delivery claim.
+    realtime =
+      injectedRealtime ??
+      createRealtimeRuntime({
+        config,
+        connections: discovery.connections,
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        directory: users.directory,
+        enforcement: safety.eligibility,
+        logger,
+        onboarding: users.onboarding,
+        safety: safety.directory,
+        standing: users.standing,
+      });
     notifications =
       injectedNotifications ??
       createNotificationsApiRuntime({
@@ -472,6 +505,7 @@ export function createApplication(
     media = injectedMedia;
     identity = injectedIdentity;
     messaging = injectedMessaging;
+    realtime = injectedRealtime;
     notifications = injectedNotifications;
     payouts = injectedPayouts;
     safety = injectedSafety;
@@ -515,6 +549,7 @@ export function createApplication(
     outboundHttp:
       options.dependencies?.outboundHttp ?? new DenyAllOutboundHttp(),
     payouts,
+    ...(realtime === undefined ? {} : { realtime }),
     queueRedis,
     safety,
     users,
@@ -555,6 +590,31 @@ export function createApplication(
    * capacity answer rather than a decision about the caller, and the client may
    * retry wherever the operation itself is retryable.
    */
+  /**
+   * Wraps one RTC handler so the paths exist even where the runtime does not.
+   *
+   * A composition that supplied no REALTIME runtime still publishes the paths
+   * and answers `503` on them, rather than omitting them: an absent route and a
+   * route that cannot serve are different facts, and a client deserves the
+   * second one. Every production composition owns its database and therefore
+   * always has the runtime, so this refusal is reachable only from a test
+   * composition that injected its own.
+   */
+  function rtcRoute(
+    run: (routes: RtcRoutes, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (realtime === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(realtime.routes, input);
+    };
+  }
+
   function admitted(
     route: (input: RouteRequest) => Promise<RouteResult>,
   ): (context: {
@@ -1116,6 +1176,36 @@ export function createApplication(
     .post(
       apiRoutePaths.messagingMessages,
       admitted(async (input) => messaging.routes.sendMessage(input)),
+    )
+    .post(
+      apiRoutePaths.rtcCalls,
+      admitted(rtcRoute(async (routes, input) => routes.createCall(input))),
+    )
+    .get(
+      apiRoutePaths.rtcCalls,
+      admitted(rtcRoute(async (routes, input) => routes.getCall(input))),
+    )
+    .post(
+      apiRoutePaths.rtcCallAcceptance,
+      admitted(rtcRoute(async (routes, input) => routes.acceptCall(input))),
+    )
+    .post(
+      apiRoutePaths.rtcCallRejection,
+      admitted(rtcRoute(async (routes, input) => routes.rejectCall(input))),
+    )
+    .post(
+      apiRoutePaths.rtcCallCancellation,
+      admitted(rtcRoute(async (routes, input) => routes.cancelCall(input))),
+    )
+    .post(
+      apiRoutePaths.rtcCallTermination,
+      admitted(rtcRoute(async (routes, input) => routes.endCall(input))),
+    )
+    .post(
+      apiRoutePaths.rtcCallJoinAuthorization,
+      admitted(
+        rtcRoute(async (routes, input) => routes.issueJoinAuthorization(input)),
+      ),
     )
     .post(
       apiRoutePaths.safetyBlocks,
