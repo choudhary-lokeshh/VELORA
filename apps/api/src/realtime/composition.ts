@@ -26,6 +26,7 @@ import {
 import { RtcJoinAuthorizationService } from './authorization.js';
 import { RtcCallEnforcement } from './enforcement.js';
 import { RtcOperations } from './operations.js';
+import { RtcReconciler } from './reconciliation.js';
 import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { RtcProviderEventRoutes } from './provider-event-routes.js';
@@ -56,6 +57,11 @@ export interface RealtimeRuntime {
    * `realtime_` table.
    */
   readonly operations: RtcOperations;
+  /**
+   * Discharges what the platform owes a provider. Composed here and run by the
+   * worker, because a provider call must never sit on a request path.
+   */
+  readonly reconciliation: RtcReconciler;
   readonly signals: RtcSignalPublisherPort;
   /**
    * This domain's outbox, exposed so the relay in the worker can drain it. The
@@ -208,6 +214,8 @@ export function createRealtimeRuntime(input: {
   readonly signalChannel?: RtcSignalChannel;
   /** USERS' published account-standing answer. */
   readonly standing?: RtcStandingPort;
+  /** Identifies this process on any lease it takes. */
+  readonly workerName?: string;
 }): RealtimeRuntime {
   const repository = new RtcRepository(input.database);
   const outbox = new OutboxRepository(input.database, realtimeOutbox);
@@ -256,6 +264,15 @@ export function createRealtimeRuntime(input: {
     authorization,
     eligibility,
     enforcement: new RtcCallEnforcement(input.database, { signals }),
+    reconciliation: new RtcReconciler({
+      logger: input.logger ?? silentFallbackLogger,
+      now,
+      // Names the process holding a lease, so an operator looking at a stuck
+      // obligation can tell which worker was carrying it.
+      owner: input.workerName ?? 'rtc-reconciler',
+      provider,
+      repository,
+    }),
     operations: new RtcOperations({
       // Reported from what this process actually composed rather than from the
       // configuration that was meant to select it. A screen reporting the

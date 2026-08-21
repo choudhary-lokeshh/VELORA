@@ -466,7 +466,19 @@ export class RtcService {
         if (moved === undefined) return undefined;
         // The obligation to tear this room down is recorded now, while the
         // reference is in hand, rather than when the call ends — a crash
-        // between ending and recording would otherwise leak the room.
+        // between ending and recording would otherwise leak the room. It is
+        // written by the transaction that moved the call, so a process dying
+        // immediately afterwards cannot leave a room nobody owes anything
+        // about.
+        if (moved.provider !== null && moved.providerReference !== null) {
+          await this.dependencies.repository.recordObligation(executor, {
+            kind: 'terminate_session',
+            now: this.dependencies.now(),
+            provider: moved.provider,
+            providerReference: moved.providerReference,
+            sessionId: moved.id,
+          });
+        }
         return moved;
       },
     );

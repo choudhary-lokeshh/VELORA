@@ -466,6 +466,52 @@ export type RtcProviderObligationState =
 export const maximumRtcObligationAttempts = 8;
 
 /**
+ * How long a worker holds an obligation before another may take it.
+ *
+ * Long enough to cover a slow provider call and short enough that a worker
+ * killed mid-discharge does not park the work for a shift. Nothing depends on
+ * the lease being correct for safety: the discharge itself is idempotent, so a
+ * lease expiring early costs a duplicate request to a provider that already did
+ * the thing.
+ */
+export const rtcObligationLeaseMilliseconds = 60_000;
+
+/**
+ * How long to wait before trying a failed obligation again.
+ *
+ * Exponential in the attempt count and capped, because a provider that is down
+ * is not helped by being asked faster, and a teardown that has failed seven
+ * times is not going to succeed on the eighth if it is asked a second later.
+ */
+export function rtcObligationBackoffMilliseconds(attempts: number): number {
+  return Math.min(2 ** Math.max(0, attempts) * 1_000, 300_000);
+}
+
+/** How many obligations one drain cycle discharges. */
+export const rtcObligationBatchSize = 20;
+
+/**
+ * How often the worker drains what is owed to a provider.
+ *
+ * Frequent, because the thing being cleaned up is a room that may still be
+ * carrying media: a teardown that waits a minute is a minute of a call the
+ * platform believes is over.
+ */
+export const rtcObligationDrainIntervalMilliseconds = 5_000;
+
+/**
+ * How often the worker closes invitations and calls that ran out of time.
+ *
+ * Both deadlines are already stored on the row, so this discovers facts that
+ * are true rather than firing an alarm at the instant one becomes true. A
+ * missed cycle delays a record and changes no decision — acceptance
+ * independently refuses a passed deadline, and a stalled call is refused by its
+ * own state — which is what makes the interval a tuning choice rather than a
+ * correctness one.
+ */
+export const rtcSweepIntervalMilliseconds = 5_000;
+
+/**
  * What has happened to a verified provider event.
  *
  * `ignored` is a first-class outcome rather than a failure. A provider is

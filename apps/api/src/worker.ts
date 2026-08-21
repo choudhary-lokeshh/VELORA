@@ -48,7 +48,13 @@ import {
   mediaUploadSweepIntervalMilliseconds,
 } from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
+import { createRealtimeRuntime } from './realtime/composition.js';
+import {
+  rtcObligationDrainIntervalMilliseconds,
+  rtcSweepIntervalMilliseconds,
+} from './realtime/policy.js';
 import { realtimeOutbox } from './realtime/schema.js';
+import { ConnectionDirectory } from './discovery/connections.js';
 import { createNotificationsRuntime } from './notifications/composition.js';
 import {
   createNotificationWake,
@@ -170,6 +176,10 @@ export interface WorkerComposition {
   readonly providerEventDrain: Poller;
   readonly relay: OutboxRelay;
   readonly relayPoller: Poller;
+  /** Discharges what calling owes a provider. Decides nothing about a call. */
+  readonly rtcObligationDrain: Poller;
+  /** Closes invitations and calls that ran out of time. */
+  readonly rtcSweep: Poller;
   /** Records passed takedown deadlines as evidence. Decides nothing. */
   readonly safetyDeadlineSweep: Poller;
   readonly registry: JobRegistry;
@@ -185,6 +195,22 @@ export interface WorkerComposition {
  * repositories rather than building HTTP runtimes it has no use for. Those are
  * the same classes the API composes; what a worker does not need is routes.
  */
+/**
+ * Admits nobody, whatever an account has done.
+ *
+ * The worker authorizes no call — it carries out decisions already recorded —
+ * so the admission answer it composes REALTIME with is one that always refuses.
+ * A worker able to admit somebody would be a second way into calling that no
+ * request path guards.
+ */
+const refusedAdmission = {
+  adultAssurance: 'none',
+  adultAssuranceRefused: false,
+  outstandingPolicies: [],
+  outstandingProfile: [],
+  step: 'adult_declaration',
+} as const;
+
 export function createWorkerComposition(input: {
   readonly config: ServerConfig;
   readonly database: DatabaseService;
@@ -220,6 +246,23 @@ export function createWorkerComposition(input: {
     safety: new SafetyDirectory(new SafetyRepository(handle)),
     standing: new ConsumerStanding(new UsersRepository(handle)),
     wake: createNotificationWake(input.queue),
+  });
+
+  // REALTIME is composed here because this process carries out what calling
+  // owes and what it has to clean up: provider teardown, invitations whose
+  // deadline passed, and calls stuck past a bounded wait. It gets no request
+  // resolvers and no routes, because none is served here — and its eligibility
+  // contract refuses every pair, since nothing on this process authorizes a
+  // call and a worker that could would be a second way into calling.
+  const realtime = createRealtimeRuntime({
+    config: input.config,
+    connections: new ConnectionDirectory(handle),
+    database: handle,
+    eligibility: { mayCall: () => Promise.resolve(false) },
+    logger: input.logger,
+    now,
+    onboarding: { evaluate: () => Promise.resolve(refusedAdmission) },
+    workerName: owner,
   });
 
   // BILLING is composed on the worker for one reason: this process drains its
@@ -426,6 +469,64 @@ export function createWorkerComposition(input: {
         : new UnpublishedTakedownPolicy(),
     repository: new SafetyRepository(handle),
   });
+  // What calling owes a provider. The discharge itself reaches a vendor, so it
+  // runs here and never on a request path, and it holds no database connection
+  // while it does.
+  const rtcObligationDrain = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const report = await realtime.reconciliation.dischargeOnce();
+        // Silent when nothing was owed, which is the ordinary case and, with no
+        // approved provider, the only one. Counts only: what an operator needs
+        // is how much is outstanding and whether it is falling, and an
+        // identifier here would put two people's call in a log line.
+        if (report.examined === 0) return;
+        const cycle = {
+          abandoned: report.abandoned,
+          deferred: report.deferred,
+          discharged: report.discharged,
+          examined: report.examined,
+          provider: realtime.provider.provider,
+        };
+        if (report.abandoned > 0) {
+          input.logger.error(cycle, 'rtc obligations abandoned');
+        } else if (report.deferred > 0) {
+          input.logger.warn(cycle, 'rtc obligations deferred');
+        } else {
+          input.logger.info(cycle, 'rtc obligation drain cycle');
+        }
+      }),
+    intervalMilliseconds: rtcObligationDrainIntervalMilliseconds,
+    logger: input.logger,
+    name: 'rtc-obligation-drain',
+  });
+
+  // Invitations nobody answered and calls stuck past a bounded wait. Both
+  // deadlines are already true in the database, so this records facts rather
+  // than deciding them, and a cycle that never runs delays a record without
+  // changing any decision.
+  const rtcSweep = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const expired = await realtime.service.expireDueInvitations();
+        const stalled = await realtime.service.closeStalledCalls();
+        const closed =
+          expired + stalled.failedToConnect + stalled.reconnectExpired;
+        if (closed === 0) return;
+        input.logger.info(
+          {
+            failedToConnect: stalled.failedToConnect,
+            invitationsExpired: expired,
+            reconnectExpired: stalled.reconnectExpired,
+          },
+          'rtc sweep cycle',
+        );
+      }),
+    intervalMilliseconds: rtcSweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'rtc-sweep',
+  });
+
   const safetyDeadlineSweep = new Poller({
     cycle: async () =>
       admit(async () => {
@@ -632,6 +733,8 @@ export function createWorkerComposition(input: {
   return {
     billing,
     financialReconciliation,
+    rtcObligationDrain,
+    rtcSweep,
     identity,
     identityProviderEventDrain,
     identityReconciliation,
@@ -650,6 +753,8 @@ export function createWorkerComposition(input: {
         identityProviderEventDrain.stop(),
         identityReconciliation.stop(),
         financialReconciliation.stop(),
+        rtcObligationDrain.stop(),
+        rtcSweep.stop(),
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
         mediaProcessing.stop(),
@@ -671,6 +776,11 @@ export function createWorkerComposition(input: {
       await relayPoller.runOnce();
       await financialReconciliation.runOnce();
       await safetyDeadlineSweep.runOnce();
+      // A restart drains what is owed before it settles into its interval: a
+      // room left open by the process that died is the one thing here worth
+      // being impatient about.
+      await rtcObligationDrain.runOnce();
+      await rtcSweep.runOnce();
       await mediaUploadSweep.runOnce();
       await mediaInspection.runOnce();
       await mediaProcessing.runOnce();

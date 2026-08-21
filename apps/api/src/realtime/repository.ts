@@ -480,6 +480,87 @@ export class RtcRepository {
       .limit(input.limit);
   }
 
+  /**
+   * Claims due obligations under a lease.
+   *
+   * `skip locked` rather than a plain read, so two workers draining at once
+   * take disjoint work instead of both discharging the same teardown against a
+   * provider. The lease is what makes a worker dying mid-discharge recoverable:
+   * the row stays `pending`, its lease expires, and the next cycle picks it up
+   * — which is why the claim also takes rows whose lease has run out.
+   */
+  async claimDueObligations(
+    executor: Executor,
+    input: {
+      readonly leaseMilliseconds: number;
+      readonly limit: number;
+      readonly now: Date;
+      readonly owner: string;
+    },
+  ): Promise<readonly RtcProviderObligationRow[]> {
+    const due = await executor
+      .select({ id: realtimeProviderObligations.id })
+      .from(realtimeProviderObligations)
+      .where(
+        and(
+          eq(realtimeProviderObligations.state, 'pending'),
+          sql`${realtimeProviderObligations.availableAt} <= ${input.now}`,
+          sql`(${realtimeProviderObligations.leaseExpiresAt} is null
+               or ${realtimeProviderObligations.leaseExpiresAt} <= ${input.now})`,
+        ),
+      )
+      .orderBy(realtimeProviderObligations.id)
+      .limit(input.limit)
+      .for('update', { skipLocked: true });
+    if (due.length === 0) return [];
+
+    return executor
+      .update(realtimeProviderObligations)
+      .set({
+        leaseExpiresAt: new Date(input.now.getTime() + input.leaseMilliseconds),
+        leaseOwner: input.owner,
+        updatedAt: input.now,
+      })
+      .where(
+        inArray(
+          realtimeProviderObligations.id,
+          due.map((row) => row.id),
+        ),
+      )
+      .returning();
+  }
+
+  /**
+   * Defers an obligation that did not discharge, or abandons it loudly.
+   *
+   * Abandoning is a state rather than a deletion: a room this platform could
+   * not tear down is exactly the thing an operator has to know about, and a row
+   * quietly removed after eight tries would be a leak nobody could see.
+   */
+  async deferObligation(
+    executor: Executor,
+    input: {
+      readonly availableAt: Date;
+      readonly id: number;
+      readonly now: Date;
+      readonly reason: string;
+      readonly terminal: boolean;
+    },
+  ): Promise<void> {
+    await executor
+      .update(realtimeProviderObligations)
+      .set({
+        attempts: sql`${realtimeProviderObligations.attempts} + 1`,
+        availableAt: input.availableAt,
+        failureReason: input.reason,
+        leaseExpiresAt: null,
+        leaseOwner: null,
+        ...(input.terminal ? { state: 'abandoned' as const } : {}),
+        updatedAt: input.now,
+      })
+      .where(eq(realtimeProviderObligations.id, input.id));
+  }
+
   /** Settles one obligation. Retained either way; nothing is deleted. */
   async settleObligation(
     executor: Executor,
@@ -495,7 +576,12 @@ export class RtcRepository {
       .set({
         attempts: sql`${realtimeProviderObligations.attempts} + 1`,
         ...(input.discharged
-          ? { dischargedAt: input.now, state: 'discharged' as const }
+          ? {
+              dischargedAt: input.now,
+              leaseExpiresAt: null,
+              leaseOwner: null,
+              state: 'discharged' as const,
+            }
           : {}),
         ...(input.reason === undefined ? {} : { failureReason: input.reason }),
         updatedAt: input.now,

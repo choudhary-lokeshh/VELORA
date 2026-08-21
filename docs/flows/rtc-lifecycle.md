@@ -62,6 +62,12 @@ An interruption changes nothing else about the call. It keeps its participants, 
 
 **Divergence** — a provider room alive after the platform ended a call, a participant still connected after revocation, a session pending creation too long, a callback never delivered — is detected by bounded reconciliation, which records a finding before it repairs and may only move toward termination. It never resurrects an ended call and never overrides safety.
 
+What the platform owes a provider is recorded by the transaction that incurs it: the obligation to tear a room down is written when the room is bound, not when the call ends, because a crash between ending and recording would leak a room nothing knew about. A worker discharges those obligations on its own loop, and the whole shape of that loop follows from one rule — no provider call runs inside a database transaction — so a cycle is a claim, then network calls holding no connection, then a settle.
+
+The claim takes a lease with `skip locked`, so two workers draining at once take disjoint work rather than both tearing down the same room, and a worker dying mid-discharge is recovered by its lease expiring rather than by anybody noticing. Failure defers with exponential backoff rather than retrying immediately, since a provider that is down is not helped by being asked faster. After a bounded number of attempts the obligation is **abandoned, which is a state the row keeps** — a room the platform could not tear down is exactly the divergence an operator has to see, and a row deleted after the last attempt would be a leak with no evidence of itself. That count is what the operator screen reports.
+
+The reconciler decides nothing about a call. It carries out decisions already recorded: it cannot end a call, revoke authorization, or move a session's state, because a reconciler that could would be a second authority over calling that no request path guards.
+
 ## Security, concurrency, and data
 
 Every mutating route re-resolves the acting principal against the session's participant rows; a non-participant is answered exactly as a session that does not exist. No request field names a participant, session, provider, room, scope, duration, or state. Mutating calls are idempotent. Concurrency is decided by the session's own guarded transitions and the pair lock, so accept-versus-cancel, accept-versus-block, end-versus-reconnect, and duplicate invitations resolve to one outcome under any interleaving.
