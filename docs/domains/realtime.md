@@ -106,6 +106,14 @@ The counts are taken inside the transaction that writes and under the pair lock 
 
 A refusal says only that a bound was reached. It does not say which bound, how much of it remains, or when it lifts, and it answers identically however often it is asked — a refusal carrying its own counter would be a way to measure somebody else's calling. It is a `409` with `RATE_LIMITED`, the product convention; `429` belongs to AUTH's answer about authentication attempts, and reusing it would put a product limit in the bucket a client treats as "retry the sign-in".
 
+## Scale
+
+Almost every question this domain asks is about a *live* call, and a live call is a vanishing fraction of the rows: a call is an event, its history is kept forever, and no retention duration is approved. So the indexes are partial on the live states, and what the scale suite checks is that the planner uses them rather than walking a history that grows without bound. It asserts plans taken from `EXPLAIN` on seeded volume rather than timings, because a sequential scan that is fast on a hundred calls is an outage on a million.
+
+The access paths held to a plan are the pair's live call, every live call one account is in from either side of the ordered pair, both deadline sweeps, the per-person and per-call credential counts, the obligation drain, and the operator screen's join.
+
+One measured detail decides how those assertions are written. Dropping the state-deadline index does **not** produce a sequential scan — the planner falls back to another live-partial index and applies the deadline as a filter, which reads every live call on every cycle. A "no sequential scan" assertion would pass straight through that regression, so the sweep tests pin the index by name. The pair lookup deliberately does not: three indexes are partial on the live states and any of them answers it in a couple of pages, so naming one would assert a planner choice rather than a property.
+
 ## Operations
 
 An operator sees calling as counts, ages, and adapter names. The state screen carries **no identifier of any kind** — not a call, not an account, not a provider room — because a screen somebody watches all day must not become a window onto who is talking to whom. Two people having a call is not an operational fact.
