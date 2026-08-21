@@ -267,6 +267,22 @@ export const trustAndSafetyEligibility = 'trust-and-safety';
  */
 export const unavailableCallEligibility = 'unavailable';
 export const composedCallEligibility = 'composed';
+/**
+ * How a call's movements reach a connected client.
+ *
+ * `unavailable` carries nothing, which is the accurate description of a
+ * platform with no realtime gateway: the consumer surfaces that would connect
+ * to one are deferred, so there is no audience to deliver to. Clients read
+ * authoritative state over HTTP either way, which is why this is a complete
+ * answer rather than a degraded one.
+ *
+ * `redis` fans out over ephemeral Redis so two API replicas can reach the same
+ * person's connections. It is transport only: it holds no call state, decides
+ * nothing, and losing it loses no durable fact.
+ */
+export const unavailableSignalTransport = 'unavailable';
+export const redisSignalTransport = 'redis';
+
 export const unavailableRtcProvider = 'unavailable';
 export const localTestRtcProvider = 'local-test';
 
@@ -464,6 +480,9 @@ export const serverConfigSchema = z
     REALTIME_RTC_PROVIDER: z
       .enum([unavailableRtcProvider, localTestRtcProvider])
       .default(unavailableRtcProvider),
+    REALTIME_SIGNAL_TRANSPORT: z
+      .enum([unavailableSignalTransport, redisSignalTransport])
+      .default(unavailableSignalTransport),
     SAFETY_CONSENT_POLICY: z
       .enum([unpublishedConsentPolicy, localTestConsentPolicy])
       .default(unpublishedConsentPolicy),
@@ -767,6 +786,7 @@ export function redactServerConfig(config: ServerConfig) {
     port: config.PORT,
     rtcCallEligibility: config.REALTIME_CALL_ELIGIBILITY,
     rtcProvider: config.REALTIME_RTC_PROVIDER,
+    rtcSignalTransport: config.REALTIME_SIGNAL_TRANSPORT,
     safetyEligibility: config.MESSAGING_SAFETY_ELIGIBILITY,
     privilegedAuthenticatorVerifier:
       config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,

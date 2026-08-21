@@ -1,8 +1,10 @@
 import {
   composedCallEligibility,
   localTestRtcProvider,
+  redisSignalTransport,
   unavailableCallEligibility,
   unavailableRtcProvider,
+  unavailableSignalTransport,
   type ServerConfig,
 } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
@@ -28,10 +30,17 @@ import { UnavailableRtcProvider, type RtcProviderPort } from './provider.js';
 import { RtcRepository } from './repository.js';
 import { realtimeOutbox } from './schema.js';
 import { RtcRoutes } from './routes.js';
+import {
+  RedisRtcSignalPublisher,
+  UnavailableRtcSignalPublisher,
+  type RtcSignalChannel,
+  type RtcSignalPublisherPort,
+} from './signalling.js';
 import { RtcService } from './service.js';
 
 export interface RealtimeRuntime {
   readonly authorization: RtcJoinAuthorizationService;
+  readonly signals: RtcSignalPublisherPort;
   /**
    * This domain's outbox, exposed so the relay in the worker can drain it. The
    * relay reads it; no other domain does.
@@ -61,6 +70,35 @@ const rtcProviders: Readonly<
   [localTestRtcProvider]: (now) => new LocalTestRtcProvider(now),
   [unavailableRtcProvider]: () => new UnavailableRtcProvider(),
 };
+
+/**
+ * How a call's movements reach a connected client.
+ *
+ * `unavailable` is the default and carries nothing, which is accurate rather
+ * than degraded: no realtime gateway exists, because the surfaces that would
+ * connect to one are deferred. Selecting `redis` without supplying a channel is
+ * an error rather than a silent downgrade, on the same rule as every other
+ * registry here — a transport that quietly carried nothing would be
+ * indistinguishable from one that worked.
+ */
+function selectSignalPublisher(input: {
+  readonly config: ServerConfig;
+  readonly logger?: SafeLogger;
+  readonly signalChannel?: RtcSignalChannel;
+}): RtcSignalPublisherPort {
+  if (input.config.REALTIME_SIGNAL_TRANSPORT === unavailableSignalTransport) {
+    return new UnavailableRtcSignalPublisher();
+  }
+  if (input.signalChannel === undefined) {
+    throw new Error(
+      `${redisSignalTransport} signal transport was configured, but no channel was supplied`,
+    );
+  }
+  return new RedisRtcSignalPublisher({
+    channel: input.signalChannel,
+    logger: input.logger ?? silentFallbackLogger,
+  });
+}
 
 function selectRtcProvider(
   config: ServerConfig,
@@ -145,6 +183,11 @@ export function createRealtimeRuntime(input: {
   readonly onboarding: OnboardingService;
   /** TRUST & SAFETY's pairwise answer. */
   readonly safety?: RtcPairSafetyPort;
+  /**
+   * Ephemeral Redis, when this composition fans out to connected clients. It
+   * carries hints and never state, so its absence costs a refresh.
+   */
+  readonly signalChannel?: RtcSignalChannel;
   /** USERS' published account-standing answer. */
   readonly standing?: RtcStandingPort;
 }): RealtimeRuntime {
@@ -152,6 +195,7 @@ export function createRealtimeRuntime(input: {
   const outbox = new OutboxRepository(input.database, realtimeOutbox);
   const now = input.now ?? (() => new Date());
   const provider = selectRtcProvider(input.config, now);
+  const signals = selectSignalPublisher(input);
   const orchestrator = new RtcProviderOrchestrator({
     logger: input.logger ?? silentFallbackLogger,
     now,
@@ -182,6 +226,7 @@ export function createRealtimeRuntime(input: {
     orchestrator,
     outbox,
     repository,
+    signals,
   });
   return {
     authorization,
@@ -190,6 +235,7 @@ export function createRealtimeRuntime(input: {
     outbox,
     provider,
     repository,
+    signals,
     routes: new RtcRoutes({
       authorization,
       // Routes are only reachable when a composition supplies the consumer

@@ -17,6 +17,7 @@ import {
   type RtcCallMedium,
   type RtcEndReason,
 } from './policy.js';
+import type { RtcSignalPublisherPort } from './signalling.js';
 import {
   participantRoleOf,
   type RtcRepository,
@@ -75,6 +76,12 @@ export interface RtcServiceDependencies {
    */
   readonly outbox: OutboxAppendPort;
   readonly repository: RtcRepository;
+  /**
+   * Best-effort fanout to connected clients. Published after the transition is
+   * committed and never inside its transaction: a hint is worth nothing if
+   * delivering it can fail the thing it describes.
+   */
+  readonly signals: RtcSignalPublisherPort;
 }
 
 /**
@@ -591,11 +598,29 @@ export class RtcService {
     return eligibility.step === 'completed';
   }
 
+  /**
+   * Tells whoever is connected that a call moved.
+   *
+   * After the commit, outside the transaction, and never awaited for
+   * correctness: the publisher swallows its own failures, and a client that
+   * hears nothing reads authoritative state instead. Both participants are
+   * named, because either may have a device waiting on it.
+   */
+  private announce(session: RtcSessionRow): void {
+    void this.dependencies.signals.publish({
+      callId: session.id,
+      generation: session.authorizationGeneration,
+      recipientIds: [session.pairLowId, session.pairHighId],
+      state: session.state,
+    });
+  }
+
   private viewOf(
     actorId: string,
     session: RtcSessionRow,
     counterpartId: string,
   ): CallOutcome {
+    this.announce(session);
     return {
       kind: 'call',
       view: {
