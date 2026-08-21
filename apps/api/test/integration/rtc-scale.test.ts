@@ -48,8 +48,33 @@ beforeEach(async () => {
 
 /** Finished calls, which is what a mature table is almost entirely made of. */
 const seededFinishedCalls = 40_000;
-/** Live calls, which is what almost every question is about. */
-const seededLiveCalls = 40;
+
+/**
+ * Live calls, which is what almost every question is about.
+ *
+ * Mostly `active`, with a handful stuck in the two states that have a deadline
+ * — which is the shape a real platform has and, more to the point, the shape
+ * the sweep assertions actually depend on.
+ *
+ * The first version of this suite seeded forty live calls evenly across four
+ * states. That made the live-side indexes and the partial deadline index almost
+ * the same size, so the planner's choice between them turned on cost
+ * differences smaller than the variation between machines: twenty local runs
+ * all chose the deadline index and the hosted runner chose a live-side index
+ * and filtered. The test was asserting a preference under conditions where no
+ * preference existed. Seeding a real disparity is what makes the assertion
+ * about the index rather than about the hardware.
+ */
+const seededLiveCalls = 4_000;
+/**
+ * How many of those sit in a state a sweep has a deadline for.
+ *
+ * Split across all three: calls still ringing past their invitation deadline,
+ * calls stuck connecting, and calls stuck reconnecting. Every sweep assertion
+ * needs rows its query actually matches — a plan asserted for a query that
+ * finds nothing is not evidence about that query.
+ */
+const seededStalledCalls = 30;
 const seededIssuances = 20_000;
 
 /**
@@ -127,15 +152,21 @@ async function seed(): Promise<void> {
     });
   }
 
-  // Live calls, spread across the states that have a deadline so the sweep
-  // plans have something to find.
-  const liveStates = ['invited', 'connecting', 'reconnecting', 'active'];
+  // Live calls: overwhelmingly `active`, with a few stuck in each state that
+  // has a deadline. A sweep looking for the stalled ones must not pay for the
+  // healthy ones, and that is only a meaningful question when the healthy ones
+  // outnumber them.
+  const stalledStates = ['invited', 'connecting', 'reconnecting'] as const;
   for (let index = 0; index < seededLiveCalls; index += 1) {
-    const state = liveStates[index % liveStates.length] ?? 'invited';
+    const state: string =
+      index < seededStalledCalls
+        ? (stalledStates[index % stalledStates.length] ?? 'invited')
+        : 'active';
     const initiator = uuidFor('33333333', index);
     const counterpart = uuidFor('44444444', index);
     const at = new Date(now.getTime() - 600_000);
     calls.push({
+      // A ringing call has not been answered; everything else has.
       accepted_at: state === 'invited' ? null : at,
       authorization_generation: 1,
       created_at: at,

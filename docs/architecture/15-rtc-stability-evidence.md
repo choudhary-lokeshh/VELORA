@@ -50,6 +50,16 @@ Two order- and load-dependent defects were found and fixed before this evidence 
 
 Both are the same class: a margin measured against wall-clock time rather than against a captured instant. That class is what repeated running exists to surface.
 
+## What twenty local runs did not catch
+
+The proof above was taken on one machine, and one machine is not the population a gate runs on. The commit that followed it failed hosted on a query-plan assertion that had passed twenty consecutive times locally.
+
+The assertion was that a sweep for calls stuck `reconnecting` uses the partial deadline index. The seed created forty live calls spread evenly across four states, which left the live-side indexes and the deadline index at nearly the same size — so the planner's choice between them turned on cost differences smaller than the variation between a local machine and a hosted runner. Locally it chose the deadline index every time; on the runner it chose a live-side index and applied the deadline as a filter. The test was asserting a preference under conditions where no preference had been established.
+
+The fix was to the seed rather than to the assertion. Live calls are now overwhelmingly `active` with a handful stuck in the two states that have a deadline, which is both the shape a real platform has and the condition the assertion depends on. Measured after the change: the deadline plan costs 73.92 against 312.88 for the next best, and the deadline index is 16 KB against 147 KB — a margin decided by selectivity rather than by hardware.
+
+**The lesson for repeated-run evidence is narrower than "run it more times".** Repetition on identical hardware proves stability against ordering, load, and clocks. It cannot prove stability against a different planner, a different PostgreSQL build, or a different machine, because every iteration shares those. A plan assertion needs a seed that makes the intended index decisively cheaper, and the way to check that is to measure the margin rather than to observe that the test passed.
+
 ## Authority
 
 See [testing and release discipline](../engineering/05-testing-release.md) for the port-ownership rule in its permanent home, and [REALTIME](../domains/realtime.md) for what the suites being repeated actually assert.
