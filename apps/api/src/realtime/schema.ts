@@ -120,9 +120,25 @@ export const realtimeSessions = pgTable(
     /** Durable total order; timestamps and random UUIDs can tie. */
     sequence: bigserial('sequence', { mode: 'number' }).notNull(),
     state: text('state').notNull().$type<RtcSessionState>(),
+    /**
+     * When the current state began.
+     *
+     * Separate from `updated_at`, which moves for any write. Both bounded
+     * waits — how long a call may sit connecting, and how long an interruption
+     * is treated as an interruption — are measured against this, so a sweep
+     * asks the database when a state started rather than inferring it from the
+     * last time anything touched the row.
+     */
+    stateEnteredAt: timestamptz('state_entered_at').notNull(),
     updatedAt: timestamptz('updated_at').notNull(),
   },
   (table) => [
+    // Calls stuck in a state that has a deadline, for the sweeps that close
+    // them. Partial on exactly those two states, so a history of finished calls
+    // never enters the plan.
+    index('realtime_sessions_state_deadline_idx')
+      .on(table.stateEnteredAt)
+      .where(sql`${table.state} in ('connecting', 'reconnecting')`),
     // One live call per pair, ever. This is also what makes invitation
     // idempotent without a client key: a second attempt loses to the index and
     // then reads the call that already exists, and two people calling each

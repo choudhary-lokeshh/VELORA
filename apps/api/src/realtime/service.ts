@@ -14,6 +14,8 @@ import {
 import {
   isTerminalRtcSessionState,
   rtcInvitationTimeoutMilliseconds,
+  rtcJoinTimeoutMilliseconds,
+  rtcReconnectGraceMilliseconds,
   type RtcCallMedium,
   type RtcEndReason,
 } from './policy.js';
@@ -425,6 +427,136 @@ export class RtcService {
       connecting,
       counterpartOf(found, connecting.initiatorId),
     );
+  }
+
+  /**
+   * Records that media is flowing.
+   *
+   * An operational observation, taken from a verified provider event rather
+   * than from either endpoint: only the endpoints can see media, and they are
+   * the least trustworthy participants in the call. Reaching `active` grants
+   * nothing that acceptance did not already grant.
+   */
+  async markConnected(sessionId: string): Promise<boolean> {
+    const now = this.dependencies.now();
+    const moved = await this.dependencies.repository.transaction(
+      async (executor) => {
+        const held = await this.dependencies.repository.lockById(
+          executor,
+          sessionId,
+        );
+        if (held === undefined) return undefined;
+        if (held.state !== 'connecting' && held.state !== 'reconnecting') {
+          return undefined;
+        }
+        return this.dependencies.repository.transitionSession(executor, {
+          ...(held.connectedAt === null ? { connectedAt: now } : {}),
+          expected: held.state,
+          id: sessionId,
+          next: 'active',
+          now,
+        });
+      },
+    );
+    if (moved !== undefined) this.announce(moved);
+    return moved !== undefined;
+  }
+
+  /**
+   * Records that transport was interrupted.
+   *
+   * A network drop is not a hang-up, and treating it as one would end calls
+   * every time somebody walked between two cell towers. The call keeps its
+   * participants, its provider room, and its authorization generation; what
+   * starts is a bounded wait.
+   */
+  async markInterrupted(sessionId: string): Promise<boolean> {
+    const now = this.dependencies.now();
+    const moved = await this.dependencies.repository.transaction(
+      async (executor) => {
+        const held = await this.dependencies.repository.lockById(
+          executor,
+          sessionId,
+        );
+        if (held?.state !== 'active') return undefined;
+        return this.dependencies.repository.transitionSession(executor, {
+          expected: 'active',
+          id: sessionId,
+          next: 'reconnecting',
+          now,
+        });
+      },
+    );
+    if (moved !== undefined) this.announce(moved);
+    return moved !== undefined;
+  }
+
+  /**
+   * Closes calls that have waited longer than they are allowed to.
+   *
+   * Two deadlines, one mechanism. A call that never established media is a
+   * failure to connect rather than a call somebody ended, and an interruption
+   * that outlives its grace is an ending — a call nobody is connected to cannot
+   * be told apart from a call everybody has left.
+   *
+   * Recovery rather than a timer: both deadlines are already true in the
+   * database, so a missed sweep delays a record and changes no decision. Every
+   * closure is a guarded transition, so two sweeps racing produce one ending.
+   */
+  async closeStalledCalls(limit = 100): Promise<{
+    readonly failedToConnect: number;
+    readonly reconnectExpired: number;
+  }> {
+    const now = this.dependencies.now();
+    const failedToConnect = await this.closeExpired({
+      deadline: new Date(now.getTime() - rtcJoinTimeoutMilliseconds),
+      limit,
+      now,
+      reason: 'join_timeout',
+      state: 'connecting',
+      terminal: 'failed',
+    });
+    const reconnectExpired = await this.closeExpired({
+      deadline: new Date(now.getTime() - rtcReconnectGraceMilliseconds),
+      limit,
+      now,
+      reason: 'reconnect_expired',
+      state: 'reconnecting',
+      terminal: 'ended',
+    });
+    return { failedToConnect, reconnectExpired };
+  }
+
+  private async closeExpired(input: {
+    readonly deadline: Date;
+    readonly limit: number;
+    readonly now: Date;
+    readonly reason: RtcEndReason;
+    readonly state: 'connecting' | 'reconnecting';
+    readonly terminal: 'failed' | 'ended';
+  }): Promise<number> {
+    const due = await this.dependencies.repository.findExpiredByState(
+      this.dependencies.repository.transactionless,
+      { deadline: input.deadline, limit: input.limit, state: input.state },
+    );
+    let closed = 0;
+    for (const session of due) {
+      const settled = await this.dependencies.repository.transaction(
+        (executor) =>
+          this.dependencies.repository.terminateSession(executor, {
+            expected: input.state,
+            id: session.id,
+            now: input.now,
+            reason: input.reason,
+            terminal: input.terminal,
+          }),
+      );
+      if (settled !== undefined) {
+        closed += 1;
+        this.announce(settled);
+      }
+    }
+    return closed;
   }
 
   /**

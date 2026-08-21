@@ -113,9 +113,9 @@ async function boundCall(): Promise<{ callId: string; roomId: string }> {
     database.sql`insert into realtime_sessions
       (authorization_generation, accepted_at, created_at, id, initiator_id,
        invitation_expires_at, medium, origin_introduction_id,
-       pair_high_id, pair_low_id, state, updated_at)
+       pair_high_id, pair_low_id, state, state_entered_at, updated_at)
      values (1, now(), now(), ${callId}, ${caller}, now() + interval '1 minute',
-       'voice', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'accepted', now())`,
+       'voice', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'accepted', now(), now())`,
   );
   await execute(
     database.sql`insert into realtime_participants (invited_at, accepted_at, role, session_id, user_id)

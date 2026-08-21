@@ -100,6 +100,7 @@ export class RtcRepository {
         pairHighId: pair.high,
         pairLowId: pair.low,
         state: 'invited',
+        stateEnteredAt: input.now,
         updatedAt: input.now,
       })
       .onConflictDoNothing()
@@ -222,6 +223,7 @@ export class RtcRepository {
           ? {}
           : { connectedAt: input.connectedAt }),
         state: input.next,
+        stateEnteredAt: input.now,
         updatedAt: input.now,
       })
       .where(
@@ -270,6 +272,7 @@ export class RtcRepository {
         endReason: input.reason,
         endedAt: input.now,
         state: input.terminal,
+        stateEnteredAt: input.now,
         updatedAt: input.now,
       })
       .where(
@@ -580,6 +583,33 @@ export class RtcRepository {
       )
       .limit(1);
     return rows.at(0);
+  }
+
+  /**
+   * Calls stuck in a state that has a deadline.
+   *
+   * One query for both bounded waits, because they are the same question asked
+   * of two states: has this call been here longer than it is allowed to be.
+   */
+  async findExpiredByState(
+    executor: Executor,
+    input: {
+      readonly deadline: Date;
+      readonly limit: number;
+      readonly state: 'connecting' | 'reconnecting';
+    },
+  ): Promise<readonly RtcSessionRow[]> {
+    return executor
+      .select()
+      .from(realtimeSessions)
+      .where(
+        and(
+          eq(realtimeSessions.state, input.state),
+          sql`${realtimeSessions.stateEnteredAt} <= ${input.deadline}`,
+        ),
+      )
+      .orderBy(realtimeSessions.stateEnteredAt)
+      .limit(input.limit);
   }
 
   /** Invitations whose own deadline has passed, oldest first. */

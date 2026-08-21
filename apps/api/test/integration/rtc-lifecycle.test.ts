@@ -879,9 +879,9 @@ describe('the database refuses what the domain forbids', () => {
       await refused(() =>
         execute(database.sql`insert into realtime_sessions
            (authorization_generation, created_at, id, initiator_id, invitation_expires_at,
-            medium, origin_introduction_id, pair_high_id, pair_low_id, state, updated_at)
+            medium, origin_introduction_id, pair_high_id, pair_low_id, state, state_entered_at, updated_at)
          values (1, now(), ${crypto.randomUUID()}, ${pair.a.id}, now() + interval '1 minute',
-            'voice', ${pair.introductionId}, ${pair.a.id}, ${pair.a.id}, 'invited', now())`),
+            'voice', ${pair.introductionId}, ${pair.a.id}, ${pair.a.id}, 'invited', now(), now())`),
       ),
     ).toBe(true);
   });
@@ -894,9 +894,9 @@ describe('the database refuses what the domain forbids', () => {
       await refused(() =>
         execute(database.sql`insert into realtime_sessions
            (authorization_generation, created_at, id, initiator_id, invitation_expires_at,
-            medium, origin_introduction_id, pair_high_id, pair_low_id, state, updated_at)
+            medium, origin_introduction_id, pair_high_id, pair_low_id, state, state_entered_at, updated_at)
          values (1, now(), ${crypto.randomUUID()}, ${stranger.id}, now() + interval '1 minute',
-            'voice', ${pair.introductionId}, ${ordered[1] ?? ''}, ${ordered[0] ?? ''}, 'invited', now())`),
+            'voice', ${pair.introductionId}, ${ordered[1] ?? ''}, ${ordered[0] ?? ''}, 'invited', now(), now())`),
       ),
     ).toBe(true);
   });

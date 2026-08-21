@@ -22,7 +22,7 @@ stateDiagram-v2
   Connecting --> Failed: join timeout or provider error
   Active --> Reconnecting: transport interruption
   Reconnecting --> Active: bounded grace, re-authorized
-  Reconnecting --> Ending: grace expires
+  Reconnecting --> Ended: grace expires
   Active --> Ending: hang-up, block, or enforcement
   Ending --> Ended: revocation and teardown discharged
   Rejected --> [*]
@@ -50,7 +50,11 @@ stateDiagram-v2
 
 **Invitation expiry** produces a missed-call fact exactly once, derived from the session's own lifecycle rather than from any delivery outcome.
 
-**Reconnect** is bounded. A transport interruption does not mean a call ended, and a reconnect obtains fresh authorization rather than reusing a credential: eligibility is re-composed, the generation is re-checked, and a session that was ended, revoked, or blocked in the meantime refuses. When the grace period expires, the call ends safely.
+**Reconnect** is bounded. A transport interruption does not mean a call ended, and a reconnect obtains fresh authorization rather than reusing a credential: eligibility is re-composed, the generation is re-checked, and a session that was ended, revoked, or blocked in the meantime refuses. An interruption is therefore when a block takes effect rather than a window that outlives one.
+
+An interruption changes nothing else about the call. It keeps its participants, its provider room, and its authorization generation — advancing the generation would kill the credential the other side is still holding — and the instant media first flowed stays the instant media first flowed rather than being rewritten by each leg.
+
+**Both waits are bounded by a stored deadline, not by a timer.** The session records when its current state began, separately from when the row was last written, and two sweeps read it: a call that never established media is `failed` with a join timeout, and an interruption that outlives its grace is `ended`. The distinction is deliberate — a call that never connected is a failure to connect, not something that looks like somebody hung up, and a call nobody is connected to cannot be told apart from a call everybody has left. Because the deadline is already true in the database, a missed sweep delays a record and changes no decision, and because every closure is a guarded transition, two sweeps racing produce one ending.
 
 **Provider outage** fails closed and visibly. Sessions that cannot be created are `failed` with a normalized reason, not silently retried into existence, and no path infers success from a timeout.
 

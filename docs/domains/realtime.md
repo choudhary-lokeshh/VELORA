@@ -30,6 +30,8 @@ The reverse direction is closed the same way. A call ending on the platform does
 
 Every transition is constrained. There is no path from a terminal state to any other, no path that skips acceptance, and no path a client can assert. A session that reaches a terminal state stays there, and every later attempt to transition it answers idempotently rather than erroring, because a retried hang-up is the normal case and not an exception.
 
+Two of those states have a deadline, and the session records when its current state began rather than only when the row was last written. A call may sit `connecting` for a bounded time before it is `failed` with a join timeout, and an interruption is treated as an interruption for a bounded grace before the call is `ended`. Both are discovered by a sweep reading a deadline that is already true, which is why a worker that never runs delays a record and changes no decision. An interruption itself changes nothing but the state: the participants, the provider room, the authorization generation, and the instant media first flowed all survive it, because advancing the generation would kill a credential the other side is still using.
+
 Exactly two participants exist, they are distinct, and their roles are fixed at creation. A session with one participant, three participants, or the same person twice is refused by the schema rather than by a check somebody could forget to write.
 
 ## Eligibility

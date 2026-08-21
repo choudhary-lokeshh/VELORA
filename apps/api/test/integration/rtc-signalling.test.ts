@@ -276,9 +276,9 @@ describe('Redis holds no call state', () => {
       database.sql`insert into realtime_sessions
         (authorization_generation, created_at, id, initiator_id,
          invitation_expires_at, medium, origin_introduction_id,
-         pair_high_id, pair_low_id, state, updated_at)
+         pair_high_id, pair_low_id, state, state_entered_at, updated_at)
        values (1, now(), ${callId}, ${alice}, now() + interval '1 minute',
-         'voice', ${crypto.randomUUID()}, ${bob}, ${alice}, 'invited', now())`,
+         'voice', ${crypto.randomUUID()}, ${bob}, ${alice}, 'invited', now(), now())`,
     );
 
     // Pub/sub stores nothing: a published message exists only for whoever was
