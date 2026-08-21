@@ -64,6 +64,7 @@ import {
   createMessagingRuntime,
   type MessagingRuntime,
 } from './messaging/composition.js';
+import { RtcCallEnforcement } from './realtime/enforcement.js';
 import {
   createRealtimeRuntime,
   type RealtimeRuntime,
@@ -346,6 +347,12 @@ export function createApplication(
       injectedSafety ??
       createSafetyRuntime({
         accounts: users.enforcement,
+        // Ending a call authorizes nothing, so this contract depends on the
+        // call rows and on nothing SAFETY owns. Building it here rather than
+        // taking it from the realtime runtime is what keeps the composition
+        // acyclic: REALTIME consumes SAFETY's eligibility answer and is
+        // therefore composed after it.
+        calls: new RtcCallEnforcement(ownedDatabase.database),
         catalog: new ClubSafetyDirectory(),
         config,
         consumerContext: users.consumerContext,

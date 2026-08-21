@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -146,6 +146,68 @@ export class RtcRepository {
       )
       .limit(1);
     return rows.at(0);
+  }
+
+  /**
+   * The live call between two people, locked.
+   *
+   * Distinct from `findLiveForPair` because the caller is about to end it. A
+   * plain read would be a check-then-act: the pair lock alone does not close
+   * this, because the transitions a call makes on its own — reaching a provider,
+   * observing media, a stall sweep closing it — deliberately do not take the
+   * pair lock, and one of those landing between the read and the write would
+   * leave a guarded terminate matching nothing and the call still running.
+   */
+  async lockLiveForPair(
+    executor: Executor,
+    input: { readonly first: string; readonly second: string },
+  ): Promise<RtcSessionRow | undefined> {
+    const pair = orderedPair(input.first, input.second);
+    const rows = await executor
+      .select()
+      .from(realtimeSessions)
+      .where(
+        and(
+          eq(realtimeSessions.pairLowId, pair.low),
+          eq(realtimeSessions.pairHighId, pair.high),
+          inLiveStates(),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    return rows.at(0);
+  }
+
+  /**
+   * Every live call one person is in.
+   *
+   * For enforcement against an account rather than against a pair. Both sides
+   * of the ordered pair are searched, because which side somebody is on is an
+   * artefact of identifier ordering and says nothing about who they are.
+   *
+   * Rows are locked as they are read. A safety decision that found a call and
+   * then lost a race to end it would leave the call running, which is the one
+   * outcome this whole path exists to prevent.
+   */
+  async lockLiveForUser(
+    executor: Executor,
+    input: { readonly limit: number; readonly userId: string },
+  ): Promise<readonly RtcSessionRow[]> {
+    return executor
+      .select()
+      .from(realtimeSessions)
+      .where(
+        and(
+          or(
+            eq(realtimeSessions.pairLowId, input.userId),
+            eq(realtimeSessions.pairHighId, input.userId),
+          ),
+          inLiveStates(),
+        ),
+      )
+      .orderBy(realtimeSessions.sequence)
+      .limit(input.limit)
+      .for('update');
   }
 
   /**

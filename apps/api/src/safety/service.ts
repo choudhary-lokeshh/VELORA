@@ -1,6 +1,7 @@
 import type { TransactionHandle } from '../database/executor.js';
 import { lockPair } from '../database/pair-lock.js';
 import { lockSubject } from '../database/subject-lock.js';
+import type { RtcCallEnforcementPort } from '../realtime/enforcement.js';
 import type { UserAccountRow } from '../users/repository.js';
 import type { UsersService } from '../users/service.js';
 import {
@@ -91,6 +92,15 @@ export type ReportListOutcome =
   | { readonly kind: 'invalid_cursor' };
 
 export interface SafetyServiceDependencies {
+  /**
+   * REALTIME's published enforcement contract, when this composition has one.
+   *
+   * Optional because a composition without RTC has no calls to end, not
+   * because ending them is optional where they exist. When it is absent a
+   * block does what it always did; when it is present a block also stops a
+   * call in progress, in the same transaction.
+   */
+  readonly calls?: RtcCallEnforcementPort;
   readonly now: () => Date;
   readonly repository: SafetyRepository;
   readonly targets: ReportTargetResolver;
@@ -140,6 +150,22 @@ export class SafetyService {
           executor,
           { blockedId: targetId, blockerId: actor.id, now },
         );
+        // A call in progress ends with the block, in this transaction, under
+        // this pair lock. Refusing the *next* thing the pair does would leave
+        // the conversation somebody is having right now running — which is the
+        // one moment a block most needs to work. Ending it also advances the
+        // call's authorization generation, so a credential either of them is
+        // holding dies at the same instant.
+        //
+        // Deliberately unconditional on `created`: a block that already stood
+        // is answered idempotently, and a call that somehow outlived an earlier
+        // block should still be ended rather than reported as fine.
+        await this.dependencies.calls?.endLiveCallForPair({
+          executor,
+          first: actor.id,
+          now,
+          second: targetId,
+        });
         const row =
           created ??
           (await this.dependencies.repository.findLiveBlock(executor, {

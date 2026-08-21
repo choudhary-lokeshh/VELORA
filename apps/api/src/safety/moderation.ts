@@ -1,6 +1,7 @@
 import type { TransactionHandle } from '../database/executor.js';
 import { lockSubject } from '../database/subject-lock.js';
 import type { ConversationEnforcementPort } from '../messaging/enforcement.js';
+import type { RtcCallEnforcementPort } from '../realtime/enforcement.js';
 import type { ConsumerEnforcementPort } from '../users/enforcement.js';
 import { decodeCaseCursor, encodeCaseCursor } from './cursor.js';
 import type { EnforcementAuthority } from './enforcement.js';
@@ -259,6 +260,12 @@ export type DecisionOutcome =
 export interface ModerationServiceDependencies {
   readonly accounts: ConsumerEnforcementPort;
   readonly authority: EnforcementAuthority;
+  /**
+   * REALTIME's published enforcement contract, when this composition has one.
+   * A composition without RTC has no calls to end; one with RTC ends them as
+   * part of imposing a restriction rather than afterwards.
+   */
+  readonly calls?: RtcCallEnforcementPort;
   readonly conversations: ConversationEnforcementPort;
   readonly now: () => Date;
   readonly repository: SafetyRepository;
@@ -871,6 +878,19 @@ export class ModerationService {
             now: input.now,
           });
     if (!applied) throw new EnforcementNotApplicable();
+    if (scope === 'account_restriction') {
+      // A restricted account stops being able to talk now, not at its next
+      // request. Leaving a call running would let the restriction be outlived
+      // by exactly the conversation it was imposed over, and ending it advances
+      // each call's authorization generation, so any credential already issued
+      // dies with it. In the same transaction as the restriction, so the two
+      // cannot disagree.
+      await this.dependencies.calls?.endLiveCallsForSubject({
+        executor,
+        now: input.now,
+        userId: input.found.targetId,
+      });
+    }
     return {
       enforcementId: imposed.enforcement.id,
       // Imposing what already stands is the same decision, and saying the

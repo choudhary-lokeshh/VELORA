@@ -44,7 +44,7 @@ stateDiagram-v2
 
 **Connect.** Endpoints join through the provider. The platform learns that media exists from verified provider events, and treats that as an observation of technical state rather than as a grant of anything.
 
-**End.** Either participant hangs up; a block or enforcement ends the call without either of them acting. Ending advances the authorization generation, records revocation and teardown obligations, and commits. A worker discharges them against the provider outside any transaction; reconciliation verifies the outcome and repairs drift.
+**End.** Either participant hangs up; a block or enforcement ends the call without either of them acting, inside the transaction that records the safety decision and under the pair lock it already holds, so the decision and the ending cannot disagree. Ending advances the authorization generation, records revocation and teardown obligations, and commits. A worker discharges them against the provider outside any transaction; reconciliation verifies the outcome and repairs drift.
 
 ## Alternate and failure paths
 

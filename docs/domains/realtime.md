@@ -84,6 +84,14 @@ VELORA relays no SDP and no ICE candidates. Offer and answer negotiation belongs
 
 Safety dominates RTC, in one direction only. A block or a live enforcement refuses a new invitation, invalidates a pending one, refuses join authorization, refuses reconnect, and ends an active call. Nothing about a call — not an accepted invitation, not an active media session, not a provider insisting the room is alive — weakens a safety decision or delays one.
 
+Ending is what makes that true of a call already in progress, rather than only of the next thing the pair does. REALTIME publishes one contract for it — end the live call between two people, or end every live call one account is in — and that is the whole of what a safety decision may do here. It cannot start a call, answer one, read who is in one, extend a credential, or move a terminal call back to life, because none of those is a decision the enforcement scope covers and a contract allowing them would be a second, unreviewed way into calling.
+
+**The decision and the ending commit together.** A block ends the call inside the transaction that records the block, under the pair lock the blocker already holds, so there is no instant in which the block stands and the call it should have stopped is still running. A restriction ends the subject's calls inside the transaction that imposes it, for the same reason: leaving them running would let the restriction be outlived by exactly the conversation it was imposed over.
+
+The call is locked before it is ended, not merely read. The pair lock keeps other decisions about these two people out, but a call also moves on its own — binding a provider, media being observed, a stall sweep closing it — and none of those take the pair lock. An unlocked read would take a state that stops being true before the guarded write lands, and the write would then match nothing.
+
+Ending advances the authorization generation, so every credential outstanding for that call dies at the platform boundary immediately, whatever the provider still believes. A ringing call ends rather than being recorded as declined or withdrawn: `invited -> ended` exists in the transition table for this path alone, because routing a safety decision through either of the participants' own outcomes would record one of them as having decided when neither did. A call that has already finished is left exactly as it was — rewriting why it ended would destroy the record of what happened.
+
 A participant may report the other participant of a session they were in. The report references the session, the participants, and the timestamps. It carries no media, no SDP, no ICE data, and no addresses, because none of those exist to carry. Reporter privacy follows the TRUST & SAFETY architecture unchanged.
 
 ## Abuse

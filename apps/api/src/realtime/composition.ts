@@ -24,6 +24,7 @@ import {
   type RtcStandingPort,
 } from './eligibility.js';
 import { RtcJoinAuthorizationService } from './authorization.js';
+import { RtcCallEnforcement } from './enforcement.js';
 import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { RtcProviderEventRoutes } from './provider-event-routes.js';
@@ -42,6 +43,12 @@ import { RtcService } from './service.js';
 
 export interface RealtimeRuntime {
   readonly authorization: RtcJoinAuthorizationService;
+  /**
+   * What TRUST & SAFETY is allowed to do to a call: end it. Published here so
+   * the application can hand it to SAFETY without SAFETY reaching into this
+   * domain for anything else.
+   */
+  readonly enforcement: RtcCallEnforcement;
   readonly signals: RtcSignalPublisherPort;
   /**
    * This domain's outbox, exposed so the relay in the worker can drain it. The
@@ -241,6 +248,7 @@ export function createRealtimeRuntime(input: {
   return {
     authorization,
     eligibility,
+    enforcement: new RtcCallEnforcement(input.database, { signals }),
     orchestrator,
     outbox,
     provider,

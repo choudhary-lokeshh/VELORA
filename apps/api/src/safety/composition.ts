@@ -15,6 +15,7 @@ import {
   type IdentityDepictedPersonEvidenceReaderPort,
 } from '../identity/assurance-reader.js';
 import type { ConversationEnforcementPort } from '../messaging/enforcement.js';
+import type { RtcCallEnforcementPort } from '../realtime/enforcement.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import type { ConsumerEnforcementPort } from '../users/enforcement.js';
 import type { UsersService } from '../users/service.js';
@@ -83,6 +84,15 @@ export interface SafetyRuntime {
  */
 export function createSafetyRuntime(input: {
   readonly accounts: ConsumerEnforcementPort;
+  /**
+   * REALTIME's published enforcement contract.
+   *
+   * Supplied by compositions that have RTC. Where it is absent — a worker with
+   * no calling, a test that composes SAFETY alone — a block and a restriction
+   * do exactly what they always did; where it is present, both also end a call
+   * in progress, inside the transaction that records the decision.
+   */
+  readonly calls?: RtcCallEnforcementPort;
   /** PRIVATE CLUBS' answer about what a visitor could have been looking at. */
   readonly catalog: SafetyCatalogTargetPort;
   /** Chooses the consent wording policy; Identity owns verification. */
@@ -117,6 +127,7 @@ export function createSafetyRuntime(input: {
     creators: input.creators,
   });
   const service = new SafetyService({
+    ...(input.calls === undefined ? {} : { calls: input.calls }),
     now,
     repository,
     targets,
@@ -153,6 +164,7 @@ export function createSafetyRuntime(input: {
     moderation: new ModerationService({
       accounts: input.accounts,
       authority,
+      ...(input.calls === undefined ? {} : { calls: input.calls }),
       conversations: input.conversations,
       now,
       repository,
