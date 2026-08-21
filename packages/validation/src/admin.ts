@@ -694,6 +694,84 @@ export const adminMediaBacklogSchema = z
   })
   .strict();
 
+/**
+ * Which RTC adapters are in force, reported by name.
+ *
+ * `unavailable` across the row is the truth about a deployed environment: no
+ * approved RTC provider, no composed eligibility answer, and no realtime
+ * gateway, so calling is refused rather than half-running. Reporting the name
+ * rather than a boolean is what makes "off" and "off because nobody has
+ * approved one" distinguishable without a second screen.
+ */
+export const adminRtcAdapterStateSchema = z
+  .object({
+    eligibility: z.string().min(1).max(64),
+    provider: z.string().min(1).max(64),
+    signalTransport: z.string().min(1).max(64),
+  })
+  .strict();
+
+/**
+ * Calling in operational terms.
+ *
+ * Counts and ages, and no identifier of any kind — not a call, not an account,
+ * not a provider room. A screen an operator watches all day must not become a
+ * window onto who is talking to whom, and two people having a call is not an
+ * operational fact. There is deliberately no list and no search here for the
+ * same reason.
+ */
+export const adminRtcStateResponseSchema = z
+  .object({
+    adapters: adminRtcAdapterStateSchema,
+    /**
+     * Owed work, by class, every class every time. A list that omitted the
+     * healthy classes could not tell an operator "nothing is owed" apart from
+     * "the signal stopped arriving", and those are opposite situations.
+     */
+    backlogs: z.array(adminMediaBacklogSchema),
+    calls: z.array(adminMediaCountSchema),
+    /**
+     * Calls that finished while their teardown did not. The platform believes
+     * the call is over and a provider may still hold the room open. A number
+     * rather than a list, because listing it would name conversations.
+     */
+    endedWithUndischargedTeardown: z.number().int().min(0),
+    /** Whether this environment can carry a call at all. */
+    liveCallingAvailable: z.boolean(),
+    providerEvents: z.array(adminMediaCountSchema),
+    providerObligations: z.array(adminMediaCountSchema),
+  })
+  .strict();
+export type AdminRtcStateResponse = z.infer<typeof adminRtcStateResponseSchema>;
+
+/**
+ * One call as an operator sees it.
+ *
+ * Reached only by an operator who already holds the identifier, from a report
+ * or a reconciliation finding. It carries the lifecycle, because triaging a
+ * stuck call without it is guesswork, and it carries nothing else: no
+ * credential, no provider room reference, no address, no participant, and
+ * nothing about media — none of which exists anywhere in the domain to carry.
+ */
+export const adminRtcCallSchema = z
+  .object({
+    acceptedAt: z.iso.datetime().optional(),
+    authorizationGeneration: z.number().int().min(1),
+    connectedAt: z.iso.datetime().optional(),
+    createdAt: z.iso.datetime(),
+    endReason: z.string().min(1).max(64).optional(),
+    endedAt: z.iso.datetime().optional(),
+    id: z.uuid(),
+    issuances: z.number().int().min(0),
+    medium: z.enum(['voice', 'video']),
+    obligations: z.array(adminMediaCountSchema),
+    providerBound: z.boolean(),
+    providerName: z.string().min(1).max(64).optional(),
+    state: z.string().min(1).max(32),
+  })
+  .strict();
+export type AdminRtcCall = z.infer<typeof adminRtcCallSchema>;
+
 export const adminMediaStateResponseSchema = z
   .object({
     adapters: adminMediaAdapterStateSchema,

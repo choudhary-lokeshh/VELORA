@@ -340,9 +340,15 @@ export function testAdminRuntime(input: {
   readonly media: MediaRuntime;
   readonly now?: () => Date;
   readonly privilegedAccess?: PrivilegedAccessService;
+  /**
+   * REALTIME's operational read. A direct Admin test may omit it when no RTC
+   * route is exercised, and the harness then composes a runtime whose adapters
+   * are the unavailable ones — which is what a deployed environment has.
+   */
+  readonly realtime?: RealtimeRuntime;
   readonly safety: SafetyRuntime;
 }): AdminRuntime {
-  const database = input.database ?? drizzle.mock();
+  const database: UsersDatabase = input.database ?? drizzle.mock();
   // ADMIN receives the public IDENTITY operations projection, never a
   // repository or database handle. A direct Admin test may omit it when no
   // Identity route is exercised, so the harness composes the local test seam.
@@ -367,6 +373,36 @@ export function testAdminRuntime(input: {
       operations: input.media.operations,
       purge: input.media.service,
     },
+    rtc: (
+      input.realtime ??
+      createRealtimeRuntime({
+        config: input.config,
+        connections: {
+          isMutuallyIntroduced: () => Promise.resolve(false),
+          mutualConnectionFor: () => Promise.resolve(undefined),
+        },
+        database,
+        // Refuses every pair, whatever the configuration says. This runtime
+        // exists only to answer an operational read, so nothing in it should
+        // be able to authorize a call — and supplying the contract directly
+        // also keeps a suite that configures composed eligibility from having
+        // to supply its parts twice.
+        eligibility: { mayCall: () => Promise.resolve(false) },
+        // Admits nobody. The operational read never asks this, and an
+        // Admin-only composition that could admit somebody to a call would be
+        // a second way into calling.
+        onboarding: {
+          evaluate: () =>
+            Promise.resolve({
+              adultAssurance: 'none',
+              adultAssuranceRefused: false,
+              outstandingPolicies: [],
+              outstandingProfile: [],
+              step: 'adult_declaration',
+            } as const),
+        },
+      })
+    ).operations,
     ...(input.now === undefined ? {} : { now: input.now }),
     ...(input.privilegedAccess === undefined
       ? {}

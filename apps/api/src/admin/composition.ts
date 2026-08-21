@@ -9,6 +9,8 @@ import type {
   CreatorsRepository,
 } from '../creators/repository.js';
 import type { MediaOperations } from '../media/operations.js';
+import type { RtcOperations } from '../realtime/operations.js';
+import { AdminRtcRoutes } from './rtc-routes.js';
 import type { IdentityOperations } from '../identity/operations.js';
 import type { AppealService } from '../safety/appeals.js';
 import type { EnforcementAuthority } from '../safety/enforcement.js';
@@ -32,6 +34,7 @@ export interface AdminRuntime {
   readonly identityRoutes: AdminIdentityRoutes;
   /** Operator media surface. A read, a read, and one idempotent repair. */
   readonly mediaRoutes: AdminMediaRoutes;
+  readonly rtcRoutes: AdminRtcRoutes;
   /** Operator moderation surface. Every route is an explicit command. */
   readonly moderationRoutes: AdminModerationRoutes;
   readonly routes: AdminRoutes;
@@ -82,6 +85,14 @@ export function createAdminRuntime(input: {
   };
   /** IDENTITY's published operations seam; ADMIN never sees `identity_` SQL. */
   readonly identity: IdentityOperations;
+  /**
+   * REALTIME's published operations seam, on the same rule as MEDIA's: nothing
+   * outside that domain queries a `realtime_` table. ADMIN is given the read
+   * and no action at all — ending somebody's call is a safety decision, and it
+   * goes through TRUST & SAFETY where it acquires a record, a reason, and an
+   * appeal path.
+   */
+  readonly rtc: RtcOperations;
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
   /** TRUST & SAFETY's complaint seam. */
@@ -119,6 +130,10 @@ export function createAdminRuntime(input: {
         ? {}
         : { exactActions: input.privilegedAccess }),
       identity: input.identity,
+    }),
+    rtcRoutes: new AdminRtcRoutes({
+      adminContext,
+      operations: input.rtc,
     }),
     mediaRoutes: new AdminMediaRoutes({
       adminContext,

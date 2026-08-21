@@ -14,7 +14,7 @@ import { OutboxRepository } from '../events/outbox.js';
 import type { ConnectionDirectoryPort } from '../discovery/connections.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import type { ConsumerDirectory } from '../users/directory.js';
-import type { OnboardingService } from '../users/onboarding.js';
+
 import {
   ComposedRtcCallEligibility,
   UnavailableRtcCallEligibility,
@@ -25,6 +25,7 @@ import {
 } from './eligibility.js';
 import { RtcJoinAuthorizationService } from './authorization.js';
 import { RtcCallEnforcement } from './enforcement.js';
+import { RtcOperations } from './operations.js';
 import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { RtcProviderEventRoutes } from './provider-event-routes.js';
@@ -39,7 +40,7 @@ import {
   type RtcSignalChannel,
   type RtcSignalPublisherPort,
 } from './signalling.js';
-import { RtcService } from './service.js';
+import { RtcService, type RtcAdmissionPort } from './service.js';
 
 export interface RealtimeRuntime {
   readonly authorization: RtcJoinAuthorizationService;
@@ -49,6 +50,12 @@ export interface RealtimeRuntime {
    * domain for anything else.
    */
   readonly enforcement: RtcCallEnforcement;
+  /**
+   * What an operator may see of calling: counts, ages, and one call by
+   * identifier. Published here because nothing outside this domain queries a
+   * `realtime_` table.
+   */
+  readonly operations: RtcOperations;
   readonly signals: RtcSignalPublisherPort;
   /**
    * This domain's outbox, exposed so the relay in the worker can drain it. The
@@ -191,7 +198,7 @@ export function createRealtimeRuntime(input: {
   /** TRUST & SAFETY's live-enforcement answer for one subject. */
   readonly enforcement?: RtcEnforcementPort;
   readonly now?: () => Date;
-  readonly onboarding: OnboardingService;
+  readonly onboarding: RtcAdmissionPort;
   /** TRUST & SAFETY's pairwise answer. */
   readonly safety?: RtcPairSafetyPort;
   /**
@@ -249,6 +256,22 @@ export function createRealtimeRuntime(input: {
     authorization,
     eligibility,
     enforcement: new RtcCallEnforcement(input.database, { signals }),
+    operations: new RtcOperations({
+      // Reported from what this process actually composed rather than from the
+      // configuration that was meant to select it. A screen reporting the
+      // intended adapter while the process runs another is exactly the lie an
+      // operations screen exists to prevent.
+      adapters: {
+        eligibility:
+          eligibility instanceof UnavailableRtcCallEligibility
+            ? unavailableCallEligibility
+            : composedCallEligibility,
+        provider: provider.provider,
+        signalTransport: signals.transport,
+      },
+      now,
+      repository,
+    }),
     orchestrator,
     outbox,
     provider,

@@ -106,6 +106,20 @@ The counts are taken inside the transaction that writes and under the pair lock 
 
 A refusal says only that a bound was reached. It does not say which bound, how much of it remains, or when it lifts, and it answers identically however often it is asked — a refusal carrying its own counter would be a way to measure somebody else's calling. It is a `409` with `RATE_LIMITED`, the product convention; `429` belongs to AUTH's answer about authentication attempts, and reusing it would put a product limit in the bucket a client treats as "retry the sign-in".
 
+## Operations
+
+An operator sees calling as counts, ages, and adapter names. The state screen carries **no identifier of any kind** — not a call, not an account, not a provider room — because a screen somebody watches all day must not become a window onto who is talking to whom. Two people having a call is not an operational fact.
+
+There is no list of calls and no search anywhere in the operator contract. The comparison with media is the one that settles it: an asset has one owner, while a call is a relationship between two people that neither of them published, so a browsing surface over calls exposes something no product surface would.
+
+Every backlog class is reported on every read, including the empty ones, with the age of the oldest thing in it and the threshold at which it becomes an alert. A count alone cannot separate a busy platform from a stuck one — forty calls past their join timeout in the last minute and one past it since Tuesday are the same number and opposite situations — and a list that omitted the healthy classes could not be told apart from a signal that stopped arriving. The age is absent rather than zero when nothing is waiting, because a zero reads as "waited no time at all" and an alert rule written against it would be written against a lie.
+
+One disagreement gets a number of its own: calls that ended while their teardown did not discharge, which is the case where the platform believes a call is over and a provider may still be holding the room open. It is counted rather than listed, for the same reason as everything else here.
+
+One call can be read by an operator who already holds its identifier from a report or a reconciliation finding. It carries the lifecycle — state, medium, timings, why it ended, the authorization generation, how many credentials have been minted against it, and the teardown owed — and it carries no participant, no credential, no provider room reference, and no address. A call that does not exist is answered exactly as one that does, so guessing identifiers is not productive here either.
+
+**There is no operator action at all.** No ending a call, no revoking a credential, no forcing a teardown. Ending somebody's call is a safety decision, and safety decisions go through TRUST & SAFETY where they acquire an enforcement record, a reason, and an appeal path; a console button would be that same power with none of them. Teardown that will not discharge belongs to reconciliation and is surfaced as a number to alert on rather than a button to press.
+
 ## Privacy
 
 No call media, recording, transcript, SDP, ICE candidate, TURN credential, reusable join credential, or participant IP address is stored, logged, traced, or published as a metric label. Recording is not implemented and no configuration value enables it; it remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`.

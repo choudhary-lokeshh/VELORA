@@ -45,6 +45,8 @@ import {
   adminMediaPurgeRequestSchema,
   adminMediaPurgeResponseSchema,
   adminMediaStateResponseSchema,
+  adminRtcCallSchema,
+  adminRtcStateResponseSchema,
   adminOperationResponseSchema,
   adminReinstateCreatorRequestSchema,
   adminRemoveObjectRequestSchema,
@@ -244,6 +246,8 @@ export const apiRoutePaths = {
   adminMediaPurge: '/v1/admin/media/purge',
   adminMediaState: '/v1/admin/media/state',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
+  adminRtcCall: '/v1/admin/rtc/call',
+  adminRtcState: '/v1/admin/rtc/state',
   adminSafetyAppealOutcome: '/v1/admin/safety/appeals/outcome',
   adminSafetyAppeals: '/v1/admin/safety/appeals',
   adminSafetyCase: '/v1/admin/safety/case',
@@ -391,6 +395,8 @@ export const apiSchemas = {
   AdminMediaPurgeResponse: adminMediaPurgeResponseSchema,
   AdminMediaStateResponse: adminMediaStateResponseSchema,
   AdminOperationResponse: adminOperationResponseSchema,
+  AdminRtcCall: adminRtcCallSchema,
+  AdminRtcStateResponse: adminRtcStateResponseSchema,
   AdminReinstateCreatorRequest: adminReinstateCreatorRequestSchema,
   AdminRemoveObjectRequest: adminRemoveObjectRequestSchema,
   AdminRevokeMembershipRequest: adminRevokeMembershipRequestSchema,
@@ -2248,6 +2254,47 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Upholding a complaint names the superseding decision that replaced the original, and the server refuses one that does not genuinely replace it. Every outcome records the operator who reached it, because a complaint may not be decided solely by automated means and a column only a person fills is how that stops being a promise.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminRtcState',
+    path: apiRoutePaths.adminRtcState,
+    responses: {
+      '200': {
+        description:
+          'Calling in operational terms: how many calls are in each state, how much provider teardown and how many verified provider events are owed, how long the oldest owed thing in each class has been waiting and whether that is past the age at which it becomes an alert, and how many calls finished while their teardown did not \u2014 the one disagreement where the platform believes a call is over and a provider may still be holding the room open. Counts, ages, and adapter names only: no call identifier, no account, and no provider room reference.',
+        schemaName: 'AdminRtcStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A read and only a read. There is no list of calls and no search anywhere in this contract: an operator able to page through calls would have a browsing surface over who contacts whom, and unlike an asset with one owner, a call is a relationship neither person published. The adapters are the ones this process actually composed rather than the configuration meant to select them, and naming them rather than reporting a boolean is what makes "off" and "off because no RTC provider has been approved" distinguishable.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminRtcCall',
+    path: apiRoutePaths.adminRtcCall,
+    requestQuery: [{ description: 'The call to describe', name: 'callId' }],
+    responses: {
+      '200': {
+        description:
+          'One call\u2019s lifecycle: its state, medium, timings, why it ended, the authorization generation in force, how many join credentials have been minted for it, and the teardown owed against it by state.',
+        schemaName: 'AdminRtcCall',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description:
+          'No call matches that identifier. Answered the same way for a call that never existed, so guessing identifiers is not productive here either.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Answers about one call whose identifier the operator already holds from a report or a reconciliation finding. It carries the technical lifecycle that every product surface is deliberately denied, and it carries no participant, no credential, no provider room reference, no address, and nothing about media \u2014 none of which exists anywhere in the domain to carry.',
   },
   {
     method: 'get',

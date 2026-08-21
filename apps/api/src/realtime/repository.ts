@@ -737,6 +737,18 @@ export class RtcRepository {
     };
   }
 
+  /** How many credentials have been minted for one call, by anybody. */
+  async countIssuancesForCall(
+    executor: Executor,
+    sessionId: string,
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: sql<string>`count(*)::text` })
+      .from(realtimeJoinIssuances)
+      .where(eq(realtimeJoinIssuances.sessionId, sessionId));
+    return Number(rows.at(0)?.total ?? '0');
+  }
+
   /**
    * How many credentials one person has been issued for one call.
    *

@@ -241,6 +241,43 @@ export const rtcJoinTimeoutMilliseconds = 30_000;
 export const rtcReconnectGraceMilliseconds = 30_000;
 
 /**
+ * The classes of owed work an operator watches, and when each becomes late.
+ *
+ * Every class is reported on every read, including the empty ones. A screen or
+ * an alert rule reading a list that omits what is healthy cannot tell "nothing
+ * is waiting" from "the signal stopped arriving", and those are opposite
+ * situations that would page opposite people.
+ *
+ * The thresholds are deliberately generous relative to the deadlines
+ * themselves. A call one second past its join timeout is a call the sweep has
+ * not reached yet; a call five minutes past it means the sweep is not running,
+ * which is the condition worth waking somebody for.
+ */
+export const rtcBacklogKinds = [
+  /** Invitations whose own deadline passed and which are still `invited`. */
+  'invitation_expiry',
+  /** Calls still `connecting` past the join timeout. */
+  'join_timeout',
+  /** Calls still `reconnecting` past the reconnect grace. */
+  'reconnect_grace',
+  /** Provider teardown and revocation that is due and undischarged. */
+  'provider_obligation',
+  /** Verified provider events recorded and not yet applied. */
+  'provider_event',
+] as const;
+export type RtcBacklogKind = (typeof rtcBacklogKinds)[number];
+
+export const rtcBacklogThresholdMilliseconds: Readonly<
+  Record<RtcBacklogKind, number>
+> = {
+  invitation_expiry: 300_000,
+  join_timeout: 300_000,
+  provider_event: 600_000,
+  provider_obligation: 600_000,
+  reconnect_grace: 300_000,
+};
+
+/**
  * The window every RTC abuse limit below is counted over.
  *
  * One value rather than one per limit, because the limits are answered by a

@@ -1,6 +1,6 @@
 import { lockPair } from '../database/pair-lock.js';
 import type { ConnectionDirectoryPort } from '../discovery/connections.js';
-import type { OnboardingService } from '../users/onboarding.js';
+import type { ConsumerEligibility } from '../users/onboarding.js';
 import type { UserAccountRow } from '../users/repository.js';
 import type { OutboxAppendPort } from '../events/outbox.js';
 import type { RtcCallEligibilityPort } from './eligibility.js';
@@ -75,11 +75,25 @@ export interface RtcProviderOrchestration {
   readonly providerName: string;
 }
 
+/**
+ * USERS' admission answer, as the narrowest question REALTIME asks of it.
+ *
+ * Declared here rather than importing the service, on the rule
+ * `docs/architecture/03-domain-boundaries.md` sets: a consumer declares the
+ * contract it needs and the owner supplies it at the composition root. The
+ * whole question is "may this account take part at all", which is the same
+ * standard MESSAGING applies, taken from the same derived answer rather than
+ * from a second copy of the rule.
+ */
+export interface RtcAdmissionPort {
+  evaluate(account: UserAccountRow): Promise<ConsumerEligibility>;
+}
+
 export interface RtcServiceDependencies {
   readonly connections: ConnectionDirectoryPort;
   readonly eligibility: RtcCallEligibilityPort;
   readonly now: () => Date;
-  readonly onboarding: OnboardingService;
+  readonly onboarding: RtcAdmissionPort;
   /** Absent until a provider adapter is composed. */
   readonly orchestrator?: RtcProviderOrchestration;
   /**

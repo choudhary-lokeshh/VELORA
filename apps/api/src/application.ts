@@ -392,44 +392,6 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
-    // ADMIN is composed last because it operates every other domain and owns
-    // none of them: it takes their repositories and writes through them.
-    admin =
-      injectedAdmin ??
-      createAdminRuntime({
-        caller: auth.caller,
-        capabilities: {
-          commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
-          commercePolicy: config.BILLING_COMMERCE_POLICY,
-          paymentProvider: config.BILLING_PAYMENT_PROVIDER,
-          payoutPolicy: config.PAYOUTS_POLICY,
-          payoutProvider: config.PAYOUTS_PROVIDER,
-          taxAuthority: config.BILLING_TAX_AUTHORITY,
-        },
-
-        clubs: clubs.clubRepository,
-        content: clubs.repository,
-        creators: creators.repository,
-        database: ownedDatabase.database,
-        identity: identity.operations,
-        // The operational read is MEDIA's own, because nothing outside that
-        // domain queries a `media_` table. What ADMIN is handed beside it is a
-        // single purge method: taking an object out of public view owes the
-        // cache the news, and that is the whole of what a takedown may ask of
-        // the bytes.
-        media: { operations: media.operations, purge: media.service },
-        // A sensitive exact-subject read consumes AUTH's existing one-time
-        // binding. It is not a substitute for ADMIN role/scope policy.
-        privilegedAccess: auth.privilegedAccess,
-        profiles: creators.profileRepository,
-        // ADMIN authorizes a reversal and BILLING decides whether it is one it
-        // can make. There is no path from an operator to a financial row that
-        // does not go through the domain that owns it.
-        refunds: billing.refunds,
-        appeals: safety.appeals,
-        moderation: safety.moderation,
-        safety: safety.authority,
-      });
     discovery =
       injectedDiscovery ??
       createDiscoveryRuntime({
@@ -466,6 +428,49 @@ export function createApplication(
         onboarding: users.onboarding,
         safety: safety.directory,
         standing: users.standing,
+      });
+    // ADMIN is composed last because it operates every other domain and owns
+    // none of them: it takes their repositories and writes through them.
+    admin =
+      injectedAdmin ??
+      createAdminRuntime({
+        caller: auth.caller,
+        capabilities: {
+          commerceEligibility: config.BILLING_COMMERCE_ELIGIBILITY,
+          commercePolicy: config.BILLING_COMMERCE_POLICY,
+          paymentProvider: config.BILLING_PAYMENT_PROVIDER,
+          payoutPolicy: config.PAYOUTS_POLICY,
+          payoutProvider: config.PAYOUTS_PROVIDER,
+          taxAuthority: config.BILLING_TAX_AUTHORITY,
+        },
+
+        clubs: clubs.clubRepository,
+        content: clubs.repository,
+        creators: creators.repository,
+        database: ownedDatabase.database,
+        identity: identity.operations,
+        // The operational read is MEDIA's own, because nothing outside that
+        // domain queries a `media_` table. What ADMIN is handed beside it is a
+        // single purge method: taking an object out of public view owes the
+        // cache the news, and that is the whole of what a takedown may ask of
+        // the bytes.
+        media: { operations: media.operations, purge: media.service },
+        // REALTIME's own operational read, on the same rule MEDIA follows:
+        // nothing outside that domain queries its tables. ADMIN gets the read
+        // and no action — ending a call is a safety decision and goes through
+        // TRUST & SAFETY, where it acquires a record, a reason, and an appeal.
+        rtc: realtime.operations,
+        // A sensitive exact-subject read consumes AUTH's existing one-time
+        // binding. It is not a substitute for ADMIN role/scope policy.
+        privilegedAccess: auth.privilegedAccess,
+        profiles: creators.profileRepository,
+        // ADMIN authorizes a reversal and BILLING decides whether it is one it
+        // can make. There is no path from an operator to a financial row that
+        // does not go through the domain that owns it.
+        refunds: billing.refunds,
+        appeals: safety.appeals,
+        moderation: safety.moderation,
+        safety: safety.authority,
       });
     notifications =
       injectedNotifications ??
@@ -1127,6 +1132,14 @@ export function createApplication(
     .get(
       apiRoutePaths.adminIdentitySubject,
       admitted(async (input) => admin.identityRoutes.getIdentitySubject(input)),
+    )
+    .get(
+      apiRoutePaths.adminRtcState,
+      admitted(async (input) => admin.rtcRoutes.getRtcState(input)),
+    )
+    .get(
+      apiRoutePaths.adminRtcCall,
+      admitted(async (input) => admin.rtcRoutes.getRtcCall(input)),
     )
     .get(
       apiRoutePaths.adminMediaState,
