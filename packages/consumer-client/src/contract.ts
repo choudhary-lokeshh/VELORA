@@ -57,6 +57,33 @@ export type MessageList = JsonBody<'/v1/messaging/messages', 'get', 200>;
 export type Message = MessageList['messages'][number];
 export type NotificationList = JsonBody<'/v1/notifications', 'get', 200>;
 export type NotificationEntry = NotificationList['notifications'][number];
+/**
+ * One call, as the person in it is allowed to see it.
+ *
+ * `endReason` is the disclosable vocabulary and not the platform's own: a call
+ * ended by a block or an enforcement arrives as `ended_by_platform`, because
+ * telling one participant which of the two safety decisions applied would
+ * publish the other person's. There is no field here for a provider, a room, a
+ * scope, or a credential.
+ */
+export type Call = JsonBody<'/v1/rtc/calls', 'get', 200>;
+export type CreateCallBody = RequestBody<'/v1/rtc/calls', 'post'>;
+export type CallMedium = Call['medium'];
+
+/**
+ * A means of joining, and the whole of it.
+ *
+ * Short-lived, issued to one participant for one call, and never durable: it
+ * belongs in memory for as long as the join takes and nowhere else — not in
+ * storage, not in a URL, not in a log. Reconnecting asks for a new one rather
+ * than reusing this, which is what lets a block landing mid-call take effect.
+ */
+export type JoinAuthorization = JsonBody<
+  '/v1/rtc/calls/join-authorization',
+  'post',
+  200
+>;
+
 export type BlockList = JsonBody<'/v1/safety/blocks', 'get', 200>;
 export type Block = BlockList['blocks'][number];
 export type ReportList = JsonBody<'/v1/safety/reports', 'get', 200>;

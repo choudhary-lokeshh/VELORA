@@ -16,10 +16,22 @@ Expected navigation groups are:
 
 - Public: landing, safety/help, legal notices, creator public pages where enabled, sign-in/signup.
 - Onboarding: adult/country gate, authentication, required notices/consents, profile setup, verification status where required.
-- Core: discovery, introduction status, conversations, notifications, own profile/availability.
+- Core: discovery, introduction status, conversations, calls, notifications, own profile/availability.
 - Safety and account: block/report entry points, safety center, privacy, sessions, subscription/receipts, export/deletion.
 
 Exact information architecture, labels, routes, layout, and visual design are `DESIGN REQUIRED` in Figma. Public creator pages remain part of creator/club commerce architecture; they must not alter consumer discovery. The canonical public creator address is `/c/{handle}`, resolved against the explicitly public projection CREATORS publishes; it carries no consumer product, no session requirement, and no purchase control, and an unknown handle, an unpublished profile, and a creator who is not active are one indistinguishable answer. The page shows the creator's published public catalog alongside their profile, paged and bounded by the server; drafts, archived items, and members-only items never appear on it. Published clubs appear as metadata only — a name and a description — with no member count, no member list, and no control implying anybody can pay to join, because membership comes from an invitation the creator sends and no payment path exists.
+
+### Calling
+
+Calling is offered from a mutual introduction and from nothing else. The screen has no field that takes a person as a value — no identifier, no handle lookup, no dialler — because the server derives the other party from the relationship and refuses a request that names one; a control here that accepted a person would be offering something the API has no route for. Voice and video are separate controls rather than one control with a medium toggle: agreeing to be heard is not agreeing to be seen, and a toggle carrying the last choice forward would make the more exposing option the default for somebody who never chose it.
+
+Which controls exist is decided by the role and the state the server reported. Only a recipient answers or declines, only a caller withdraws, and either may hang up once there is something to hang up; a control the server would refuse is not rendered disabled, it is not rendered. State is always read back rather than inferred from the action just taken, because a call can be overtaken between the click and the answer.
+
+Somebody meets a call they did not place through the server's own one-live-call-per-pair rule: reaching for the pair returns the call that already exists, on the correct side of it, rather than opening a second one. There is no in-browser ring, because no realtime gateway is deployed; a call that was missed appears in notifications, in the past tense, since a notice offering to answer would be offering something that stopped ringing long before anybody read it.
+
+No join credential is retained. Joining asks the server for one and drops it, because there is nothing to hand it to: no media stack is opened, no track is captured, and no provider is contacted. When a media stack exists the credential will go straight to it and still never be stored, never enter the address, and never be rendered — a credential a third party honours without asking again is the one secret this surface could leak, and not holding it is how it does not. It is requested again on every join and every reconnect rather than cached, because the server re-composes eligibility at each issuance: re-asking is what lets a block landing mid-call take effect instead of being outlived by a credential minted before it. No RTC provider is approved, so in every deployed environment the API refuses to mint one at all and the surface reports that plainly.
+
+An ending is disclosed in the vocabulary the person is entitled to. A call ended by a safety decision arrives as `ended_by_platform` and is shown as such; the screen has no finer vocabulary, because distinguishing a block from an enforcement would publish the other person's decision to the person it was taken about.
 
 ## Domains and dependencies
 

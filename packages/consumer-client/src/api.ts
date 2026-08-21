@@ -6,16 +6,19 @@ import type {
   Availability,
   Block,
   BlockList,
+  Call,
   ConsumerAccount,
   ConsumerProfile,
   ConsumerSubscriptionList,
   Conversation,
   ConversationList,
   CreateAppealBody,
+  CreateCallBody,
   CreateReportBody,
   DiscoveryFeed,
   Introduction,
   IntroductionList,
+  JoinAuthorization,
   Message,
   MessageList,
   NotificationList,
@@ -111,6 +114,32 @@ export interface ConsumerApi {
   availability(signal?: AbortSignal): Promise<ApiResult<Availability>>;
   block(targetId: string): Promise<ApiResult<Block>>;
   blocks(query: PageQuery, signal?: AbortSignal): Promise<ApiResult<BlockList>>;
+  /**
+   * Places a call against a mutual introduction.
+   *
+   * The relationship is what is named; the server derives who the other person
+   * is. There is deliberately no way to call somebody by identifier, so this
+   * client cannot express one.
+   */
+  call(body: CreateCallBody): Promise<ApiResult<Call>>;
+  /** Answers a ringing call. Only its recipient may. */
+  acceptCall(callId: string): Promise<ApiResult<Call>>;
+  /** Declines a ringing call. Only its recipient may. */
+  rejectCall(callId: string): Promise<ApiResult<Call>>;
+  /** Withdraws an invitation before it is answered. Only its caller may. */
+  cancelCall(callId: string): Promise<ApiResult<Call>>;
+  /** Hangs up. Either participant may, and doing it twice is safe. */
+  endCall(callId: string): Promise<ApiResult<Call>>;
+  /** Reads one call the caller is a participant of. */
+  readCall(callId: string, signal?: AbortSignal): Promise<ApiResult<Call>>;
+  /**
+   * Obtains this participant's means of joining.
+   *
+   * Asked for again on every join and on every reconnect rather than held: the
+   * server re-composes eligibility each time it issues one, so re-asking is
+   * what makes a block landing mid-call take effect.
+   */
+  joinAuthorization(callId: string): Promise<ApiResult<JoinAuthorization>>;
   candidates(
     query: PageQuery,
     signal?: AbortSignal,
@@ -251,6 +280,59 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         api.GET('/v1/messaging/conversations', {
           ...(await reading(signal)),
           params: { query: pageParameters(query) },
+        }),
+      ),
+
+    call: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/rtc/calls', { ...(await writing()), body }),
+      ),
+
+    acceptCall: async (callId) =>
+      attempt(async () =>
+        api.POST('/v1/rtc/calls/acceptance', {
+          ...(await writing()),
+          body: { callId },
+        }),
+      ),
+
+    rejectCall: async (callId) =>
+      attempt(async () =>
+        api.POST('/v1/rtc/calls/rejection', {
+          ...(await writing()),
+          body: { callId },
+        }),
+      ),
+
+    cancelCall: async (callId) =>
+      attempt(async () =>
+        api.POST('/v1/rtc/calls/cancellation', {
+          ...(await writing()),
+          body: { callId },
+        }),
+      ),
+
+    endCall: async (callId) =>
+      attempt(async () =>
+        api.POST('/v1/rtc/calls/termination', {
+          ...(await writing()),
+          body: { callId },
+        }),
+      ),
+
+    readCall: async (callId, signal) =>
+      attempt(async () =>
+        api.GET('/v1/rtc/calls', {
+          ...(await reading(signal)),
+          params: { query: { callId } },
+        }),
+      ),
+
+    joinAuthorization: async (callId) =>
+      attempt(async () =>
+        api.POST('/v1/rtc/calls/join-authorization', {
+          ...(await writing()),
+          body: { callId },
         }),
       ),
 

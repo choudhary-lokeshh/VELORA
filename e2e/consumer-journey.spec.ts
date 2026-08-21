@@ -100,6 +100,21 @@ test.describe('Consumer Web product journey', () => {
     await expect(page.getByTestId('nav-discovery')).toHaveCount(0);
   });
 
+  test('keeps calling behind the same admission as everything else', async ({
+    page,
+  }) => {
+    // Absent after going as far as this environment allows. Calling sits behind
+    // the admission that needs a discoverable profile, and no media storage
+    // provider is approved, so the browser cannot reach it — the same wall
+    // discovery and conversations are behind. A test that reached the calling
+    // screen here would be proving something no deployment can do; the surface
+    // itself is proved against the published contract in
+    // `apps/web/test/calls.test.tsx`.
+    await admitAsFarAsPossible(page, uniqueSubject('calls'));
+    await expect(page.getByTestId('nav-calls')).toHaveCount(0);
+    await expect(page.getByTestId('nav-discovery')).toHaveCount(0);
+  });
+
   test('says honestly that no photo storage exists rather than failing silently', async ({
     page,
   }) => {

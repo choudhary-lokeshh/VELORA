@@ -70,6 +70,8 @@ Durable state is lifecycle only: who invited whom, under which relationship, at 
 
 Realtime fanout carries hints. Clients recover authoritative state by reading it, and a fanout outage degrades the interface rather than the call's record.
 
+Consumer Web is the first surface on this flow. It places and answers calls through the routes above and holds no authorization of its own: it asks for a join credential on every join and every reconnect and retains none, so there is nothing on that surface for a credential to outlive. It cannot express a call the server would refuse — there is no field on it that names a person — and it discloses an ending only in the coarse vocabulary the API publishes. Consumer Mobile is not built yet.
+
 ## Phase and open questions
 
 The provider-neutral core is V1 by [product phases](../product/01-product-phases.md); live calling is blocked. `DECISION REQUIRED`: provider and hosting mode, invitation and reconnect durations pending product review, regional availability, in-call safety intervention authority, native mobile RTC feasibility, emergency-calling posture, and operations ownership. `LEGAL REVIEW REQUIRED`: recording, transcription, and call retention.

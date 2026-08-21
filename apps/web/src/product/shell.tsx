@@ -25,6 +25,7 @@ import {
 } from '@velora/consumer-client';
 import { createWebConsumerApi } from './api';
 import { AvailabilityPanel } from './availability';
+import { CallsPanel } from './calls';
 import { ConversationsPanel } from './conversations';
 import { DiscoveryPanel } from './discovery';
 import { IntroductionsPanel } from './introductions';
@@ -55,6 +56,7 @@ const productSections = [
   { id: 'discovery', label: 'Discovery' },
   { id: 'introductions', label: 'Introductions' },
   { id: 'conversations', label: 'Conversations' },
+  { id: 'calls', label: 'Calls' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'memberships', label: 'Memberships' },
   { id: 'profile', label: 'Profile' },
@@ -393,6 +395,9 @@ function ProductSection({
     }
     case 'conversations': {
       return <ConversationsPanel api={api} />;
+    }
+    case 'calls': {
+      return <CallsPanel api={api} />;
     }
     case 'notifications': {
       return <NotificationsPanel api={api} />;

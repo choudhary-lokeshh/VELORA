@@ -32,6 +32,12 @@ import {
 const notificationPageSize = 20;
 
 const notificationLabels: Readonly<Record<string, string>> = {
+  // Deliberately past-tense and non-actionable. A ring is a live event and this
+  // list is a record of what happened; a notice that said "answer now" would be
+  // offering a call that has almost certainly already stopped ringing by the
+  // time anybody reads it here.
+  call_incoming: 'Somebody called you.',
+  call_missed: 'You missed a call.',
   introduction_mutual: 'You have a new mutual introduction.',
   message_received: 'You have a new message.',
 };

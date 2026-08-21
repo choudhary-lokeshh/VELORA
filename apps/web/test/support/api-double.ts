@@ -81,7 +81,29 @@ export interface ApiDoubleState {
     senderId: string;
     sequence: number;
   }[];
+  /**
+   * The pair's call, if there is one.
+   *
+   * Singular rather than a list, because the server enforces one live call per
+   * pair: a second invitation while one is live returns the existing call
+   * rather than opening a second. A double holding an array would let a test
+   * pass against behaviour the server does not have.
+   */
+  call: {
+    acceptedAt?: string;
+    connectedAt?: string;
+    counterpart: { displayName: string; id: string };
+    createdAt: string;
+    endReason?: string;
+    endedAt?: string;
+    id: string;
+    invitationExpiresAt: string;
+    medium: 'voice' | 'video';
+    role: 'caller' | 'recipient';
+    state: string;
+  } | null;
   notifications: {
+    callId?: string;
     conversationId?: string;
     createdAt: string;
     id: string;
@@ -166,6 +188,7 @@ export function emptyState(): ApiDoubleState {
   return {
     subscriptions: [],
     account: null,
+    call: null,
     availability: {
       effectiveState: 'unavailable',
       state: 'unavailable',
@@ -226,6 +249,7 @@ export function admittedState(): ApiDoubleState {
       version: 1,
     },
     appeals: [],
+    call: null,
     reports: [],
     statements: [],
     session: {
@@ -239,6 +263,72 @@ export function admittedState(): ApiDoubleState {
     },
   };
 }
+
+/** Mirrors the server's own live-state set. */
+const liveCallStates = new Set([
+  'invited',
+  'accepted',
+  'connecting',
+  'active',
+  'reconnecting',
+  'ending',
+]);
+
+/** Only an answered, still-live call admits anybody. */
+const joinableCallStates = new Set([
+  'accepted',
+  'connecting',
+  'active',
+  'reconnecting',
+]);
+
+/**
+ * Which action moves a call where, and who may take it.
+ *
+ * Role and origin state are both enforced, because they are what the server
+ * enforces: only a recipient answers or declines, only a caller withdraws, and
+ * nothing at all moves a call that has already finished.
+ */
+const callTransitions: Readonly<
+  Record<
+    string,
+    {
+      readonly from: ReadonlySet<string>;
+      readonly next: string;
+      readonly reason?: string;
+      readonly role?: 'caller' | 'recipient';
+    }
+  >
+> = {
+  '/v1/rtc/calls/acceptance': {
+    from: new Set(['invited']),
+    next: 'accepted',
+    role: 'recipient',
+  },
+  '/v1/rtc/calls/cancellation': {
+    from: new Set(['invited']),
+    next: 'cancelled',
+    reason: 'withdrawn',
+    role: 'caller',
+  },
+  '/v1/rtc/calls/rejection': {
+    from: new Set(['invited']),
+    next: 'rejected',
+    reason: 'declined',
+    role: 'recipient',
+  },
+  '/v1/rtc/calls/termination': {
+    from: new Set([
+      'accepted',
+      'connecting',
+      'active',
+      'reconnecting',
+      'ending',
+    ]),
+    next: 'ended',
+    reason: 'hung_up',
+  },
+};
 
 export function createApiDouble(
   initial: ApiDoubleState = emptyState(),
@@ -451,6 +541,85 @@ export function createApiDouble(
         (entry) => entry.id !== input.candidateId,
       );
       return json(200, introduction);
+    }
+
+    // REALTIME. Terminal states are terminal here too: a double that let an
+    // ended call be answered would prove the surface handles a case the server
+    // makes unreachable.
+    if (path === '/v1/rtc/calls' && method === 'GET') {
+      const callId = url.searchParams.get('callId');
+      return state.call?.id === callId
+        ? json(200, state.call)
+        : error(404, 'RESOURCE_NOT_FOUND');
+    }
+    if (path === '/v1/rtc/calls' && method === 'POST') {
+      const input = body as {
+        introductionId: string;
+        medium: 'voice' | 'video';
+      };
+      const introduction = state.introductions.find(
+        (entry) =>
+          entry.id === input.introductionId && entry.state === 'mutual',
+      );
+      // A pending, closed, or absent introduction answers exactly as one that
+      // does not exist, so probing this route discloses nothing.
+      if (introduction === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      if (state.call !== null && liveCallStates.has(state.call.state)) {
+        return json(200, state.call);
+      }
+      state.call = {
+        counterpart: {
+          displayName: introduction.counterpart.displayName,
+          id: introduction.counterpart.id,
+        },
+        createdAt: iso(),
+        id: '66666666-6666-4666-8666-666666666666',
+        invitationExpiresAt: iso(45_000),
+        medium: input.medium,
+        role: 'caller',
+        state: 'invited',
+      };
+      return json(200, state.call);
+    }
+    if (path.startsWith('/v1/rtc/calls/') && method === 'POST') {
+      const input = body as { callId: string };
+      if (state.call?.id !== input.callId) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      if (path === '/v1/rtc/calls/join-authorization') {
+        if (!joinableCallStates.has(state.call.state)) {
+          return error(409, 'CONFLICT');
+        }
+        return json(200, {
+          callId: state.call.id,
+          // Short-lived and per-issuance. A double returning a fixed string
+          // would let a surface that cached one still pass.
+          credential: `join-${String(calls.length)}`,
+          expiresAt: iso(120_000),
+          medium: state.call.medium,
+        });
+      }
+      const transition = callTransitions[path];
+      if (transition === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      // A finished call answers with itself however many times it is asked,
+      // because a retried hang-up is the ordinary case rather than an error.
+      if (!liveCallStates.has(state.call.state)) return json(200, state.call);
+      if (!transition.from.has(state.call.state)) return error(409, 'CONFLICT');
+      if (
+        transition.role !== undefined &&
+        state.call.role !== transition.role
+      ) {
+        return error(409, 'CONFLICT');
+      }
+      state.call = {
+        ...state.call,
+        ...(transition.next === 'accepted' ? { acceptedAt: iso() } : {}),
+        ...(transition.reason === undefined
+          ? {}
+          : { endReason: transition.reason, endedAt: iso() }),
+        state: transition.next,
+      };
+      return json(200, state.call);
     }
 
     // MESSAGING.
