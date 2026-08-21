@@ -152,6 +152,7 @@ describe('AUTH persistence and invariants', () => {
       'payouts_journal_transactions',
       'payouts_outbox',
       'payouts_recipients',
+      'realtime_join_issuances',
       'realtime_participants',
       'realtime_provider_obligations',
       'realtime_sessions',

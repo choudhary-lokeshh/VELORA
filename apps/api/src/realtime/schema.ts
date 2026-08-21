@@ -407,3 +407,45 @@ export const realtimeProviderObligations = pgTable(
     ),
   ],
 );
+
+/**
+ * That a join credential was issued, and to whom.
+ *
+ * Append-only evidence, and deliberately not the credential. What a later
+ * question needs — was anybody admitted to this call, when, under which
+ * authorization generation, and when did it stop working — is answerable from
+ * these columns, and none of them is a secret. The credential itself exists for
+ * the length of one response and is written nowhere.
+ *
+ * It is what the abuse limits count and what an operator reads when asking
+ * whether a call somebody reported was ever actually joined.
+ */
+export const realtimeJoinIssuances = pgTable(
+  'realtime_join_issuances',
+  {
+    /** The generation in force when this was minted. */
+    authorizationGeneration: integer('authorization_generation').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    issuedAt: timestamptz('issued_at').notNull(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => realtimeSessions.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+  },
+  (table) => [
+    index('realtime_join_issuances_session_idx').on(table.sessionId),
+    // "How many credentials has this person been issued lately", which is the
+    // question the abuse limits ask.
+    index('realtime_join_issuances_user_idx').on(table.userId, table.issuedAt),
+    check(
+      'realtime_join_issuances_generation_check',
+      sql`${table.authorizationGeneration} >= 1`,
+    ),
+    // A credential that never expires is not a short-lived credential.
+    check(
+      'realtime_join_issuances_expiry_check',
+      sql`${table.expiresAt} > ${table.issuedAt}`,
+    ),
+  ],
+);

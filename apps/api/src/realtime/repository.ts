@@ -16,6 +16,7 @@ import {
   type RtcSessionState,
 } from './policy.js';
 import {
+  realtimeJoinIssuances,
   realtimeParticipants,
   realtimeProviderObligations,
   realtimeSessions,
@@ -433,6 +434,48 @@ export class RtcRepository {
         updatedAt: input.now,
       })
       .where(eq(realtimeProviderObligations.id, input.id));
+  }
+
+  /**
+   * Records that a credential was minted, without the credential.
+   *
+   * Deliberately a separate write from the minting itself: the secret exists
+   * only in the response, and nothing that touches storage ever holds it.
+   */
+  async recordIssuance(
+    executor: Executor,
+    input: {
+      readonly authorizationGeneration: number;
+      readonly expiresAt: Date;
+      readonly now: Date;
+      readonly sessionId: string;
+      readonly userId: string;
+    },
+  ): Promise<void> {
+    await executor.insert(realtimeJoinIssuances).values({
+      authorizationGeneration: input.authorizationGeneration,
+      expiresAt: input.expiresAt,
+      issuedAt: input.now,
+      sessionId: input.sessionId,
+      userId: input.userId,
+    });
+  }
+
+  /** How many credentials this person has been issued since an instant. */
+  async countIssuancesSince(
+    executor: Executor,
+    input: { readonly since: Date; readonly userId: string },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: sql<string>`count(*)::text` })
+      .from(realtimeJoinIssuances)
+      .where(
+        and(
+          eq(realtimeJoinIssuances.userId, input.userId),
+          sql`${realtimeJoinIssuances.issuedAt} >= ${input.since}`,
+        ),
+      );
+    return Number(rows.at(0)?.total ?? '0');
   }
 
   /** Invitations whose own deadline has passed, oldest first. */

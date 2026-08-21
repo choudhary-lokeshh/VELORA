@@ -18,6 +18,7 @@ import {
   type RtcPairSafetyPort,
   type RtcStandingPort,
 } from './eligibility.js';
+import { RtcJoinAuthorizationService } from './authorization.js';
 import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { UnavailableRtcProvider, type RtcProviderPort } from './provider.js';
@@ -25,6 +26,7 @@ import { RtcRepository } from './repository.js';
 import { RtcService } from './service.js';
 
 export interface RealtimeRuntime {
+  readonly authorization: RtcJoinAuthorizationService;
   readonly eligibility: RtcCallEligibilityPort;
   readonly orchestrator: RtcProviderOrchestrator;
   readonly provider: RtcProviderPort;
@@ -152,6 +154,12 @@ export function createRealtimeRuntime(input: {
     ...(input.standing === undefined ? {} : { standing: input.standing }),
   });
   return {
+    authorization: new RtcJoinAuthorizationService({
+      eligibility,
+      now,
+      provider,
+      repository,
+    }),
     eligibility,
     orchestrator,
     provider,
