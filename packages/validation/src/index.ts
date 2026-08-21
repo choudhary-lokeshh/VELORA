@@ -2468,8 +2468,7 @@ export const apiOperations = [
       },
       ...consumerAuthenticationResponses,
       '409': {
-        description:
-          'The pair may not talk right now, or the caller\u2019s own standing does not permit calling. Which of those it is, is deliberately not disclosed.',
+        description: `The pair may not talk right now, the caller\u2019s own standing does not permit calling, or a calling bound has been reached — code ${productErrorCodes.rateLimited} in that last case. Which of the first two it is, is deliberately not disclosed, and a bound never reports how much of it remains.`,
         schemaName: 'ApiError',
       },
       '422': invalidProductInputResponse,
@@ -2621,8 +2620,7 @@ export const apiOperations = [
       },
       ...consumerAuthenticationResponses,
       '409': {
-        description:
-          'The call does not admit anybody right now: it was never answered, it has ended, it is not bound to a provider session, or the pair may no longer talk. Eligibility is composed again at issuance rather than inherited from the acceptance.',
+        description: `The call does not admit anybody right now: it was never answered, it has ended, it is not bound to a provider session, the pair may no longer talk, or a minting bound has been reached — code ${productErrorCodes.rateLimited} in that last case. Eligibility is composed again at issuance rather than inherited from the acceptance, and a bound never reports how much of it remains.`,
         schemaName: 'ApiError',
       },
       '422': invalidProductInputResponse,

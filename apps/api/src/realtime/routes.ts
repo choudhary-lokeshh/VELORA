@@ -125,6 +125,13 @@ export class RtcRoutes {
           input.correlationId,
         );
       }
+      case 'rate_limited': {
+        return routeFailure(
+          409,
+          productErrorCodes.rateLimited,
+          input.correlationId,
+        );
+      }
       case 'unavailable': {
         // No approved provider. `503` rather than `409`: nothing about this
         // caller or this call is wrong, and the answer may differ later.
@@ -196,6 +203,17 @@ export class RtcRoutes {
         return routeFailure(
           409,
           productErrorCodes.actionNotPermitted,
+          input.correlationId,
+        );
+      }
+      case 'rate_limited': {
+        // The product convention for a bound reached, and deliberately not a
+        // `429`: `429` is AUTH's answer about authentication attempts, and
+        // reusing it here would put a product limit in the bucket a client
+        // treats as "retry the sign-in".
+        return routeFailure(
+          409,
+          productErrorCodes.rateLimited,
           input.correlationId,
         );
       }

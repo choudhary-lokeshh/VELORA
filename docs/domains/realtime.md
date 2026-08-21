@@ -98,6 +98,14 @@ A participant may report the other participant of a session they were in. The re
 
 Calling is expensive to the person receiving it and to whatever provider is behind it, so the limits are server-side and deterministic: invitations per caller, invitations against one target pair, concurrent outstanding calls, join-authorization issuances, provider session creations, and reconnect churn. Windows use an injected clock so a limit is asserted where it actually falls rather than where a fast loop happens to land. A refusal discloses nothing about the target's state.
 
+**Every one of them is counted from rows this domain already keeps**, not from a counter in an ephemeral store. That is a correctness property rather than a saving: a limit held only in Redis is reset by a flush or a restart, so getting past one would be a matter of waiting for an operational event. Invitations, concurrent calls, and provider rooms are counted from `realtime_sessions`; issuances per person and per call are counted from `realtime_join_issuances`, written by the same path that mints, so no route can spend a credential without it appearing in the count.
+
+The per-pair bound is deliberately far below the per-caller one. Repeated calling of one person is the shape harassment actually takes, and somebody who is not being answered already has their answer. Counting reconnect churn as issuances against a session needs no separate ledger, because a reconnect obtains a fresh credential by design.
+
+The counts are taken inside the transaction that writes and under the pair lock the caller already holds, on the same rule as every other check here: a count taken outside is a number that was true a moment ago, and two invitations racing would both read it and both write.
+
+A refusal says only that a bound was reached. It does not say which bound, how much of it remains, or when it lifts, and it answers identically however often it is asked — a refusal carrying its own counter would be a way to measure somebody else's calling. It is a `409` with `RATE_LIMITED`, the product convention; `429` belongs to AUTH's answer about authentication attempts, and reusing it would put a product limit in the bucket a client treats as "retry the sign-in".
+
 ## Privacy
 
 No call media, recording, transcript, SDP, ICE candidate, TURN credential, reusable join credential, or participant IP address is stored, logged, traced, or published as a metric label. Recording is not implemented and no configuration value enables it; it remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`.

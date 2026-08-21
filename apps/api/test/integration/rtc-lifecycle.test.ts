@@ -990,3 +990,178 @@ describe('nothing about a call is stored that should not be', () => {
     }
   });
 });
+
+describe('calling is bounded, and a bound discloses nothing', () => {
+  /**
+   * Seeds calls that count towards a limit, without placing them.
+   *
+   * The limits are counted from the durable rows this domain already keeps, so
+   * reaching one is a matter of those rows existing. Placing thirty real calls
+   * would prove the same thing far more slowly and would additionally be
+   * testing the invitation path against itself.
+   */
+  async function seedCalls(input: {
+    readonly count: number;
+    readonly initiatorId: string;
+    readonly counterpartId?: string;
+    readonly createdAgoMilliseconds?: number;
+    readonly live?: boolean;
+    readonly providerBound?: boolean;
+  }): Promise<void> {
+    for (let index = 0; index < input.count; index += 1) {
+      const counterpart =
+        input.counterpartId ??
+        `9${String(index).padStart(7, '0')}-9999-4999-8999-999999999999`;
+      const [low, high] =
+        input.initiatorId < counterpart
+          ? [input.initiatorId, counterpart]
+          : [counterpart, input.initiatorId];
+      const at = new Date(
+        now().getTime() - (input.createdAgoMilliseconds ?? 1_000),
+      );
+      await execute(
+        database.sql`insert into realtime_sessions
+          (authorization_generation, created_at, id, initiator_id,
+           invitation_expires_at, medium, origin_introduction_id,
+           pair_high_id, pair_low_id, provider, provider_bound_at,
+           provider_reference, state, state_entered_at, updated_at,
+           ended_at, end_reason)
+         values (1, ${at}, ${crypto.randomUUID()}, ${input.initiatorId},
+           ${at}, 'voice', ${crypto.randomUUID()}, ${high}, ${low},
+           ${input.providerBound === true ? 'local-test' : null},
+           ${input.providerBound === true ? at : null},
+           ${input.providerBound === true ? crypto.randomUUID() : null},
+           ${input.live === true ? 'invited' : 'expired'}, ${at}, ${at},
+           ${input.live === true ? null : at},
+           ${input.live === true ? null : 'invitation_expired'})`,
+      );
+    }
+  }
+
+  it('refuses a caller who has placed too many calls in the window', async () => {
+    const pair = await introducedPair();
+    await seedCalls({ count: 30, initiatorId: pair.a.id });
+
+    const outcome = await realtime.service.invite(pair.a, {
+      introductionId: pair.introductionId,
+      medium: 'voice',
+    });
+    // A ring interrupts whether or not anybody answers, so the bound is on
+    // placing rather than on connecting.
+    expect(outcome.kind).toBe('rate_limited');
+    // And it says only that. A refusal carrying a counter would be a way to
+    // measure somebody else's calling.
+    expect(Object.keys(outcome)).toEqual(['kind']);
+  });
+
+  it('refuses repeated calling of one person well before the caller bound', async () => {
+    const pair = await introducedPair();
+    await seedCalls({
+      count: 6,
+      counterpartId: pair.b.id,
+      initiatorId: pair.a.id,
+    });
+
+    // Six, not thirty. Repeated calling of one person is the shape harassment
+    // takes, and somebody who is not being answered has their answer.
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('rate_limited');
+  });
+
+  it('counts only what is inside the window', async () => {
+    const pair = await introducedPair();
+    await seedCalls({
+      count: 30,
+      createdAgoMilliseconds: 3_600_000 + 60_000,
+      initiatorId: pair.a.id,
+    });
+
+    // An hour ago is not now. A limit that counted everything ever would be a
+    // permanent ban that nobody decided to impose.
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('call');
+  });
+
+  it('refuses somebody already in too many calls at once', async () => {
+    const pair = await introducedPair();
+    await seedCalls({ count: 3, initiatorId: pair.a.id, live: true });
+
+    // One live call per pair is already a unique index; this bounds calling
+    // several different people at the same time, which is spraying rather than
+    // talking.
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('rate_limited');
+  });
+
+  it('refuses a caller who has caused too many provider rooms', async () => {
+    const pair = await introducedPair();
+    await seedCalls({
+      count: 20,
+      initiatorId: pair.a.id,
+      providerBound: true,
+    });
+
+    // Reaching a provider costs money and leaves a room to tear down, so it is
+    // bounded even though a room only exists for a call somebody answered.
+    expect(
+      (
+        await realtime.service.invite(pair.a, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('rate_limited');
+  });
+
+  it('bounds one caller without bounding anybody else', async () => {
+    const pair = await introducedPair();
+    await seedCalls({ count: 30, initiatorId: pair.a.id });
+
+    // The person on the other side of the same introduction is unaffected: a
+    // limit is about who is doing the calling, not about the pair.
+    expect(
+      (
+        await realtime.service.invite(pair.b, {
+          introductionId: pair.introductionId,
+          medium: 'voice',
+        })
+      ).kind,
+    ).toBe('call');
+  });
+
+  it('answers a bound identically however the caller probes it', async () => {
+    const pair = await introducedPair();
+    await seedCalls({ count: 30, initiatorId: pair.a.id });
+
+    const first = await realtime.service.invite(pair.a, {
+      introductionId: pair.introductionId,
+      medium: 'voice',
+    });
+    const second = await realtime.service.invite(pair.a, {
+      introductionId: pair.introductionId,
+      medium: 'video',
+    });
+    // Asking again, or asking for a different medium, tells the caller nothing
+    // new — and in particular does not reveal how close to the bound they are
+    // or when it lifts.
+    expect(second).toEqual(first);
+  });
+});

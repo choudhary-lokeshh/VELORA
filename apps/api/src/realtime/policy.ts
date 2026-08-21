@@ -241,6 +241,80 @@ export const rtcJoinTimeoutMilliseconds = 30_000;
 export const rtcReconnectGraceMilliseconds = 30_000;
 
 /**
+ * The window every RTC abuse limit below is counted over.
+ *
+ * One value rather than one per limit, because the limits are answered by a
+ * single query over rows that already exist and a second window would mean a
+ * second scan. An hour is long enough that a burst cannot be walked around by
+ * waiting, and short enough that somebody who was rate-limited during an
+ * argument can call again the same evening.
+ */
+export const rtcAbuseWindowMilliseconds = 3_600_000;
+
+/**
+ * How many calls one person may place in the window.
+ *
+ * Calling is expensive to the person receiving it in a way messaging is not: a
+ * ring interrupts, and a caller who can place them without bound can make
+ * somebody's phone unusable without ever saying anything reportable. The bound
+ * is on placing, not on connecting, because the interruption happens whether or
+ * not anybody answers.
+ */
+export const maximumRtcInvitationsPerCaller = 30;
+
+/**
+ * How many calls one person may place to one other person in the window.
+ *
+ * Deliberately much smaller than the per-caller bound, because repeated calling
+ * of one person is the shape harassment actually takes. Somebody who is not
+ * being answered has their answer; the limit says so rather than letting the
+ * ringing continue.
+ */
+export const maximumRtcInvitationsPerPair = 6;
+
+/**
+ * How many live calls one person may be in at once.
+ *
+ * One live call per pair is already enforced by a unique index, so this bounds
+ * calling several different people simultaneously. A person genuinely holds one
+ * conversation at a time; a handful of concurrent sessions is the slack for a
+ * call that has not finished tearing down, and anything past that is a caller
+ * spraying invitations rather than talking to somebody.
+ */
+export const maximumConcurrentRtcCalls = 3;
+
+/**
+ * How many join credentials one person may be issued in the window.
+ *
+ * A credential is the one thing this platform hands out that a third party will
+ * honour without asking again, so minting them is bounded per person regardless
+ * of how many calls they are in. This is the last line rather than the first:
+ * every issuance already re-composes eligibility.
+ */
+export const maximumRtcJoinIssuancesPerUser = 60;
+
+/**
+ * How many join credentials one person may be issued for one call.
+ *
+ * This is the reconnect-churn bound. A reconnect obtains a fresh credential, so
+ * counting issuances against a session counts reconnect attempts without a
+ * separate ledger — and an endpoint reconnecting in a tight loop is either
+ * broken or being driven, and either way is spending credential mints on a call
+ * that is not working.
+ */
+export const maximumRtcJoinIssuancesPerSession = 12;
+
+/**
+ * How many provider rooms one person may cause to be created in the window.
+ *
+ * Reaching a provider costs money and leaves a room that has to be torn down,
+ * so the bound exists even though a room is only created for a call somebody
+ * answered. It is above the per-caller invitation bound being reachable, so it
+ * binds only when something is creating rooms without calls to put in them.
+ */
+export const maximumRtcProviderSessionsPerCaller = 20;
+
+/**
  * What has to be decided or built before calling may be enabled in a deployed
  * environment. Each entry is a real blocker, not a caution.
  *

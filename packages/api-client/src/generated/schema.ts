@@ -12897,7 +12897,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The pair may not talk right now, or the caller’s own standing does not permit calling. Which of those it is, is deliberately not disclosed. */
+            /** @description The pair may not talk right now, the caller’s own standing does not permit calling, or a calling bound has been reached — code RATE_LIMITED in that last case. Which of the first two it is, is deliberately not disclosed, and a bound never reports how much of it remains. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -13492,7 +13492,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The call does not admit anybody right now: it was never answered, it has ended, it is not bound to a provider session, or the pair may no longer talk. Eligibility is composed again at issuance rather than inherited from the acceptance. */
+            /** @description The call does not admit anybody right now: it was never answered, it has ended, it is not bound to a provider session, the pair may no longer talk, or a minting bound has been reached — code RATE_LIMITED in that last case. Eligibility is composed again at issuance rather than inherited from the acceptance, and a bound never reports how much of it remains. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */

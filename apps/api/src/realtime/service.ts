@@ -13,6 +13,11 @@ import {
 } from './events.js';
 import {
   isTerminalRtcSessionState,
+  maximumConcurrentRtcCalls,
+  maximumRtcInvitationsPerCaller,
+  maximumRtcInvitationsPerPair,
+  maximumRtcProviderSessionsPerCaller,
+  rtcAbuseWindowMilliseconds,
   rtcInvitationTimeoutMilliseconds,
   rtcJoinTimeoutMilliseconds,
   rtcReconnectGraceMilliseconds,
@@ -44,6 +49,12 @@ export interface CallView {
 
 export type CallOutcome =
   | { readonly kind: 'call'; readonly view: CallView }
+  /**
+   * A bound was reached. Deliberately says only that, and never which bound or
+   * how much of it is left: a refusal that reported its own counter would be a
+   * way to measure somebody else's calling.
+   */
+  | { readonly kind: 'rate_limited' }
   /** The actor's own account does not currently permit calling. */
   | { readonly kind: 'not_eligible' }
   /** Deliberately indistinguishable from a call that does not exist. */
@@ -143,6 +154,7 @@ export class RtcService {
       ): Promise<
         | { readonly counterpartId: string; readonly session: RtcSessionRow }
         | 'denied'
+        | 'limited'
         | 'unknown'
       > => {
         const connection =
@@ -165,6 +177,28 @@ export class RtcService {
           }))
         ) {
           return 'denied';
+        }
+
+        // Counted under the pair lock and inside the writing transaction, on
+        // the same rule as every other check here: a count taken outside would
+        // be a number that was true a moment ago, and two invitations racing
+        // would both read the same one and both write.
+        const recent = await this.dependencies.repository.countRecentActivity(
+          executor,
+          {
+            callerId: actor.id,
+            first: actor.id,
+            second: connection.counterpartId,
+            since: new Date(now.getTime() - rtcAbuseWindowMilliseconds),
+          },
+        );
+        if (
+          recent.invitations >= maximumRtcInvitationsPerCaller ||
+          recent.pairInvitations >= maximumRtcInvitationsPerPair ||
+          recent.liveCalls >= maximumConcurrentRtcCalls ||
+          recent.providerSessions >= maximumRtcProviderSessionsPerCaller
+        ) {
+          return 'limited';
         }
 
         const created = await this.dependencies.repository.insertSession(
@@ -216,6 +250,7 @@ export class RtcService {
     );
     if (outcome === 'unknown') return { kind: 'not_found' };
     if (outcome === 'denied') return { kind: 'not_permitted' };
+    if (outcome === 'limited') return { kind: 'rate_limited' };
     return this.viewOf(actor.id, outcome.session, outcome.counterpartId);
   }
 

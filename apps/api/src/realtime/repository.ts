@@ -674,6 +674,96 @@ export class RtcRepository {
       .limit(input.limit);
   }
 
+  /**
+   * Everything the abuse limits need, in one query.
+   *
+   * Four counts over rows this domain already holds, rather than a counter in
+   * an ephemeral store. That matters beyond tidiness: a limit kept only in
+   * Redis is reset by a flush or a restart, so somebody who wanted to get past
+   * one would only have to wait for an operational event. These counts are
+   * whatever the durable record says, always.
+   *
+   * One statement rather than four, because all four are asked at the same
+   * instant in the same transaction, and four round trips inside a transaction
+   * holding a pooled connection is four times the connection this decision
+   * needs to occupy.
+   */
+  async countRecentActivity(
+    executor: Executor,
+    input: {
+      readonly callerId: string;
+      readonly first: string;
+      readonly second: string;
+      readonly since: Date;
+    },
+  ): Promise<{
+    readonly invitations: number;
+    readonly liveCalls: number;
+    readonly pairInvitations: number;
+    readonly providerSessions: number;
+  }> {
+    const pair = orderedPair(input.first, input.second);
+    const rows = await executor
+      .select({
+        invitations: sql<string>`count(*) filter (
+          where ${realtimeSessions.initiatorId} = ${input.callerId}
+            and ${realtimeSessions.createdAt} >= ${input.since}
+        )::text`,
+        liveCalls: sql<string>`count(*) filter (
+          where (${realtimeSessions.pairLowId} = ${input.callerId}
+                 or ${realtimeSessions.pairHighId} = ${input.callerId})
+            and ${realtimeSessions.state} in (${sql.raw(
+              liveRtcSessionStates.map((state) => `'${state}'`).join(', '),
+            )})
+        )::text`,
+        pairInvitations: sql<string>`count(*) filter (
+          where ${realtimeSessions.pairLowId} = ${pair.low}
+            and ${realtimeSessions.pairHighId} = ${pair.high}
+            and ${realtimeSessions.initiatorId} = ${input.callerId}
+            and ${realtimeSessions.createdAt} >= ${input.since}
+        )::text`,
+        providerSessions: sql<string>`count(*) filter (
+          where ${realtimeSessions.initiatorId} = ${input.callerId}
+            and ${realtimeSessions.providerBoundAt} >= ${input.since}
+        )::text`,
+      })
+      .from(realtimeSessions);
+    const row = rows.at(0);
+    return {
+      invitations: Number(row?.invitations ?? '0'),
+      liveCalls: Number(row?.liveCalls ?? '0'),
+      pairInvitations: Number(row?.pairInvitations ?? '0'),
+      providerSessions: Number(row?.providerSessions ?? '0'),
+    };
+  }
+
+  /**
+   * How many credentials one person has been issued for one call.
+   *
+   * The reconnect-churn count: a reconnect obtains a fresh credential, so this
+   * counts reconnect attempts without keeping a second ledger of them.
+   */
+  async countIssuancesForSessionSince(
+    executor: Executor,
+    input: {
+      readonly sessionId: string;
+      readonly since: Date;
+      readonly userId: string;
+    },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: sql<string>`count(*)::text` })
+      .from(realtimeJoinIssuances)
+      .where(
+        and(
+          eq(realtimeJoinIssuances.sessionId, input.sessionId),
+          eq(realtimeJoinIssuances.userId, input.userId),
+          sql`${realtimeJoinIssuances.issuedAt} >= ${input.since}`,
+        ),
+      );
+    return Number(rows.at(0)?.total ?? '0');
+  }
+
   /** Invitations whose own deadline has passed, oldest first. */
   async claimExpiredInvitations(
     executor: Executor,

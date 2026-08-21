@@ -1,6 +1,9 @@
 import { lockPair } from '../database/pair-lock.js';
 import type { RtcCallEligibilityPort } from './eligibility.js';
 import {
+  maximumRtcJoinIssuancesPerSession,
+  maximumRtcJoinIssuancesPerUser,
+  rtcAbuseWindowMilliseconds,
   rtcJoinCredentialTtlMilliseconds,
   type RtcCallMedium,
 } from './policy.js';
@@ -29,6 +32,11 @@ export type JoinAuthorizationOutcome =
   | { readonly kind: 'not_found' }
   /** The call is not in a state that admits anybody, or the pair may not talk. */
   | { readonly kind: 'not_permitted' }
+  /**
+   * A minting bound was reached. Says only that: reporting which bound, or how
+   * much of it remains, would publish a measure of somebody's calling.
+   */
+  | { readonly kind: 'rate_limited' }
   /** No provider is approved, so there is nothing to join. */
   | { readonly kind: 'unavailable' };
 
@@ -133,6 +141,24 @@ export class RtcJoinAuthorizationService {
           return 'refused' as const;
         }
 
+        // The last line, not the first: eligibility above has already decided
+        // whether this person may be admitted at all. These bound how often
+        // minting itself may happen — per person, and per call, which is what
+        // bounds an endpoint reconnecting in a loop.
+        const since = new Date(now.getTime() - rtcAbuseWindowMilliseconds);
+        if (
+          (await this.dependencies.repository.countIssuancesSince(executor, {
+            since,
+            userId: input.actorId,
+          })) >= maximumRtcJoinIssuancesPerUser ||
+          (await this.dependencies.repository.countIssuancesForSessionSince(
+            executor,
+            { sessionId: input.sessionId, since, userId: input.actorId },
+          )) >= maximumRtcJoinIssuancesPerSession
+        ) {
+          return 'limited' as const;
+        }
+
         return {
           authorizationGeneration: held.authorizationGeneration,
           medium: held.medium,
@@ -143,6 +169,7 @@ export class RtcJoinAuthorizationService {
 
     if (decision === 'unknown') return { kind: 'not_found' };
     if (decision === 'refused') return { kind: 'not_permitted' };
+    if (decision === 'limited') return { kind: 'rate_limited' };
 
     // Outside the transaction, deliberately: minting reaches a provider, and a
     // pooled connection held across somebody else's network is a connection the

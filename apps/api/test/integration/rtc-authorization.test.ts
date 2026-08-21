@@ -338,3 +338,100 @@ describe('no approved provider means nothing to join', () => {
     ).toBe('unavailable');
   });
 });
+
+describe('minting is bounded, per person and per call', () => {
+  /** Issuances that count towards a bound, without minting them. */
+  async function seedIssuances(input: {
+    readonly count: number;
+    readonly issuedAgoMilliseconds?: number;
+    readonly sessionId: string;
+    readonly userId: string;
+  }): Promise<void> {
+    for (let index = 0; index < input.count; index += 1) {
+      const at = new Date(Date.now() - (input.issuedAgoMilliseconds ?? 1_000));
+      await execute(
+        database.sql`insert into realtime_join_issuances
+          (authorization_generation, expires_at, issued_at, session_id, user_id)
+         values (1, ${new Date(at.getTime() + 120_000)}, ${at},
+           ${input.sessionId}, ${input.userId})`,
+      );
+    }
+  }
+
+  it('refuses a person who has been issued too many credentials', async () => {
+    const id = await joinableSession();
+    await seedIssuances({ count: 60, sessionId: id, userId: caller });
+
+    const outcome = await realtime.authorization.issue({
+      actorId: caller,
+      sessionId: id,
+    });
+    // A credential is the one thing this platform hands out that a third party
+    // honours without asking again, so minting is bounded per person whatever
+    // the call is.
+    expect(outcome.kind).toBe('rate_limited');
+    expect(Object.keys(outcome)).toEqual(['kind']);
+  });
+
+  it('refuses an endpoint reconnecting into one call in a loop', async () => {
+    const id = await joinableSession();
+    await seedIssuances({ count: 12, sessionId: id, userId: caller });
+
+    // The reconnect-churn bound. A reconnect obtains a fresh credential, so
+    // counting issuances against a session counts reconnect attempts without a
+    // second ledger — and this many means the call is not working.
+    expect(
+      (await realtime.authorization.issue({ actorId: caller, sessionId: id }))
+        .kind,
+    ).toBe('rate_limited');
+  });
+
+  it('bounds one person on one call without bounding the other', async () => {
+    const id = await joinableSession();
+    await seedIssuances({ count: 12, sessionId: id, userId: caller });
+
+    // The person on the other side of the same call is not churning, and is
+    // not punished for the other endpoint doing so.
+    expect(
+      (
+        await realtime.authorization.issue({
+          actorId: recipient,
+          sessionId: id,
+        })
+      ).kind,
+    ).toBe('authorization');
+  });
+
+  it('counts only issuances inside the window', async () => {
+    const id = await joinableSession();
+    await seedIssuances({
+      count: 60,
+      issuedAgoMilliseconds: 3_600_000 + 60_000,
+      sessionId: id,
+      userId: caller,
+    });
+
+    expect(
+      (await realtime.authorization.issue({ actorId: caller, sessionId: id }))
+        .kind,
+    ).toBe('authorization');
+  });
+
+  it('records the issuances it made, so the count is what actually happened', async () => {
+    const id = await joinableSession();
+    for (let index = 0; index < 3; index += 1) {
+      expect(
+        (await realtime.authorization.issue({ actorId: caller, sessionId: id }))
+          .kind,
+      ).toBe('authorization');
+    }
+
+    const rows = await rowsOf<{ count: string }>(
+      database.sql`select count(*)::text as count from realtime_join_issuances
+        where session_id = ${id} and user_id = ${caller}`,
+    );
+    // The ledger the bound is counted from is written by the path that mints,
+    // so a limit cannot be walked around by a route that forgot to record.
+    expect(rows[0]?.count).toBe('3');
+  });
+});
