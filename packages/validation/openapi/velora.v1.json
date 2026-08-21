@@ -28956,7 +28956,9 @@
                   "type": "string",
                   "enum": [
                     "message_received",
-                    "introduction_mutual"
+                    "introduction_mutual",
+                    "call_incoming",
+                    "call_missed"
                   ]
                 },
                 "readAt": {

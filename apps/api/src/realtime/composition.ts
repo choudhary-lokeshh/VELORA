@@ -8,6 +8,7 @@ import {
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { DatabaseHandle } from '../database/executor.js';
+import { OutboxRepository } from '../events/outbox.js';
 import type { ConnectionDirectoryPort } from '../discovery/connections.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import type { ConsumerDirectory } from '../users/directory.js';
@@ -25,11 +26,17 @@ import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { UnavailableRtcProvider, type RtcProviderPort } from './provider.js';
 import { RtcRepository } from './repository.js';
+import { realtimeOutbox } from './schema.js';
 import { RtcRoutes } from './routes.js';
 import { RtcService } from './service.js';
 
 export interface RealtimeRuntime {
   readonly authorization: RtcJoinAuthorizationService;
+  /**
+   * This domain's outbox, exposed so the relay in the worker can drain it. The
+   * relay reads it; no other domain does.
+   */
+  readonly outbox: OutboxRepository;
   readonly eligibility: RtcCallEligibilityPort;
   readonly orchestrator: RtcProviderOrchestrator;
   readonly provider: RtcProviderPort;
@@ -142,6 +149,7 @@ export function createRealtimeRuntime(input: {
   readonly standing?: RtcStandingPort;
 }): RealtimeRuntime {
   const repository = new RtcRepository(input.database);
+  const outbox = new OutboxRepository(input.database, realtimeOutbox);
   const now = input.now ?? (() => new Date());
   const provider = selectRtcProvider(input.config, now);
   const orchestrator = new RtcProviderOrchestrator({
@@ -172,12 +180,14 @@ export function createRealtimeRuntime(input: {
     now,
     onboarding: input.onboarding,
     orchestrator,
+    outbox,
     repository,
   });
   return {
     authorization,
     eligibility,
     orchestrator,
+    outbox,
     provider,
     repository,
     routes: new RtcRoutes({

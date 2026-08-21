@@ -21,15 +21,23 @@ import { z } from 'zod';
 /**
  * The kinds of thing the platform tells somebody about in V1.
  *
- * Both are transactional and both follow from something the recipient
- * deliberately took part in. There is no marketing kind, and adding one is a
- * consent decision rather than a schema change.
+ * Every one is transactional and every one follows from something the
+ * recipient deliberately took part in. There is no marketing kind, and adding
+ * one is a consent decision rather than a schema change.
  */
 export const notificationKindSchema = z.enum([
   /** Somebody the recipient is in a conversation with sent them a message. */
   'message_received',
   /** A pending introduction the recipient took part in became mutual. */
   'introduction_mutual',
+  /** Somebody the recipient is introduced to is calling them, right now. */
+  'call_incoming',
+  /**
+   * A call the recipient did not answer. Derived from the invitation's own
+   * deadline rather than from whether a device ever rang, so it stays true
+   * when a push is lost.
+   */
+  'call_missed',
 ]);
 export type NotificationKind = z.infer<typeof notificationKindSchema>;
 

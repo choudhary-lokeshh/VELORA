@@ -48,6 +48,7 @@ import {
   mediaUploadSweepIntervalMilliseconds,
 } from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
+import { realtimeOutbox } from './realtime/schema.js';
 import { createNotificationsRuntime } from './notifications/composition.js';
 import {
   createNotificationWake,
@@ -299,6 +300,10 @@ export function createWorkerComposition(input: {
       {
         producer: 'messaging',
         repository: new OutboxRepository(handle, messagingOutbox),
+      },
+      {
+        producer: 'realtime',
+        repository: new OutboxRepository(handle, realtimeOutbox),
       },
       {
         producer: 'billing',

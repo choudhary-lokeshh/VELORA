@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { inList, nullablePairing, timestamptz } from '../database/columns.js';
+import { outboxTable } from '../events/outbox-table.js';
 import {
   maximumRtcIdempotencyKeyLength,
   maximumRtcProviderReferenceLength,
@@ -449,3 +450,17 @@ export const realtimeJoinIssuances = pgTable(
     ),
   ],
 );
+
+/**
+ * REALTIME's transactional outbox.
+ *
+ * Inside `realtime_` because the fact and the call it describes have to commit
+ * together, and only this domain's transaction can do that. A fact written
+ * anywhere else — a queue, another domain's table, a second connection — would
+ * be a second commit, and a process killed between the two would leave somebody
+ * being called and nobody told about it.
+ *
+ * NOTIFICATIONS never reads it. The relay drains it and hands each fact to
+ * whichever consumer registered for that event name.
+ */
+export const realtimeOutbox = outboxTable('realtime_outbox');

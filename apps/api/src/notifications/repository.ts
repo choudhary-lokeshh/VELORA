@@ -399,6 +399,7 @@ export class NotificationRepository {
   async insertFeedEntry(
     executor: Executor,
     input: {
+      readonly callId: string | null;
       readonly conversationId: string | null;
       readonly introductionId: string | null;
       readonly kind: NotificationKind;
@@ -412,6 +413,7 @@ export class NotificationRepository {
     const inserted = await executor
       .insert(notificationFeed)
       .values({
+        callId: input.callId,
         conversationId: input.conversationId,
         createdAt: input.now,
         id: crypto.randomUUID(),

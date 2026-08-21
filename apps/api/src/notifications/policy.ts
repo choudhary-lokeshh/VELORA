@@ -1,5 +1,10 @@
 import { introductionMutualEventName } from '../discovery/events.js';
 import { messageSentEventName } from '../messaging/events.js';
+import {
+  callInvitedEventName,
+  callMissedEventName,
+} from '../realtime/events.js';
+import { rtcInvitationTimeoutMilliseconds } from '../realtime/policy.js';
 
 /**
  * NOTIFICATIONS policy: what may be sent, over what, how often it is retried,
@@ -103,6 +108,10 @@ export type AttemptOutcome = (typeof attemptOutcomes)[number];
 export const notificationKinds = [
   'message_received',
   'introduction_mutual',
+  /** Somebody is calling, right now. */
+  'call_incoming',
+  /** A call went unanswered. Derived from the lifecycle, not from delivery. */
+  'call_missed',
 ] as const;
 export type NotificationKind = (typeof notificationKinds)[number];
 
@@ -173,6 +182,29 @@ export const notificationTemplates: Readonly<
     channel: 'push',
     key: 'discovery.introduction.mutual.v1',
     kind: 'introduction_mutual',
+    purpose: 'transactional',
+    requiresPairEligibility: true,
+    timeToLiveMilliseconds: oneDayMilliseconds,
+  },
+  [callInvitedEventName]: {
+    allowedProducer: 'realtime',
+    channel: 'push',
+    key: 'realtime.call.incoming.v1',
+    kind: 'call_incoming',
+    purpose: 'transactional',
+    requiresPairEligibility: true,
+    // Seconds, not a day. A ring that arrives after the invitation has expired
+    // is an interruption about something that is already over, and the delivery
+    // path drops a notice whose time to live has passed rather than sending it.
+    // This is deliberately longer than the invitation itself so a notice is
+    // never discarded before the call it is about has finished ringing.
+    timeToLiveMilliseconds: rtcInvitationTimeoutMilliseconds * 2,
+  },
+  [callMissedEventName]: {
+    allowedProducer: 'realtime',
+    channel: 'push',
+    key: 'realtime.call.missed.v1',
+    kind: 'call_missed',
     purpose: 'transactional',
     requiresPairEligibility: true,
     timeToLiveMilliseconds: oneDayMilliseconds,

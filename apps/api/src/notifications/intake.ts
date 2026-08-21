@@ -9,6 +9,12 @@ import {
   messageSentEventName,
   parseMessageSentEvent,
 } from '../messaging/events.js';
+import {
+  callInvitedEventName,
+  callMissedEventName,
+  parseCallInvitedEvent,
+  parseCallMissedEvent,
+} from '../realtime/events.js';
 import { notificationTemplates } from './policy.js';
 import type { NotificationRepository } from './repository.js';
 
@@ -44,7 +50,8 @@ import type { NotificationRepository } from './repository.js';
  * producer did not intend to publish and this domain never had.
  */
 interface NotificationFact {
-  /** In-app deep-link target. Exactly one of the two is present. */
+  /** In-app deep-link target. Exactly one of the three is present. */
+  readonly callId?: string;
   readonly conversationId?: string;
   readonly introductionId?: string;
   /** What an external channel is allowed to see. Identifiers only. */
@@ -85,6 +92,29 @@ const factReaders: Readonly<Record<string, FactReader>> = {
       payload: { introductionId: fact.introductionId },
       recipientId: fact.initiatorId,
       subjectId: fact.respondingActorId,
+    };
+  },
+  [callInvitedEventName]: (payload) => {
+    const fact = parseCallInvitedEvent(payload);
+    if (fact === undefined) return undefined;
+    return {
+      callId: fact.callId,
+      // Identifiers only. The medium, the caller's name, and everything else
+      // stay in REALTIME, so no later template change can render them onto a
+      // lock screen from a field this domain never held.
+      payload: { callId: fact.callId },
+      recipientId: fact.recipientId,
+      subjectId: fact.callerId,
+    };
+  },
+  [callMissedEventName]: (payload) => {
+    const fact = parseCallMissedEvent(payload);
+    if (fact === undefined) return undefined;
+    return {
+      callId: fact.callId,
+      payload: { callId: fact.callId },
+      recipientId: fact.recipientId,
+      subjectId: fact.callerId,
     };
   },
 };
@@ -157,6 +187,7 @@ export class NotificationIntake implements OutboxConsumer {
           },
         );
         await this.dependencies.repository.insertFeedEntry(executor, {
+          callId: fact.callId ?? null,
           conversationId: fact.conversationId ?? null,
           introductionId: fact.introductionId ?? null,
           kind: template.kind,

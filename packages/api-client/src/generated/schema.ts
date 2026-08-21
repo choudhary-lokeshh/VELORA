@@ -3006,7 +3006,7 @@ export interface components {
                 /** Format: uuid */
                 introductionId?: string;
                 /** @enum {string} */
-                kind: "message_received" | "introduction_mutual";
+                kind: "message_received" | "introduction_mutual" | "call_incoming" | "call_missed";
                 /** Format: date-time */
                 readAt?: string;
                 /** Format: uuid */

@@ -130,6 +130,7 @@ const truncationRoots = [
   // opaque identifier with no foreign key, so nothing cascades into it and the
   // session is its own root. Participants and provider obligations follow by
   // cascade.
+  'realtime_outbox',
   'realtime_sessions',
   'safety_blocks',
   // Cases are the parent of reports, evidence, and decisions, so truncating

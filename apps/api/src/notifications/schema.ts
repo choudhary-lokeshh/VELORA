@@ -257,6 +257,8 @@ export const notificationAttempts = pgTable(
 export const notificationFeed = pgTable(
   'notifications_feed',
   {
+    /** Deep-link target for a call notice. */
+    callId: uuid('call_id'),
     /** Deep-link target for a conversation notice. */
     conversationId: uuid('conversation_id'),
     createdAt: timestamptz('created_at').notNull(),
@@ -301,8 +303,10 @@ export const notificationFeed = pgTable(
     check(
       'notifications_feed_target_check',
       sql`case ${table.kind}
-        when 'message_received' then ${table.conversationId} is not null and ${table.introductionId} is null
-        when 'introduction_mutual' then ${table.introductionId} is not null and ${table.conversationId} is null
+        when 'message_received' then ${table.conversationId} is not null and ${table.introductionId} is null and ${table.callId} is null
+        when 'introduction_mutual' then ${table.introductionId} is not null and ${table.conversationId} is null and ${table.callId} is null
+        when 'call_incoming' then ${table.callId} is not null and ${table.conversationId} is null and ${table.introductionId} is null
+        when 'call_missed' then ${table.callId} is not null and ${table.conversationId} is null and ${table.introductionId} is null
         else false
       end`,
     ),

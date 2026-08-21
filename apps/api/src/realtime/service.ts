@@ -2,7 +2,15 @@ import { lockPair } from '../database/pair-lock.js';
 import type { ConnectionDirectoryPort } from '../discovery/connections.js';
 import type { OnboardingService } from '../users/onboarding.js';
 import type { UserAccountRow } from '../users/repository.js';
+import type { OutboxAppendPort } from '../events/outbox.js';
 import type { RtcCallEligibilityPort } from './eligibility.js';
+import {
+  callInvitedEventName,
+  callInvitedEventVersion,
+  callMissedEventName,
+  callMissedEventVersion,
+  callSubjectType,
+} from './events.js';
 import {
   isTerminalRtcSessionState,
   rtcInvitationTimeoutMilliseconds,
@@ -60,6 +68,12 @@ export interface RtcServiceDependencies {
   readonly onboarding: OnboardingService;
   /** Absent until a provider adapter is composed. */
   readonly orchestrator?: RtcProviderOrchestration;
+  /**
+   * REALTIME's own transactional outbox. A published fact is written by the
+   * same transaction that writes the call, so a process killed immediately
+   * afterwards cannot leave somebody being called and nobody told.
+   */
+  readonly outbox: OutboxAppendPort;
   readonly repository: RtcRepository;
 }
 
@@ -159,6 +173,21 @@ export class RtcService {
           },
         );
         if (created !== undefined) {
+          await this.dependencies.outbox.append(executor, {
+            correlationId: created.id,
+            eventName: callInvitedEventName,
+            eventVersion: callInvitedEventVersion,
+            id: crypto.randomUUID(),
+            now,
+            occurredAt: now,
+            payload: {
+              callId: created.id,
+              callerId: actor.id,
+              recipientId: connection.counterpartId,
+            },
+            subjectId: created.id,
+            subjectType: callSubjectType,
+          });
           return { counterpartId: connection.counterpartId, session: created };
         }
 
@@ -408,14 +437,41 @@ export class RtcService {
     let expired = 0;
     for (const session of due) {
       const settled = await this.dependencies.repository.transaction(
-        async (executor) =>
-          this.dependencies.repository.terminateSession(executor, {
-            expected: 'invited',
-            id: session.id,
+        async (executor) => {
+          const closed = await this.dependencies.repository.terminateSession(
+            executor,
+            {
+              expected: 'invited',
+              id: session.id,
+              now,
+              reason: 'invitation_expired',
+              terminal: 'expired',
+            },
+          );
+          if (closed === undefined) return undefined;
+          // Written by the transaction that closed it, and only when that
+          // transition actually won. Two sweeps racing produce one expiry and
+          // therefore one missed-call fact.
+          await this.dependencies.outbox.append(executor, {
+            correlationId: closed.id,
+            eventName: callMissedEventName,
+            eventVersion: callMissedEventVersion,
+            id: crypto.randomUUID(),
             now,
-            reason: 'invitation_expired',
-            terminal: 'expired',
-          }),
+            occurredAt: now,
+            payload: {
+              callId: closed.id,
+              callerId: closed.initiatorId,
+              recipientId:
+                closed.initiatorId === closed.pairLowId
+                  ? closed.pairHighId
+                  : closed.pairLowId,
+            },
+            subjectId: closed.id,
+            subjectType: callSubjectType,
+          });
+          return closed;
+        },
       );
       if (settled !== undefined) expired += 1;
     }

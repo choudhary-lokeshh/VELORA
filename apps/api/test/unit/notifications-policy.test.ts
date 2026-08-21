@@ -13,6 +13,10 @@ import {
   parseMessageSentEvent,
 } from '../../src/messaging/events.js';
 import {
+  callInvitedEventName,
+  callMissedEventName,
+} from '../../src/realtime/events.js';
+import {
   decodeFeedCursor,
   encodeFeedCursor,
 } from '../../src/notifications/cursor.js';
@@ -222,9 +226,14 @@ describe('published discovery facts', () => {
 });
 
 describe('notification event coverage', () => {
-  it('covers exactly the two V1 events judged to warrant telling somebody', () => {
+  it('covers exactly the V1 events judged to warrant telling somebody', () => {
     expect(Object.keys(notificationTemplates).sort()).toEqual(
-      [introductionMutualEventName, messageSentEventName].sort(),
+      [
+        callInvitedEventName,
+        callMissedEventName,
+        introductionMutualEventName,
+        messageSentEventName,
+      ].sort(),
     );
   });
 
@@ -235,7 +244,7 @@ describe('notification event coverage', () => {
         true,
       );
     }
-    // Two templates, two distinct kinds: a client renders one line per kind and
+    // One distinct kind per template: a client renders one line per kind and
     // could not tell two notices apart if they shared one.
     const kinds = Object.values(notificationTemplates).map(
       (template) => template.kind,
