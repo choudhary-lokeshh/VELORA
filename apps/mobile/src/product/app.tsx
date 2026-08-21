@@ -22,6 +22,7 @@ import {
 } from '../auth/session';
 import { useAccountState, type AccountState } from './account';
 import { createMobileConsumerApi } from './api';
+import { CallsArea } from './calls';
 import {
   ConversationsArea,
   DiscoveryArea,
@@ -56,6 +57,7 @@ const productAreas = [
   { id: 'discovery', label: 'Discovery' },
   { id: 'introductions', label: 'Introductions' },
   { id: 'conversations', label: 'Conversations' },
+  { id: 'calls', label: 'Calls' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'profile', label: 'Profile' },
   { id: 'safety', label: 'Safety' },
@@ -331,6 +333,9 @@ function ProductArea({
     }
     case 'conversations': {
       return <ConversationsArea api={api} />;
+    }
+    case 'calls': {
+      return <CallsArea api={api} />;
     }
     case 'notifications': {
       return <NotificationsArea api={api} />;

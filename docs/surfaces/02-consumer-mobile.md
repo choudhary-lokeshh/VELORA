@@ -16,6 +16,23 @@ Expected navigation groups are onboarding/authentication, discovery, conversatio
 
 Major V1 screens cover launch/admission, signup/sign-in/recovery, adult/country/consent gates, profile setup/edit, availability, candidate view, introduction status, conversation/message composer, notifications, block/report, session/privacy, export/deletion, and safe unavailable/error states.
 
+### Calling, and why it carries no media
+
+The calling area drives the call lifecycle — invite, answer, decline, withdraw, hang up, authorize a join — against REALTIME's existing authority over the ordinary bearer transport. It opens no microphone, no camera, no audio route, and no peer connection, it requests no device permission, and it says so on screen rather than implying a capability it does not have.
+
+**Native media is blocked, and the blocker is this repository's mobile architecture rather than package compatibility.** As of 2026-08-21 the packages themselves permit it on paper: `react-native-webrtc@124.0.8` declares `react-native >=0.60.0`, and `@config-plugins/react-native-webrtc@15.0.2` declares `expo >=56`, so React Native 0.86 under Expo SDK 57 satisfies both. What does not permit it is the build:
+
+- This app has no native projects. There is no `ios/` or `android/` directory, no `eas.json`, and `expo-dev-client` is not a dependency. `pnpm --filter @velora/mobile build` runs `expo export`, which produces Metro JavaScript bundles and compiles no native code.
+- `react-native-webrtc` requires custom native code and cannot run in Expo Go; it needs a development build produced by prebuild or EAS.
+- So adding it would put native code into the tree that **no gate in this repository compiles, links, signs, or runs**. `pnpm ci:verify` would stay green while the application was unbuildable, and a check that cannot fail is not a check. Shipping a native dependency whose correctness nothing verifies is the definition of a claimed capability.
+- There is also nothing to connect to. `REALTIME_RTC_PROVIDER` is rejected by configuration outside local and test, because no provider is approved ([RTC provider eligibility](../compliance/10-rtc-provider-eligibility.md)), so no deployed environment can mint a join credential in the first place.
+
+The consequences are recorded honestly rather than worked around. There is no camera switch, no audio-route or Bluetooth control, and no microphone permission prompt, because each would be a control over a device this app never opens — and a permission prompt for a capability that does not exist teaches somebody to grant one for nothing. Permission handling, a permanent-denial path, front/back camera, and audio routing all belong to the change that introduces real media, alongside the native build pipeline that can verify it.
+
+What the surface does handle is everything a phone produces around a call, and it handles it by holding no call state of its own. Returning to the foreground re-reads the call, so one that ended while the screen was off is reported rather than left on screen. A cold start restores nothing, so a notification tapped hours later cannot revive a finished call — reaching for the pair opens a new one instead. A network handover is a failed request followed by a re-read, not a state machine. Answering on another device makes this one stale at its next question, which it asks after every action, because the server records one acceptance and tells this device what happened. A safety ending arrives as `ended_by_platform` from any state — ringing, active, or reconnecting — and is shown as itself with no finer vocabulary, because distinguishing a block from an enforcement would publish the other person's decision.
+
+No join credential is retained. Joining asks for one and drops it, and asks again on every join and every reconnect, which is what lets a block landing mid-call be enforced rather than outlived.
+
 ## Domains and dependencies
 
 Domain ownership matches Consumer Web: AUTH owns authentication; IDENTITY ASSURANCE owns verified evidence; USERS owns self-declaration/profile/account; DISCOVERY, MESSAGING, TRUST & SAFETY, and NOTIFICATIONS own their states; REALTIME/BILLING/AI remain phase-gated. Mobile calls published API contracts only. Device push, camera, microphone, photo library, contacts, and location are platform capabilities, not automatic permissions or domain truth.

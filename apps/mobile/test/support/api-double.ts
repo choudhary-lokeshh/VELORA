@@ -49,7 +49,39 @@ export interface MobileApiState {
     senderId: string;
     sequence: number;
   }[];
+  /**
+   * The pair's call, if there is one.
+   *
+   * Singular, because the server allows one live call per pair: a second
+   * invitation while one is live returns that one rather than opening another.
+   */
+  call: {
+    acceptedAt?: string;
+    counterpart: { displayName: string; id: string };
+    createdAt: string;
+    endReason?: string;
+    endedAt?: string;
+    id: string;
+    invitationExpiresAt: string;
+    medium: 'voice' | 'video';
+    role: 'caller' | 'recipient';
+    state: string;
+  } | null;
+  introductions: {
+    counterpart: {
+      displayName: string;
+      id: string;
+      media: { id: string; position: number }[];
+      sharedLanguages: string[];
+    };
+    createdAt: string;
+    id: string;
+    mutualAt?: string;
+    role: 'initiator' | 'recipient';
+    state: 'pending' | 'mutual' | 'closed';
+  }[];
   notifications: {
+    callId?: string;
     conversationId?: string;
     createdAt: string;
     id: string;
@@ -96,9 +128,77 @@ export interface MobileApiDouble {
 export const ownAccountId = '11111111-1111-4111-8111-111111111111';
 export const otherPersonId = '22222222-2222-4222-8222-222222222222';
 export const conversationId = '33333333-3333-4333-8333-333333333333';
+export const introductionId = '55555555-5555-4555-8555-555555555555';
+export const callId = '66666666-6666-4666-8666-666666666666';
 
 const iso = (offset = 0) =>
   new Date(Date.UTC(2026, 7, 14, 12, 0, 0) + offset).toISOString();
+
+/** Mirrors the server's own live-state set. */
+const liveCallStates = new Set([
+  'invited',
+  'accepted',
+  'connecting',
+  'active',
+  'reconnecting',
+  'ending',
+]);
+
+/** Only an answered, still-live call admits anybody. */
+const joinableCallStates = new Set([
+  'accepted',
+  'connecting',
+  'active',
+  'reconnecting',
+]);
+
+/**
+ * Which action moves a call where, and who may take it.
+ *
+ * Both the role and the origin state are enforced, because both are what the
+ * server enforces: only a recipient answers or declines, only a caller
+ * withdraws, and nothing at all moves a call that has already finished.
+ */
+const callTransitions: Readonly<
+  Record<
+    string,
+    {
+      readonly from: ReadonlySet<string>;
+      readonly next: string;
+      readonly reason?: string;
+      readonly role?: 'caller' | 'recipient';
+    }
+  >
+> = {
+  '/v1/rtc/calls/acceptance': {
+    from: new Set(['invited']),
+    next: 'accepted',
+    role: 'recipient',
+  },
+  '/v1/rtc/calls/cancellation': {
+    from: new Set(['invited']),
+    next: 'cancelled',
+    reason: 'withdrawn',
+    role: 'caller',
+  },
+  '/v1/rtc/calls/rejection': {
+    from: new Set(['invited']),
+    next: 'rejected',
+    reason: 'declined',
+    role: 'recipient',
+  },
+  '/v1/rtc/calls/termination': {
+    from: new Set([
+      'accepted',
+      'connecting',
+      'active',
+      'reconnecting',
+      'ending',
+    ]),
+    next: 'ended',
+    reason: 'hung_up',
+  },
+};
 
 export function admittedState(): MobileApiState {
   return {
@@ -128,6 +228,8 @@ export function admittedState(): MobileApiState {
         state: 'active',
       },
     ],
+    call: null,
+    introductions: [],
     messages: [],
     notifications: [],
     offline: false,
@@ -325,7 +427,84 @@ export function createMobileApiDouble(
       return json(200, { suppressedUntil: iso(86_400_000) });
     }
     if (path === '/v1/discovery/introductions' && method === 'GET') {
-      return json(200, { introductions: [] });
+      return json(200, { introductions: state.introductions });
+    }
+
+    // REALTIME. Role, origin state, and one-live-call-per-pair are all
+    // enforced, because they are what the server enforces; a double that let a
+    // caller answer their own call would prove the surface handles a case that
+    // cannot happen.
+    if (path === '/v1/rtc/calls' && method === 'GET') {
+      const callId = url.searchParams.get('callId');
+      return state.call?.id === callId
+        ? json(200, state.call)
+        : error(404, 'RESOURCE_NOT_FOUND');
+    }
+    if (path === '/v1/rtc/calls' && method === 'POST') {
+      const input = body as {
+        introductionId: string;
+        medium: 'voice' | 'video';
+      };
+      const introduction = state.introductions.find(
+        (entry) =>
+          entry.id === input.introductionId && entry.state === 'mutual',
+      );
+      if (introduction === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      if (state.call !== null && liveCallStates.has(state.call.state)) {
+        return json(200, state.call);
+      }
+      state.call = {
+        counterpart: {
+          displayName: introduction.counterpart.displayName,
+          id: introduction.counterpart.id,
+        },
+        createdAt: iso(),
+        id: callId,
+        invitationExpiresAt: iso(45_000),
+        medium: input.medium,
+        role: 'caller',
+        state: 'invited',
+      };
+      return json(200, state.call);
+    }
+    if (path.startsWith('/v1/rtc/calls/') && method === 'POST') {
+      const input = body as { callId: string };
+      if (state.call?.id !== input.callId) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      if (path === '/v1/rtc/calls/join-authorization') {
+        if (!joinableCallStates.has(state.call.state)) {
+          return error(409, 'CONFLICT');
+        }
+        return json(200, {
+          callId: state.call.id,
+          // Per-issuance. A fixed string would let a surface that cached one
+          // still pass.
+          credential: `join-${String(calls.length)}`,
+          expiresAt: iso(120_000),
+          medium: state.call.medium,
+        });
+      }
+      const transition = callTransitions[path];
+      if (transition === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      // A finished call answers with itself however many times it is asked.
+      if (!liveCallStates.has(state.call.state)) return json(200, state.call);
+      if (!transition.from.has(state.call.state)) return error(409, 'CONFLICT');
+      if (
+        transition.role !== undefined &&
+        state.call.role !== transition.role
+      ) {
+        return error(409, 'CONFLICT');
+      }
+      state.call = {
+        ...state.call,
+        ...(transition.next === 'accepted' ? { acceptedAt: iso() } : {}),
+        ...(transition.reason === undefined
+          ? {}
+          : { endReason: transition.reason, endedAt: iso() }),
+        state: transition.next,
+      };
+      return json(200, state.call);
     }
     if (path === '/v1/messaging/conversations' && method === 'GET') {
       return json(200, { conversations: state.conversations });

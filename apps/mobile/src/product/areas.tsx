@@ -591,6 +591,12 @@ function merge(
 }
 
 const notificationLabels: Readonly<Record<string, string>> = {
+  // Past tense, and offering nothing to press. A phone notice is read minutes
+  // or hours after it arrived, and a notice that offered to answer would be
+  // offering a call that stopped ringing long before anybody saw it. Tapping
+  // through to a stale call is exactly the behaviour this avoids.
+  call_incoming: 'Somebody called you.',
+  call_missed: 'You missed a call.',
   introduction_mutual: 'You have a new mutual introduction.',
   message_received: 'You have a new message.',
 };
