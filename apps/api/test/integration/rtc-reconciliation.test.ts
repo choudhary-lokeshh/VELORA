@@ -270,6 +270,11 @@ describe('a cycle claims, calls, and settles', () => {
 describe('failing to discharge is deferral, never deletion', () => {
   it('backs off and records why', async () => {
     const { obligationId } = await owedTeardown();
+    // Captured before the cycle, so the assertion below is about the backoff
+    // the cycle applied rather than about how long the test then took. A margin
+    // measured against a fresh clock reading is a margin that evaporates when
+    // the machine is busy.
+    const before = now();
 
     const report = await reconcilerWith({
       endSession: () => Promise.reject(new Error('provider is unreachable')),
@@ -284,7 +289,7 @@ describe('failing to discharge is deferral, never deletion', () => {
     expect(row.failure_reason).toBe('provider is unreachable');
     // And it is not due again immediately: a provider that is down is not
     // helped by being asked faster.
-    expect(row.available_at.getTime()).toBeGreaterThan(now().getTime());
+    expect(row.available_at.getTime()).toBeGreaterThan(before.getTime());
   });
 
   it('leaves a deferred obligation alone until its backoff has passed', async () => {

@@ -22,6 +22,7 @@ import {
   maximumRtcIdempotencyKeyLength,
   maximumRtcProviderReferenceLength,
   rtcCallMediums,
+  endReasonsFor,
   rtcEndReasons,
   rtcParticipantRoles,
   rtcProviderEventStates,
@@ -197,6 +198,25 @@ export const realtimeSessions = pgTable(
       sql`${table.endReason} is null or ${table.endReason} in (${sql.raw(
         rtcEndReasons.map((reason) => `'${reason}'`).join(', '),
       )})`,
+    ),
+    // A reason belongs to the state it is recorded with. Found by a red-team
+    // pass: the vocabulary check above accepts any known reason on any terminal
+    // state, so `failed` could carry `declined` and the row would claim a
+    // person decided something they did not. The service already refuses it;
+    // this is the same rule where a migration or a repair script cannot get
+    // around it.
+    check(
+      'realtime_sessions_end_reason_state_check',
+      sql`${table.endReason} is null or ${sql.raw(
+        terminalRtcSessionStates
+          .map(
+            (state) =>
+              `(state = '${state}' and end_reason in (${endReasonsFor(state)
+                .map((reason) => `'${reason}'`)
+                .join(', ')}))`,
+          )
+          .join(' or '),
+      )}`,
     ),
     check(
       'realtime_sessions_pair_order_check',

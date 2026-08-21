@@ -128,6 +128,14 @@ One call can be read by an operator who already holds its identifier from a repo
 
 **There is no operator action at all.** No ending a call, no revoking a credential, no forcing a teardown. Ending somebody's call is a safety decision, and safety decisions go through TRUST & SAFETY where they acquire an enforcement record, a reason, and an appeal path; a console button would be that same power with none of them. Teardown that will not discharge belongs to reconciliation and is surfaced as a number to alert on rather than a button to press.
 
+## Adversarial review
+
+A hostile read of the finished domain is kept as a suite of its own, and it attacks the published contracts rather than repeating what the behaviour suites cover: keeping a credential alive past its terms, learning something about somebody who is not answering, recording a call that did not happen, and making the platform disagree with itself about who is in a call.
+
+It found one gap and closed it. The vocabulary check accepted any known end reason on any terminal state, so a `failed` call could carry `declined` — a row claiming a person decided something they did not. The service already refused it, but the database did not, and this domain's rule is that the database refuses what the domain forbids. The constraint now maps each terminal state to exactly the reasons that belong to it, where a migration or a repair script cannot get around it.
+
+One property is worth naming because nothing else would catch it breaking. The name a provider knows a participant by is derived rather than stored, and a revocation obligation recorded in the API process is discharged by the worker — so a per-process or upgrade-changed hash seed would leave every revocation naming somebody the provider has never heard of, and nothing would fail until a real revocation had to work. The derivation is asserted directly against its inputs.
+
 ## Privacy
 
 No call media, recording, transcript, SDP, ICE candidate, TURN credential, reusable join credential, or participant IP address is stored, logged, traced, or published as a metric label. Recording is not implemented and no configuration value enables it; it remains `DECISION REQUIRED / LEGAL REVIEW REQUIRED`.

@@ -421,6 +421,13 @@
       "when": 1787300694755,
       "tag": "0059_rtc-reconnect-recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1787340366540,
+      "tag": "0060_rtc-end-reason-state",
+      "breakpoints": true
     }
   ]
 }
