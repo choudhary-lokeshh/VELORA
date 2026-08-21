@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -18,6 +18,7 @@ import {
 import {
   realtimeJoinIssuances,
   realtimeParticipants,
+  realtimeProviderEvents,
   realtimeProviderObligations,
   realtimeSessions,
 } from './schema.js';
@@ -26,6 +27,7 @@ export type RtcSessionRow = typeof realtimeSessions.$inferSelect;
 export type RtcParticipantRow = typeof realtimeParticipants.$inferSelect;
 export type RtcProviderObligationRow =
   typeof realtimeProviderObligations.$inferSelect;
+export type RtcProviderEventRow = typeof realtimeProviderEvents.$inferSelect;
 
 export interface RtcSessionWithParticipants {
   readonly participants: readonly RtcParticipantRow[];
@@ -476,6 +478,108 @@ export class RtcRepository {
         ),
       );
     return Number(rows.at(0)?.total ?? '0');
+  }
+
+  /**
+   * Records a verified callback, or reports that it is already recorded.
+   *
+   * `onConflictDoNothing` against the composite identity is what makes the
+   * fiftieth delivery of one event cost a single refused insert. It returns
+   * nothing on a duplicate, and the caller treats that as success — because it
+   * is: the platform already holds the fact.
+   */
+  async recordProviderEvent(
+    executor: Executor,
+    input: {
+      readonly normalizedEventType: string;
+      readonly now: Date;
+      readonly occurredAt: Date;
+      readonly payloadDigest: string;
+      readonly provider: string;
+      readonly providerAccount: string;
+      readonly providerEnvironment: string;
+      readonly providerEventId: string;
+      readonly providerReference: string | null;
+    },
+  ): Promise<RtcProviderEventRow | undefined> {
+    const inserted = await executor
+      .insert(realtimeProviderEvents)
+      .values({
+        availableAt: input.now,
+        id: crypto.randomUUID(),
+        normalizedEventType: input.normalizedEventType,
+        occurredAt: input.occurredAt,
+        payloadDigest: input.payloadDigest,
+        provider: input.provider,
+        providerAccount: input.providerAccount,
+        providerEnvironment: input.providerEnvironment,
+        providerEventId: input.providerEventId,
+        providerReference: input.providerReference,
+        receivedAt: input.now,
+        state: 'received',
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted.at(0);
+  }
+
+  /** Verified events waiting to be applied, oldest first. */
+  async claimableProviderEvents(
+    executor: Executor,
+    input: { readonly limit: number; readonly now: Date },
+  ): Promise<readonly RtcProviderEventRow[]> {
+    return executor
+      .select()
+      .from(realtimeProviderEvents)
+      .where(
+        and(
+          inArray(realtimeProviderEvents.state, ['received', 'retry_wait']),
+          sql`${realtimeProviderEvents.availableAt} <= ${input.now}`,
+        ),
+      )
+      .orderBy(realtimeProviderEvents.availableAt, realtimeProviderEvents.id)
+      .limit(input.limit);
+  }
+
+  /** Settles one verified event. Retained either way; nothing is deleted. */
+  async settleProviderEvent(
+    executor: Executor,
+    input: {
+      readonly id: string;
+      readonly now: Date;
+      readonly reason?: string;
+      readonly state: 'processed' | 'ignored' | 'dead_letter' | 'retry_wait';
+    },
+  ): Promise<void> {
+    await executor
+      .update(realtimeProviderEvents)
+      .set({
+        attempts: sql`${realtimeProviderEvents.attempts} + 1`,
+        ...(input.state === 'processed' || input.state === 'ignored'
+          ? { processedAt: input.now }
+          : {}),
+        ...(input.reason === undefined ? {} : { failureReason: input.reason }),
+        state: input.state,
+      })
+      .where(eq(realtimeProviderEvents.id, input.id));
+  }
+
+  /** The call a provider room belongs to, if this platform still holds one. */
+  async findByProviderReference(
+    executor: Executor,
+    input: { readonly provider: string; readonly providerReference: string },
+  ): Promise<RtcSessionRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(realtimeSessions)
+      .where(
+        and(
+          eq(realtimeSessions.provider, input.provider),
+          eq(realtimeSessions.providerReference, input.providerReference),
+        ),
+      )
+      .limit(1);
+    return rows.at(0);
   }
 
   /** Invitations whose own deadline has passed, oldest first. */

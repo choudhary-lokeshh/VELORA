@@ -26,6 +26,8 @@ import {
 import { RtcJoinAuthorizationService } from './authorization.js';
 import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
+import { RtcProviderEventRoutes } from './provider-event-routes.js';
+import { RtcProviderEventService } from './provider-events.js';
 import { UnavailableRtcProvider, type RtcProviderPort } from './provider.js';
 import { RtcRepository } from './repository.js';
 import { realtimeOutbox } from './schema.js';
@@ -49,6 +51,8 @@ export interface RealtimeRuntime {
   readonly eligibility: RtcCallEligibilityPort;
   readonly orchestrator: RtcProviderOrchestrator;
   readonly provider: RtcProviderPort;
+  readonly providerEventRoutes: RtcProviderEventRoutes;
+  readonly providerEvents: RtcProviderEventService;
   readonly repository: RtcRepository;
   readonly routes: RtcRoutes;
   readonly service: RtcService;
@@ -228,12 +232,20 @@ export function createRealtimeRuntime(input: {
     repository,
     signals,
   });
+  const providerEvents = new RtcProviderEventService({
+    logger: input.logger ?? silentFallbackLogger,
+    now,
+    provider,
+    repository,
+  });
   return {
     authorization,
     eligibility,
     orchestrator,
     outbox,
     provider,
+    providerEventRoutes: new RtcProviderEventRoutes(providerEvents),
+    providerEvents,
     repository,
     signals,
     routes: new RtcRoutes({

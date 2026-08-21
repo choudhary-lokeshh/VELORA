@@ -1178,6 +1178,18 @@ export function createApplication(
       admitted(async (input) => messaging.routes.sendMessage(input)),
     )
     .post(
+      apiRoutePaths.rtcProviderEvents,
+      admitted(async (input) =>
+        realtime === undefined
+          ? routeFailure(
+              503,
+              productErrorCodes.dependencyUnavailable,
+              input.correlationId,
+            )
+          : realtime.providerEventRoutes.receive(input),
+      ),
+    )
+    .post(
       apiRoutePaths.rtcCalls,
       admitted(rtcRoute(async (routes, input) => routes.createCall(input))),
     )

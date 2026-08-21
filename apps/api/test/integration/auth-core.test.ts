@@ -155,6 +155,7 @@ describe('AUTH persistence and invariants', () => {
       'realtime_join_issuances',
       'realtime_outbox',
       'realtime_participants',
+      'realtime_provider_events',
       'realtime_provider_obligations',
       'realtime_sessions',
       'safety_appeals',

@@ -131,6 +131,9 @@ const truncationRoots = [
   // session is its own root. Participants and provider obligations follow by
   // cascade.
   'realtime_outbox',
+  // Verified provider callbacks reference a room by the provider's own handle
+  // rather than by a foreign key, so nothing cascades into them either.
+  'realtime_provider_events',
   'realtime_sessions',
   'safety_blocks',
   // Cases are the parent of reports, evidence, and decisions, so truncating

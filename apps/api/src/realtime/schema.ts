@@ -10,7 +10,13 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { inList, nullablePairing, timestamptz } from '../database/columns.js';
+import {
+  digestColumn,
+  inList,
+  isHexDigest,
+  nullablePairing,
+  timestamptz,
+} from '../database/columns.js';
 import { outboxTable } from '../events/outbox-table.js';
 import {
   maximumRtcIdempotencyKeyLength,
@@ -18,6 +24,7 @@ import {
   rtcCallMediums,
   rtcEndReasons,
   rtcParticipantRoles,
+  rtcProviderEventStates,
   rtcProviderObligationStates,
   rtcProviderObligations,
   rtcSessionStates,
@@ -25,6 +32,7 @@ import {
   type RtcCallMedium,
   type RtcEndReason,
   type RtcParticipantRole,
+  type RtcProviderEventState,
   type RtcProviderObligation,
   type RtcProviderObligationState,
   type RtcSessionState,
@@ -464,3 +472,93 @@ export const realtimeJoinIssuances = pgTable(
  * whichever consumer registered for that event name.
  */
 export const realtimeOutbox = outboxTable('realtime_outbox');
+
+/**
+ * Verified provider callbacks, and what became of each.
+ *
+ * A row exists here only after the exact raw bytes authenticated. What is
+ * stored is a digest of those bytes and a normalized allow-list — never the
+ * body, because a body is a provider's shape rather than this platform's, and
+ * retaining one would create a place where SDP, an address, or a credential
+ * could arrive and stay.
+ *
+ * Identity is the provider, its account, its environment, and the provider's
+ * own event identifier together. That composite is what makes duplication
+ * harmless and what stops an event from a sandbox account being applied to
+ * production data.
+ *
+ * A verified event may update what the platform *observes* about a call. It
+ * may never create a participant, grant permission, extend a credential,
+ * reverse a platform decision, or resurrect a superseded generation — those are
+ * enforced by the service, and this table deliberately holds no column that
+ * would let it.
+ */
+export const realtimeProviderEvents = pgTable(
+  'realtime_provider_events',
+  {
+    attempts: integer('attempts').notNull().default(0),
+    availableAt: timestamptz('available_at').notNull(),
+    /** A redacted code, never a provider message or a payload fragment. */
+    failureReason: text('failure_reason'),
+    id: uuid('id').primaryKey(),
+    leaseExpiresAt: timestamptz('lease_expires_at'),
+    leaseOwner: text('lease_owner'),
+    /** This domain's vocabulary, not the vendor's. */
+    normalizedEventType: text('normalized_event_type').notNull(),
+    occurredAt: timestamptz('occurred_at').notNull(),
+    /** Of the exact bytes that authenticated. The body itself is discarded. */
+    payloadDigest: digestColumn('payload_digest').notNull(),
+    processedAt: timestamptz('processed_at'),
+    provider: text('provider').notNull(),
+    providerAccount: text('provider_account').notNull(),
+    providerEnvironment: text('provider_environment').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    /** The room it is about, when it names one. */
+    providerReference: text('provider_reference'),
+    receivedAt: timestamptz('received_at').notNull(),
+    state: text('state').notNull().$type<RtcProviderEventState>(),
+  },
+  (table) => [
+    // Duplicate delivery is expected rather than exceptional, and this is what
+    // makes it free. The account and environment are part of the identity so a
+    // sandbox event can never be mistaken for a production one.
+    uniqueIndex('realtime_provider_events_identity_uk').on(
+      table.provider,
+      table.providerAccount,
+      table.providerEnvironment,
+      table.providerEventId,
+    ),
+    index('realtime_provider_events_claimable_idx')
+      .on(table.availableAt, table.id)
+      .where(sql`${table.state} in ('received', 'retry_wait')`),
+    index('realtime_provider_events_reference_idx')
+      .on(table.provider, table.providerReference)
+      .where(sql`${table.providerReference} is not null`),
+    check(
+      'realtime_provider_events_state_check',
+      inList(table.state, rtcProviderEventStates),
+    ),
+    check(
+      'realtime_provider_events_digest_check',
+      isHexDigest(table.payloadDigest),
+    ),
+    check(
+      'realtime_provider_events_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'realtime_provider_events_lease_shape_check',
+      nullablePairing(table.leaseOwner, table.leaseExpiresAt),
+    ),
+    // A settled row holding a lease would be indistinguishable from a live
+    // claim to the worker that next scans this table.
+    check(
+      'realtime_provider_events_lease_state_check',
+      sql`${table.leaseOwner} is null or ${table.state} in ('received', 'retry_wait')`,
+    ),
+    check(
+      'realtime_provider_events_processed_shape_check',
+      sql`(${table.state} in ('processed', 'ignored')) = (${table.processedAt} is not null)`,
+    ),
+  ],
+);

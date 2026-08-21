@@ -353,3 +353,33 @@ export type RtcProviderObligationState =
  * find and an operator needs to see.
  */
 export const maximumRtcObligationAttempts = 8;
+
+/**
+ * What has happened to a verified provider event.
+ *
+ * `ignored` is a first-class outcome rather than a failure. A provider is
+ * entitled to tell the platform about a room it no longer recognises, an event
+ * type nobody acts on, or a call that ended before the message arrived, and
+ * recording that it was seen and deliberately not acted on is what stops the
+ * same event being retried forever.
+ */
+export const rtcProviderEventStates = [
+  'received',
+  'retry_wait',
+  'processed',
+  'ignored',
+  'dead_letter',
+] as const;
+export type RtcProviderEventState = (typeof rtcProviderEventStates)[number];
+
+/** How many times a verified event is applied before it is retired loudly. */
+export const maximumRtcProviderEventAttempts = 8;
+
+/**
+ * The largest callback body this platform will read.
+ *
+ * Enforced before anything parses, because a parser is the wrong place to
+ * discover that a body is hostile. A provider with something legitimate to say
+ * says it in far less than this.
+ */
+export const maximumRtcProviderEventBytes = 64 * 1024;

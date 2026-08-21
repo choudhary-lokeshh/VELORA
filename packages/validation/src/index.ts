@@ -298,6 +298,7 @@ export const apiRoutePaths = {
   rtcCallRejection: '/v1/rtc/calls/rejection',
   rtcCallTermination: '/v1/rtc/calls/termination',
   rtcCalls: '/v1/rtc/calls',
+  rtcProviderEvents: '/v1/rtc/provider-events',
   notifications: '/v1/notifications',
   notificationsRead: '/v1/notifications/read',
   safetyBlockRemoval: '/v1/safety/blocks/removal',
@@ -1630,6 +1631,32 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       "The provider's signature over the exact bytes is the entire credential: there is no session, no audience, and no CSRF token here. Size is bounded before the body is read as data, and the signature is checked before it is parsed as anything.",
+  },
+  {
+    method: 'post',
+    operationId: 'receiveRtcProviderEvent',
+    path: apiRoutePaths.rtcProviderEvents,
+    responses: {
+      '202': {
+        description:
+          'The RTC-provider event was verified and its minimized durable receipt exists. Exact redeliveries receive the same acknowledgement. Nothing is applied on the request thread; a worker applies what a verified event is allowed to change, which is what the platform observes about a call and never who may take part in one.',
+        schemaName: 'ProviderEventAcknowledgement',
+      },
+      '401': {
+        description:
+          'The exact raw body could not be authenticated. Nothing was written, and the response does not reveal which check failed — a bad signature, a mutated body, and a wrong account answer identically.',
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+      '413': {
+        description:
+          'The body exceeded the callback limit and was refused before anything parsed it.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The configured provider signature over exact bytes is the credential. The endpoint stores provider/account/environment identity, event metadata, a body digest, and a room reference; never the callback body, SDP, ICE candidates, addresses, or credentials.',
   },
   {
     method: 'post',
