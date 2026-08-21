@@ -128,7 +128,8 @@ const truncationRoots = [
   'notifications_intents',
   // REALTIME references consumer accounts and the authorizing introduction by
   // opaque identifier with no foreign key, so nothing cascades into it and the
-  // session is its own root. Participants follow by cascade.
+  // session is its own root. Participants and provider obligations follow by
+  // cascade.
   'realtime_sessions',
   'safety_blocks',
   // Cases are the parent of reports, evidence, and decisions, so truncating

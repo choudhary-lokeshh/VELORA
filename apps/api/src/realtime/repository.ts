@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -12,12 +12,19 @@ import {
   type RtcCallMedium,
   type RtcEndReason,
   type RtcParticipantRole,
+  type RtcProviderObligation,
   type RtcSessionState,
 } from './policy.js';
-import { realtimeParticipants, realtimeSessions } from './schema.js';
+import {
+  realtimeParticipants,
+  realtimeProviderObligations,
+  realtimeSessions,
+} from './schema.js';
 
 export type RtcSessionRow = typeof realtimeSessions.$inferSelect;
 export type RtcParticipantRow = typeof realtimeParticipants.$inferSelect;
+export type RtcProviderObligationRow =
+  typeof realtimeProviderObligations.$inferSelect;
 
 export interface RtcSessionWithParticipants {
   readonly participants: readonly RtcParticipantRow[];
@@ -290,6 +297,142 @@ export class RtcRepository {
           eq(realtimeParticipants.userId, input.userId),
         ),
       );
+  }
+
+  /**
+   * Reserves the provider identity a session will be created under.
+   *
+   * Written and committed before the provider is contacted. That ordering is
+   * the whole mechanism: an ambiguous create is answered by asking the provider
+   * what it did with this key, and a key generated after the call would be a
+   * key the provider never saw.
+   */
+  async reserveProviderIdentity(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly provider: string;
+      readonly providerIdempotencyKey: string;
+      readonly sessionId: string;
+    },
+  ): Promise<RtcSessionRow | undefined> {
+    const updated = await executor
+      .update(realtimeSessions)
+      .set({
+        provider: input.provider,
+        providerIdempotencyKey: input.providerIdempotencyKey,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(realtimeSessions.id, input.sessionId),
+          // Only once. A session that already carries a key keeps it, so a
+          // retry reuses the identity the provider may already have seen.
+          isNull(realtimeSessions.providerIdempotencyKey),
+        ),
+      )
+      .returning();
+    return updated.at(0);
+  }
+
+  /**
+   * Binds the provider's own handle to the session.
+   *
+   * Guarded on the reference still being absent, so two recoveries racing to
+   * bind the same ambiguous create settle on one and the loser observes it.
+   */
+  async bindProviderSession(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly providerReference: string;
+      readonly sessionId: string;
+    },
+  ): Promise<RtcSessionRow | undefined> {
+    const updated = await executor
+      .update(realtimeSessions)
+      .set({
+        providerBoundAt: input.now,
+        providerReference: input.providerReference,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(realtimeSessions.id, input.sessionId),
+          isNull(realtimeSessions.providerReference),
+        ),
+      )
+      .returning();
+    return updated.at(0);
+  }
+
+  /**
+   * Records what the platform owes a provider, in the transaction that decided
+   * it. An obligation written afterwards is an obligation a crash can lose.
+   */
+  async recordObligation(
+    executor: Executor,
+    input: {
+      readonly kind: RtcProviderObligation;
+      readonly now: Date;
+      readonly participantReference?: string;
+      readonly provider: string;
+      readonly providerReference: string;
+      readonly sessionId: string;
+    },
+  ): Promise<void> {
+    await executor.insert(realtimeProviderObligations).values({
+      availableAt: input.now,
+      createdAt: input.now,
+      kind: input.kind,
+      participantReference: input.participantReference ?? null,
+      provider: input.provider,
+      providerReference: input.providerReference,
+      sessionId: input.sessionId,
+      state: 'pending',
+      updatedAt: input.now,
+    });
+  }
+
+  /** Obligations that are due, oldest first. */
+  async listDueObligations(
+    executor: Executor,
+    input: { readonly limit: number; readonly now: Date },
+  ): Promise<readonly RtcProviderObligationRow[]> {
+    return executor
+      .select()
+      .from(realtimeProviderObligations)
+      .where(
+        and(
+          eq(realtimeProviderObligations.state, 'pending'),
+          sql`${realtimeProviderObligations.availableAt} <= ${input.now}`,
+        ),
+      )
+      .orderBy(realtimeProviderObligations.id)
+      .limit(input.limit);
+  }
+
+  /** Settles one obligation. Retained either way; nothing is deleted. */
+  async settleObligation(
+    executor: Executor,
+    input: {
+      readonly discharged: boolean;
+      readonly id: number;
+      readonly now: Date;
+      readonly reason?: string;
+    },
+  ): Promise<void> {
+    await executor
+      .update(realtimeProviderObligations)
+      .set({
+        attempts: sql`${realtimeProviderObligations.attempts} + 1`,
+        ...(input.discharged
+          ? { dischargedAt: input.now, state: 'discharged' as const }
+          : {}),
+        ...(input.reason === undefined ? {} : { failureReason: input.reason }),
+        updatedAt: input.now,
+      })
+      .where(eq(realtimeProviderObligations.id, input.id));
   }
 
   /** Invitations whose own deadline has passed, oldest first. */

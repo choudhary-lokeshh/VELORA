@@ -40,11 +40,26 @@ export type CallOutcome =
   /** The pair may not talk, or the transition is not available now. */
   | { readonly kind: 'not_permitted' };
 
+export interface RtcProviderOrchestration {
+  bindProviderSession(input: {
+    readonly medium: RtcCallMedium;
+    readonly providerIdempotencyKey: string;
+    readonly sessionId: string;
+  }): Promise<
+    | { readonly kind: 'bound'; readonly session: RtcSessionRow }
+    | { readonly kind: 'unavailable' }
+    | { readonly kind: 'unresolved' }
+  >;
+  readonly providerName: string;
+}
+
 export interface RtcServiceDependencies {
   readonly connections: ConnectionDirectoryPort;
   readonly eligibility: RtcCallEligibilityPort;
   readonly now: () => Date;
   readonly onboarding: OnboardingService;
+  /** Absent until a provider adapter is composed. */
+  readonly orchestrator?: RtcProviderOrchestration;
   readonly repository: RtcRepository;
 }
 
@@ -276,6 +291,104 @@ export class RtcService {
     // are talking.
     if (role === undefined) return { kind: 'not_found' };
     return this.viewOf(actor.id, found.session, counterpartOf(found, actor.id));
+  }
+
+  /**
+   * Gives an accepted call somewhere to happen.
+   *
+   * Deliberately not part of the acceptance transaction. Acceptance is a
+   * platform fact and commits on its own; reaching a provider is a network call
+   * that must not run inside a transaction, and a provider that is slow, absent,
+   * or ambiguous must not be able to un-accept a call somebody answered.
+   *
+   * So the states are separate too. A call that cannot reach a provider fails
+   * with a reason that says so, rather than looking like somebody hung up.
+   */
+  async establishProviderSession(sessionId: string): Promise<CallOutcome> {
+    const found = await this.dependencies.repository.findById(
+      this.dependencies.repository.transactionless,
+      sessionId,
+    );
+    if (found === undefined) return { kind: 'not_found' };
+    if (found.session.state !== 'accepted') return { kind: 'not_permitted' };
+
+    const orchestrator = this.dependencies.orchestrator;
+    if (orchestrator === undefined) return { kind: 'not_permitted' };
+
+    const now = this.dependencies.now();
+    // The key is reserved and committed before the provider is contacted. That
+    // ordering is what makes an ambiguous create answerable rather than lost.
+    const reserved = await this.dependencies.repository.transaction(
+      (executor) =>
+        this.dependencies.repository.reserveProviderIdentity(executor, {
+          now,
+          provider: orchestrator.providerName,
+          providerIdempotencyKey: `rtc-${sessionId}`,
+          sessionId,
+        }),
+    );
+    const key =
+      reserved?.providerIdempotencyKey ??
+      found.session.providerIdempotencyKey ??
+      `rtc-${sessionId}`;
+
+    const outcome = await orchestrator.bindProviderSession({
+      medium: found.session.medium,
+      providerIdempotencyKey: key,
+      sessionId,
+    });
+
+    if (outcome.kind === 'unavailable') {
+      // No approved provider. The call fails for that reason rather than
+      // pretending somebody ended it.
+      const failed = await this.dependencies.repository.transaction(
+        (executor) =>
+          this.dependencies.repository.terminateSession(executor, {
+            expected: 'accepted',
+            id: sessionId,
+            now: this.dependencies.now(),
+            reason: 'provider_unavailable',
+            terminal: 'failed',
+          }),
+      );
+      if (failed === undefined) return { kind: 'not_permitted' };
+      return this.viewOf(
+        found.session.initiatorId,
+        failed,
+        counterpartOf(found, found.session.initiatorId),
+      );
+    }
+
+    if (outcome.kind === 'unresolved') {
+      // Recoverable: the reservation stands, the call is still accepted, and
+      // reconciliation owns it. Nothing infers success from silence.
+      return { kind: 'not_permitted' };
+    }
+
+    const connecting = await this.dependencies.repository.transaction(
+      async (executor) => {
+        const moved = await this.dependencies.repository.transitionSession(
+          executor,
+          {
+            expected: 'accepted',
+            id: sessionId,
+            next: 'connecting',
+            now: this.dependencies.now(),
+          },
+        );
+        if (moved === undefined) return undefined;
+        // The obligation to tear this room down is recorded now, while the
+        // reference is in hand, rather than when the call ends — a crash
+        // between ending and recording would otherwise leak the room.
+        return moved;
+      },
+    );
+    if (connecting === undefined) return { kind: 'not_permitted' };
+    return this.viewOf(
+      connecting.initiatorId,
+      connecting,
+      counterpartOf(found, connecting.initiatorId),
+    );
   }
 
   /**

@@ -226,6 +226,7 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'payouts_outbox',
         'payouts_recipients',
         'realtime_participants',
+        'realtime_provider_obligations',
         'realtime_sessions',
         'safety_appeals',
         'safety_blocks',

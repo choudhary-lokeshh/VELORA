@@ -282,3 +282,74 @@ export const callRecordingImplemented = false;
  * duration later removes data without changing how any of this behaves.
  */
 export const callRetentionDuration = undefined;
+
+/**
+ * Bounds on everything a provider hands back.
+ *
+ * A provider is an untrusted input, and an unbounded string from one is a
+ * denial-of-service surface and a storage surface at the same time. These are
+ * the widths the database enforces and the runtime guards in `./provider.ts`
+ * check before anything is persisted.
+ */
+export const maximumRtcProviderReferenceLength = 200;
+export const maximumRtcProviderEventIdLength = 200;
+export const maximumRtcProviderEventTypeLength = 100;
+export const maximumRtcIdempotencyKeyLength = 200;
+
+/**
+ * How long a participant's join credential is good for.
+ *
+ * Minutes, not hours. The credential is the one thing the platform hands out
+ * that a provider will honour without asking again, so its lifetime is the
+ * width of the window between a safety decision and that decision reaching the
+ * media path. Shortening it is the only lever the platform fully controls:
+ * revocation depends on a third party performing it, and this does not.
+ *
+ * Long enough to survive a slow client establishing a connection, short enough
+ * that a stolen one is worth little. Re-issuance is a fresh eligibility
+ * composition rather than an extension, so a longer call does not need a
+ * longer credential.
+ */
+export const rtcJoinCredentialTtlMilliseconds = 120_000;
+
+/**
+ * The ceiling a credential lifetime may never exceed, asserted by test.
+ *
+ * A separate constant from the value above because the value is a tuning
+ * decision and this is a safety property. Raising the lifetime past this is a
+ * decision that has to be taken deliberately, against this line, rather than by
+ * editing a number that looked adjustable.
+ */
+export const maximumRtcJoinCredentialTtlMilliseconds = 300_000;
+
+/**
+ * What a provider operation is trying to achieve.
+ *
+ * Recorded so an obligation the platform owes a provider — tear this room
+ * down, remove this participant — survives the process that discovered it.
+ * A crash between deciding and doing must leave the obligation, not lose it.
+ */
+export const rtcProviderObligations = [
+  'create_session',
+  'revoke_participant',
+  'terminate_session',
+] as const;
+export type RtcProviderObligation = (typeof rtcProviderObligations)[number];
+
+export const rtcProviderObligationStates = [
+  'pending',
+  'discharged',
+  'abandoned',
+] as const;
+export type RtcProviderObligationState =
+  (typeof rtcProviderObligationStates)[number];
+
+/**
+ * How many times an obligation is attempted before it is abandoned loudly.
+ *
+ * An abandoned obligation is not a discarded one: the row stays, carrying what
+ * the platform owed and did not manage to do, because a provider still holding
+ * a room the platform ended is exactly the divergence reconciliation exists to
+ * find and an operator needs to see.
+ */
+export const maximumRtcObligationAttempts = 8;

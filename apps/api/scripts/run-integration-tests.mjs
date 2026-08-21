@@ -1,7 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import { GenericContainer, Wait } from 'testcontainers';
@@ -139,14 +140,35 @@ function failedTestsFromReport() {
   return failures;
 }
 
+/**
+ * The connection ceiling, derived rather than guessed.
+ *
+ * Every integration file runs in one Bun process and each keeps its own bounded
+ * pool, so the ceiling the run needs is a property of the harness rather than of
+ * any one test. It was previously a literal, and a literal goes stale silently:
+ * adding two suites walked the run into the old 400 and the symptom was a
+ * `beforeEach` hook timing out with `Connection closed`, which reads like a
+ * flaky test rather than like a limit being reached.
+ *
+ * Deriving it from the suite count keeps that from recurring. The multiplier is
+ * the per-suite pool size in `test/support/database.ts`; the addition is
+ * headroom for the migration connection, the diagnostics connection, and
+ * PostgreSQL's own superuser reservation.
+ */
+const applicationRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const integrationSuiteCount = readdirSync(
+  join(applicationRoot, 'test', 'integration'),
+).filter((entry) => entry.endsWith('.test.ts')).length;
+const perSuitePoolSize = 20;
+const maximumConnections = integrationSuiteCount * perSuitePoolSize + 40;
+
 const [postgres, redis] = await Promise.all([
-  // Headroom, stated rather than assumed. Every integration file runs in one
-  // Bun process and each keeps its own bounded pool, so the ceiling the suite
-  // needs is a property of the harness and not of any one test. The default
-  // hundred is close enough to that total that exhausting it is a hang rather
-  // than an error, which is the worst way for a limit to be reached.
   new PostgreSqlContainer('postgres:18.4-alpine3.24')
-    .withCommand(['postgres', '-c', 'max_connections=400'])
+    .withCommand([
+      'postgres',
+      '-c',
+      `max_connections=${String(maximumConnections)}`,
+    ])
     .start(),
   new GenericContainer('redis:8.10.0-alpine3.23')
     .withCommand([

@@ -10,16 +10,22 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { inList, timestamptz } from '../database/columns.js';
+import { inList, nullablePairing, timestamptz } from '../database/columns.js';
 import {
+  maximumRtcIdempotencyKeyLength,
+  maximumRtcProviderReferenceLength,
   rtcCallMediums,
   rtcEndReasons,
   rtcParticipantRoles,
+  rtcProviderObligationStates,
+  rtcProviderObligations,
   rtcSessionStates,
   terminalRtcSessionStates,
   type RtcCallMedium,
   type RtcEndReason,
   type RtcParticipantRole,
+  type RtcProviderObligation,
+  type RtcProviderObligationState,
   type RtcSessionState,
 } from './policy.js';
 
@@ -89,6 +95,17 @@ export const realtimeSessions = pgTable(
     medium: text('medium').notNull().$type<RtcCallMedium>(),
     /** The mutual introduction that authorized this call to exist at all. */
     originIntroductionId: uuid('origin_introduction_id').notNull(),
+    /** Adapter carrying this call. Configuration, never a request field. */
+    provider: text('provider'),
+    providerBoundAt: timestamptz('provider_bound_at'),
+    /**
+     * Committed before the provider is ever contacted, which is what makes an
+     * ambiguous create answerable: the platform asks what the provider did
+     * with this key rather than creating a second room.
+     */
+    providerIdempotencyKey: text('provider_idempotency_key'),
+    /** The provider's own handle for the session. Opaque, and never public. */
+    providerReference: text('provider_reference'),
     pairHighId: uuid('pair_high_id').notNull(),
     pairLowId: uuid('pair_low_id').notNull(),
     /** Durable total order; timestamps and random UUIDs can tie. */
@@ -130,6 +147,18 @@ export const realtimeSessions = pgTable(
       .on(table.invitationExpiresAt)
       .where(sql`${table.state} = 'invited'`),
     uniqueIndex('realtime_sessions_sequence_uk').on(table.sequence),
+    // One provider room per key. The key is committed before the provider is
+    // contacted, so this is what stops a retry creating a second room.
+    uniqueIndex('realtime_sessions_provider_key_uk').on(
+      table.providerIdempotencyKey,
+    ),
+    // One session per provider room. A provider reference arriving for a
+    // session that already holds a different one is a binding error, not a
+    // second attempt.
+    uniqueIndex('realtime_sessions_provider_reference_uk').on(
+      table.provider,
+      table.providerReference,
+    ),
     check(
       'realtime_sessions_state_check',
       inList(table.state, rtcSessionStates),
@@ -185,6 +214,29 @@ export const realtimeSessions = pgTable(
     ),
     // Media cannot have been observed before the call was answered, and a call
     // that was never answered cannot hold a connection instant.
+    // A provider reference and the moment it was bound arrive together.
+    check(
+      'realtime_sessions_provider_binding_shape_check',
+      nullablePairing(table.providerReference, table.providerBoundAt),
+    ),
+    // A bound reference belongs to a named adapter. A reference with no
+    // provider could not be acted on later.
+    check(
+      'realtime_sessions_provider_named_check',
+      sql`${table.providerReference} is null or ${table.provider} is not null`,
+    ),
+    check(
+      'realtime_sessions_provider_reference_length_check',
+      sql`${table.providerReference} is null or char_length(${table.providerReference}) between 1 and ${sql.raw(
+        String(maximumRtcProviderReferenceLength),
+      )}`,
+    ),
+    check(
+      'realtime_sessions_provider_key_length_check',
+      sql`${table.providerIdempotencyKey} is null or char_length(${table.providerIdempotencyKey}) between 1 and ${sql.raw(
+        String(maximumRtcIdempotencyKeyLength),
+      )}`,
+    ),
     check(
       'realtime_sessions_connected_after_accepted_check',
       sql`${table.connectedAt} is null or ${table.connectedAt} >= ${table.acceptedAt}`,
@@ -261,6 +313,97 @@ export const realtimeParticipants = pgTable(
     check(
       'realtime_participants_left_order_check',
       sql`${table.leftAt} is null or ${table.leftAt} >= ${table.joinedAt}`,
+    ),
+  ],
+);
+
+/**
+ * What the platform owes a provider and has not yet managed to do.
+ *
+ * A call ends on the platform the moment its terminal state commits. Whether
+ * the provider has torn anything down is a separate question with a separate
+ * answer, and the gap between them is where rooms leak and revoked
+ * participants keep talking. This table is that gap made durable.
+ *
+ * An obligation is written by the same transaction as the decision that
+ * created it, so a process killed immediately afterwards leaves the obligation
+ * rather than losing it. It is claimed by lease, attempted outside every
+ * transaction, and settled by a state transition — the same shape the outbox
+ * relay uses, for the same reason: a claim that lives in memory does not
+ * survive the worker that took it.
+ *
+ * Rows are never deleted. A discharged obligation is evidence the provider was
+ * told; an abandoned one is evidence it was not, and that is exactly what an
+ * operator investigating a room that outlived its call needs to see.
+ */
+export const realtimeProviderObligations = pgTable(
+  'realtime_provider_obligations',
+  {
+    attempts: integer('attempts').notNull().default(0),
+    /** Not claimable before this instant. Retry backoff is written here. */
+    availableAt: timestamptz('available_at').notNull(),
+    createdAt: timestamptz('created_at').notNull(),
+    dischargedAt: timestamptz('discharged_at'),
+    /** A redacted code, never a provider message. */
+    failureReason: text('failure_reason'),
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    kind: text('kind').notNull().$type<RtcProviderObligation>(),
+    leaseExpiresAt: timestamptz('lease_expires_at'),
+    leaseOwner: text('lease_owner'),
+    /** Present only for an obligation about one participant. */
+    participantReference: text('participant_reference'),
+    provider: text('provider').notNull(),
+    providerReference: text('provider_reference').notNull(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => realtimeSessions.id, { onDelete: 'cascade' }),
+    state: text('state').notNull().$type<RtcProviderObligationState>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+  },
+  (table) => [
+    // The worker's only hot query: the oldest claimable obligations. Partial,
+    // so a table holding a year of discharged history still answers it from an
+    // index the size of the backlog.
+    index('realtime_provider_obligations_claimable_idx')
+      .on(table.id)
+      .where(sql`${table.state} = 'pending'`),
+    index('realtime_provider_obligations_session_idx').on(table.sessionId),
+    check(
+      'realtime_provider_obligations_kind_check',
+      inList(table.kind, rtcProviderObligations),
+    ),
+    check(
+      'realtime_provider_obligations_state_check',
+      inList(table.state, rtcProviderObligationStates),
+    ),
+    check(
+      'realtime_provider_obligations_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'realtime_provider_obligations_lease_shape_check',
+      nullablePairing(table.leaseOwner, table.leaseExpiresAt),
+    ),
+    // A lease belongs to a row somebody may still be working on. A settled row
+    // holding one would be indistinguishable from a live claim.
+    check(
+      'realtime_provider_obligations_lease_state_check',
+      sql`${table.leaseOwner} is null or ${table.state} = 'pending'`,
+    ),
+    check(
+      'realtime_provider_obligations_discharged_shape_check',
+      sql`(${table.state} = 'discharged') = (${table.dischargedAt} is not null)`,
+    ),
+    // Only a participant obligation names a participant.
+    check(
+      'realtime_provider_obligations_participant_shape_check',
+      sql`(${table.kind} = 'revoke_participant') = (${table.participantReference} is not null)`,
+    ),
+    check(
+      'realtime_provider_obligations_reference_length_check',
+      sql`char_length(${table.providerReference}) between 1 and ${sql.raw(
+        String(maximumRtcProviderReferenceLength),
+      )}`,
     ),
   ],
 );
