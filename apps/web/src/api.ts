@@ -1,5 +1,5 @@
 import { createVeloraApiClient } from '@velora/api-client';
-import { loadClientConfig } from '@velora/config/client';
+import { resolveSurfaceConfig } from '@velora/config/client';
 
 /**
  * The API base URL is resolved on the server at request time and handed to the
@@ -16,13 +16,7 @@ export interface ApiEnvironment {
 export function resolveApiBaseUrl(
   environment: ApiEnvironment = process.env,
 ): string {
-  return loadClientConfig({
-    apiBaseUrl: environment.VELORA_API_BASE_URL,
-    appEnvironment:
-      environment.VELORA_APP_ENV ??
-      (environment.NODE_ENV === 'production' ? 'production' : 'local'),
-    localDefaultApiBaseUrl: 'http://127.0.0.1:4000',
-  }).apiBaseUrl;
+  return resolveSurfaceConfig(environment).apiBaseUrl;
 }
 
 export function createSurfaceApiClient(baseUrl: string) {

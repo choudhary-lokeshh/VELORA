@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { browserSecurityHeaders, loadClientConfig } from '../src/client.js';
+import {
+  browserSecurityHeaders,
+  loadClientConfig,
+  loopbackApiBaseUrl,
+  resolveSurfaceConfig,
+} from '../src/client.js';
 import { loadServerConfig, redactServerConfig } from '../src/server.js';
 
 /** Returns the failure message so a test can assert which gate refused. */
@@ -278,6 +283,27 @@ describe('server configuration', () => {
     }
   });
 
+  it('publishes no appeal window, and refuses to in a deployed environment', () => {
+    // A separate gate from the takedown deadlines, because the two are lifted
+    // by different answers: one is how fast the platform must act on a claim,
+    // the other is how long somebody keeps the right to contest what was
+    // already decided. An appeal is still accepted with no window published;
+    // what is absent is a date after which it would be refused, which is the
+    // safer half of the question to leave open.
+    expect(loadServerConfig(validEnvironment).SAFETY_APPEAL_POLICY).toBe(
+      'unpublished',
+    );
+    for (const appEnvironment of ['staging', 'production']) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        APP_ENV: appEnvironment,
+        SAFETY_APPEAL_POLICY: 'local-test',
+      });
+      expect(failure).toContain('SAFETY_APPEAL_POLICY');
+      expect(failure).toContain('carry no authority');
+    }
+  });
+
   it('gives mature content one value, which is off, everywhere', () => {
     // Not a feature flag. A flag that could be flipped is enablement waiting
     // for an accident, and Apple treats a dormant remotely-enabled feature as a
@@ -396,6 +422,55 @@ describe('client configuration', () => {
       }),
     ).toThrow('cannot use localhost');
   });
+
+  /**
+   * The loopback address has more than one spelling, and the guard used to
+   * know only two of them. It tested for the hostname `'::1'`, which `URL`
+   * never produces — `http://[::1]:4000` arrives with the brackets attached —
+   * so the IPv6 loopback was accepted in production while the header layer,
+   * checking the bracketed form, treated the same address as local.
+   *
+   * Every case below is the loopback written differently. A deployed surface
+   * accepting any of them points at an endpoint that exists nowhere and
+   * publishes a Content-Security-Policy permitting it.
+   */
+  it.each([
+    ['IPv6 loopback', 'http://[::1]:4000'],
+    ['expanded IPv6 loopback', 'http://[0:0:0:0:0:0:0:1]:4000'],
+    ['IPv4-mapped IPv6 loopback', 'http://[::ffff:127.0.0.1]:4000'],
+    ['the mapped form already in hex', 'http://[::ffff:7f00:1]:4000'],
+    ['another address in 127.0.0.0/8', 'http://127.0.0.2:4000'],
+    ['IPv4 shorthand', 'http://127.1:4000'],
+    ['the address as one integer', 'http://2130706433:4000'],
+  ])('rejects %s when deployed', (_label, apiBaseUrl) => {
+    for (const appEnvironment of ['staging', 'production']) {
+      expect(() => loadClientConfig({ apiBaseUrl, appEnvironment })).toThrow(
+        'cannot use localhost',
+      );
+    }
+    // The same address is usable where a loopback endpoint is the point, and
+    // is recognised as loopback there too: the upgrade directive is omitted
+    // rather than left to break a plain-HTTP local API in WebKit.
+    const headers = browserSecurityHeaders({
+      apiBaseUrl,
+      appEnvironment: 'local',
+      referrerPolicy: 'same-origin',
+    });
+    expect(headers['content-security-policy']).not.toContain(
+      'upgrade-insecure-requests',
+    );
+  });
+
+  it('still accepts a real endpoint in every environment', () => {
+    for (const appEnvironment of ['local', 'test', 'staging', 'production']) {
+      expect(
+        loadClientConfig({
+          apiBaseUrl: 'https://api.velora.test',
+          appEnvironment,
+        }).apiBaseUrl,
+      ).toBe('https://api.velora.test');
+    }
+  });
 });
 
 describe('AUTH provider configuration', () => {
@@ -498,6 +573,90 @@ describe('AUTH provider configuration', () => {
     expect(JSON.stringify(redacted)).not.toContain(key);
     expect(redacted.accessTokenSigningKeyConfigured).toBe(true);
   });
+});
+
+describe('Next.js surface environment resolution', () => {
+  it('falls back to the loopback API only where a loopback API is allowed', () => {
+    expect(resolveSurfaceConfig({}).apiBaseUrl).toBe(loopbackApiBaseUrl);
+    expect(resolveSurfaceConfig({ VELORA_APP_ENV: 'local' }).apiBaseUrl).toBe(
+      loopbackApiBaseUrl,
+    );
+    expect(() => resolveSurfaceConfig({ NODE_ENV: 'production' })).toThrow();
+    expect(() =>
+      resolveSurfaceConfig({
+        VELORA_API_BASE_URL: loopbackApiBaseUrl,
+        VELORA_APP_ENV: 'production',
+      }),
+    ).toThrow();
+  });
+
+  it('reads the runtime signal only when nobody declared an environment', () => {
+    expect(
+      resolveSurfaceConfig({ NODE_ENV: 'development' }).appEnvironment,
+    ).toBe('local');
+    expect(
+      resolveSurfaceConfig({
+        NODE_ENV: 'production',
+        VELORA_API_BASE_URL: 'https://api.velora.test',
+      }).appEnvironment,
+    ).toBe('production');
+    // An explicit declaration outranks the runtime's guess in both directions.
+    expect(
+      resolveSurfaceConfig({
+        NODE_ENV: 'production',
+        VELORA_APP_ENV: 'staging',
+        VELORA_API_BASE_URL: 'https://api.velora.test',
+      }).appEnvironment,
+    ).toBe('staging');
+  });
+
+  /**
+   * The regression this function exists for.
+   *
+   * The origin a surface's pages call and the origin its
+   * Content-Security-Policy permits are one fact. They were derived twice from
+   * the same variables — resolved in `src/api.ts`, read raw in `middleware.ts`
+   * — and a local surface with neither variable set therefore advertised
+   * `connect-src 'self'` while serving pages that called the loopback API.
+   * Every request the browser made was refused by the policy the same process
+   * had just set, and it surfaced as the API being unreachable rather than as
+   * a configuration mistake.
+   *
+   * Asserting the two agree is the only form of this test that would have
+   * caught it: each half was individually correct.
+   */
+  it.each([
+    ['nothing configured, as in local development', {}],
+    ['an explicit local environment', { VELORA_APP_ENV: 'local' }],
+    [
+      'a deployed environment',
+      {
+        VELORA_API_BASE_URL: 'https://api.velora.test',
+        VELORA_APP_ENV: 'production',
+      },
+    ],
+    [
+      'a deployed environment on a non-default port',
+      {
+        VELORA_API_BASE_URL: 'https://api.velora.test:8443',
+        VELORA_APP_ENV: 'staging',
+      },
+    ],
+  ])(
+    'permits exactly the origin its pages will call, given %s',
+    (_label, environment) => {
+      const config = resolveSurfaceConfig(environment);
+      const headers = browserSecurityHeaders({
+        apiBaseUrl: config.apiBaseUrl,
+        appEnvironment: config.appEnvironment,
+        referrerPolicy: 'same-origin',
+      });
+
+      expect(headers['content-security-policy']).toContain(
+        `connect-src 'self' ${new URL(config.apiBaseUrl).origin}`,
+      );
+    },
+  );
 });
 
 describe('browser security headers', () => {

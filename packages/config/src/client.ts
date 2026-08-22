@@ -30,9 +30,31 @@ export interface ClientConfigInput {
   readonly localDefaultApiBaseUrl?: string | undefined;
 }
 
-function isLocalHostname(hostname: string): boolean {
+/**
+ * The loopback address, in the forms `URL` can hand back.
+ *
+ * One predicate, because there were two and they disagreed. The staging and
+ * production guard below tested for `'::1'`, which `URL` never produces — it
+ * normalises `http://[::1]:4000` to the hostname `'[::1]'`, brackets included —
+ * so the IPv6 loopback passed a check written to refuse it while the
+ * `upgrade-insecure-requests` decision, testing the bracketed form, called the
+ * same address local. A deployed surface could therefore be pointed at an
+ * endpoint that exists nowhere, and have its Content-Security-Policy permit it.
+ *
+ * `URL` already collapses the IPv4 shorthands (`127.1` and `2130706433` both
+ * arrive as `127.0.0.1`), so only the IPv6 spellings need naming here: the
+ * loopback itself, the whole `127.0.0.0/8` block, and the IPv4-mapped form,
+ * which `URL` prints in hex as `[::ffff:7f00:1]`.
+ */
+const mappedIpv4LoopbackPattern = /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/u;
+const ipv4LoopbackPattern = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u;
+
+function isLoopbackHostname(hostname: string): boolean {
   return (
-    hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+    hostname === 'localhost' ||
+    hostname === '[::1]' ||
+    ipv4LoopbackPattern.test(hostname) ||
+    mappedIpv4LoopbackPattern.test(hostname)
   );
 }
 
@@ -51,13 +73,53 @@ export function loadClientConfig(input: ClientConfigInput): ClientConfig {
   }
 
   const url = new URL(apiBaseUrl);
-  if (!mayUseLocalDefault && isLocalHostname(url.hostname)) {
+  if (!mayUseLocalDefault && isLoopbackHostname(url.hostname)) {
     throw new Error('Staging/production API base URL cannot use localhost');
   }
 
   return clientConfigSchema.parse({
     apiBaseUrl: url.toString().replace(/\/$/, ''),
     appEnvironment: parsed.appEnvironment,
+  });
+}
+
+/**
+ * The loopback API every surface falls back to in local development.
+ *
+ * Declared once. It used to be written out in each surface's own resolver,
+ * which is survivable, and in none of their middlewares, which was not: the
+ * header layer read the raw environment while the page layer applied this
+ * default, so a local surface advertised `connect-src 'self'` and then served a
+ * page that called this address. Every request the browser made was refused by
+ * the policy the same process had just set.
+ */
+export const loopbackApiBaseUrl = 'http://127.0.0.1:4000';
+
+/** The server environment a Next.js surface reads at request time. */
+export interface SurfaceEnvironment {
+  readonly NODE_ENV?: string | undefined;
+  readonly VELORA_API_BASE_URL?: string | undefined;
+  readonly VELORA_APP_ENV?: string | undefined;
+}
+
+/**
+ * One resolution of a Next.js surface's environment, for every consumer of it.
+ *
+ * The origin a page calls and the origin its Content-Security-Policy permits
+ * are the same fact, so they are derived together rather than separately. An
+ * absent `VELORA_APP_ENV` falls back to the runtime's own signal, which is the
+ * only inference here; everything else, including the refusal of a loopback
+ * endpoint outside local and test, belongs to `loadClientConfig`.
+ */
+export function resolveSurfaceConfig(
+  environment: SurfaceEnvironment,
+): ClientConfig {
+  return loadClientConfig({
+    apiBaseUrl: environment.VELORA_API_BASE_URL,
+    appEnvironment:
+      environment.VELORA_APP_ENV ??
+      (environment.NODE_ENV === 'production' ? 'production' : 'local'),
+    localDefaultApiBaseUrl: loopbackApiBaseUrl,
   });
 }
 
@@ -94,12 +156,7 @@ function isLoopbackApi(apiBaseUrl: string | undefined): boolean {
   if (apiBaseUrl === undefined || apiBaseUrl.length === 0) return false;
   try {
     const url = new URL(apiBaseUrl);
-    return (
-      url.protocol === 'http:' &&
-      (url.hostname === 'localhost' ||
-        url.hostname === '127.0.0.1' ||
-        url.hostname === '[::1]')
-    );
+    return url.protocol === 'http:' && isLoopbackHostname(url.hostname);
   } catch {
     return false;
   }
