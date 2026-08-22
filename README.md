@@ -40,9 +40,9 @@ Runtime versions are provisioned by [mise](https://mise.jdx.dev) from `mise.toml
 ```bash
 mise install
 pnpm install --frozen-lockfile
+pnpm dev:bootstrap
+pnpm dev
 pnpm ci:verify
-pnpm infra:up
-pnpm infra:down
 ```
 
 CI is `.github/workflows/verify.yml`. It provisions the same pinned toolchain and runs `pnpm ci:verify` on every push, pull request, and once daily, so the dependency risk acceptance expiries fire without waiting for a commit. It has read-only permissions and deploys nothing.
@@ -55,4 +55,8 @@ Identity Assurance is distinct from authentication. Its `unavailable` adapter is
 
 Browser AUTH end-to-end tests start a real API, PostgreSQL, and Redis before the browsers. The session cookie keeps its production attributes everywhere. WebKit does not store a `Secure` cookie delivered over plain-HTTP loopback, so the specs that need the browser to hold a session run on Chromium and Firefox; WebKit runs the transport, security-header, and surface-isolation specs. Access tokens are signed with Ed25519, so verifying one never requires material that could mint one.
 
-Copy `.env.example` only for local development. It contains safe local placeholders, never production credentials. If host services already use 5432 or 6379, set `VELORA_POSTGRES_PORT` or `VELORA_REDIS_PORT` before Compose and use the same ports in the local service URLs. Local Redis persists AOF/RDB data in a named volume so BullMQ restart durability can be tested; it is not a production topology or backup policy. `EPHEMERAL_REDIS_URL` and `QUEUE_REDIS_URL` must remain logically separate even when local development uses different logical databases on one instance.
+`pnpm dev:bootstrap` copies `.env.example` to `.env` when there is no `.env`, starts PostgreSQL and Redis, and applies migrations. It never overwrites an existing environment file, never generates a secret, and never resets a database; run its steps individually with `pnpm env:bootstrap`, `pnpm infra:up`, and `pnpm db:migrate`, and stop the containers with `pnpm infra:down`. `pnpm dev` then starts the API on 4000, Consumer Web on 3000, Creator Studio on 3001, Platform Admin on 3002, and the Expo dev server; the worker runs separately with `pnpm --filter @velora/api dev:worker`.
+
+Every environment variable Velora reads is declared once in `.env.example` and documented in [configuration and environments](docs/engineering/07-configuration-environments.md): owner, secret or public, which environment needs it, and what happens when it is absent. `pnpm env:check` fails the gate if that template, `packages/config/src/server.ts`, and that document ever disagree, so a configuration field cannot exist in only one of them. `.env.example` contains safe local placeholders, never production credentials, and `pnpm secrets:check` fails on a tracked environment file at any path.
+
+If host services already use 5432 or 6379, set `VELORA_POSTGRES_PORT` or `VELORA_REDIS_PORT` before Compose and use the same ports in the local service URLs. Local Redis persists AOF/RDB data in a named volume so BullMQ restart durability can be tested; it is not a production topology or backup policy. `EPHEMERAL_REDIS_URL` and `QUEUE_REDIS_URL` must remain logically separate even when local development uses different logical databases on one instance.

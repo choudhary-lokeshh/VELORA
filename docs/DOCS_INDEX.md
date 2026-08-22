@@ -172,6 +172,7 @@ These are architecture/product gates, not legal advice:
 | [Observability](engineering/04-observability.md) | Logs/metrics/traces and audit separation |
 | [Testing and release](engineering/05-testing-release.md) | Test layers, design/security/flow release evidence, rollout/rollback |
 | [AI engineering integration](engineering/06-ai-evaluation-observability.md) | Integration pointer to dedicated AI evaluation authority |
+| [Configuration and environments](engineering/07-configuration-environments.md) | Every environment variable Velora reads: owner, secret or public, which environment needs it, what a blank value means, what production does without it, and the local bootstrap path |
 | [Open decisions](decisions/DECISIONS_REQUIRED.md) | Unresolved technical/product/provider/design/legal decisions and deadlines |
 | [ADR-0001](decisions/ADR-0001-documentation-first.md) | Documentation-first, domain-boundary decision |
 | [ADR-0002](decisions/ADR-0002-isolated-ai-platform.md) | Accepted isolated/provider-neutral AI boundary |
@@ -203,7 +204,7 @@ These are architecture/product gates, not legal advice:
 
 Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](architecture/09-technical-stack.md), [product phases](product/01-product-phases.md), the owning surface/domain/flow, and relevant security/compliance authority.
 
-- Backend foundation: repository shape, domain boundaries, contracts/events, data ownership, ADR-0016, then unaffected portions of ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0013, and ADR-0014.
+- Backend foundation: repository shape, domain boundaries, contracts/events, data ownership, configuration and environments, ADR-0016, then unaffected portions of ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0013, and ADR-0014.
 - Consumer Web bootstrap: Consumer Web surface, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Consumer Mobile bootstrap: Consumer Mobile surface, notification/deep-link authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Creator Studio bootstrap: Creator Studio surface, creator/club domains and flows, Design/Figma authority, ADR-0016, ADR-0020, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0010, ADR-0013, ADR-0014, ADR-0015.
@@ -214,7 +215,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Media/storage: MEDIA, media upload/delivery security, media threat model, media provider eligibility, content owner/flow, outbound networking, jobs/idempotency, data ownership, provider adapters, ADR-0007, ADR-0010, ADR-0014, ADR-0019, ADR-0022, ADR-0023.
 - Billing and payouts: monetisation, BILLING/PAYOUTS, money flow, payment flow/security/compliance/operations, provider eligibility, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0019, ADR-0021.
 - AI: complete AI authority path, owning tool domains, AI action flow, ADR-0002, ADR-0007, ADR-0009, ADR-0012, ADR-0013, ADR-0014.
-- Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, dependency risk acceptance, ADR-0016, ADR-0019, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
+- Infrastructure and CI/CD: scale/resilience, observability/testing, incident/platform health, configuration and environments, dependency risk acceptance, ADR-0016, ADR-0019, unaffected portions of ADR-0003, ADR-0006, ADR-0007, ADR-0013, ADR-0014, open provider decisions.
 - AUTH and privileged access: AUTH domain, onboarding, RBAC, security baseline, admin operations, incident response, ADR-0009, ADR-0017, then the affected surface and owning domain.
 - Identity assurance: Identity Assurance domain/flow/threat model/provider eligibility/operations, AUTH and every evidence-consuming domain, privacy/outbound/jobs/migrations/API/observability/testing, ADR-0006, ADR-0007, ADR-0009, ADR-0014, ADR-0016, ADR-0017, ADR-0019, ADR-0020, ADR-0022, and ADR-0024.
 
@@ -234,7 +235,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Identity assurance: phases, Identity Assurance domain/flow, verification threat model/provider eligibility/operations, owner domain and surface, privacy/outbound/jobs/API/migrations/observability/testing, ADR-0024, and every owner ADR whose predicate consumes evidence.
 - Security/privacy: security baseline and every relevant specialized security/compliance/incident authority plus owning domain/flow.
 - Design/Figma: relevant product/surface/flow/security/phase, then all six Design/Figma documents and exact approved Figma handoff.
-- Provider integration: provider adapters, owner domain/flow/security, compliance gates, jobs/idempotency, observability/operations, open decisions, then provider-specific ADR. Start with local/mock/test adapter.
+- Provider integration: provider adapters, configuration and environments for the seam's existing variable and its fail-closed default, owner domain/flow/security, compliance gates, jobs/idempotency, observability/operations, open decisions, then provider-specific ADR. Start with local/mock/test adapter.
 - Compliance/market entry: all nine compliance docs, product phase/surface, every affected domain/provider, security/privacy, operations, Admin country gate, legal review.
 - Operations: relevant operations document, Admin surface/domain/RBAC/flow, affected domain/flow, observability, security/privacy/compliance.
 - AI: every document in AI authority, AI action flow/integration docs, product phases/surface, provider/outbound/jobs/RBAC/privacy/testing/operations, and every domain/tool contract involved.

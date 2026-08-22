@@ -25,6 +25,9 @@
     "toolchain:check": "node scripts/check-toolchain.mjs",
     "install:check": "node scripts/check-frozen-install.mjs",
     "workspace:check": "node scripts/check-workspace-policy.mjs",
+    "env:check": "node scripts/check-env-template.mjs",
+    "env:bootstrap": "node scripts/bootstrap-local-env.mjs",
+    "dev:bootstrap": "pnpm env:bootstrap && pnpm infra:up && pnpm db:migrate",
     "hygiene:check": "node scripts/check-hygiene.mjs",
     "whitespace:check": "git diff --check && pnpm hygiene:check",
     "contracts:generate": "pnpm --filter @velora/validation generate && pnpm --filter @velora/api-client generate",
@@ -36,7 +39,7 @@
     "db:migrate": "pnpm --filter @velora/api db:migrate",
     "audit:dependencies": "node scripts/check-dependency-security.mjs",
     "auth:policy": "node scripts/check-auth-policy.mjs",
-    "ci:verify": "pnpm toolchain:check && pnpm install:check && pnpm workspace:check && pnpm format:check && pnpm lint && pnpm boundaries && pnpm typecheck && pnpm contracts:check && pnpm auth:policy && pnpm test && pnpm test:integration && pnpm build:uncached && pnpm test:e2e && pnpm mobile:doctor && pnpm infra:config && pnpm secrets:check && pnpm whitespace:check && pnpm audit:dependencies"
+    "ci:verify": "pnpm toolchain:check && pnpm install:check && pnpm workspace:check && pnpm env:check && pnpm format:check && pnpm lint && pnpm boundaries && pnpm typecheck && pnpm contracts:check && pnpm auth:policy && pnpm test && pnpm test:integration && pnpm build:uncached && pnpm test:e2e && pnpm mobile:doctor && pnpm infra:config && pnpm secrets:check && pnpm whitespace:check && pnpm audit:dependencies"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

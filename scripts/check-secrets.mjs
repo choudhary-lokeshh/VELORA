@@ -21,8 +21,15 @@ const patterns = [
 const failures = [];
 for (const file of files) {
   if (!existsSync(file) || file === 'pnpm-lock.yaml') continue;
-  if (/^\.env(?:\.|$)/.test(file) && file !== '.env.example') {
-    failures.push(`${file}: environment file must not be tracked`);
+  // Any path, not just the repository root: an `apps/api/.env` is exactly as
+  // committed as a root one, and anchoring this to the root is how one gets
+  // missed. The single root template is the one exemption, so a second
+  // `.env.example` beside an application fails here rather than becoming a
+  // parallel place to declare configuration.
+  if (/(?:^|\/)\.env(?:\.|$)/u.test(file) && file !== '.env.example') {
+    failures.push(
+      `${file}: environment files must not be tracked; the only template is .env.example at the repository root`,
+    );
     continue;
   }
   const content = readFileSync(file, 'utf8');
