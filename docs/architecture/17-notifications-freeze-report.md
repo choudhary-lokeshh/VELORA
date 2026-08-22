@@ -89,7 +89,7 @@ Five migrations, expand-safe, with the one that adds a constraint to a populated
 | `3feb6f3` | Query plans at volume | 32579915826 | cancelled by the next push |
 | `5380fc8` | Correcting note for `3feb6f3` | 32580175673 | **failure** — see below |
 | `8bc8c11` | This freeze report | — | superseded before push |
-| `7c2647f` | Correct the concurrency assertion CI caught | pending | pending |
+| `104676b` | Correct the concurrency assertion CI caught | 32581908114 | success |
 
 **The hosted runner found a defect that eleven local runs did not.** The
 fifty-concurrent-registration test asserted that all fifty answers were `200`.
@@ -109,6 +109,35 @@ duplicate there is one person's notice arriving on another person's phone. The
 platform was never wrong; the test was.
 
 Recorded accurately rather than flatteringly. `3feb6f3` needed three local gate attempts: the first failed on a Prettier check over a file `expo-doctor` rewrote mid-run, the second on a hygiene failure over a file `expo-cli` generated without a trailing newline, and only the third was clean. Its hosted run was then cancelled by the push of `5380fc8`, which is a strict superset of it. `3feb6f3` also carries an unrelated `VELORA_BIND_HOST` change that a `git add -A` swept in; `5380fc8` records what happened and why nothing was rewritten.
+
+## The stability sequence, and what it found
+
+The twenty-run sequence was invalidated at run 3, and what invalidated it was
+not this vertical: five tests in `rtc-reconciliation.test.ts` failed together,
+reporting that the reconciler examined zero obligations when one had just been
+created.
+
+The cause is a clock race, and it is the second time this repository has met
+this class — `0f9f3b3` took paging stability off the container clock for the
+same underlying reason. PostgreSQL's `now()` and the worker's clock are
+different clocks: the database runs in a container whose clock measured roughly
+twenty milliseconds *ahead* of the host's, and the reconciler claims what is due
+against its own clock (`available_at <= input.now`). An obligation written at
+the database's `now()` is therefore in the future by the reconciler's reckoning
+for the first few tens of milliseconds of its life, and a discharge cycle inside
+that window examines nothing.
+
+It fails intermittently and, counter-intuitively, on the *fastest* runs: a fast
+run leaves less wall time between the insert and the claim. The same five tests
+had failed once earlier in this session and were attributed to the machine
+having slept. That diagnosis was wrong, and the second occurrence — with no
+sleep involved and on the fastest of three runs — is what disproved it.
+
+The fix backdates the seeded obligation by a second, which dwarfs any plausible
+skew and weakens nothing: those tests are about the claim and discharge cycle,
+and the due-time boundary is covered on its own terms by
+`leaves a deferred obligation alone until its backoff has passed`. No runtime
+code changed, because no runtime code was wrong.
 
 ## What is frozen
 

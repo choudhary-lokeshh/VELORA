@@ -101,11 +101,31 @@ async function owedTeardown(
        ${reference}, 'ended', now(), now(), now(), 'hung_up')`,
   );
   const inserted = await rowsOf<{ id: number }>(
+    /**
+     * `available_at` is deliberately a second in the past, and that second is
+     * load-bearing.
+     *
+     * PostgreSQL's `now()` and this process's clock are different clocks. The
+     * database runs in a container whose clock sits a few tens of milliseconds
+     * ahead of the host's, and the reconciler claims what is due against *its*
+     * clock: `available_at <= input.now`. An obligation written at the
+     * database's `now()` is therefore in the future by the reconciler's
+     * reckoning for the first few tens of milliseconds of its life, and a
+     * `dischargeOnce` that runs inside that window examines nothing.
+     *
+     * That is exactly how this suite failed — intermittently, and only on the
+     * fastest runs, because a fast run leaves less wall time between this
+     * insert and the claim. Backdating by a second dwarfs any plausible skew
+     * and asserts nothing less: these tests are about the claim and discharge
+     * cycle, not about the due-time boundary, which
+     * `leaves a deferred obligation alone until its backoff has passed` covers
+     * on its own terms.
+     */
     database.sql`insert into realtime_provider_obligations
       (attempts, available_at, created_at, kind, provider, provider_reference,
        session_id, state, updated_at)
-     values (0, now(), now(), 'terminate_session', 'local-test', ${reference},
-       ${sessionId}, 'pending', now())
+     values (0, now() - interval '1 second', now(), 'terminate_session',
+       'local-test', ${reference}, ${sessionId}, 'pending', now())
      returning id`,
   );
   const obligationId = inserted[0]?.id;
