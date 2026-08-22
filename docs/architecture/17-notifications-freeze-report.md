@@ -87,7 +87,26 @@ Five migrations, expand-safe, with the one that adds a constraint to a populated
 | `7e55a7e` | Admin delivery operations | 32570430232 | success |
 | `d359001` | Red-team | 32571919595 | success |
 | `3feb6f3` | Query plans at volume | 32579915826 | cancelled by the next push |
-| `5380fc8` | Correcting note for `3feb6f3` | 32580175673 | see below |
+| `5380fc8` | Correcting note for `3feb6f3` | 32580175673 | **failure** — see below |
+| `8bc8c11` | This freeze report | — | superseded before push |
+| `7c2647f` | Correct the concurrency assertion CI caught | pending | pending |
+
+**The hosted runner found a defect that eleven local runs did not.** The
+fifty-concurrent-registration test asserted that all fifty answers were `200`.
+That passed locally every time and failed on CI, because registration
+serializes on an advisory lock over the token and database admission bounds how
+many requests may be in flight, declining the rest with a retryable `503`
+rather than holding them. Fifty simultaneous registrations of one token are a
+convoy on that lock, so on a slower machine some reach the admission wait and
+are refused — which is [ADR-0019](../decisions/ADR-0019-database-connection-admission.md)
+working, not failing.
+
+The test was asserting a throughput guarantee the platform deliberately
+declines to make. It now asserts what the platform does promise: no answer is
+an internal error, at least one registration succeeds, and concurrency cannot
+produce a second live registration. The last is the one that matters, because a
+duplicate there is one person's notice arriving on another person's phone. The
+platform was never wrong; the test was.
 
 Recorded accurately rather than flatteringly. `3feb6f3` needed three local gate attempts: the first failed on a Prettier check over a file `expo-doctor` rewrote mid-run, the second on a hygiene failure over a file `expo-cli` generated without a trailing newline, and only the third was clean. Its hosted run was then cancelled by the push of `5380fc8`, which is a strict superset of it. `3feb6f3` also carries an unrelated `VELORA_BIND_HOST` change that a `git add -A` swept in; `5380fc8` records what happened and why nothing was rewritten.
 

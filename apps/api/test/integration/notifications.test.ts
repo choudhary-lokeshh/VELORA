@@ -1930,13 +1930,34 @@ describe('push device registration', () => {
     const recipient = await deviceOwner();
 
     // The same device registering fifty times at once, which is what a retry
-    // storm or a reconnecting app actually looks like. The partial unique
-    // index decides; nothing here reads-then-writes.
+    // storm or a reconnecting app actually looks like.
     const results = await Promise.all(
       Array.from({ length: 50 }, async () => register(recipient)),
     );
 
-    expect(results.every((result) => result.status === 200)).toBe(true);
+    /**
+     * Every answer is either the registration or a refusal to begin it.
+     *
+     * Not "all fifty succeed". Registration serializes on an advisory lock over
+     * the token, and database admission bounds how many requests may be in
+     * flight at once and declines the rest with a retryable 503 rather than
+     * holding them — which is [ADR-0019](../../../docs/decisions/ADR-0019-database-connection-admission.md)
+     * working, not failing. Fifty simultaneous registrations of one token is a
+     * convoy on that lock, so on a slower machine some of them reach the
+     * admission wait and are refused. The first version of this test asserted
+     * fifty 200s, passed on every local run, and failed on the hosted runner:
+     * it was asserting a throughput guarantee the platform deliberately
+     * declines to make.
+     *
+     * What the platform does promise is that no answer is an internal error
+     * and that concurrency cannot produce a second live registration. Both are
+     * asserted, and the second is the one that matters — a duplicate here is
+     * one person's notice arriving on another person's phone.
+     */
+    expect(
+      results.every((result) => result.status === 200 || result.status === 503),
+    ).toBe(true);
+    expect(results.some((result) => result.status === 200)).toBe(true);
     expect(await liveDevices(recipient.id)).toHaveLength(1);
   });
 });
