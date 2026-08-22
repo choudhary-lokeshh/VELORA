@@ -43,6 +43,8 @@ import {
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
 import { ConversationParticipation } from '../../src/messaging/participation.js';
 import type { NotificationChannelPort } from '../../src/notifications/channel.js';
+import { NotificationOperations } from '../../src/notifications/operations.js';
+import { NotificationRepository } from '../../src/notifications/repository.js';
 import {
   createNotificationsApiRuntime,
   type NotificationsApiRuntime,
@@ -363,6 +365,14 @@ export function testAdminRuntime(input: {
     input.identity ?? testIdentityRuntime({ config: input.config, database });
   return createAdminRuntime({
     caller: input.caller,
+    // NOTIFICATIONS' own operational read. A direct Admin test may exercise no
+    // notification route, and composing it here costs nothing: it is a query
+    // object over the same database, with no adapter and no side effect.
+    notifications: new NotificationOperations({
+      deliveryChannel: input.config.NOTIFICATIONS_DELIVERY_CHANNEL,
+      now: () => new Date(),
+      repository: new NotificationRepository(database),
+    }),
     capabilities: {
       commerceEligibility: input.config.BILLING_COMMERCE_ELIGIBILITY,
       commercePolicy: input.config.BILLING_COMMERCE_POLICY,

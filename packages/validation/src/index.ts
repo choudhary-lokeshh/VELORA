@@ -45,6 +45,8 @@ import {
   adminMediaPurgeRequestSchema,
   adminMediaPurgeResponseSchema,
   adminMediaStateResponseSchema,
+  adminNotificationDeliverySchema,
+  adminNotificationStateResponseSchema,
   adminRtcCallSchema,
   adminRtcStateResponseSchema,
   adminOperationResponseSchema,
@@ -251,6 +253,8 @@ export const apiRoutePaths = {
   adminMediaPurge: '/v1/admin/media/purge',
   adminMediaState: '/v1/admin/media/state',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
+  adminNotificationDelivery: '/v1/admin/notifications/delivery',
+  adminNotificationState: '/v1/admin/notifications/state',
   adminRtcCall: '/v1/admin/rtc/call',
   adminRtcState: '/v1/admin/rtc/state',
   adminSafetyAppealOutcome: '/v1/admin/safety/appeals/outcome',
@@ -403,6 +407,8 @@ export const apiSchemas = {
   AdminMediaPurgeRequest: adminMediaPurgeRequestSchema,
   AdminMediaPurgeResponse: adminMediaPurgeResponseSchema,
   AdminMediaStateResponse: adminMediaStateResponseSchema,
+  AdminNotificationDelivery: adminNotificationDeliverySchema,
+  AdminNotificationStateResponse: adminNotificationStateResponseSchema,
   AdminOperationResponse: adminOperationResponseSchema,
   AdminRtcCall: adminRtcCallSchema,
   AdminRtcStateResponse: adminRtcStateResponseSchema,
@@ -516,6 +522,7 @@ export const apiQueryParameters = {
   adminSearch: adminCreatorSearchSchema,
   assetId: z.uuid(),
   caseId: z.uuid(),
+  deliveryId: z.uuid(),
   moderationQueue: moderationQueueSchema,
   ownerDomain: adminIdentityOwnerDomainSchema,
   ownerReference: z.uuid(),
@@ -2269,6 +2276,49 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Upholding a complaint names the superseding decision that replaced the original, and the server refuses one that does not genuinely replace it. Every outcome records the operator who reached it, because a complaint may not be decided solely by automated means and a column only a person fills is how that stops being a promise.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminNotificationState',
+    path: apiRoutePaths.adminNotificationState,
+    responses: {
+      '200': {
+        description:
+          'Notification delivery in operational terms: how many notices are in each state, how many attempts ended each way, failures by the class that decided what happened next, why notices were suppressed, how many verified provider events are waiting to be applied, how many device registrations are live and why the rest were retired, and how long the oldest owed thing in each class has been waiting. Counts, ages, and the adapter name only: no notice identifier, no account, and no device.',
+        schemaName: 'AdminNotificationStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A read and only a read. There is no list of notices and no search anywhere in this contract: an operator able to page through them would have a browsing surface over who is told about whom. The failure row is the one that separates an outage on this side from a problem with a destination, and the adapter is named rather than reported as a boolean so that "off" and "off because no delivery provider has been approved" stay distinguishable.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminNotificationDelivery',
+    path: apiRoutePaths.adminNotificationDelivery,
+    requestQuery: [
+      { description: 'The delivery to describe', name: 'deliveryId' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One delivery\u2019s lifecycle: its state, channel, template, timings, how many attempts it has spent, whether a worker currently holds it, why it last failed, and why it was suppressed if it was.',
+        schemaName: 'AdminNotificationDelivery',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description:
+          'No delivery matches that identifier. Answered the same way for one that never existed, so guessing identifiers is not productive here either.',
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Answers about one delivery whose identifier the operator already holds from a report or a reconciliation finding. It carries the technical lifecycle every consumer surface is deliberately denied, and it carries no recipient, no subject, and no payload \u2014 the question is why a notice did not go, and none of those three answer it. It reports that a worker holds the notice without naming which, because an operator cannot act on a process identifier.',
   },
   {
     method: 'get',

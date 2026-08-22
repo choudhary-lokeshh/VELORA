@@ -9,7 +9,9 @@ import type {
   CreatorsRepository,
 } from '../creators/repository.js';
 import type { MediaOperations } from '../media/operations.js';
+import type { NotificationOperations } from '../notifications/operations.js';
 import type { RtcOperations } from '../realtime/operations.js';
+import { AdminNotificationRoutes } from './notification-routes.js';
 import { AdminRtcRoutes } from './rtc-routes.js';
 import type { IdentityOperations } from '../identity/operations.js';
 import type { AppealService } from '../safety/appeals.js';
@@ -34,6 +36,7 @@ export interface AdminRuntime {
   readonly identityRoutes: AdminIdentityRoutes;
   /** Operator media surface. A read, a read, and one idempotent repair. */
   readonly mediaRoutes: AdminMediaRoutes;
+  readonly notificationRoutes: AdminNotificationRoutes;
   readonly rtcRoutes: AdminRtcRoutes;
   /** Operator moderation surface. Every route is an explicit command. */
   readonly moderationRoutes: AdminModerationRoutes;
@@ -92,6 +95,7 @@ export function createAdminRuntime(input: {
    * goes through TRUST & SAFETY where it acquires a record, a reason, and an
    * appeal path.
    */
+  readonly notifications: NotificationOperations;
   readonly rtc: RtcOperations;
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
@@ -130,6 +134,10 @@ export function createAdminRuntime(input: {
         ? {}
         : { exactActions: input.privilegedAccess }),
       identity: input.identity,
+    }),
+    notificationRoutes: new AdminNotificationRoutes({
+      adminContext,
+      operations: input.notifications,
     }),
     rtcRoutes: new AdminRtcRoutes({
       adminContext,

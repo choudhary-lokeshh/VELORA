@@ -106,6 +106,20 @@ Today one feedback type has an effect with teeth. `token_invalid` retires every 
 
 An event naming something this platform has no record of is neither an error nor a reason to retry. A provider may report about a device that was never registered here, and the honest response is to record that it did not match rather than to keep asking or to invent the missing row.
 
+## What an operator may see, and what they may not do
+
+The operational read lives in NOTIFICATIONS rather than in ADMIN, on the rule MEDIA's and REALTIME's views already follow: nothing outside this domain queries a `notifications_` table, and an operator genuinely needs the technical lifecycle, so the query belongs where the rule is.
+
+The state screen is counts, ages, and the adapter name, and **carries no identifier of any kind** — not a notice, not an account, not a device. A screen an operator watches all day must not become a window onto who is being told about whom, and one person being notified about another is not an operational fact. Every declared state appears every time, including the zeroes, because a list that omitted the healthy states could not tell an operator "nothing is stuck" apart from "the signal stopped arriving".
+
+There is **no list and no search**. An operator able to page through notices has a browsing surface over who contacts whom, which is not an operations tool however it is labelled. The detail route answers about one delivery whose identifier the operator already holds from a report or a reconciliation finding, and it carries no recipient, no subject, and no payload: the question is why a notice did not go, and none of those three answer it. It reports that a worker holds a notice without naming which, because an operator cannot act on a process identifier.
+
+The failure row is the one that earns its place. Failures grouped by the class that decided what happened next separate an outage on this side from a problem with a destination: a wall of `transport` is an outage, a wall of `hard_bounce` is a list problem, and a wall of `invalid_token` is a fleet of devices that should have been retired and were not.
+
+There is **no action** at all: no retrying a notice, no suppressing a destination, no clearing a dead letter. Each of those has consequences for a person — a retry sends somebody a message, a suppression stops one arriving — and none has an approved authority, an audit record, or a reason vocabulary yet. An operator button would be that power with none of those. What will not deliver is reconciliation's problem and is surfaced as a number to be alerted on rather than a button to be pressed; adding one is a decision in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), not an implementation detail.
+
+The adapter is reported from what the process actually composed rather than from the configuration meant to select it. A screen naming the configured adapter while the process runs another is exactly the lie an operations screen exists to prevent.
+
 ## In-app notifications, and the second V1 event
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.

@@ -25,6 +25,7 @@ import {
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
 import { createAdminRuntime, type AdminRuntime } from './admin/composition.js';
+import { NotificationOperations } from './notifications/operations.js';
 import {
   createBillingRuntime,
   type BillingRuntime,
@@ -429,6 +430,18 @@ export function createApplication(
         safety: safety.directory,
         standing: users.standing,
       });
+    // NOTIFICATIONS before ADMIN, because ADMIN takes its operational read and
+    // must report the adapter this process actually composed rather than the
+    // configuration meant to select one.
+    notifications =
+      injectedNotifications ??
+      createNotificationsApiRuntime({
+        config,
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        logger,
+        safety: safety.directory,
+      });
     // ADMIN is composed last because it operates every other domain and owns
     // none of them: it takes their repositories and writes through them.
     admin =
@@ -455,6 +468,15 @@ export function createApplication(
         // cache the news, and that is the whole of what a takedown may ask of
         // the bytes.
         media: { operations: media.operations, purge: media.service },
+        // NOTIFICATIONS' own operational read, on the same rule. ADMIN gets the
+        // read and no action: retrying a notice sends somebody a message and
+        // suppressing a destination stops one arriving, and neither has an
+        // approved authority, an audit record, or a reason vocabulary yet.
+        notifications: new NotificationOperations({
+          deliveryChannel: notifications.providerChannelName,
+          now: () => new Date(),
+          repository: notifications.repository,
+        }),
         // REALTIME's own operational read, on the same rule MEDIA follows:
         // nothing outside that domain queries its tables. ADMIN gets the read
         // and no action — ending a call is a safety decision and goes through
@@ -471,15 +493,6 @@ export function createApplication(
         appeals: safety.appeals,
         moderation: safety.moderation,
         safety: safety.authority,
-      });
-    notifications =
-      injectedNotifications ??
-      createNotificationsApiRuntime({
-        config,
-        consumerContext: users.consumerContext,
-        database: ownedDatabase.database,
-        logger,
-        safety: safety.directory,
       });
   } else {
     // Domains need typed data access, not a health probe. A caller that
@@ -1134,6 +1147,18 @@ export function createApplication(
     .get(
       apiRoutePaths.adminIdentitySubject,
       admitted(async (input) => admin.identityRoutes.getIdentitySubject(input)),
+    )
+    .get(
+      apiRoutePaths.adminNotificationState,
+      admitted(async (input) =>
+        admin.notificationRoutes.getNotificationState(input),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminNotificationDelivery,
+      admitted(async (input) =>
+        admin.notificationRoutes.getNotificationDelivery(input),
+      ),
     )
     .get(
       apiRoutePaths.adminRtcState,

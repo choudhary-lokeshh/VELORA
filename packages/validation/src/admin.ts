@@ -907,3 +907,84 @@ export const adminMediaPurgeResponseSchema = z
 export type AdminMediaPurgeResponse = z.infer<
   typeof adminMediaPurgeResponseSchema
 >;
+
+/**
+ * Which notification adapter is in force, reported by name.
+ *
+ * `unavailable` is the truth about a deployed environment: no approved email or
+ * push provider, so nothing is sent rather than half-sent. Reporting the name
+ * rather than a boolean is what makes "off" and "off because nobody has
+ * approved one" distinguishable without a second screen.
+ */
+export const adminNotificationAdapterStateSchema = z
+  .object({ deliveryChannel: z.string().min(1).max(64) })
+  .strict();
+
+/**
+ * Notification delivery in operational terms.
+ *
+ * Counts and ages, and no identifier of any kind — not a notice, not an
+ * account, not a device. A screen an operator watches all day must not become a
+ * window onto who is being told about whom, and one person being notified about
+ * another is not an operational fact. There is deliberately no list and no
+ * search here for the same reason.
+ */
+export const adminNotificationStateResponseSchema = z
+  .object({
+    adapters: adminNotificationAdapterStateSchema,
+    /** Attempts by outcome. */
+    attempts: z.array(adminMediaCountSchema),
+    /**
+     * Owed work that is not moving, every class every time. A list that omitted
+     * the healthy classes could not tell an operator "nothing is stuck" apart
+     * from "the signal stopped arriving".
+     */
+    backlogs: z.array(adminMediaBacklogSchema),
+    /** Registrations by whether they are live, and by why they are not. */
+    devices: z.array(adminMediaCountSchema),
+    /**
+     * Failures by the class that decided what happened next. This is the row
+     * that separates "something is wrong with us" from "something is wrong
+     * with a destination".
+     */
+    failures: z.array(adminMediaCountSchema),
+    intents: z.array(adminMediaCountSchema),
+    providerEvents: z.array(adminMediaCountSchema),
+    suppressions: z.array(adminMediaCountSchema),
+  })
+  .strict();
+
+/**
+ * One delivery, for an operator who already has its identifier.
+ *
+ * Carries the lifecycle, because triaging a stuck notice without it is
+ * guesswork. Carries **no recipient, no subject, and no payload**: the question
+ * an operator has is why a notice did not go, and none of those three answer
+ * it. `leaseHeld` says whether a worker holds it, not which one — an operator
+ * cannot act on a process identifier.
+ */
+export const adminNotificationDeliverySchema = z
+  .object({
+    attemptOutcomes: z.array(adminMediaCountSchema),
+    attempts: z.number().int().min(0),
+    channel: z.string().min(1).max(32),
+    createdAt: z.iso.datetime(),
+    deliveredAt: z.iso.datetime().optional(),
+    expiresAt: z.iso.datetime(),
+    /** A redacted code from the last failure. Never a provider message. */
+    failureReason: z.string().min(1).max(128).optional(),
+    id: z.uuid(),
+    leaseHeld: z.boolean(),
+    nextAttemptAt: z.iso.datetime(),
+    state: z.string().min(1).max(32),
+    suppressionReason: z.string().min(1).max(64).optional(),
+    templateKey: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type AdminNotificationStateResponse = z.infer<
+  typeof adminNotificationStateResponseSchema
+>;
+export type AdminNotificationDelivery = z.infer<
+  typeof adminNotificationDeliverySchema
+>;

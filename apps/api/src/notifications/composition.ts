@@ -53,6 +53,8 @@ export interface NotificationsRuntime {
  */
 export interface NotificationsApiRuntime {
   readonly devices: PushDeviceService;
+  /** The adapter this process actually composed, for the operations screen. */
+  readonly providerChannelName: string;
   /** Receives provider feedback. Records it; never applies it. */
   readonly providerEventRoutes: NotificationProviderEventRoutes;
   readonly feed: NotificationFeedService;
@@ -159,13 +161,18 @@ export function createNotificationsApiRuntime(input: {
   });
   const preferences = new NotificationPreferenceService({ now, repository });
   const devices = new PushDeviceService({ now, repository });
+  const channel = input.channel ?? selectChannel(input.config);
   return {
     devices,
+    // Reported from what was composed rather than from the configuration meant
+    // to select it. A screen naming the configured adapter while the process
+    // runs another is exactly the lie an operations screen exists to prevent.
+    providerChannelName: channel.provider,
     feed,
     preferences,
     providerEventRoutes: new NotificationProviderEventRoutes(
       new NotificationProviderEventService({
-        channel: input.channel ?? selectChannel(input.config),
+        channel,
         logger: input.logger,
         now,
         repository,

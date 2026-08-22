@@ -16,13 +16,19 @@ import {
   UnavailableNotificationChannel,
 } from '../../src/notifications/channel.js';
 import { RegisteredDeviceDestinations } from '../../src/notifications/destinations.js';
+import { NotificationOperations } from '../../src/notifications/operations.js';
 import { NotificationProviderEventService } from '../../src/notifications/provider-events.js';
 import {
   createNotificationsApiRuntime,
   createNotificationsRuntime,
 } from '../../src/notifications/composition.js';
 import { NotificationDeliveryService } from '../../src/notifications/delivery.js';
-import { maximumDeliveryAttempts } from '../../src/notifications/policy.js';
+import {
+  deliveryFailureClasses,
+  maximumDeliveryAttempts,
+  notificationStates,
+  suppressionReasons,
+} from '../../src/notifications/policy.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
@@ -2262,5 +2268,108 @@ describe('provider feedback is hostile input until it authenticates', () => {
     // calling this at all, so the request is refused before verification.
     expect(outcome.kind).toBe('unavailable');
     expect(await events()).toHaveLength(0);
+  });
+});
+
+describe('what an operator may see of delivery', () => {
+  const operations = new NotificationOperations({
+    deliveryChannel: 'local-test',
+    now,
+    repository: notifications.repository,
+  });
+
+  it('reports every declared state, including the zeroes', async () => {
+    const state = await operations.operationalState();
+
+    // A list that omitted the healthy states could not tell an operator
+    // "nothing is stuck" apart from "the signal stopped arriving", and those
+    // are opposite situations.
+    expect(state.intents.map((entry) => entry.state).toSorted()).toEqual(
+      [...notificationStates].toSorted(),
+    );
+    expect(state.failures.map((entry) => entry.state).toSorted()).toEqual(
+      [...deliveryFailureClasses].toSorted(),
+    );
+    expect(state.suppressions.map((entry) => entry.state).toSorted()).toEqual(
+      [...suppressionReasons].toSorted(),
+    );
+    expect(state.adapters.deliveryChannel).toBe('local-test');
+  });
+
+  it('carries no identifier of any kind', async () => {
+    const { conversationId, sender } = await pair();
+    await sendMessage(sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+    await notifications.delivery.deliverDue();
+
+    const serialized = JSON.stringify(await operations.operationalState());
+
+    // A screen an operator watches all day must not become a window onto who
+    // is being told about whom. Counts and ages only.
+    expect(serialized).not.toContain(sender.id);
+    expect(serialized).not.toContain(conversationId);
+    expect(serialized).not.toMatch(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/u,
+    );
+  });
+
+  it('answers about one delivery without naming who it was for', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await sendMessage(sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+    await notifications.delivery.deliverDue();
+    const intentId = (await intents())[0]?.id ?? '';
+
+    const detail = await operations.deliveryDetail(intentId);
+
+    expect(detail?.id).toBe(intentId);
+    expect(detail?.state).toBe('delivered');
+    expect(detail?.channel).toBe('push');
+    expect(detail?.templateKey).toBe(messageTemplateKey);
+    // The question is why a notice did not go. A recipient, a subject, and a
+    // payload answer none of it, so none of them is here.
+    const serialized = JSON.stringify(detail);
+    expect(serialized).not.toContain(recipient.id);
+    expect(serialized).not.toContain(sender.id);
+    expect(serialized).not.toContain(conversationId);
+    expect(serialized).not.toContain('payload');
+    // Whether a worker holds it, never which one: an operator cannot act on a
+    // process identifier.
+    expect(detail?.leaseHeld).toBe(false);
+    expect(serialized).not.toContain('leaseOwner');
+  });
+
+  it('answers nothing for an identifier that matches nothing', async () => {
+    expect(
+      await operations.deliveryDetail(crypto.randomUUID()),
+    ).toBeUndefined();
+  });
+
+  it('counts live registrations beside the reasons the rest were retired', async () => {
+    const owner = await consumer('ops-device@velora.test');
+    await handle(
+      post('/v1/notifications/devices', owner, {
+        installationId: 'ops-install-1',
+        platform: 'ios',
+        token: 'f'.repeat(64),
+      }),
+    );
+
+    const devices = (await operations.operationalState()).devices;
+
+    // The interesting comparison is between them: a fleet retiring faster than
+    // it registers is a client bug, and neither number says so alone.
+    expect(devices.find((entry) => entry.state === 'active')?.count).toBe(1);
+    expect(devices.map((entry) => entry.state)).toContain(
+      'provider_invalidated',
+    );
   });
 });
