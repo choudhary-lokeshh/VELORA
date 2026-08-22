@@ -59,7 +59,23 @@ import {
 } from '../support/profile-media.js';
 
 const databaseUrl = await provisionDatabase('velora_notifications');
-const database: TestDatabase = connectDatabase(databaseUrl);
+/**
+ * Headroom above this suite's own peak, not the default twenty.
+ *
+ * Two tests here fire fifty simultaneous requests — one registering the same
+ * device, one redelivering the same provider event. Admission bounds route
+ * concurrency at sixteen, and each admitted request holds a connection for a
+ * transaction that also holds an advisory lock, while the suite's own
+ * assertions query alongside them. A pool that has to queue a caller while it
+ * is serving transactions is the shape `connectDatabase` documents as able to
+ * strand a connection `idle in transaction`, and the answer the other
+ * concurrency suites already use is a bigger pool rather than a smaller test.
+ *
+ * Found by the stability sequence: run 9 of 20 returned a status that was
+ * neither the registration nor an admission refusal, on eight previously clean
+ * runs of identical code.
+ */
+const database: TestDatabase = connectDatabase(databaseUrl, { max: 60 });
 
 const healthy = {
   close: () => Promise.resolve(),
@@ -1954,9 +1970,17 @@ describe('push device registration', () => {
      * asserted, and the second is the one that matters — a duplicate here is
      * one person's notice arriving on another person's phone.
      */
-    expect(
-      results.every((result) => result.status === 200 || result.status === 503),
-    ).toBe(true);
+    // Asserted as the list of offending statuses rather than as a boolean, so
+    // a failure names what arrived instead of leaving the next reader to
+    // guess. The first version reported only `false`, which cost a cycle.
+    const unexpected = [
+      ...new Set(
+        results
+          .map((result) => result.status)
+          .filter((status) => status !== 200 && status !== 503),
+      ),
+    ];
+    expect(unexpected).toEqual([]);
     expect(results.some((result) => result.status === 200)).toBe(true);
     expect(await liveDevices(recipient.id)).toHaveLength(1);
   });

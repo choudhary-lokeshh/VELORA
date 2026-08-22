@@ -139,6 +139,30 @@ and the due-time boundary is covered on its own terms by
 `leaves a deferred obligation alone until its backoff has passed`. No runtime
 code changed, because no runtime code was wrong.
 
+### The second attempt, and the second finding
+
+The sequence was restarted on the fixed code and reached run 9 of 20 before a
+single test failed: the fifty-concurrent registration returned a status that was
+neither the registration nor an admission refusal. Eight runs of identical code
+had been clean.
+
+The cause was this suite's connection pool, not the runtime. `connectDatabase`
+defaults to twenty connections and documents the failure mode precisely — a pool
+that must queue a caller while it is also serving transactions can strand a
+connection `idle in transaction` — and every other suite driving high
+concurrency already asks for sixty. This one fires fifty simultaneous requests
+in two places, registration and callback redelivery, on the default. The repo's
+own note says such a suite "needs headroom above its own peak rather than a
+smaller test", so the pool was raised rather than the concurrency lowered.
+
+The assertion also reported only `false`, which cost a diagnostic cycle. It now
+asserts the list of offending statuses, so the next failure names what arrived.
+
+Three defects in this vertical's own test code have now been caught by running
+it rather than by reading it: a throughput assumption that only fails on slow
+machines, a clock race that only fails on fast ones, and a pool that only fails
+under sustained repetition. None was a defect in the runtime.
+
 ## What is frozen
 
 **PRODUCTION NOTIFICATIONS DELIVERY CORE: FROZEN.** The obligation model, failure classification, preference authority, device lifecycle, destination resolution, callback inbox, retry and dead-letter behaviour, operational read, and their evidence are complete and green.
