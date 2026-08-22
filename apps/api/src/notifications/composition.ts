@@ -13,6 +13,7 @@ import {
   type NotificationChannelPort,
 } from './channel.js';
 import { NotificationDeliveryService } from './delivery.js';
+import { RegisteredDeviceDestinations } from './destinations.js';
 import { PushDeviceService } from './devices.js';
 import { NotificationFeedService } from './feed.js';
 import {
@@ -100,6 +101,7 @@ export function createNotificationsRuntime(input: {
     channel,
     delivery: new NotificationDeliveryService({
       channel,
+      destinations: new RegisteredDeviceDestinations(repository),
       logger: input.logger,
       now,
       owner: input.owner ?? `notifications-${crypto.randomUUID()}`,

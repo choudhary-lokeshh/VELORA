@@ -66,6 +66,16 @@ Preference is evaluated inside the claiming transaction, last. The platform's ow
 
 A push preference is a decision about being interrupted, not about being told. An opted-out notice is still written to the in-app feed and still appears when the person opens the app; what does not happen is the external send.
 
+## Delivery needs somewhere to arrive
+
+A notice is aimed at a destination, and the destination is resolved inside the claiming transaction rather than remembered from when the notice was created. A device registered last week may have been retired since, and a notice aimed at a retired registration is one nobody receives.
+
+A recipient with no destination is a suppression — `destination_unavailable` — and not a failure. Nothing was wrong and nobody was asked, so no attempt budget is spent. It is also what stops the delivered path from lying: before this, the development channel reported success for a recipient with no registered device at all, which is a report that somebody was reached who had nothing to reach.
+
+Every live device is handed to the adapter in one request. Fan-out across devices is the adapter's business; the obligation is still one thing the platform owes one person, with one intent, one retry budget, and one attempt history. What crosses that seam is a device reference and a platform — never a token and never a fingerprint.
+
+Email and SMS resolve to no destination for anybody, and that is a statement about the platform rather than about any recipient. **No domain stores an email address.** `auth_identities` holds an opaque provider subject, and AUTH's recovery port takes a destination as a parameter without keeping one. That gap blocks the email channel more completely than the absence of an approved provider does: an approved vendor would still have nowhere to send. It is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), and it belongs to AUTH rather than here — NOTIFICATIONS observes deliverability and never owns an identity.
+
 ## Push device registration, and why a token is not an identity
 
 A push token is a bearer credential for reaching a device. Whoever is holding that device receives whatever is sent to it, which makes every rule here a rule about the device rather than about the person.

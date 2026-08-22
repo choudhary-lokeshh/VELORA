@@ -167,6 +167,16 @@ export const suppressionReasons = [
    * for a mandatory category: the preferences table refuses to store one.
    */
   'recipient_opted_out',
+  /**
+   * There is nowhere to send it. No device is registered for a push notice, or
+   * no address exists for an email one.
+   *
+   * This is a suppression rather than a failure because nothing was wrong and
+   * nobody was asked. It is also the reason the delivered path cannot lie: a
+   * channel that reported success for a recipient with no destination would be
+   * reporting that somebody was reached who could not have been.
+   */
+  'destination_unavailable',
 ] as const;
 export type SuppressionReason = (typeof suppressionReasons)[number];
 

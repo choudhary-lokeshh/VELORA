@@ -6,6 +6,10 @@ import type {
   NotificationChannelPort,
   NotificationReceipt,
 } from './channel.js';
+import type {
+  DeliveryDestination,
+  DeliveryDestinationPort,
+} from './destinations.js';
 import {
   channelUnavailableRetryMilliseconds,
   defaultPreferenceEnabled,
@@ -47,6 +51,7 @@ export type DeliveryOutcome =
 
 type ClaimResult =
   | {
+      readonly destinations: readonly DeliveryDestination[];
       readonly kind: 'claimed';
       readonly intent: NotificationIntentRow;
       readonly template: NotificationTemplate;
@@ -56,6 +61,7 @@ type ClaimResult =
 
 export interface NotificationDeliveryDependencies {
   readonly channel: NotificationChannelPort;
+  readonly destinations: DeliveryDestinationPort;
   readonly logger: SafeLogger;
   readonly now: () => Date;
   /** Identifies this worker's claims. Survives in the row, not in memory. */
@@ -152,7 +158,11 @@ export class NotificationDeliveryService {
       return { intentId, kind: 'suppressed', reason: claim.reason };
     }
 
-    const receipt = await this.send(claim.intent, claim.template.channel);
+    const receipt = await this.send(
+      claim.intent,
+      claim.template.channel,
+      claim.destinations,
+    );
     return this.settle(claim.intent, claim.template.channel, receipt);
   }
 
@@ -199,23 +209,23 @@ export class NotificationDeliveryService {
         });
         if (claimed === undefined) return { kind: 'skipped' };
 
-        const reason = await this.suppressionFor(
-          executor,
-          claimed,
-          template,
-          now,
-        );
-        if (reason !== undefined) {
+        const evaluated = await this.evaluate(executor, claimed, template, now);
+        if (evaluated.reason !== undefined) {
           await this.recordSuppression(
             executor,
             claimed,
             template.channel,
-            reason,
+            evaluated.reason,
             now,
           );
-          return { kind: 'suppressed', reason };
+          return { kind: 'suppressed', reason: evaluated.reason };
         }
-        return { intent: claimed, kind: 'claimed', template };
+        return {
+          destinations: evaluated.destinations,
+          intent: claimed,
+          kind: 'claimed',
+          template,
+        };
       },
     );
   }
@@ -227,6 +237,38 @@ export class NotificationDeliveryService {
    * Read inside the claiming transaction, on the caller's executor. A check
    * that committed separately from the claim it authorizes is not a check.
    */
+  private async evaluate(
+    executor: TransactionHandle,
+    intent: NotificationIntentRow,
+    template: NotificationTemplate,
+    now: Date,
+  ): Promise<{
+    readonly destinations: readonly DeliveryDestination[];
+    readonly reason: SuppressionReason | undefined;
+  }> {
+    const reason = await this.suppressionFor(executor, intent, template, now);
+    if (reason !== undefined) return { destinations: [], reason };
+
+    // Read here rather than remembered from when the notice was created, for
+    // the same reason the safety recheck is: a device registered last week may
+    // have been retired since, and a notice aimed at a retired registration is
+    // one nobody receives.
+    const destinations = await this.dependencies.destinations.resolve({
+      channel: template.channel,
+      executor,
+      recipientId: intent.recipientId,
+    });
+    // Nowhere to send it is a suppression, not a failure: nothing was wrong
+    // and nobody was asked. It is also what stops the delivered path from
+    // lying, because a channel reporting success for a recipient with no
+    // destination would be reporting that somebody was reached who could not
+    // have been.
+    if (destinations.length === 0) {
+      return { destinations: [], reason: 'destination_unavailable' };
+    }
+    return { destinations, reason: undefined };
+  }
+
   private async suppressionFor(
     executor: TransactionHandle,
     intent: NotificationIntentRow,
@@ -329,10 +371,12 @@ export class NotificationDeliveryService {
   private async send(
     intent: NotificationIntentRow,
     channel: NotificationChannel,
+    destinations: readonly DeliveryDestination[],
   ): Promise<NotificationReceipt> {
     try {
       return await this.dependencies.channel.deliver({
         channel,
+        destinations,
         // Stable for the life of the notice, so a provider honouring it
         // collapses this side's retries into one send.
         idempotencyKey: intent.id,

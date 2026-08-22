@@ -1,3 +1,4 @@
+import type { DeliveryDestination } from './destinations.js';
 import type { DeliveryFailureClass, NotificationChannel } from './policy.js';
 
 /**
@@ -16,6 +17,13 @@ import type { DeliveryFailureClass, NotificationChannel } from './policy.js';
  */
 export interface NotificationDeliveryRequest {
   readonly channel: NotificationChannel;
+  /**
+   * Where this notice can actually arrive, resolved in the claiming
+   * transaction. Never empty: delivery suppresses a notice with no destination
+   * rather than handing one to an adapter, so no adapter ever has to decide
+   * what "sent to nobody" should mean.
+   */
+  readonly destinations: readonly DeliveryDestination[];
   /** Stable across every attempt for this notice. The intent's identifier. */
   readonly idempotencyKey: string;
   /** Minimized template fields. Never a message body or a display name. */
@@ -70,6 +78,13 @@ export class UnavailableNotificationChannel implements NotificationChannelPort {
 
 export interface RecordedNotification extends NotificationDeliveryRequest {
   readonly providerReference: string;
+}
+
+/** Every device one recorded delivery was aimed at. */
+export function reachedDeviceIds(
+  record: RecordedNotification,
+): readonly string[] {
+  return record.destinations.map((destination) => destination.deviceId);
 }
 
 /**

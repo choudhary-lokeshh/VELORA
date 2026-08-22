@@ -164,6 +164,7 @@ describe('delivery policy', () => {
       'recipient_not_deliverable',
       'expired',
       'recipient_opted_out',
+      'destination_unavailable',
     ]);
   });
 

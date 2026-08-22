@@ -1,0 +1,2 @@
+ALTER TABLE "notifications_intents" DROP CONSTRAINT "notifications_intents_suppression_check";--> statement-breakpoint
+ALTER TABLE "notifications_intents" ADD CONSTRAINT "notifications_intents_suppression_check" CHECK ("notifications_intents"."suppression_reason" is null or "notifications_intents"."suppression_reason" in ('safety_block', 'recipient_not_deliverable', 'expired', 'recipient_opted_out', 'destination_unavailable'));

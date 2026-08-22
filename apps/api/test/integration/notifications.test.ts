@@ -14,6 +14,7 @@ import {
   LocalTestNotificationChannel,
   UnavailableNotificationChannel,
 } from '../../src/notifications/channel.js';
+import { RegisteredDeviceDestinations } from '../../src/notifications/destinations.js';
 import {
   createNotificationsApiRuntime,
   createNotificationsRuntime,
@@ -466,6 +467,23 @@ async function pair(): Promise<{
     `recipient-${String(requesterSequence)}@velora.test`,
   );
   const conversationId = await conversationBetween(sender, recipient);
+  // A push notice needs somewhere to arrive. Without a registered device the
+  // delivery path suppresses rather than sends, which is the correct behaviour
+  // and would make every assertion below about the wrong thing.
+  await handle(
+    post('/v1/notifications/devices', recipient, {
+      installationId: `pair-recipient-${String(requesterSequence)}`,
+      platform: 'ios',
+      token: `recipient-token-${String(requesterSequence)}`.padEnd(64, '0'),
+    }),
+  );
+  await handle(
+    post('/v1/notifications/devices', sender, {
+      installationId: `pair-sender-${String(requesterSequence)}`,
+      platform: 'android',
+      token: `sender-token-${String(requesterSequence)}`.padEnd(64, '0'),
+    }),
+  );
   // Becoming mutual is itself a notice, owed to whoever signalled first. It is
   // drained and settled here so every assertion below is about what that
   // suite's own message produced.
@@ -875,6 +893,7 @@ describe('delivery failure handling', () => {
     // The posture every deployed environment has today.
     const unavailable = new NotificationDeliveryService({
       channel: new UnavailableNotificationChannel(),
+      destinations: new RegisteredDeviceDestinations(notifications.repository),
       logger,
       now,
       owner: 'test-delivery-worker',
@@ -1699,6 +1718,19 @@ describe('notification preferences', () => {
 describe('push device registration', () => {
   const token = 'a'.repeat(64);
   const installation = 'installation-0001';
+  let deviceSubject = 0;
+
+  /**
+   * A fresh account with no device.
+   *
+   * Deliberately not `pair()`, which registers a device for each side so the
+   * delivery suites have somewhere for a push notice to arrive. These tests are
+   * about registration itself and have to start from nothing.
+   */
+  async function deviceOwner(): Promise<Credentials> {
+    deviceSubject += 1;
+    return consumer(`device-owner-${String(deviceSubject)}@velora.test`);
+  }
 
   async function register(
     actor: Credentials,
@@ -1732,7 +1764,7 @@ describe('push device registration', () => {
   }
 
   it('registers a device and never echoes the credential back', async () => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
     const result = await register(recipient);
 
     expect(result.status).toBe(200);
@@ -1746,7 +1778,7 @@ describe('push device registration', () => {
   });
 
   it('stores a fingerprint and not the token', async () => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
     await register(recipient);
 
     const rows = await liveDevices(recipient.id);
@@ -1759,7 +1791,7 @@ describe('push device registration', () => {
   });
 
   it('treats a repeat registration as a heartbeat, not a second device', async () => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
     const first = await register(recipient);
     clockOffsetMilliseconds += 60_000;
     const second = await register(recipient);
@@ -1773,7 +1805,7 @@ describe('push device registration', () => {
   });
 
   it('retires the old token when an installation rotates', async () => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
     await register(recipient);
     const rotated = await register(recipient, { token: 'b'.repeat(64) });
 
@@ -1789,8 +1821,8 @@ describe('push device registration', () => {
   });
 
   it('takes a token away from an account that no longer holds the device', async () => {
-    const { recipient } = await pair();
-    const other = await consumer('device-thief@velora.test');
+    const recipient = await deviceOwner();
+    const other = await deviceOwner();
     await register(recipient);
 
     // The same physical device, now signed in as somebody else. Leaving both
@@ -1811,8 +1843,8 @@ describe('push device registration', () => {
   });
 
   it('revokes only the caller’s own installation', async () => {
-    const { recipient } = await pair();
-    const other = await consumer('device-bystander@velora.test');
+    const recipient = await deviceOwner();
+    const other = await deviceOwner();
     await register(recipient);
     // A different device entirely. Registering the same token would take the
     // recipient's registration away first, which is the previous test's
@@ -1836,7 +1868,7 @@ describe('push device registration', () => {
   });
 
   it('retires the registration when the caller revokes it', async () => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
     await register(recipient);
 
     const response = await handle(
@@ -1855,7 +1887,7 @@ describe('push device registration', () => {
     [{ platform: 'windows' }],
     [{ installationId: 'tiny' }],
   ])('refuses a registration that is not a usable shape: %o', async (body) => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
     const result = await register(recipient, body);
 
     expect(result.status).toBe(422);
@@ -1881,7 +1913,7 @@ describe('push device registration', () => {
   });
 
   it('leaves exactly one live registration under fifty concurrent registrations', async () => {
-    const { recipient } = await pair();
+    const recipient = await deviceOwner();
 
     // The same device registering fifty times at once, which is what a retry
     // storm or a reconnecting app actually looks like. The partial unique
@@ -1892,5 +1924,110 @@ describe('push device registration', () => {
 
     expect(results.every((result) => result.status === 200)).toBe(true);
     expect(await liveDevices(recipient.id)).toHaveLength(1);
+  });
+});
+
+describe('delivery needs somewhere to arrive', () => {
+  async function messageTo(actor: {
+    readonly conversationId: string;
+    readonly sender: Credentials;
+  }) {
+    await sendMessage(actor.sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId: actor.conversationId,
+    });
+    await relay.dispatchOnce();
+  }
+
+  it('suppresses a push notice for somebody with no registered device', async () => {
+    const sender = await consumer('no-device-sender@velora.test');
+    const recipient = await consumer('no-device-recipient@velora.test');
+    const conversationId = await conversationBetween(sender, recipient);
+    await relay.dispatchOnce();
+    await notifications.delivery.deliverDue();
+    channel.reset();
+
+    await messageTo({ conversationId, sender });
+    await notifications.delivery.deliverDue();
+
+    const rows = await intents();
+    // Not a failure and not a delivery. Nothing was wrong and nobody was
+    // asked, and reporting success here would report that a person was
+    // reached who has no device to reach.
+    expect(rows[0]?.state).toBe('suppressed');
+    expect(rows[0]?.suppression_reason).toBe('destination_unavailable');
+    expect(channel.deliveredTo(recipient.id)).toHaveLength(0);
+    // No attempt was spent either, so the notice cost no retry budget.
+    const attempts = await attemptsOf(rows[0]?.id ?? '');
+    expect(attempts[0]?.outcome).toBe('suppressed');
+  });
+
+  it('suppresses when the only device was revoked after the notice was owed', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await messageTo({ conversationId, sender });
+    // Registered when the notice was created, gone by the time it is claimed.
+    // Destinations are read in the claiming transaction for exactly this
+    // reason: a notice aimed at a retired registration is one nobody gets.
+    await handle(
+      post('/v1/notifications/devices/revocations', recipient, {
+        installationId: `pair-recipient-${String(requesterSequence)}`,
+      }),
+    );
+
+    await notifications.delivery.deliverDue();
+
+    expect((await intents())[0]?.suppression_reason).toBe(
+      'destination_unavailable',
+    );
+    expect(channel.deliveredTo(recipient.id)).toHaveLength(0);
+  });
+
+  it('carries every live device, and no credential, to the channel', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await handle(
+      post('/v1/notifications/devices', recipient, {
+        installationId: 'second-device-0001',
+        platform: 'android',
+        token: 'second-device-token'.padEnd(64, '0'),
+      }),
+    );
+
+    await messageTo({ conversationId, sender });
+    await notifications.delivery.deliverDue();
+
+    const sent = channel.deliveredTo(recipient.id);
+    expect(sent).toHaveLength(1);
+    // One notice, both devices. Fan-out is the adapter's business; the
+    // obligation is still one thing the platform owes one person.
+    expect(sent[0]?.destinations).toHaveLength(2);
+    // Two distinct devices, not the same one counted twice.
+    expect(
+      new Set(sent[0]?.destinations.map((entry) => entry.deviceId)).size,
+    ).toBe(2);
+    expect(
+      sent[0]?.destinations.map((entry) => entry.platform).toSorted(),
+    ).toEqual(['android', 'ios']);
+    // Device references, never tokens or fingerprints.
+    const serialized = JSON.stringify(sent[0]?.destinations);
+    expect(serialized).not.toContain('token');
+    expect(serialized).not.toContain('fingerprint');
+  });
+
+  it('has no destination to resolve for email, because no address exists', async () => {
+    const { recipient } = await pair();
+    const resolver = new RegisteredDeviceDestinations(notifications.repository);
+
+    // A statement about the platform rather than about this person. No domain
+    // stores an email address at all, so there is nothing to resolve for
+    // anybody, and that blocks the email channel more completely than the
+    // absence of an approved provider does.
+    expect(
+      await resolver.resolve({
+        channel: 'email',
+        executor: notifications.repository.transactionless,
+        recipientId: recipient.id,
+      }),
+    ).toHaveLength(0);
   });
 });
