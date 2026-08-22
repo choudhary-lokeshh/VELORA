@@ -1300,6 +1300,14 @@ export function createApplication(
       admitted(async (input) =>
         notifications.routes.updateNotificationPreference(input),
       ),
+    )
+    .post(
+      apiRoutePaths.notificationDevices,
+      admitted(async (input) => notifications.routes.registerPushDevice(input)),
+    )
+    .post(
+      apiRoutePaths.notificationDeviceRevocations,
+      admitted(async (input) => notifications.routes.revokePushDevice(input)),
     );
 
   return {

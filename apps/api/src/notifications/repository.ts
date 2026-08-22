@@ -7,6 +7,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   or,
   sql,
 } from 'drizzle-orm';
@@ -23,6 +24,8 @@ import type {
   NotificationChannel,
   NotificationKind,
   NotificationPurpose,
+  PushDeviceDisableReason,
+  PushPlatform,
   SuppressionReason,
 } from './policy.js';
 import {
@@ -30,6 +33,7 @@ import {
   notificationFeed,
   notificationIntents,
   notificationPreferences,
+  notificationPushDevices,
 } from './schema.js';
 
 export type NotificationIntentRow = typeof notificationIntents.$inferSelect;
@@ -37,6 +41,8 @@ export type NotificationAttemptRow = typeof notificationAttempts.$inferSelect;
 export type NotificationFeedRow = typeof notificationFeed.$inferSelect;
 export type NotificationPreferenceRow =
   typeof notificationPreferences.$inferSelect;
+export type NotificationPushDeviceRow =
+  typeof notificationPushDevices.$inferSelect;
 
 /**
  * Every NOTIFICATIONS read and write.
@@ -581,6 +587,128 @@ export class NotificationRepository {
           notificationPreferences.channel,
         ],
       });
+  }
+
+  /**
+   * Retires every live registration holding this token, except the one this
+   * principal is about to take.
+   *
+   * The `except` is what makes re-registering an unchanged token idempotent
+   * rather than a retirement followed by an insert.
+   */
+  async disableDevicesByFingerprint(
+    executor: Executor,
+    input: {
+      readonly exceptRecipientId: string;
+      readonly now: Date;
+      readonly reason: PushDeviceDisableReason;
+      readonly tokenFingerprint: string;
+    },
+  ): Promise<void> {
+    await executor
+      .update(notificationPushDevices)
+      .set({ disableReason: input.reason, disabledAt: input.now })
+      .where(
+        and(
+          eq(notificationPushDevices.tokenFingerprint, input.tokenFingerprint),
+          isNull(notificationPushDevices.disabledAt),
+          ne(notificationPushDevices.recipientId, input.exceptRecipientId),
+        ),
+      );
+  }
+
+  /** Retires this installation's live registrations. */
+  async disableDevicesByInstallation(
+    executor: Executor,
+    input: {
+      readonly exceptTokenFingerprint?: string;
+      readonly installationId: string;
+      readonly now: Date;
+      readonly reason: PushDeviceDisableReason;
+      readonly recipientId: string;
+    },
+  ): Promise<void> {
+    await executor
+      .update(notificationPushDevices)
+      .set({ disableReason: input.reason, disabledAt: input.now })
+      .where(
+        and(
+          eq(notificationPushDevices.recipientId, input.recipientId),
+          eq(notificationPushDevices.installationId, input.installationId),
+          isNull(notificationPushDevices.disabledAt),
+          ...(input.exceptTokenFingerprint === undefined
+            ? []
+            : [
+                ne(
+                  notificationPushDevices.tokenFingerprint,
+                  input.exceptTokenFingerprint,
+                ),
+              ]),
+        ),
+      );
+  }
+
+  /**
+   * Records a live registration, or refreshes the one that is already there.
+   *
+   * A repeated registration of an unchanged token is a heartbeat rather than a
+   * new device, so it moves `lastSeenAt` and nothing else. That is what keeps
+   * an app that registers on every launch from accumulating rows.
+   */
+  async upsertPushDevice(
+    executor: Executor,
+    input: {
+      readonly installationId: string;
+      readonly now: Date;
+      readonly platform: PushPlatform;
+      readonly recipientId: string;
+      readonly tokenFingerprint: string;
+    },
+  ): Promise<NotificationPushDeviceRow> {
+    const inserted = await executor
+      .insert(notificationPushDevices)
+      .values({
+        createdAt: input.now,
+        id: crypto.randomUUID(),
+        installationId: input.installationId,
+        lastSeenAt: input.now,
+        platform: input.platform,
+        recipientId: input.recipientId,
+        tokenFingerprint: input.tokenFingerprint,
+      })
+      .onConflictDoUpdate({
+        set: {
+          installationId: input.installationId,
+          lastSeenAt: input.now,
+          platform: input.platform,
+          recipientId: input.recipientId,
+        },
+        target: notificationPushDevices.tokenFingerprint,
+        targetWhere: isNull(notificationPushDevices.disabledAt),
+      })
+      .returning();
+    const row = inserted[0];
+    if (row === undefined) {
+      throw new Error('push device registration produced no row');
+    }
+    return row;
+  }
+
+  /** Every device this person can currently be reached on. */
+  async listActivePushDevices(
+    executor: Executor,
+    recipientId: string,
+  ): Promise<readonly NotificationPushDeviceRow[]> {
+    return executor
+      .select()
+      .from(notificationPushDevices)
+      .where(
+        and(
+          eq(notificationPushDevices.recipientId, recipientId),
+          isNull(notificationPushDevices.disabledAt),
+        ),
+      )
+      .orderBy(notificationPushDevices.createdAt);
   }
 
   private heldBy(id: string, owner: string) {

@@ -1695,3 +1695,202 @@ describe('notification preferences', () => {
     expect(listed.notifications).toHaveLength(1);
   });
 });
+
+describe('push device registration', () => {
+  const token = 'a'.repeat(64);
+  const installation = 'installation-0001';
+
+  async function register(
+    actor: Credentials,
+    body: Record<string, unknown> = {},
+  ) {
+    const response = await handle(
+      post('/v1/notifications/devices', actor, {
+        installationId: installation,
+        platform: 'ios',
+        token,
+        ...body,
+      }),
+    );
+    const parsed = (await response.json()) as {
+      devices?: { deviceId: string; lastSeenAt: string; platform: string }[];
+    };
+    return { devices: parsed.devices ?? [], status: response.status };
+  }
+
+  async function liveDevices(recipientId: string) {
+    return rowsOf<{
+      disable_reason: string | null;
+      id: string;
+      installation_id: string;
+      token_fingerprint: string;
+    }>(
+      database.sql`select disable_reason, id, installation_id, token_fingerprint
+        from notifications_push_devices
+        where recipient_id = ${recipientId} and disabled_at is null`,
+    );
+  }
+
+  it('registers a device and never echoes the credential back', async () => {
+    const { recipient } = await pair();
+    const result = await register(recipient);
+
+    expect(result.status).toBe(200);
+    expect(result.devices).toHaveLength(1);
+    // The caller already has its own token. Returning one would put a bearer
+    // credential in a response body, a log, and a proxy cache for no purpose.
+    const serialized = JSON.stringify(result.devices);
+    expect(serialized).not.toContain(token);
+    expect(serialized).not.toContain('token');
+    expect(serialized).not.toContain('fingerprint');
+  });
+
+  it('stores a fingerprint and not the token', async () => {
+    const { recipient } = await pair();
+    await register(recipient);
+
+    const rows = await liveDevices(recipient.id);
+    // Nothing can send with a fingerprint — and nothing can send at all, since
+    // no push provider is approved and no native build exists to issue a
+    // token. Storing a credential no code path can spend is risk with no
+    // benefit, so the column that would hold one does not exist yet.
+    expect(rows[0]?.token_fingerprint).toMatch(/^[0-9a-f]{64}$/u);
+    expect(rows[0]?.token_fingerprint).not.toBe(token);
+  });
+
+  it('treats a repeat registration as a heartbeat, not a second device', async () => {
+    const { recipient } = await pair();
+    const first = await register(recipient);
+    clockOffsetMilliseconds += 60_000;
+    const second = await register(recipient);
+
+    expect(second.devices).toHaveLength(1);
+    expect(second.devices[0]?.deviceId).toBe(first.devices[0]?.deviceId ?? '');
+    // An app that registers on every launch must not accumulate rows.
+    expect(second.devices[0]?.lastSeenAt).not.toBe(
+      first.devices[0]?.lastSeenAt ?? '',
+    );
+  });
+
+  it('retires the old token when an installation rotates', async () => {
+    const { recipient } = await pair();
+    await register(recipient);
+    const rotated = await register(recipient, { token: 'b'.repeat(64) });
+
+    expect(rotated.devices).toHaveLength(1);
+    const all = await rowsOf<{ disable_reason: string | null }>(
+      database.sql`select disable_reason from notifications_push_devices
+        where recipient_id = ${recipient.id} order by created_at`,
+    );
+    // Two rows, one live. The retired one keeps its fingerprint as evidence.
+    expect(all).toHaveLength(2);
+    expect(all[0]?.disable_reason).toBe('token_rotated');
+    expect(all[1]?.disable_reason).toBeNull();
+  });
+
+  it('takes a token away from an account that no longer holds the device', async () => {
+    const { recipient } = await pair();
+    const other = await consumer('device-thief@velora.test');
+    await register(recipient);
+
+    // The same physical device, now signed in as somebody else. Leaving both
+    // registrations live is one person's notice arriving on another person's
+    // phone, so the earlier one is retired rather than shared.
+    const claimed = await register(other, {
+      installationId: 'installation-0002',
+    });
+
+    expect(claimed.status).toBe(200);
+    expect(await liveDevices(recipient.id)).toHaveLength(0);
+    expect(await liveDevices(other.id)).toHaveLength(1);
+    const retired = await rowsOf<{ disable_reason: string | null }>(
+      database.sql`select disable_reason from notifications_push_devices
+        where recipient_id = ${recipient.id}`,
+    );
+    expect(retired[0]?.disable_reason).toBe('claimed_by_another_principal');
+  });
+
+  it('revokes only the caller’s own installation', async () => {
+    const { recipient } = await pair();
+    const other = await consumer('device-bystander@velora.test');
+    await register(recipient);
+    // A different device entirely. Registering the same token would take the
+    // recipient's registration away first, which is the previous test's
+    // subject and would hide this one's.
+    await register(other, {
+      installationId: 'installation-0003',
+      token: 'c'.repeat(64),
+    });
+
+    const response = await handle(
+      post('/v1/notifications/devices/revocations', other, {
+        installationId: installation,
+      }),
+    );
+
+    // `installation` is the recipient's, not theirs. Revoking it silently
+    // succeeds and changes nothing, so this cannot be used to discover
+    // whether an installation identifier exists.
+    expect(response.status).toBe(200);
+    expect(await liveDevices(recipient.id)).toHaveLength(1);
+  });
+
+  it('retires the registration when the caller revokes it', async () => {
+    const { recipient } = await pair();
+    await register(recipient);
+
+    const response = await handle(
+      post('/v1/notifications/devices/revocations', recipient, {
+        installationId: installation,
+      }),
+    );
+    const body = (await response.json()) as { devices: unknown[] };
+
+    expect(body.devices).toHaveLength(0);
+    expect(await liveDevices(recipient.id)).toHaveLength(0);
+  });
+
+  it.each([
+    [{ token: 'short' }],
+    [{ platform: 'windows' }],
+    [{ installationId: 'tiny' }],
+  ])('refuses a registration that is not a usable shape: %o', async (body) => {
+    const { recipient } = await pair();
+    const result = await register(recipient, body);
+
+    expect(result.status).toBe(422);
+  });
+
+  it('refuses to register without a session', async () => {
+    const response = await handle(
+      new Request('http://api.test/v1/notifications/devices', {
+        body: JSON.stringify({
+          installationId: installation,
+          platform: 'ios',
+          token,
+        }),
+        headers: {
+          'content-type': 'application/json',
+          origin: testConsumerOrigin,
+        },
+        method: 'POST',
+      }),
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it('leaves exactly one live registration under fifty concurrent registrations', async () => {
+    const { recipient } = await pair();
+
+    // The same device registering fifty times at once, which is what a retry
+    // storm or a reconnecting app actually looks like. The partial unique
+    // index decides; nothing here reads-then-writes.
+    const results = await Promise.all(
+      Array.from({ length: 50 }, async () => register(recipient)),
+    );
+
+    expect(results.every((result) => result.status === 200)).toBe(true);
+    expect(await liveDevices(recipient.id)).toHaveLength(1);
+  });
+});

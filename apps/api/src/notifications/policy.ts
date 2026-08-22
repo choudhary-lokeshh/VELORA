@@ -365,6 +365,49 @@ export const notificationTemplateByKey: Readonly<
 );
 
 /**
+ * Platforms a device registration may name.
+ *
+ * Both are the operating system rather than a vendor: a token belongs to a
+ * device and the provider that will eventually carry it is configuration, not
+ * a property of the registration. That separation is what lets the provider
+ * decision land later without rewriting every stored row.
+ */
+export const pushPlatforms = ['ios', 'android'] as const;
+export type PushPlatform = (typeof pushPlatforms)[number];
+
+/**
+ * Why a device registration stopped being usable.
+ *
+ * Every one is terminal for that registration. A registration is never
+ * re-enabled: the device registers again and gets a new row, which is the only
+ * way this side can be sure the token it holds is one the device still has.
+ */
+export const pushDeviceDisableReasons = [
+  /** The person signed out on this installation. */
+  'signed_out',
+  /** The same token registered under a different principal. */
+  'claimed_by_another_principal',
+  /** The installation registered a different token. */
+  'token_rotated',
+  /** The provider reported the token invalid. It never becomes valid again. */
+  'provider_invalidated',
+  /** An operator or a retention pass retired it. */
+  'retired',
+] as const;
+export type PushDeviceDisableReason = (typeof pushDeviceDisableReasons)[number];
+
+/**
+ * Bounds on a device token, as a shape rather than as a vendor format.
+ *
+ * APNs tokens are 64 hexadecimal characters and FCM registration tokens are
+ * longer and opaque, so pinning either vendor's format here would refuse the
+ * other. What is bounded instead is what any credential may be: printable,
+ * bounded in length, and not empty.
+ */
+export const minimumPushTokenLength = 32;
+export const maximumPushTokenLength = 4_096;
+
+/**
  * The category and channel pairs a person can actually decide about.
  *
  * Derived from the approved catalogue rather than listed by hand, so a setting

@@ -13,6 +13,7 @@ import {
   type NotificationChannelPort,
 } from './channel.js';
 import { NotificationDeliveryService } from './delivery.js';
+import { PushDeviceService } from './devices.js';
 import { NotificationFeedService } from './feed.js';
 import {
   createNotificationIntakes,
@@ -45,6 +46,7 @@ export interface NotificationsRuntime {
  * caller.
  */
 export interface NotificationsApiRuntime {
+  readonly devices: PushDeviceService;
   readonly feed: NotificationFeedService;
   readonly preferences: NotificationPreferenceService;
   readonly repository: NotificationRepository;
@@ -136,12 +138,15 @@ export function createNotificationsApiRuntime(input: {
     safety: input.safety,
   });
   const preferences = new NotificationPreferenceService({ now, repository });
+  const devices = new PushDeviceService({ now, repository });
   return {
+    devices,
     feed,
     preferences,
     repository,
     routes: new NotificationRoutes({
       consumerContext: input.consumerContext,
+      devices,
       feed,
       preferences,
       repository,

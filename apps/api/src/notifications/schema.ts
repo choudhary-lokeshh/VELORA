@@ -13,13 +13,22 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { inList, nullablePairing, timestamptz } from '../database/columns.js';
+import {
+  digestColumn,
+  inList,
+  isHexDigest,
+  lengthBetween,
+  nullablePairing,
+  timestamptz,
+} from '../database/columns.js';
 import {
   attemptOutcomes,
   deliveryFailureClasses,
   mandatoryNotificationCategories,
   notificationCategories,
   notificationChannels,
+  pushDeviceDisableReasons,
+  pushPlatforms,
   notificationKinds,
   notificationPurposes,
   notificationStates,
@@ -390,6 +399,93 @@ export const notificationPreferences = pgTable(
       sql`${table.enabled} or ${table.category} not in (${sql.raw(
         mandatoryNotificationCategories.map((value) => `'${value}'`).join(', '),
       )})`,
+    ),
+  ],
+);
+
+/**
+ * Where a push notice could be sent, and whether it still can be.
+ *
+ * A registration binds a device token to the principal that was authenticated
+ * when it registered. It is not an identity: the token is a bearer credential
+ * for reaching a device, and it says nothing about who is holding that device
+ * now. Everything below follows from taking that seriously.
+ *
+ * **The token itself is not stored.** Only a SHA-256 fingerprint of it is,
+ * which is enough to recognise the same token arriving again and enough to
+ * name a device in a log without naming a credential. Nothing can send with a
+ * fingerprint — and nothing can send at all: no push provider is approved and
+ * there is no native build pipeline to issue a token in the first place
+ * (`docs/compliance/11-notification-provider-eligibility.md`). Storing a
+ * bearer credential that no code path can use is risk with no benefit, so the
+ * column that holds one lands with the provider that needs it, not before.
+ *
+ * A registration is never re-enabled. When something invalidates it the device
+ * registers again and gets a new row, because a fresh registration is the only
+ * evidence this side can have that the device still holds the token.
+ */
+export const notificationPushDevices = pgTable(
+  'notifications_push_devices',
+  {
+    createdAt: timestamptz('created_at').notNull(),
+    disableReason: text('disable_reason').$type<string>(),
+    disabledAt: timestamptz('disabled_at'),
+    id: uuid('id').primaryKey(),
+    /** The app installation this registration belongs to, named by the client. */
+    installationId: text('installation_id').notNull(),
+    lastSeenAt: timestamptz('last_seen_at').notNull(),
+    platform: text('platform').notNull().$type<string>(),
+    recipientId: uuid('recipient_id').notNull(),
+    /** SHA-256 of the device token. The token itself is never stored. */
+    tokenFingerprint: digestColumn('token_fingerprint').notNull(),
+  },
+  (table) => [
+    /**
+     * One live registration per token, across the whole platform.
+     *
+     * Partial, so a retired registration keeps its fingerprint as evidence
+     * while the same token may be registered again. The uniqueness is what
+     * makes "this token now belongs to somebody else" a decision rather than
+     * an accident: the older registration is retired in the same transaction,
+     * because two live registrations for one token is one person's notice
+     * arriving on another person's phone.
+     */
+    uniqueIndex('notifications_push_devices_token_uk')
+      .on(table.tokenFingerprint)
+      .where(sql`${table.disabledAt} is null`),
+    // One live registration per installation per person, so a device that
+    // rotates its token replaces rather than accumulates.
+    uniqueIndex('notifications_push_devices_installation_uk')
+      .on(table.recipientId, table.installationId)
+      .where(sql`${table.disabledAt} is null`),
+    // Delivery's only question: what can this person still be reached on.
+    index('notifications_push_devices_recipient_idx')
+      .on(table.recipientId)
+      .where(sql`${table.disabledAt} is null`),
+    check(
+      'notifications_push_devices_platform_check',
+      inList(table.platform, pushPlatforms),
+    ),
+    check(
+      'notifications_push_devices_fingerprint_check',
+      isHexDigest(table.tokenFingerprint),
+    ),
+    check(
+      'notifications_push_devices_installation_check',
+      lengthBetween(table.installationId, 8, 256),
+    ),
+    // A disabled registration has an instant and a reason, or it has neither.
+    check(
+      'notifications_push_devices_disabled_shape_check',
+      nullablePairing(table.disabledAt, table.disableReason),
+    ),
+    check(
+      'notifications_push_devices_disable_reason_check',
+      sql`${table.disableReason} is null or ${inList(table.disableReason, pushDeviceDisableReasons)}`,
+    ),
+    check(
+      'notifications_push_devices_seen_check',
+      sql`${table.lastSeenAt} >= ${table.createdAt}`,
     ),
   ],
 );

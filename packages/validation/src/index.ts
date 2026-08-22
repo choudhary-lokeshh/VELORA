@@ -115,6 +115,9 @@ import {
   notificationListResponseSchema,
   notificationPreferencesResponseSchema,
   notificationReadResponseSchema,
+  pushDeviceListResponseSchema,
+  registerPushDeviceRequestSchema,
+  revokePushDeviceRequestSchema,
   updateNotificationPreferenceRequestSchema,
 } from './notifications.js';
 import { currencyCodeSchema } from './money.js';
@@ -306,6 +309,8 @@ export const apiRoutePaths = {
   rtcCalls: '/v1/rtc/calls',
   rtcProviderEvents: '/v1/rtc/provider-events',
   notifications: '/v1/notifications',
+  notificationDeviceRevocations: '/v1/notifications/devices/revocations',
+  notificationDevices: '/v1/notifications/devices',
   notificationPreferences: '/v1/notifications/preferences',
   notificationsRead: '/v1/notifications/read',
   safetyBlockRemoval: '/v1/safety/blocks/removal',
@@ -461,6 +466,9 @@ export const apiSchemas = {
   NotificationListResponse: notificationListResponseSchema,
   NotificationPreferencesResponse: notificationPreferencesResponseSchema,
   NotificationReadResponse: notificationReadResponseSchema,
+  PushDeviceListResponse: pushDeviceListResponseSchema,
+  RegisterPushDeviceRequest: registerPushDeviceRequestSchema,
+  RevokePushDeviceRequest: revokePushDeviceRequestSchema,
   UpdateNotificationPreferenceRequest:
     updateNotificationPreferenceRequestSchema,
   Block: blockSchema,
@@ -3138,6 +3146,40 @@ export const apiOperations = [
         description: `The category and channel pairing is not one the platform sends on, or the category is mandatory and cannot be silenced. The body is an ApiError with code ${productErrorCodes.validationFailed}.`,
         schemaName: 'ApiError',
       },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'registerPushDevice',
+    path: apiRoutePaths.notificationDevices,
+    requestSchemaName: 'RegisterPushDeviceRequest',
+    responses: {
+      '200': {
+        description:
+          "The registration now in force for this installation. The device token is never echoed back: the caller already has it, and a response carrying one would put a bearer credential into a log and a proxy cache. Registering the same token again is a heartbeat rather than a second device, and registering a token another account holds retires that account's registration, because a device can only be addressed for one person.",
+        schemaName: 'PushDeviceListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'revokePushDevice',
+    path: apiRoutePaths.notificationDeviceRevocations,
+    requestSchemaName: 'RevokePushDeviceRequest',
+    responses: {
+      '200': {
+        description:
+          "Everything still registered for the caller. Revoking an installation that was never registered succeeds silently, so this operation cannot be used to test whether one exists, and only the caller's own registrations are ever reachable.",
+        schemaName: 'PushDeviceListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieOrBearer,

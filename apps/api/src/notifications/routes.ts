@@ -7,6 +7,9 @@ import {
   notificationReadResponseSchema,
   pageSizeSchema,
   productErrorCodes,
+  pushDeviceListResponseSchema,
+  registerPushDeviceRequestSchema,
+  revokePushDeviceRequestSchema,
   updateNotificationPreferenceRequestSchema,
 } from '@velora/validation';
 
@@ -22,6 +25,7 @@ import {
   type ConsumerRouteContext,
 } from '../users/context.js';
 import type { NotificationFeedService, NotificationView } from './feed.js';
+import type { PushDeviceService } from './devices.js';
 import type { NotificationPreferenceService } from './preferences.js';
 import type { NotificationRepository } from './repository.js';
 
@@ -38,6 +42,7 @@ export class NotificationRoutes {
   constructor(
     private readonly dependencies: {
       readonly consumerContext: ConsumerContextResolver;
+      readonly devices: PushDeviceService;
       readonly feed: NotificationFeedService;
       readonly preferences: NotificationPreferenceService;
       readonly repository: NotificationRepository;
@@ -134,6 +139,62 @@ export class NotificationRoutes {
           category: preference.category,
           channel: preference.channel,
           enabled: preference.enabled,
+        })),
+      }),
+      status: 200,
+    };
+  }
+
+  /**
+   * Registers a device for push.
+   *
+   * The recipient is the authenticated principal and is never read from the
+   * body, so no request here can register a token against somebody else. The
+   * token is fingerprinted by the service and discarded; nothing in this file
+   * logs it, stores it, or returns it.
+   */
+  async registerPushDevice(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(registerPushDeviceRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+
+    const outcome = await this.dependencies.devices.register({
+      installationId: parsed.value.installationId,
+      platform: parsed.value.platform,
+      recipientId: resolved.context.userId,
+      token: parsed.value.token,
+    });
+    if (outcome.kind !== 'registered') return this.invalid(input);
+    return this.deviceResponse(resolved.context.userId);
+  }
+
+  async revokePushDevice(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(revokePushDeviceRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+
+    await this.dependencies.devices.revoke({
+      installationId: parsed.value.installationId,
+      reason: 'signed_out',
+      recipientId: resolved.context.userId,
+    });
+    return this.deviceResponse(resolved.context.userId);
+  }
+
+  private async deviceResponse(recipientId: string): Promise<RouteResult> {
+    const devices = await this.dependencies.devices.active(
+      this.dependencies.repository.transactionless,
+      recipientId,
+    );
+    return {
+      body: pushDeviceListResponseSchema.parse({
+        devices: devices.map((device) => ({
+          deviceId: device.id,
+          lastSeenAt: device.lastSeenAt.toISOString(),
+          platform: device.platform,
+          registeredAt: device.createdAt.toISOString(),
         })),
       }),
       status: 200,

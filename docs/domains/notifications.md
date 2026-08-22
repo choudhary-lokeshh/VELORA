@@ -66,6 +66,20 @@ Preference is evaluated inside the claiming transaction, last. The platform's ow
 
 A push preference is a decision about being interrupted, not about being told. An opted-out notice is still written to the in-app feed and still appears when the person opens the app; what does not happen is the external send.
 
+## Push device registration, and why a token is not an identity
+
+A push token is a bearer credential for reaching a device. Whoever is holding that device receives whatever is sent to it, which makes every rule here a rule about the device rather than about the person.
+
+`notifications_push_devices` binds a token to the principal that was authenticated when it registered, to an installation the client names, and to nothing else. Three things follow, and each is enforced by a partial unique index rather than by a service remembering to check.
+
+One live registration per token, across the platform. Registering a token another account holds retires that account's registration in the same transaction, because two live registrations for one token is one person's notice arriving on another person's phone. One live registration per installation per person, so a device that rotates its token replaces its own row instead of accumulating a second one that would double every notice. And a registration is never re-enabled: whatever retires it, the device registers again and gets a new row, because a fresh registration is the only evidence this side can have that the device still holds the token.
+
+**The token itself is not stored.** Only a SHA-256 fingerprint of it is, which is enough to recognise the same token arriving again and enough to name a device in a log without naming a credential. No response echoes a token or a fingerprint; the caller already has its own token, and returning one would put a bearer credential into a response body, a log, and a proxy cache for no purpose. The column that would hold a sendable token lands with the provider that needs it, not before — no push provider is approved and there is no native build pipeline to issue a token at all, so a stored credential today is one nothing could spend.
+
+Registration is serialized by two transaction-scoped advisory locks, on the token and on the installation, taken in sorted order. All three of its decisions are about the *absence* of a row, which has nothing to lock, and fifty concurrent registrations of one token demonstrated the gap before the locks were added: some of them lost the insert race on the partial unique index and failed rather than settling on the row that won. Two locks rather than one because two different uniqueness rules are being protected, and sorted because two transactions needing both must ask in the same order.
+
+Revocation is scoped to the caller's own principal and succeeds silently when nothing is registered, so it cannot be used to discover whether an installation identifier exists.
+
 ## In-app notifications, and the second V1 event
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.

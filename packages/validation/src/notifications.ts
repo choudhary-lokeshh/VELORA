@@ -158,3 +158,72 @@ export type NotificationPreference = z.infer<
 export type NotificationPreferencesResponse = z.infer<
   typeof notificationPreferencesResponseSchema
 >;
+
+/**
+ * Registering a device to receive push.
+ *
+ * The token is a bearer credential for reaching a device, so it is accepted
+ * here and never returned anywhere: no response in this contract carries one,
+ * and the server stores only a fingerprint of it. `installationId` names the
+ * app installation so a device that rotates its token replaces its own
+ * registration rather than accumulating a second one.
+ *
+ * The recipient is the authenticated principal and is deliberately absent from
+ * this body. A field for it would be a field somebody could put another
+ * person's identifier in.
+ */
+export const pushPlatformSchema = z.enum(['ios', 'android']);
+export type PushPlatform = z.infer<typeof pushPlatformSchema>;
+
+export const registerPushDeviceRequestSchema = z
+  .object({
+    installationId: z.string().min(8).max(256),
+    platform: pushPlatformSchema,
+    /**
+     * Bounded as a shape rather than as a vendor format. APNs tokens are 64
+     * hexadecimal characters and FCM registration tokens are longer and
+     * opaque, so pinning either would refuse the other.
+     */
+    token: z.string().min(32).max(4096),
+  })
+  .strict();
+
+export const revokePushDeviceRequestSchema = z
+  .object({ installationId: z.string().min(8).max(256) })
+  .strict();
+
+/**
+ * One live registration.
+ *
+ * There is no token field and no fingerprint field. A client already has its
+ * own token; echoing one back would put a credential in a response body, a
+ * log, and a proxy cache for no purpose.
+ */
+export const pushDeviceSchema = z
+  .object({
+    deviceId: z.uuid(),
+    lastSeenAt: z.iso.datetime(),
+    platform: pushPlatformSchema,
+    registeredAt: z.iso.datetime(),
+  })
+  .strict();
+
+/**
+ * Every device the caller can currently be reached on.
+ *
+ * Returned by both registering and revoking, so a client never merges a
+ * response into local state and never has to guess what a revocation left
+ * behind. Nothing here identifies a credential: there is no token and no
+ * fingerprint, only the platform and when the registration was last seen.
+ */
+export const pushDeviceListResponseSchema = z
+  .object({ devices: z.array(pushDeviceSchema) })
+  .strict();
+
+export type RegisterPushDeviceRequest = z.infer<
+  typeof registerPushDeviceRequestSchema
+>;
+export type PushDevice = z.infer<typeof pushDeviceSchema>;
+export type PushDeviceListResponse = z.infer<
+  typeof pushDeviceListResponseSchema
+>;

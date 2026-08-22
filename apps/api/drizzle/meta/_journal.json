@@ -442,6 +442,13 @@
       "when": 1787385249045,
       "tag": "0062_notification-preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787387779487,
+      "tag": "0063_notification-push-devices",
+      "breakpoints": true
     }
   ]
 }
