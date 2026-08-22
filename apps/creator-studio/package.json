@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "next build && node ../../scripts/prepare-next-standalone.mjs creator-studio",
-    "dev": "next dev --port 3001",
+    "dev": "next dev --hostname ${VELORA_BIND_HOST:-127.0.0.1} --port 3001",
     "lint": "eslint app src test middleware.ts next.config.ts vitest.config.ts",
     "start": "PORT=3001 HOSTNAME=${VELORA_BIND_HOST:-0.0.0.0} node .next/standalone/apps/creator-studio/server.js",
     "test": "vitest run",

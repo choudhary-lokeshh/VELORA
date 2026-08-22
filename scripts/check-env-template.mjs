@@ -31,7 +31,7 @@ const templatedNonSchemaKeys = new Map([
   ['EXPO_PUBLIC_APP_ENV', 'Consumer Mobile bundle'],
   ['VELORA_API_BASE_URL', 'Next.js surfaces at request time'],
   ['VELORA_APP_ENV', 'Next.js surfaces at request time'],
-  ['VELORA_BIND_HOST', 'Next.js standalone start scripts'],
+  ['VELORA_BIND_HOST', 'Next.js dev and standalone start scripts'],
   ['VELORA_POSTGRES_PORT', 'local Docker Compose host port'],
   ['VELORA_REDIS_PORT', 'local Docker Compose host port'],
 ]);

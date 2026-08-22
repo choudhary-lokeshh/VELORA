@@ -213,7 +213,7 @@ Platform Admin.
 |---|---|---|---|---|---|
 | `VELORA_APP_ENV` | No | Safe default locally, required when deployed | `local` | The environment name | Falls back to `production` when `NODE_ENV` is `production`, `local` otherwise. Set it explicitly when deployed |
 | `VELORA_API_BASE_URL` | No | Safe default locally, required now when deployed | `http://127.0.0.1:4000` | The environment's API origin | Local and test fall back to the loopback API. Staging and production throw at startup, and a loopback value there is refused outright |
-| `VELORA_BIND_HOST` | No | Safe default | blank | Container interface if not `0.0.0.0` | The `start` scripts bind `0.0.0.0`. Read by `package.json` only, never by application code |
+| `VELORA_BIND_HOST` | No | Safe default | blank | Container/host interface if not `0.0.0.0` (start) or `127.0.0.1` (dev) | The `start` scripts default `0.0.0.0` and `dev` scripts default `127.0.0.1`. Read by `package.json` only, never by application code |
 
 Both are read at request time and neither carries a `NEXT_PUBLIC_` prefix, on
 purpose: a build-inlined value would bake one environment's endpoint into the

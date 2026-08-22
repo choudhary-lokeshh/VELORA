@@ -128,6 +128,16 @@ Twenty-five attacks: keeping two live registrations for one token, keeping two f
 
 Every one is refused, and each refusal block carries a positive control that asserts the same statement is accepted when it is well-formed. A refusal test whose statement is malformed passes for the wrong reason, and a suite of those is worse than no suite.
 
+## The access paths at a size nobody has yet
+
+`notifications-scale.test.ts` asserts what PostgreSQL decides to do rather than what a query returns, taken from `EXPLAIN` on seeded volume. A sequential scan that is fast on a hundred notices is an outage on ten million.
+
+Every hot path here has one shape: a small live set inside a large dead history. Notices still owed among all notices ever sent, registrations still live among every device that ever registered, provider events not yet applied among every event ever received. Nothing in this domain has an approved retention duration, so the history side grows without bound — which is why the indexes are partial on the live states, and why what these tests check is that the planner uses them rather than walking the history.
+
+The seeded disparity is roughly a thousand to one and is the reason the assertions mean anything. With a live fraction anywhere near the dead one, a sequential scan would be the planner's reasonable choice and a passing test would be measuring the seed rather than the index.
+
+Five paths are covered: the delivery worker's due query, the provider-event claim, a person's live devices, recognising a token already registered, and one person's feed page — the last both from the top and resumed from a cursor, because an `OFFSET` deep in a large feed reads and discards everything before it. The preference lookup is asserted against the primary key, since it runs inside the claiming transaction on every single delivery.
+
 ## In-app notifications, and the second V1 event
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.

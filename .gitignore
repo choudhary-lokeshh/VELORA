@@ -15,6 +15,11 @@ test-results/
 
 apps/mobile/.expo/
 apps/mobile/expo-env.d.ts
+# Written by expo-cli on every doctor or start run, without a trailing newline,
+# so the hygiene gate fails on it minutes after any local command regenerates
+# it. Its only rule restates `apps/mobile/expo-env.d.ts` above, so nothing is
+# lost by keeping the generated copy out of the tree.
+apps/mobile/.gitignore
 apps/mobile/ios/
 apps/mobile/android/
 
