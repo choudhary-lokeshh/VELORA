@@ -35,6 +35,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [Identity assurance freeze report](architecture/14-identity-freeze-report.md) | What the Identity Assurance core froze with, what still blocks live identity, age, and KYC verification, and what unfreezes it |
 | [RTC stability evidence](architecture/15-rtc-stability-evidence.md) | Twenty repeated runs of the non-deterministic gate stages before the RTC freeze, what was and was not repeated, and the three environment hazards each iteration enforces |
 | [RTC freeze report](architecture/16-rtc-freeze-report.md) | What the one-to-one voice and video core froze with, what still blocks a real call, and what unfreezes it |
+| [Notifications delivery freeze report](architecture/17-notifications-freeze-report.md) | What the production notification delivery platform froze with, the dated provider matrix behind it, the privacy and security answers in full, and the two independent blockers on each live channel — no approved vendor, and separately no email address anywhere and no native build pipeline |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |

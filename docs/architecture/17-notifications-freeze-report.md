@@ -1,0 +1,124 @@
+# Notifications delivery freeze report
+
+What the production notification delivery platform froze with, what still blocks a real send, and what unfreezes it. Companion to the [media](13-media-freeze-report.md), [identity](14-identity-freeze-report.md), and [RTC](16-rtc-freeze-report.md) reports, written to the same rule: architecture that is finished is described as finished, and a capability that cannot run says so in its own words.
+
+## What the core owns
+
+NOTIFICATIONS owns the delivery obligation, the channel decision, preference evaluation, destination resolution, the attempt history, the provider adapter, the verified callback record, and the operational read. It does not own the facts it delivers, the addresses it delivers to, or the identities it delivers about. A product domain states that something happened; AUTH and USERS own who somebody is; TRUST & SAFETY owns whether two people may still interact. This domain writes nothing outside `notifications_` and reads every other domain through a published contract.
+
+The consequence worth naming: a bounce does not unverify an email address, and a disabled device does not sign anybody out. Both would be this domain reaching into another's truth on the strength of a third party's opinion.
+
+## What was already there, and was not rebuilt
+
+The durable intent, the append-only attempt history, the in-app feed, outbox materialization, the lease-and-claim delivery worker with its delivery-time safety recheck, and the consumer feed contract all predate this work. They were extended, never replaced. No second outbox was created, no second notification table, and no competing event bus.
+
+## What this work added
+
+| Concern | What landed |
+| --- | --- |
+| Failure classification | Seven normalized classes; retry reads the class and never a vendor error string. Three are retryable; four are terminal on first occurrence whatever the budget says |
+| Preferences | Category-driven, with mandatory classes a preference cannot silence — enforced by a CHECK constraint, not only by a service |
+| Push devices | Server-authoritative registration, one live registration per token platform-wide and per installation per person, never re-enabled, token fingerprinted and discarded |
+| Destinations | Resolved inside the claiming transaction; no destination is a suppression, not a delivery |
+| Provider feedback | Verified callback inbox keyed by provider, account, environment, and the provider's own event identifier; body discarded, digest retained |
+| Operations | Counts, ages, and adapter name with no identifier of any kind; one delivery detail with no recipient, subject, or payload |
+| Evidence | 25 schema-level red-team attacks and 7 query-plan assertions at roughly thousand-to-one live-to-dead disparity |
+
+Five migrations, `0061` through `0065`. Four new tables: `notifications_preferences`, `notifications_push_devices`, `notifications_provider_events`, plus new columns and constraints on `notifications_attempts` and `notifications_intents`.
+
+## The defect this work existed to find
+
+Before it, the development channel reported `delivered` for a recipient with **no registered device at all**. Nothing was reached and the record said something was. It was possible because delivery had no concept of a destination: an intent named a recipient and a channel, and the adapter was handed neither an address nor a device. That is the exact shape of fake success a delivery platform cannot have, and closing it is the single most important thing here.
+
+## Provider matrix
+
+Retrieved 2026-08-22 from each vendor's own governing text. Full findings and quotations in [notification provider eligibility](../compliance/11-notification-provider-eligibility.md).
+
+| Provider | Channel | Adult-business posture | Adapter | Production approved | Production enabled |
+| --- | --- | --- | --- | --- | --- |
+| Amazon SES | Email | Silent — no clause either way | No | No | No |
+| Postmark | Email | Prohibits "Pornography/sexually explicit content" and "Escort services" | No | No | No |
+| Resend | Email | Same prohibition, plus sole-discretion removal | No | No | No |
+| SendGrid | Email | Twilio Email Policy (eff. 2026-04-09) prohibits pornography and "other similar services" | No | No | No |
+| Mailgun (Sinch) | Email | Silent on lawful adult; requires "sufficient and specific guarantees" | No | No | No |
+| SparkPost (Bird) | Email | Prohibits "obscene, offensive… or pornographic" | No | No | No |
+| Apple APNs | Push | APNs-specific attachment not retrievable | No | No | No |
+| Firebase Cloud Messaging | Push | Google Cloud AUP not retrievable | No | No | No |
+| Expo Push Service | Push | Incorporated policy not in the Terms; relays to both of the above | No | No | No |
+
+Four of six assessed email vendors prohibit the category in their own words. One is silent, which is the absence of an answer rather than permission. One will consider it against written guarantees nobody holds. No push vendor's governing text could be both retrieved and cleared.
+
+## Privacy
+
+| Question | Answer |
+| --- | --- |
+| Full device token logged | **No** — never logged, and never stored either; only a SHA-256 fingerprint is kept |
+| Full email body logged | **No** — no email body exists anywhere; no email template is defined |
+| Private message body in push | **No** — the stored payload is a deep-link target; no body, name, or preview is ever written |
+| Safety report content in push | **No** — no safety template exists, and no report field enters this domain |
+| Provider secret exposed | **No** — no provider secret exists; the local-test signing secret is a public constant refused outside local and test |
+| User email in metrics | **No** — no address exists to emit; the operations screen carries no identifier at all |
+| Client-authoritative delivery state | **No** — no consumer route can write, read, or infer delivery state |
+| Webhook body retained | **No** — a digest of the authenticated bytes only |
+| Suppression reason published | **No** — the consumer contract has no field for one, asserted by test |
+
+## Security
+
+Recipient isolation is enforced by the pair and subject constraints and by every read being scoped to the authenticated principal; no route takes a recipient from a request body. Preference enforcement is evaluated inside the claiming transaction, after the platform's own obligations and before any send. Mandatory categories cannot be stored as disabled. Callback authentication runs against exact raw bytes before parsing, with one uniform rejection for a bad signature, a mutated body, an unknown type, and an unparseable payload. Replay is a refused insert. A retired device is never resurrected, including by hand. Admin requires the Platform Admin audience and a fresh phishing-resistant assurance that no approved verifier can produce, so the operations surface is reachable by nobody. The test adapter is refused outside local and test by the configuration loader rather than by a runtime check.
+
+## Database and scale
+
+Five migrations, expand-safe, with the one that adds a constraint to a populated table carrying its own backfill. Partial indexes on every live-state hot path, because each is a small live set inside a history that grows without bound. Query plans asserted for the due-delivery query, the provider-event claim, live devices, token recognition, and feed paging from both the top and a cursor; the preference lookup is asserted against its primary key. No unbounded `OFFSET` on any hot path. Registration is serialized by two transaction-scoped advisory locks in sorted order, which fifty concurrent registrations of one token proved necessary.
+
+## Tests
+
+311 unit and 1348 integration, across 76 files. Notification-specific: the behaviour suite, a 25-attack schema red-team with positive controls in every refusal block, a 7-assertion query-plan suite, and the pre-existing RTC notification suite. Concurrency proved at ×50 for device registration and ×50 for callback redelivery.
+
+## Git history
+
+| SHA | Phase | Hosted run | Result |
+| --- | --- | --- | --- |
+| `d7c60e6` | Provider research, eligibility register, ADR-0026 | 32559527583 | success |
+| `8594db7` | Failure classification | 32560500858 | success |
+| `d2c22e7` | Preferences and eligibility | 32561871366 | success |
+| `1eb41e2` | Push device lifecycle | 32564776782 | success |
+| `e5f7623` | Destination resolution | 32567457612 | success |
+| `35c70bd` | Verified provider feedback | 32568934095 | success |
+| `7e55a7e` | Admin delivery operations | 32570430232 | success |
+| `d359001` | Red-team | 32571919595 | success |
+| `3feb6f3` | Query plans at volume | 32579915826 | cancelled by the next push |
+| `5380fc8` | Correcting note for `3feb6f3` | 32580175673 | see below |
+
+Recorded accurately rather than flatteringly. `3feb6f3` needed three local gate attempts: the first failed on a Prettier check over a file `expo-doctor` rewrote mid-run, the second on a hygiene failure over a file `expo-cli` generated without a trailing newline, and only the third was clean. Its hosted run was then cancelled by the push of `5380fc8`, which is a strict superset of it. `3feb6f3` also carries an unrelated `VELORA_BIND_HOST` change that a `git add -A` swept in; `5380fc8` records what happened and why nothing was rewritten.
+
+## What is frozen
+
+**PRODUCTION NOTIFICATIONS DELIVERY CORE: FROZEN.** The obligation model, failure classification, preference authority, device lifecycle, destination resolution, callback inbox, retry and dead-letter behaviour, operational read, and their evidence are complete and green.
+
+## What is not built, and why
+
+- **Email rendering and templates.** No email template exists, because no email destination can be resolved for anybody.
+- **Consumer Mobile push integration.** No native build pipeline, so no token can be issued to register.
+- **Creator Studio notification surface.** No creator notification event is product-authorized; inventing one to exercise the platform is exactly what the brief forbids.
+- **Consumer Web preference controls.** The preference API and its contract exist; the surface does not.
+- **Provider-drift reconciliation.** Comparing local state against provider state requires a provider to read from. The detectable local classes are surfaced as backlog ages and counts instead.
+- **SMS.** Not implemented. The channel vocabulary exists so a template can name a channel; nothing uses it.
+
+## Live delivery
+
+**LIVE EMAIL DELIVERY: BLOCKED** — no approved provider (four of six assessed prohibit the business category, one is silent, one requires written guarantees nobody holds), and, independently and more fundamentally, **no domain stores an email address at all**, so an approved vendor would still have nowhere to send.
+
+**LIVE MOBILE PUSH DELIVERY: BLOCKED** — no approved provider (no vendor's governing text was both retrievable and clear), and, independently, **no native build pipeline exists**, so no device token can be issued to register against.
+
+**LIVE SMS DELIVERY: NOT IMPLEMENTED** — no product authority requires it.
+
+## What unfreezes each
+
+Email needs a written vendor answer naming VELORA's business, and an owning domain for a consumer email address with its verification and correction path — an AUTH architecture decision that is itself blocked on identity-provider approval. Push needs a written vendor answer and a native build pipeline that compiles, links, signs, and runs the app. Both then need callback key custody, retention durations, the legal classification of which notices are mandatory, and an operations owner. All are recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
+
+## Cross-references
+
+- [NOTIFICATIONS](../domains/notifications.md) and [notification delivery flow](../flows/notification-delivery.md)
+- [ADR-0026](../decisions/ADR-0026-notification-delivery-platform.md)
+- [Notification provider eligibility](../compliance/11-notification-provider-eligibility.md)
+- [Configuration and environments](../engineering/07-configuration-environments.md)
