@@ -18,6 +18,7 @@ import type {
 } from '../database/executor.js';
 import type {
   AttemptOutcome,
+  DeliveryFailureClass,
   NotificationChannel,
   NotificationKind,
   NotificationPurpose,
@@ -365,6 +366,7 @@ export class NotificationRepository {
     input: {
       readonly attemptNumber: number;
       readonly channel: NotificationChannel;
+      readonly failureClass: DeliveryFailureClass | null;
       readonly failureReason: string | null;
       readonly intentId: string;
       readonly now: Date;
@@ -378,6 +380,7 @@ export class NotificationRepository {
         attemptNumber: input.attemptNumber,
         channel: input.channel,
         createdAt: input.now,
+        failureClass: input.failureClass,
         failureReason: input.failureReason,
         intentId: input.intentId,
         outcome: input.outcome,

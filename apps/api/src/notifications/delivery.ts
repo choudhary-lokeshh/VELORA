@@ -11,6 +11,7 @@ import {
   deliveryBackoffMilliseconds,
   deliveryBatchSize,
   deliveryLeaseMilliseconds,
+  isRetryableFailure,
   isTerminal,
   maximumDeliveryAttempts,
   notificationTemplateByKey,
@@ -267,6 +268,9 @@ export class NotificationDeliveryService {
     await this.dependencies.repository.insertAttempt(executor, {
       attemptNumber: intent.attempts,
       channel,
+      // A suppression is a decision this platform made, not a failure a
+      // provider reported, so it carries no failure class.
+      failureClass: null,
       failureReason: null,
       intentId: intent.id,
       now,
@@ -304,7 +308,15 @@ export class NotificationDeliveryService {
         { error, intentId: intent.id },
         'notification channel raised',
       );
-      return { kind: 'failed', reason: 'channel_error' };
+      // A raised adapter told us nothing about the destination, only that the
+      // call did not complete. That is a transport failure and keeps its
+      // budget; inferring anything stronger from an exception would retire a
+      // notice over a bug on this side.
+      return {
+        failureClass: 'transport',
+        kind: 'failed',
+        reason: 'channel_error',
+      };
     }
   }
 
@@ -341,6 +353,7 @@ export class NotificationDeliveryService {
           await this.dependencies.repository.insertAttempt(executor, {
             attemptNumber: intent.attempts,
             channel,
+            failureClass: null,
             failureReason: null,
             intentId: intent.id,
             now,
@@ -358,12 +371,21 @@ export class NotificationDeliveryService {
       return { intentId: intent.id, kind: 'delivered' };
     }
 
-    const deadLetter = intent.attempts >= maximumDeliveryAttempts;
+    // Two independent reasons to stop, and they are not the same reason.
+    // Exhausting the budget means every attempt so far failed in a way that
+    // might have worked; a terminal class means trying again could never work,
+    // whatever budget remains. A hard bounce retried five more times is five
+    // more messages to a mailbox that does not exist, which is how a sender
+    // reputation is lost rather than how a notice is delivered.
+    const terminalClass = !isRetryableFailure(receipt.failureClass);
+    const exhausted = intent.attempts >= maximumDeliveryAttempts;
+    const deadLetter = terminalClass || exhausted;
     const settled = await this.dependencies.repository.transaction(
       async (executor) => {
         await this.dependencies.repository.insertAttempt(executor, {
           attemptNumber: intent.attempts,
           channel,
+          failureClass: receipt.failureClass,
           failureReason: receipt.reason,
           intentId: intent.id,
           now,
@@ -378,7 +400,14 @@ export class NotificationDeliveryService {
           ),
           now,
           owner: this.dependencies.owner,
-          reason: deadLetter ? 'attempts_exhausted' : receipt.reason,
+          // The class outranks the budget, because it is the more specific
+          // fact. "attempts_exhausted" on a hard bounce would misreport why
+          // the platform stopped to whoever reads the row later.
+          reason: terminalClass
+            ? receipt.failureClass
+            : exhausted
+              ? 'attempts_exhausted'
+              : receipt.reason,
         });
       },
     );
@@ -390,8 +419,10 @@ export class NotificationDeliveryService {
       this.dependencies.logger.error(
         {
           attempts: intent.attempts,
+          failureClass: receipt.failureClass,
           intentId: intent.id,
           templateKey: intent.templateKey,
+          terminalClass,
         },
         'notification dead-lettered',
       );

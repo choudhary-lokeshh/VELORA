@@ -94,6 +94,61 @@ export const suppressionReasons = [
 ] as const;
 export type SuppressionReason = (typeof suppressionReasons)[number];
 
+/**
+ * Why a delivery attempt failed, normalized by the adapter that made it.
+ *
+ * The class decides what happens next. A provider's error text never does:
+ * vendor strings differ per vendor, change without notice, and describe the
+ * transport rather than the obligation. Every adapter converts whatever it was
+ * told into exactly one of these, and the retry decision reads only this.
+ *
+ * The split that matters is not severity, it is whether trying again could
+ * ever work. A timeout might; a mailbox that does not exist never will, and
+ * retrying it six times teaches a provider that this sender does not read
+ * bounces — which is how a sending reputation is lost.
+ */
+export const deliveryFailureClasses = [
+  /** The provider could not be reached, or answered in a way nobody planned. */
+  'transport',
+  /** The provider asked for less traffic. Retryable, and its own class so a
+   * throttle is never mistaken for a fault in the notice. */
+  'throttled',
+  /** The destination refused this message and may accept a later one. */
+  'soft_bounce',
+  /** The destination does not exist or has refused permanently. */
+  'hard_bounce',
+  /** The provider retired this device token. It never becomes valid again. */
+  'invalid_token',
+  /** The provider refused the content or the sender on policy grounds. */
+  'policy_refused',
+  /** This destination is suppressed and must not be attempted at all. */
+  'destination_suppressed',
+  /**
+   * Recorded before this vocabulary existed. No adapter produces it, and a
+   * test asserts that. It exists so the shape constraint below can be added to
+   * a table that may already hold failed attempts, without inventing a cause
+   * for one nobody classified.
+   */
+  'unclassified',
+] as const;
+export type DeliveryFailureClass = (typeof deliveryFailureClasses)[number];
+
+/**
+ * The classes worth another attempt. Everything absent from this list is
+ * terminal on the first occurrence, whatever the attempt budget still says.
+ */
+const retryableFailureClasses: readonly DeliveryFailureClass[] = [
+  'transport',
+  'throttled',
+  'soft_bounce',
+];
+
+export function isRetryableFailure(
+  failureClass: DeliveryFailureClass,
+): boolean {
+  return retryableFailureClasses.includes(failureClass);
+}
+
 export const attemptOutcomes = ['delivered', 'failed', 'suppressed'] as const;
 export type AttemptOutcome = (typeof attemptOutcomes)[number];
 

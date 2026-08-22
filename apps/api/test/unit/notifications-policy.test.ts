@@ -24,6 +24,8 @@ import { notificationDeliveryPayload } from '../../src/notifications/jobs.js';
 import {
   channelUnavailableRetryMilliseconds,
   deliveryBackoffMilliseconds,
+  deliveryFailureClasses,
+  isRetryableFailure,
   isTerminal,
   maximumDeliveryAttempts,
   notificationKinds,
@@ -296,5 +298,47 @@ describe('the in-app feed cursor', () => {
         ).toString('base64url'),
       ),
     ).toBeUndefined();
+  });
+});
+
+describe('delivery failure classification', () => {
+  /**
+   * The split is not severity, it is whether another attempt could ever work.
+   * Written as an exhaustive pair of lists rather than as a predicate test,
+   * because the thing worth protecting is the membership: moving one class
+   * across this line changes how many messages a dead mailbox receives, and
+   * that should be a visible edit rather than a quiet one.
+   */
+  const retryable = ['transport', 'throttled', 'soft_bounce'] as const;
+  const terminal = [
+    'hard_bounce',
+    'invalid_token',
+    'policy_refused',
+    'destination_suppressed',
+    'unclassified',
+  ] as const;
+
+  it('covers every declared class exactly once', () => {
+    expect([...retryable, ...terminal].toSorted()).toEqual(
+      [...deliveryFailureClasses].toSorted(),
+    );
+  });
+
+  for (const failureClass of retryable) {
+    it(`treats ${failureClass} as worth another attempt`, () => {
+      expect(isRetryableFailure(failureClass)).toBe(true);
+    });
+  }
+
+  for (const failureClass of terminal) {
+    it(`treats ${failureClass} as terminal`, () => {
+      expect(isRetryableFailure(failureClass)).toBe(false);
+    });
+  }
+
+  it('never treats the legacy class as retryable', () => {
+    // A row carrying `unclassified` predates the vocabulary. Retrying it would
+    // act on a cause nobody ever established.
+    expect(isRetryableFailure('unclassified')).toBe(false);
   });
 });

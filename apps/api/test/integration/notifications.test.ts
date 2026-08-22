@@ -384,6 +384,7 @@ async function sendMessage(
 
 interface IntentRow {
   readonly attempts: number;
+  readonly failure_reason: string | null;
   readonly id: string;
   readonly payload: Record<string, unknown>;
   readonly recipient_id: string;
@@ -418,7 +419,7 @@ async function intents(
   templateKey: string = messageTemplateKey,
 ): Promise<IntentRow[]> {
   const rows = await rowsOf<IntentRow>(
-    database.sql`select attempts, id, payload, recipient_id, state, subject_id, suppression_reason, template_key
+    database.sql`select attempts, failure_reason, id, payload, recipient_id, state, subject_id, suppression_reason, template_key
       from notifications_intents where template_key = ${templateKey}
       order by created_at`,
   );
@@ -428,10 +429,11 @@ async function intents(
 async function attemptsOf(intentId: string) {
   return rowsOf<{
     attempt_number: number;
+    failure_class: string | null;
     failure_reason: string | null;
     outcome: string;
   }>(
-    database.sql`select attempt_number, failure_reason, outcome
+    database.sql`select attempt_number, failure_class, failure_reason, outcome
       from notifications_attempts where intent_id = ${intentId}
       order by attempt_number`,
   );
@@ -748,6 +750,10 @@ describe('delivery failure handling', () => {
     expect(attempts).toHaveLength(maximumDeliveryAttempts);
     expect(attempts.every((row) => row.outcome === 'failed')).toBe(true);
     expect(attempts[0]?.failure_reason).toBe('provider_rejected');
+    // Every attempt carries the class that decided it was worth another one.
+    expect(attempts.every((row) => row.failure_class === 'transport')).toBe(
+      true,
+    );
     expect(
       logs.some(
         (entry) =>
@@ -755,6 +761,106 @@ describe('delivery failure handling', () => {
           'notification dead-lettered',
       ),
     ).toBe(true);
+  });
+
+  /**
+   * A failure whose class can never succeed stops on its first occurrence.
+   *
+   * The budget is not the question here. A mailbox that does not exist will
+   * not start existing on the fourth try, and five more messages to it is how
+   * a sending reputation is lost rather than how a notice gets delivered. The
+   * retry decision reads the class and nothing else, so a provider inventing a
+   * new error string cannot invent a new retry behaviour with it.
+   */
+  it.each([
+    ['hard_bounce', 'address_unknown'],
+    ['invalid_token', 'token_retired'],
+    ['policy_refused', 'sender_refused'],
+    ['destination_suppressed', 'destination_suppressed'],
+  ] as const)(
+    'retires a notice on the first %s without spending the retry budget',
+    async (failureClass, reason) => {
+      const { conversationId, sender } = await pair();
+      await sendMessage(sender, {
+        body: 'hello',
+        clientMessageId: 'client-1',
+        conversationId,
+      });
+      await relay.dispatchOnce();
+      channel.failWith(reason, failureClass);
+
+      await notifications.delivery.deliverDue();
+
+      const rows = await intents();
+      expect(rows[0]?.state).toBe('dead_letter');
+      // One attempt, not six. The class decided, not the counter.
+      expect(rows[0]?.attempts).toBe(1);
+      // The row records why the platform stopped, and the class outranks the
+      // budget: "attempts_exhausted" here would misreport it to an operator.
+      expect(rows[0]?.failure_reason).toBe(failureClass);
+      const attempts = await attemptsOf(rows[0]?.id ?? '');
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.failure_class).toBe(failureClass);
+      expect(attempts[0]?.outcome).toBe('failed');
+      // Retired, never deleted: the payload a repair would need survives.
+      expect(rows[0]?.payload.conversationId).toBe(conversationId);
+    },
+  );
+
+  it.each([['throttled'], ['soft_bounce']] as const)(
+    'keeps a notice owed after a %s, which may succeed later',
+    async (failureClass) => {
+      const { conversationId, sender } = await pair();
+      await sendMessage(sender, {
+        body: 'hello',
+        clientMessageId: 'client-1',
+        conversationId,
+      });
+      await relay.dispatchOnce();
+      channel.failWith('deferred', failureClass);
+
+      await notifications.delivery.deliverDue();
+
+      const rows = await intents();
+      expect(rows[0]?.state).toBe('queued');
+      expect(rows[0]?.attempts).toBe(1);
+      const attempts = await attemptsOf(rows[0]?.id ?? '');
+      expect(attempts[0]?.failure_class).toBe(failureClass);
+
+      // And it does succeed, once the provider stops refusing.
+      channel.failWith(undefined);
+      clockOffsetMilliseconds += 3_600_000;
+      await notifications.delivery.deliverDue();
+      expect((await intents())[0]?.state).toBe('delivered');
+      expect(
+        channel.deliveredTo((await intents())[0]?.recipient_id ?? ''),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('never records the legacy class, which exists only for old rows', async () => {
+    // `unclassified` is storable so the shape constraint could be added to a
+    // table that already held failed attempts. Nothing produces it, and this
+    // is the assertion that keeps it that way.
+    const { conversationId, sender } = await pair();
+    await sendMessage(sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+    channel.failWith('provider_rejected');
+
+    for (let attempt = 0; attempt < maximumDeliveryAttempts; attempt += 1) {
+      await notifications.delivery.deliverDue();
+      clockOffsetMilliseconds += 3_600_000;
+    }
+
+    const attempts = await attemptsOf((await intents())[0]?.id ?? '');
+    expect(attempts).not.toHaveLength(0);
+    expect(attempts.some((row) => row.failure_class === 'unclassified')).toBe(
+      false,
+    );
   });
 
   it('holds a notice indefinitely while no delivery provider is approved', async () => {

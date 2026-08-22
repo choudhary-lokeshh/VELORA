@@ -14,6 +14,7 @@ import {
 import { inList, nullablePairing, timestamptz } from '../database/columns.js';
 import {
   attemptOutcomes,
+  deliveryFailureClasses,
   notificationChannels,
   notificationKinds,
   notificationPurposes,
@@ -188,6 +189,12 @@ export const notificationAttempts = pgTable(
     attemptNumber: integer('attempt_number').notNull(),
     channel: text('channel').notNull().$type<string>(),
     createdAt: timestamptz('created_at').notNull(),
+    /**
+     * What kind of failure this was. The retry policy branches on this and
+     * never on the reason beside it, so a hard bounce stops on its first
+     * occurrence while a timeout keeps its budget.
+     */
+    failureClass: text('failure_class').$type<string>(),
     /** A redacted code. Never a provider message, address, or device token. */
     failureReason: text('failure_reason'),
     id: bigserial('id', { mode: 'number' }).primaryKey(),
@@ -219,14 +226,26 @@ export const notificationAttempts = pgTable(
       'notifications_attempts_number_check',
       sql`${table.attemptNumber} >= 1`,
     ),
-    // A delivered attempt carries its receipt; a failed one carries its reason.
+    check(
+      'notifications_attempts_failure_class_check',
+      sql`${table.failureClass} is null or ${inList(table.failureClass, deliveryFailureClasses)}`,
+    ),
+    // A delivered attempt carries its receipt; a failed one carries its reason
+    // and the class that decided what happened next. A failure with no class
+    // would be one the retry policy had to guess about.
     check(
       'notifications_attempts_delivered_shape_check',
       sql`${table.outcome} <> 'delivered' or ${table.providerReference} is not null`,
     ),
     check(
       'notifications_attempts_failed_shape_check',
-      sql`${table.outcome} <> 'failed' or ${table.failureReason} is not null`,
+      sql`${table.outcome} <> 'failed' or (${table.failureReason} is not null and ${table.failureClass} is not null)`,
+    ),
+    // Only a failure has a class. A delivered or suppressed attempt carrying
+    // one would invite a reader to branch on it.
+    check(
+      'notifications_attempts_class_scope_check',
+      sql`${table.outcome} = 'failed' or ${table.failureClass} is null`,
     ),
   ],
 );

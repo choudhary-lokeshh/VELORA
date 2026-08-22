@@ -1,4 +1,4 @@
-import type { NotificationChannel } from './policy.js';
+import type { DeliveryFailureClass, NotificationChannel } from './policy.js';
 
 /**
  * The external delivery seam.
@@ -34,6 +34,12 @@ export type NotificationReceipt =
   | { readonly kind: 'delivered'; readonly providerReference: string }
   | {
       readonly kind: 'failed';
+      /**
+       * What kind of failure this was, decided by the adapter. The retry
+       * policy reads this and nothing else, so a provider that invents a new
+       * error string cannot invent a new retry behaviour with it.
+       */
+      readonly failureClass: DeliveryFailureClass;
       /** A redacted code. Never a provider message or an address. */
       readonly reason: string;
     }
@@ -78,15 +84,28 @@ export interface RecordedNotification extends NotificationDeliveryRequest {
 export class LocalTestNotificationChannel implements NotificationChannelPort {
   private readonly sent: RecordedNotification[] = [];
   private failure: string | undefined;
+  private failureClass: DeliveryFailureClass = 'transport';
 
-  /** Makes the next deliveries fail, so retry and retirement are testable. */
-  failWith(reason: string | undefined): void {
+  /**
+   * Makes the next deliveries fail, so retry and retirement are testable. The
+   * class defaults to the retryable one, because that is the path with more
+   * behaviour to get wrong; a terminal class is asked for explicitly.
+   */
+  failWith(
+    reason: string | undefined,
+    failureClass: DeliveryFailureClass = 'transport',
+  ): void {
     this.failure = reason;
+    this.failureClass = failureClass;
   }
 
   deliver(request: NotificationDeliveryRequest): Promise<NotificationReceipt> {
     if (this.failure !== undefined) {
-      return Promise.resolve({ kind: 'failed', reason: this.failure });
+      return Promise.resolve({
+        failureClass: this.failureClass,
+        kind: 'failed',
+        reason: this.failure,
+      });
     }
     // The key is stable per intent, so a repeated attempt is answered with the
     // receipt the first one produced rather than sending twice. That is what a
@@ -117,5 +136,6 @@ export class LocalTestNotificationChannel implements NotificationChannelPort {
   reset(): void {
     this.sent.length = 0;
     this.failure = undefined;
+    this.failureClass = 'transport';
   }
 }
