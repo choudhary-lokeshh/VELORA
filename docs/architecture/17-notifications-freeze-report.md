@@ -163,6 +163,47 @@ it rather than by reading it: a throughput assumption that only fails on slow
 machines, a clock race that only fails on fast ones, and a pool that only fails
 under sustained repetition. None was a defect in the runtime.
 
+### The sequence that held
+
+Twenty consecutive complete integration suites on `8977ddc`, the tree that is
+also hosted-CI green. No retries, no skips, no restarts inside the sequence.
+
+| Run | Tests | Failures | Seconds |
+| --- | --- | --- | --- |
+| 1 | 1348 | 0 | 323 |
+| 2 | 1348 | 0 | 319 |
+| 3 | 1348 | 0 | 318 |
+| 4 | 1348 | 0 | 327 |
+| 5 | 1348 | 0 | 314 |
+| 6 | 1348 | 0 | 412 |
+| 7 | 1348 | 0 | 813 |
+| 8 | 1348 | 0 | 564 |
+| 9 | 1348 | 0 | 489 |
+| 10 | 1348 | 0 | 451 |
+| 11 | 1348 | 0 | 442 |
+| 12 | 1348 | 0 | 390 |
+| 13 | 1348 | 0 | 385 |
+| 14 | 1348 | 0 | 387 |
+| 15 | 1348 | 0 | 385 |
+| 16 | 1348 | 0 | 382 |
+| 17 | 1348 | 0 | 384 |
+| 18 | 1348 | 0 | 381 |
+| 19 | 1348 | 0 | 385 |
+| 20 | 1348 | 0 | 382 |
+
+26,960 tests, zero failures. The durations span 314 to 813
+seconds — a 2.6× spread, because the machine was under varying load
+throughout — which matters more than the count: the two timing-sensitive
+defects this vertical found were each visible only at one end of that range,
+one on fast runs and one on slow.
+
+What this proves and what it does not is worth stating. Twenty passes on one
+machine demonstrate stability against ordering, load, and the clock. They do not
+demonstrate that a query plan chosen here is the plan a different planner
+chooses, which is why the plan assertions seed a thousand-to-one disparity
+rather than relying on repetition, and why the hosted runner is the authority
+for anything a local run agrees with too easily.
+
 ## What is frozen
 
 **PRODUCTION NOTIFICATIONS DELIVERY CORE: FROZEN.** The obligation model, failure classification, preference authority, device lifecycle, destination resolution, callback inbox, retry and dead-letter behaviour, operational read, and their evidence are complete and green.
