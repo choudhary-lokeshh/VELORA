@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { notificationKindSchema } from '@velora/validation';
+import { notificationKindSchema, notificationSchema } from '@velora/validation';
 
 import {
   introductionMutualEventName,
@@ -154,11 +154,26 @@ describe('delivery policy', () => {
   it('never records a suppression reason a recipient could be shown', () => {
     // Every reason here is operator-facing. None of them is ever returned to
     // the person: `safety_block` would disclose somebody else's block.
+    //
+    // `recipient_opted_out` is the one reason that describes the recipient's
+    // own decision rather than somebody else's, and it is still not published.
+    // The contract carries no suppression reason at all, so there is no field
+    // for a future change to start filling in with the others.
     expect([...suppressionReasons]).toEqual([
       'safety_block',
       'recipient_not_deliverable',
       'expired',
+      'recipient_opted_out',
     ]);
+  });
+
+  it('publishes no suppression reason on the consumer contract', () => {
+    // The reason the list above can stay operator-facing: there is nowhere to
+    // put one. A notice as its recipient sees it has no field for why an
+    // external send did not happen, so adding a reason cannot leak one.
+    const published = JSON.stringify(Object.keys(notificationSchema.shape));
+    expect(published).not.toContain('suppression');
+    expect(published).not.toContain('reason');
   });
 });
 

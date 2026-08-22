@@ -1,11 +1,13 @@
 import { sql } from 'drizzle-orm';
 import {
   bigserial,
+  boolean,
   check,
   index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   uniqueIndex,
   uuid,
@@ -15,6 +17,8 @@ import { inList, nullablePairing, timestamptz } from '../database/columns.js';
 import {
   attemptOutcomes,
   deliveryFailureClasses,
+  mandatoryNotificationCategories,
+  notificationCategories,
   notificationChannels,
   notificationKinds,
   notificationPurposes,
@@ -328,6 +332,64 @@ export const notificationFeed = pgTable(
         when 'call_missed' then ${table.callId} is not null and ${table.conversationId} is null and ${table.introductionId} is null
         else false
       end`,
+    ),
+  ],
+);
+
+/**
+ * What one person has decided about one category on one channel.
+ *
+ * A row exists only where somebody expressed a preference. Absence is "never
+ * asked", and the default for a category is applied in policy rather than
+ * written here, so changing a default does not require rewriting rows that
+ * were never a decision anybody made.
+ *
+ * The table is NOTIFICATIONS-owned like everything else in this domain. It is
+ * not `users_preferences`: that table holds a discovery choice, and merging the
+ * two would put one domain's write path inside another domain's table for no
+ * reason beyond both being called a preference.
+ */
+export const notificationPreferences = pgTable(
+  'notifications_preferences',
+  {
+    category: text('category').notNull().$type<string>(),
+    channel: text('channel').notNull().$type<string>(),
+    createdAt: timestamptz('created_at').notNull(),
+    enabled: boolean('enabled').notNull(),
+    recipientId: uuid('recipient_id').notNull(),
+    updatedAt: timestamptz('updated_at').notNull(),
+  },
+  (table) => [
+    // One decision per person, per category, per channel. Also the only read
+    // this table serves — delivery asks for exactly one row — so the primary
+    // key answers it without a second index.
+    primaryKey({
+      columns: [table.recipientId, table.category, table.channel],
+      name: 'notifications_preferences_pk',
+    }),
+    check(
+      'notifications_preferences_category_check',
+      inList(table.category, notificationCategories),
+    ),
+    check(
+      'notifications_preferences_channel_check',
+      inList(table.channel, notificationChannels),
+    ),
+    /**
+     * A mandatory category cannot be stored as disabled.
+     *
+     * The invariant that matters most in this table, and the reason it is here
+     * rather than only in the service that writes it. "A security notice
+     * cannot be silenced" enforced in application code survives until somebody
+     * adds a second write path, and then fails silently and in the direction
+     * nobody notices — a person stops receiving notices about their own
+     * account. Expressed here, that row cannot exist at all.
+     */
+    check(
+      'notifications_preferences_mandatory_check',
+      sql`${table.enabled} or ${table.category} not in (${sql.raw(
+        mandatoryNotificationCategories.map((value) => `'${value}'`).join(', '),
+      )})`,
     ),
   ],
 );

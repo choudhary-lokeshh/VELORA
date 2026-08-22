@@ -18,6 +18,7 @@ import {
   createNotificationIntakes,
   type NotificationIntake,
 } from './intake.js';
+import { NotificationPreferenceService } from './preferences.js';
 import { NotificationRepository } from './repository.js';
 import { NotificationRoutes } from './routes.js';
 import type {
@@ -45,6 +46,7 @@ export interface NotificationsRuntime {
  */
 export interface NotificationsApiRuntime {
   readonly feed: NotificationFeedService;
+  readonly preferences: NotificationPreferenceService;
   readonly repository: NotificationRepository;
   readonly routes: NotificationRoutes;
 }
@@ -126,18 +128,23 @@ export function createNotificationsApiRuntime(input: {
   readonly now?: () => Date;
   readonly safety: NotificationSafetyPort;
 }): NotificationsApiRuntime {
+  const now = input.now ?? (() => new Date());
   const repository = new NotificationRepository(input.database);
   const feed = new NotificationFeedService({
-    now: input.now ?? (() => new Date()),
+    now,
     repository,
     safety: input.safety,
   });
+  const preferences = new NotificationPreferenceService({ now, repository });
   return {
     feed,
+    preferences,
     repository,
     routes: new NotificationRoutes({
       consumerContext: input.consumerContext,
       feed,
+      preferences,
+      repository,
     }),
   };
 }

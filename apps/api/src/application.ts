@@ -1288,6 +1288,18 @@ export function createApplication(
       admitted(async (input) =>
         notifications.routes.markNotificationsRead(input),
       ),
+    )
+    .get(
+      apiRoutePaths.notificationPreferences,
+      admitted(async (input) =>
+        notifications.routes.listNotificationPreferences(input),
+      ),
+    )
+    .post(
+      apiRoutePaths.notificationPreferences,
+      admitted(async (input) =>
+        notifications.routes.updateNotificationPreference(input),
+      ),
     );
 
   return {

@@ -126,6 +126,9 @@ const truncationRoots = [
   'messaging_outbox',
   'notifications_feed',
   'notifications_intents',
+  // A preference references its owner by opaque identifier with no foreign
+  // key, exactly as the intent does, so nothing cascades into it either.
+  'notifications_preferences',
   // REALTIME references consumer accounts and the authorizing introduction by
   // opaque identifier with no foreign key, so nothing cascades into it and the
   // session is its own root. Participants and provider obligations follow by

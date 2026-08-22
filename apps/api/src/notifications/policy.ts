@@ -77,6 +77,77 @@ export function isTerminal(state: NotificationState): boolean {
 }
 
 /**
+ * What a notice is about, for the purpose of deciding whether a preference may
+ * silence it.
+ *
+ * A category, not a boolean, because "can the recipient turn this off" has more
+ * than two correct answers and the difference is governance rather than topic.
+ * Some notices are offers and some are obligations, and a single
+ * `notifications_enabled` flag cannot express the second kind without either
+ * letting somebody silence a security notice or refusing to let them silence
+ * anything.
+ *
+ * Categories are also the unit a person actually reasons about. "Stop telling
+ * me about calls" is a preference somebody holds; "stop
+ * `realtime.call.missed.v1`" is not.
+ */
+export const notificationCategories = [
+  /** Sessions, credentials, recovery. Mandatory: see below. */
+  'account_security',
+  /** Safety and legal notices the platform is obliged to deliver. Mandatory. */
+  'safety_legal',
+  'direct_message',
+  'introduction',
+  'call',
+  /**
+   * Consent-gated and unreachable. No template carries it, `marketing` purpose
+   * is refused everywhere, and it defaults to off rather than on. It exists so
+   * that a promotional notice cannot be quietly reclassified as transactional
+   * to escape a consent decision nobody has taken.
+   */
+  'marketing',
+] as const;
+export type NotificationCategory = (typeof notificationCategories)[number];
+
+/**
+ * Categories a preference may not silence.
+ *
+ * This list is also a CHECK constraint on the preferences table, so a
+ * disabled row for one of these cannot exist in the database at all. That is
+ * deliberate: expressed only in application code, "a security notice is always
+ * sent" survives exactly until somebody writes a second code path that sets
+ * preferences, and the failure is silent.
+ *
+ * No V1 template uses either of them. The platform sends no security or legal
+ * notice yet, and the vocabulary exists ahead of the templates because the
+ * constraint has to be in place before the first one is written, not after.
+ */
+export const mandatoryNotificationCategories = [
+  'account_security',
+  'safety_legal',
+] as const;
+
+export function isMandatoryCategory(category: NotificationCategory): boolean {
+  return (mandatoryNotificationCategories as readonly string[]).includes(
+    category,
+  );
+}
+
+/**
+ * What a category does when nobody has expressed a preference.
+ *
+ * Everything a person took part in defaults to on, because a missing row means
+ * "never asked" and silence about a message somebody sent you is worse than a
+ * notification you did not want. `marketing` defaults to off, because consent
+ * is not the absence of a refusal.
+ */
+export function defaultPreferenceEnabled(
+  category: NotificationCategory,
+): boolean {
+  return category !== 'marketing';
+}
+
+/**
  * Why a notice was not sent.
  *
  * Stored for operators and never told to the recipient. A person who learns
@@ -91,6 +162,11 @@ export const suppressionReasons = [
   'recipient_not_deliverable',
   /** The notice outlived the moment it was about. */
   'expired',
+  /**
+   * The recipient turned this category off on this channel. Never reachable
+   * for a mandatory category: the preferences table refuses to store one.
+   */
+  'recipient_opted_out',
 ] as const;
 export type SuppressionReason = (typeof suppressionReasons)[number];
 
@@ -181,6 +257,8 @@ export type NotificationKind = (typeof notificationKinds)[number];
 export interface NotificationTemplate {
   /** Only this producer may trigger it. */
   readonly allowedProducer: string;
+  /** Decides whether a recipient's preference may silence this notice. */
+  readonly category: NotificationCategory;
   readonly channel: NotificationChannel;
   /** What the in-app feed calls this. Published; see the contract. */
   readonly kind: NotificationKind;
@@ -225,6 +303,7 @@ export const notificationTemplates: Readonly<
 > = {
   [messageSentEventName]: {
     allowedProducer: 'messaging',
+    category: 'direct_message',
     channel: 'push',
     key: 'messaging.message.received.v1',
     kind: 'message_received',
@@ -234,6 +313,7 @@ export const notificationTemplates: Readonly<
   },
   [introductionMutualEventName]: {
     allowedProducer: 'discovery',
+    category: 'introduction',
     channel: 'push',
     key: 'discovery.introduction.mutual.v1',
     kind: 'introduction_mutual',
@@ -243,6 +323,7 @@ export const notificationTemplates: Readonly<
   },
   [callInvitedEventName]: {
     allowedProducer: 'realtime',
+    category: 'call',
     channel: 'push',
     key: 'realtime.call.incoming.v1',
     kind: 'call_incoming',
@@ -257,6 +338,7 @@ export const notificationTemplates: Readonly<
   },
   [callMissedEventName]: {
     allowedProducer: 'realtime',
+    category: 'call',
     channel: 'push',
     key: 'realtime.call.missed.v1',
     kind: 'call_missed',
@@ -281,6 +363,49 @@ export const notificationTemplateByKey: Readonly<
     template,
   ]),
 );
+
+/**
+ * The category and channel pairs a person can actually decide about.
+ *
+ * Derived from the approved catalogue rather than listed by hand, so a setting
+ * cannot outlive the template it governs. Offering a switch for something the
+ * platform has no template to send would be a control that does nothing, which
+ * misrepresents what the platform does more than offering no control would.
+ *
+ * Mandatory categories are excluded because they are not offers. They are
+ * absent from this list, absent from the read surface, and refused by the
+ * preferences table's own CHECK if anything tries to store one as disabled.
+ */
+export const settablePreferencePairs: readonly {
+  readonly category: NotificationCategory;
+  readonly channel: NotificationChannel;
+}[] = Object.values(notificationTemplates)
+  .filter((template) => !isMandatoryCategory(template.category))
+  .map((template) => ({
+    category: template.category,
+    channel: template.channel,
+  }))
+  .filter(
+    (pair, index, all) =>
+      all.findIndex(
+        (other) =>
+          other.category === pair.category && other.channel === pair.channel,
+      ) === index,
+  )
+  .toSorted(
+    (first, second) =>
+      first.category.localeCompare(second.category) ||
+      first.channel.localeCompare(second.channel),
+  );
+
+export function isSettablePreferencePair(
+  category: string,
+  channel: string,
+): boolean {
+  return settablePreferencePairs.some(
+    (pair) => pair.category === category && pair.channel === channel,
+  );
+}
 
 /**
  * Retry budget for one intent.

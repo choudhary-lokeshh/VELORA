@@ -1025,6 +1025,21 @@ interface FeedEntry {
   readonly subjectId: string;
 }
 
+interface PreferenceEntry {
+  readonly category: string;
+  readonly channel: string;
+  readonly enabled: boolean;
+}
+
+async function preferences(actor: Credentials): Promise<{
+  readonly preferences: PreferenceEntry[];
+  readonly status: number;
+}> {
+  const response = await handle(get('/v1/notifications/preferences', actor));
+  const body = (await response.json()) as { preferences?: PreferenceEntry[] };
+  return { preferences: body.preferences ?? [], status: response.status };
+}
+
 function get(path: string, credentials: Credentials): Request {
   return new Request(`http://api.test${path}`, {
     headers: { cookie: credentials.cookie, origin: testConsumerOrigin },
@@ -1472,5 +1487,211 @@ describe('crash injection around the introduction fact', () => {
     );
     expect(rows[0]?.state).toBe('dispatched');
     expect(await intents(introductionTemplateKey)).toHaveLength(1);
+  });
+});
+
+describe('notification preferences', () => {
+  it('offers a switch for every pairing the platform can actually send on', async () => {
+    const { recipient } = await pair();
+    const listed = await preferences(recipient);
+
+    expect(listed.status).toBe(200);
+    // Derived from the approved catalogue, not hand-listed: a switch for
+    // something with no template would be a control that does nothing.
+    expect(
+      listed.preferences.toSorted((first, second) =>
+        first.category.localeCompare(second.category),
+      ),
+    ).toEqual([
+      { category: 'call', channel: 'push', enabled: true },
+      { category: 'direct_message', channel: 'push', enabled: true },
+      { category: 'introduction', channel: 'push', enabled: true },
+    ]);
+  });
+
+  it('never offers a mandatory category as a switch', async () => {
+    const { recipient } = await pair();
+    const listed = await preferences(recipient);
+
+    // They are obligations rather than offers, so they are absent from the
+    // read surface entirely rather than present and refused on write.
+    for (const category of ['account_security', 'safety_legal']) {
+      expect(
+        listed.preferences.some((entry) => entry.category === category),
+      ).toBe(false);
+    }
+  });
+
+  it('records a decision and answers with the whole set', async () => {
+    const { recipient } = await pair();
+    const response = await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'direct_message',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { preferences: PreferenceEntry[] };
+    // The whole set, so a client never merges a response into local state.
+    expect(body.preferences).toHaveLength(3);
+    expect(
+      body.preferences.find((entry) => entry.category === 'direct_message')
+        ?.enabled,
+    ).toBe(false);
+  });
+
+  it('refuses a pairing the platform has no template for', async () => {
+    const { recipient } = await pair();
+    // A real category on a channel it is never sent over. Accepting this would
+    // store a preference that governs nothing.
+    const response = await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'direct_message',
+        channel: 'email',
+        enabled: false,
+      }),
+    );
+
+    expect(response.status).toBe(422);
+  });
+
+  it.each([['account_security'], ['safety_legal']] as const)(
+    'refuses to silence the mandatory %s category',
+    async (category) => {
+      const { recipient } = await pair();
+      const response = await handle(
+        post('/v1/notifications/preferences', recipient, {
+          category,
+          channel: 'push',
+          enabled: false,
+        }),
+      );
+
+      expect(response.status).toBe(422);
+    },
+  );
+
+  it('refuses a disabled mandatory row at the database, not only in code', async () => {
+    const { recipient } = await pair();
+    // The service refuses this, and so does the table. Two defences for one
+    // rule, because a second write path that forgot it would fail silently and
+    // in the direction nobody notices: somebody stops being told about their
+    // own account.
+    let refused = false;
+    try {
+      await execute(
+        database.sql`insert into notifications_preferences
+          (category, channel, created_at, enabled, recipient_id, updated_at)
+         values ('account_security', 'push', now(), false, ${recipient.id}, now())`,
+      );
+    } catch {
+      refused = true;
+    }
+    expect(refused).toBe(true);
+
+    // The same row enabled is fine, so the constraint is about the decision
+    // rather than about the category existing.
+    await execute(
+      database.sql`insert into notifications_preferences
+        (category, channel, created_at, enabled, recipient_id, updated_at)
+       values ('account_security', 'push', now(), true, ${recipient.id}, now())`,
+    );
+  });
+
+  it('reads only the caller’s own decisions', async () => {
+    const { recipient } = await pair();
+    const other = await consumer('preference-outsider@velora.test');
+    await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'call',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+
+    const theirs = await preferences(other);
+
+    // Defaults, not the recipient's decision. One person's settings are never
+    // reachable from another person's session.
+    expect(
+      theirs.preferences.find((entry) => entry.category === 'call')?.enabled,
+    ).toBe(true);
+  });
+
+  it('suppresses an opted-out notice and never reaches the channel', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'direct_message',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+    await sendMessage(sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+
+    await notifications.delivery.deliverDue();
+
+    const rows = await intents();
+    expect(rows[0]?.state).toBe('suppressed');
+    expect(rows[0]?.suppression_reason).toBe('recipient_opted_out');
+    // The assertion that matters: not "we checked" but "we did not send".
+    expect(channel.deliveredTo(recipient.id)).toHaveLength(0);
+  });
+
+  it('applies a preference set after the notice was already owed', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await sendMessage(sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+    // Queued under one answer, delivered under another. Preference is read in
+    // the claiming transaction, so the current answer governs rather than the
+    // one that held when the notice was created.
+    await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'direct_message',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+
+    await notifications.delivery.deliverDue();
+
+    expect((await intents())[0]?.suppression_reason).toBe(
+      'recipient_opted_out',
+    );
+    expect(channel.deliveredTo(recipient.id)).toHaveLength(0);
+  });
+
+  it('still shows an opted-out notice in the app', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'direct_message',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+    await sendMessage(sender, {
+      body: 'hello',
+      clientMessageId: 'client-1',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+    await notifications.delivery.deliverDue();
+
+    // A push preference is a decision about being interrupted, not about
+    // being told. The in-app line is a surface the person chose to open.
+    const listed = await feed(recipient);
+    expect(listed.notifications).toHaveLength(1);
   });
 });

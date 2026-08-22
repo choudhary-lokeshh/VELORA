@@ -43,6 +43,14 @@ Every transition is a compare-and-set under a lease, so two workers holding the 
 
 Suppression is decided inside the claiming transaction, before any external call, and is asserted by integration tests against real PostgreSQL: a blocked pair, a restricted recipient, and an expired notice each reach the channel adapter zero times. See [NOTIFICATIONS](../domains/notifications.md) for the durability and recheck guarantees in full, including the one window that cannot be closed.
 
+## Implemented preference evaluation
+
+`GET /v1/notifications/preferences` returns the effective decision for every category and channel with an approved template; `POST` to the same path records one and answers with the whole set, so a client never merges a response into local state. The recipient is the authenticated principal and is never read from the body, so no field in either request can address somebody else.
+
+The update is a `POST` rather than a `PUT` because this API publishes no `PATCH`, `PUT`, or `DELETE` route anywhere: every operator and consumer command is explicit, and a generic update is a shape that can rewrite a record wholesale. An integration test asserts that property across every registered route.
+
+A pairing with no template is refused rather than stored, and a mandatory category is refused by the service and again by the table's own CHECK. See [NOTIFICATIONS](../domains/notifications.md) for why that rule is stored rather than only enforced.
+
 ## Implemented in-app delivery
 
 The in-app list is the only place a V1 notice is actually seen, because no external provider is approved. It is served from `notifications_feed`, written in the same transaction as the delivery intent, and read through `GET /v1/notifications`.

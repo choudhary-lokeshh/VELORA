@@ -3,9 +3,11 @@ import {
   defaultPageSize,
   markNotificationsReadRequestSchema,
   notificationListResponseSchema,
+  notificationPreferencesResponseSchema,
   notificationReadResponseSchema,
   pageSizeSchema,
   productErrorCodes,
+  updateNotificationPreferenceRequestSchema,
 } from '@velora/validation';
 
 import {
@@ -20,6 +22,8 @@ import {
   type ConsumerRouteContext,
 } from '../users/context.js';
 import type { NotificationFeedService, NotificationView } from './feed.js';
+import type { NotificationPreferenceService } from './preferences.js';
+import type { NotificationRepository } from './repository.js';
 
 /**
  * Consumer-facing notification routes.
@@ -35,6 +39,8 @@ export class NotificationRoutes {
     private readonly dependencies: {
       readonly consumerContext: ConsumerContextResolver;
       readonly feed: NotificationFeedService;
+      readonly preferences: NotificationPreferenceService;
+      readonly repository: NotificationRepository;
     },
   ) {}
 
@@ -75,6 +81,61 @@ export class NotificationRoutes {
     );
     return {
       body: notificationReadResponseSchema.parse({ readIds: [...readIds] }),
+      status: 200,
+    };
+  }
+
+  async listNotificationPreferences(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    return this.preferenceResponse(resolved.context.userId);
+  }
+
+  /**
+   * Records one decision and answers with the whole set.
+   *
+   * Returning the complete set rather than the one row means a client never
+   * merges a response into local state, which is where a stale switch comes
+   * from. The recipient is the authenticated principal and is never read from
+   * the body, so there is no field here that could address somebody else.
+   */
+  async updateNotificationPreference(
+    input: RouteRequest,
+  ): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(
+      updateNotificationPreferenceRequestSchema,
+      input.body,
+    );
+    if (!parsed.ok) return this.invalid(input);
+
+    const outcome = await this.dependencies.preferences.set(
+      this.dependencies.repository.transactionless,
+      {
+        category: parsed.value.category,
+        channel: parsed.value.channel,
+        enabled: parsed.value.enabled,
+        recipientId: resolved.context.userId,
+      },
+    );
+    if (outcome.kind !== 'updated') return this.invalid(input);
+    return this.preferenceResponse(resolved.context.userId);
+  }
+
+  private async preferenceResponse(recipientId: string): Promise<RouteResult> {
+    const preferences = await this.dependencies.preferences.list(
+      this.dependencies.repository.transactionless,
+      recipientId,
+    );
+    return {
+      body: notificationPreferencesResponseSchema.parse({
+        preferences: preferences.map((preference) => ({
+          category: preference.category,
+          channel: preference.channel,
+          enabled: preference.enabled,
+        })),
+      }),
       status: 200,
     };
   }

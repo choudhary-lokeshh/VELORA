@@ -8,9 +8,11 @@ import type {
 } from './channel.js';
 import {
   channelUnavailableRetryMilliseconds,
+  defaultPreferenceEnabled,
   deliveryBackoffMilliseconds,
   deliveryBatchSize,
   deliveryLeaseMilliseconds,
+  isMandatoryCategory,
   isRetryableFailure,
   isTerminal,
   maximumDeliveryAttempts,
@@ -244,18 +246,53 @@ export class NotificationDeliveryService {
       return 'recipient_not_deliverable';
     }
 
-    if (!template.requiresPairEligibility) return undefined;
-    // A template that depends on a pair, on a notice with no subject, cannot be
-    // evaluated — and an unevaluable safety condition fails closed.
-    if (intent.subjectId === null) return 'safety_block';
-    return (await this.dependencies.safety.mayInteract({
-      executor,
-      first: intent.recipientId,
-      now,
-      second: intent.subjectId,
-    }))
-      ? undefined
-      : 'safety_block';
+    if (template.requiresPairEligibility) {
+      // A template that depends on a pair, on a notice with no subject, cannot
+      // be evaluated — and an unevaluable safety condition fails closed.
+      if (intent.subjectId === null) return 'safety_block';
+      if (
+        !(await this.dependencies.safety.mayInteract({
+          executor,
+          first: intent.recipientId,
+          now,
+          second: intent.subjectId,
+        }))
+      ) {
+        return 'safety_block';
+      }
+    }
+
+    return this.preferenceSuppression(executor, intent, template);
+  }
+
+  /**
+   * What the recipient asked for, evaluated last on purpose.
+   *
+   * The platform's own obligations are settled first: whether the notice is
+   * still current, whether this account may be contacted at all, and whether
+   * these two people may still interact. Only then is the person's own choice
+   * consulted. The ordering decides which reason an operator sees when more
+   * than one applies, and a block is the more consequential fact — recording
+   * `recipient_opted_out` over a block would hide the block.
+   */
+  private async preferenceSuppression(
+    executor: TransactionHandle,
+    intent: NotificationIntentRow,
+    template: NotificationTemplate,
+  ): Promise<SuppressionReason | undefined> {
+    // A mandatory category is not an offer, so there is nothing to consult.
+    // The preferences table refuses to store a disabled row for one of these,
+    // so this is the second of two defences rather than the only one.
+    if (isMandatoryCategory(template.category)) return undefined;
+
+    const stored = await this.dependencies.repository.preferenceFor(executor, {
+      category: template.category,
+      channel: template.channel,
+      recipientId: intent.recipientId,
+    });
+    // No row means never asked, which is not the same as off.
+    const enabled = stored ?? defaultPreferenceEnabled(template.category);
+    return enabled ? undefined : 'recipient_opted_out';
   }
 
   private async recordSuppression(

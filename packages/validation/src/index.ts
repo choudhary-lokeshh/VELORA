@@ -113,7 +113,9 @@ import {
 import {
   markNotificationsReadRequestSchema,
   notificationListResponseSchema,
+  notificationPreferencesResponseSchema,
   notificationReadResponseSchema,
+  updateNotificationPreferenceRequestSchema,
 } from './notifications.js';
 import { currencyCodeSchema } from './money.js';
 import {
@@ -304,6 +306,7 @@ export const apiRoutePaths = {
   rtcCalls: '/v1/rtc/calls',
   rtcProviderEvents: '/v1/rtc/provider-events',
   notifications: '/v1/notifications',
+  notificationPreferences: '/v1/notifications/preferences',
   notificationsRead: '/v1/notifications/read',
   safetyBlockRemoval: '/v1/safety/blocks/removal',
   safetyBlocks: '/v1/safety/blocks',
@@ -456,7 +459,10 @@ export const apiSchemas = {
   SendMessageRequest: sendMessageRequestSchema,
   MarkNotificationsReadRequest: markNotificationsReadRequestSchema,
   NotificationListResponse: notificationListResponseSchema,
+  NotificationPreferencesResponse: notificationPreferencesResponseSchema,
   NotificationReadResponse: notificationReadResponseSchema,
+  UpdateNotificationPreferenceRequest:
+    updateNotificationPreferenceRequestSchema,
   Block: blockSchema,
   BlockListResponse: blockListResponseSchema,
   BlockRequest: blockRequestSchema,
@@ -3095,6 +3101,41 @@ export const apiOperations = [
       ...consumerAuthenticationResponses,
       '422': {
         description: `The cursor or page size failed contract validation. The body is an ApiError with code ${productErrorCodes.validationFailed}.`,
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'get',
+    operationId: 'listNotificationPreferences',
+    path: apiRoutePaths.notificationPreferences,
+    responses: {
+      '200': {
+        description:
+          "The caller's own effective notification preferences, one per category and channel the platform has an approved template for. A category nobody has expressed a preference about reports its default rather than being absent, and mandatory categories never appear because they are not offers.",
+        schemaName: 'NotificationPreferencesResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'updateNotificationPreference',
+    path: apiRoutePaths.notificationPreferences,
+    requestSchemaName: 'UpdateNotificationPreferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'The complete effective preference set after the change, so a client never has to merge one.',
+        schemaName: 'NotificationPreferencesResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': {
+        description: `The category and channel pairing is not one the platform sends on, or the category is mandatory and cannot be silenced. The body is an ApiError with code ${productErrorCodes.validationFailed}.`,
         schemaName: 'ApiError',
       },
       ...sharedErrorResponses,

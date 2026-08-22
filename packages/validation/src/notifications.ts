@@ -101,3 +101,60 @@ export type Notification = z.infer<typeof notificationSchema>;
 export type NotificationListResponse = z.infer<
   typeof notificationListResponseSchema
 >;
+
+/**
+ * What a person may decide about, and on what.
+ *
+ * The vocabulary is the platform's, not the client's: a surface renders what
+ * this endpoint returns rather than hard-coding a list of switches, so adding
+ * a category never means shipping a client to match.
+ */
+export const notificationCategorySchema = z.enum([
+  'account_security',
+  'safety_legal',
+  'direct_message',
+  'introduction',
+  'call',
+  'marketing',
+]);
+export type NotificationCategory = z.infer<typeof notificationCategorySchema>;
+
+export const notificationChannelSchema = z.enum(['push', 'email', 'sms']);
+export type NotificationChannel = z.infer<typeof notificationChannelSchema>;
+
+/**
+ * One decision, as the recipient sees it.
+ *
+ * `enabled` is the effective answer rather than the stored one: a category
+ * nobody has expressed a preference about reports its default, so a client
+ * never has to know what the defaults are or when they changed.
+ */
+export const notificationPreferenceSchema = z
+  .object({
+    category: notificationCategorySchema,
+    channel: notificationChannelSchema,
+    enabled: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Every decision this person can actually make.
+ *
+ * Only pairs the platform has an approved template for appear. A category and
+ * channel combination nothing can be sent on is not a setting, it is a switch
+ * that does nothing, and offering one would misrepresent what the platform
+ * does. Mandatory categories never appear either — they are not offers.
+ */
+export const notificationPreferencesResponseSchema = z
+  .object({ preferences: z.array(notificationPreferenceSchema) })
+  .strict();
+
+export const updateNotificationPreferenceRequestSchema =
+  notificationPreferenceSchema;
+
+export type NotificationPreference = z.infer<
+  typeof notificationPreferenceSchema
+>;
+export type NotificationPreferencesResponse = z.infer<
+  typeof notificationPreferencesResponseSchema
+>;

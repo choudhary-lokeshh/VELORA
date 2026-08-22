@@ -219,6 +219,7 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'notifications_attempts',
         'notifications_feed',
         'notifications_intents',
+        'notifications_preferences',
         'payouts_instructions',
         'payouts_journal_accounts',
         'payouts_journal_entries',

@@ -52,6 +52,20 @@ The published fact carries no message body, display name, or preview, and the st
 - **Quiet hours, frequency caps, and the legal classification of mandatory notices are undecided.** [ADR-0026](../decisions/ADR-0026-notification-delivery-platform.md) decides the preference architecture — categories, with mandatory classes a preference cannot silence — and V1 sends only transactional notices, which those rules would not suppress. What remains open is the policy content rather than where it evaluates.
 - **Retention is undecided.** Nothing here expires and no correctness rule depends on a row being physically deleted, so an approved duration can be applied as a deletion pass without changing behaviour.
 
+## Preferences, and the categories that are not offers
+
+A notice carries a category, and the category decides whether a preference may silence it. That is a different question from what the notice is about, and a single "notifications enabled" flag cannot answer it: either somebody can silence a notice about their own account security, or they can silence nothing.
+
+`account_security` and `safety_legal` are mandatory. No V1 template uses either — the platform sends no security or legal notice yet — and the vocabulary exists ahead of the templates because the constraint has to be in place before the first one is written. `direct_message`, `introduction`, and `call` are the three V1 categories, all optional, all on the push channel. `marketing` exists so a promotional notice cannot be reclassified as transactional to escape a consent decision nobody has taken; no template carries it and it defaults to off.
+
+The rule that a mandatory category cannot be silenced is a CHECK constraint on `notifications_preferences`, not a branch in a service. Expressed only in code it would survive exactly until a second write path forgot it, and it would then fail silently and in the direction nobody notices: a person stops being told about their own account. The service refuses it too, so there are two defences for one rule.
+
+Absence of a row means "never asked", not "off". The default for a category is applied in policy rather than written into rows, so changing a default does not require rewriting decisions nobody made. The read surface returns the *effective* answer for every category and channel the platform has an approved template for — derived from the catalogue, so a switch cannot outlive the template it governs, and a control that does nothing is never offered.
+
+Preference is evaluated inside the claiming transaction, last. The platform's own obligations settle first: whether the notice is still current, whether this account may be contacted at all, and whether these two people may still interact. Only then is the person's choice consulted. The ordering decides which reason an operator sees when more than one applies, and a block is the more consequential fact — recording `recipient_opted_out` over a block would hide the block.
+
+A push preference is a decision about being interrupted, not about being told. An opted-out notice is still written to the in-app feed and still appears when the person opens the app; what does not happen is the external send.
+
 ## In-app notifications, and the second V1 event
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.

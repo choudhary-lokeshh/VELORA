@@ -19,6 +19,7 @@ import type {
 import type {
   AttemptOutcome,
   DeliveryFailureClass,
+  NotificationCategory,
   NotificationChannel,
   NotificationKind,
   NotificationPurpose,
@@ -28,11 +29,14 @@ import {
   notificationAttempts,
   notificationFeed,
   notificationIntents,
+  notificationPreferences,
 } from './schema.js';
 
 export type NotificationIntentRow = typeof notificationIntents.$inferSelect;
 export type NotificationAttemptRow = typeof notificationAttempts.$inferSelect;
 export type NotificationFeedRow = typeof notificationFeed.$inferSelect;
+export type NotificationPreferenceRow =
+  typeof notificationPreferences.$inferSelect;
 
 /**
  * Every NOTIFICATIONS read and write.
@@ -496,6 +500,87 @@ export class NotificationRepository {
       )
       .returning({ id: notificationFeed.id });
     return updated.map((row) => row.id);
+  }
+
+  /**
+   * One person's decision about one category on one channel.
+   *
+   * `undefined` means no row, which is "never asked" rather than "off". The
+   * default for a category belongs to policy, not here, so changing a default
+   * does not require rewriting rows nobody ever set.
+   */
+  async preferenceFor(
+    executor: Executor,
+    input: {
+      readonly category: NotificationCategory;
+      readonly channel: NotificationChannel;
+      readonly recipientId: string;
+    },
+  ): Promise<boolean | undefined> {
+    const rows = await executor
+      .select({ enabled: notificationPreferences.enabled })
+      .from(notificationPreferences)
+      .where(
+        and(
+          eq(notificationPreferences.recipientId, input.recipientId),
+          eq(notificationPreferences.category, input.category),
+          eq(notificationPreferences.channel, input.channel),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.enabled;
+  }
+
+  /** Every decision this person has expressed. Their own rows and no others. */
+  async listPreferences(
+    executor: Executor,
+    recipientId: string,
+  ): Promise<readonly NotificationPreferenceRow[]> {
+    return executor
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.recipientId, recipientId))
+      .orderBy(
+        notificationPreferences.category,
+        notificationPreferences.channel,
+      );
+  }
+
+  /**
+   * Records a decision, replacing any earlier one for the same triple.
+   *
+   * A disabled mandatory category is refused by the table's own CHECK rather
+   * than by a branch here, so every write path inherits the refusal instead of
+   * having to remember it.
+   */
+  async setPreference(
+    executor: Executor,
+    input: {
+      readonly category: NotificationCategory;
+      readonly channel: NotificationChannel;
+      readonly enabled: boolean;
+      readonly now: Date;
+      readonly recipientId: string;
+    },
+  ): Promise<void> {
+    await executor
+      .insert(notificationPreferences)
+      .values({
+        category: input.category,
+        channel: input.channel,
+        createdAt: input.now,
+        enabled: input.enabled,
+        recipientId: input.recipientId,
+        updatedAt: input.now,
+      })
+      .onConflictDoUpdate({
+        set: { enabled: input.enabled, updatedAt: input.now },
+        target: [
+          notificationPreferences.recipientId,
+          notificationPreferences.category,
+          notificationPreferences.channel,
+        ],
+      });
   }
 
   private heldBy(id: string, owner: string) {
