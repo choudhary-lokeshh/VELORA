@@ -9,14 +9,36 @@ import { resolveApiBaseUrl } from '../src/api';
  * host it will never reach.
  */
 
+/**
+ * Read through `unknown` rather than straight off `process.env`. The Expo type
+ * declarations that make those reads `string | undefined` are generated into
+ * the app directory and are not in the repository, so on a clean checkout they
+ * are `any` and assigning one is an error the local run does not see.
+ */
+function readPublicEnvironment(name: string): string | undefined {
+  const value: unknown = process.env[name];
+  return typeof value === 'string' ? value : undefined;
+}
+
 const originalEnvironment = {
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
-  appEnvironment: process.env.EXPO_PUBLIC_APP_ENV,
+  apiBaseUrl: readPublicEnvironment('EXPO_PUBLIC_API_BASE_URL'),
+  appEnvironment: readPublicEnvironment('EXPO_PUBLIC_APP_ENV'),
 };
 
 afterEach(() => {
-  process.env.EXPO_PUBLIC_API_BASE_URL = originalEnvironment.apiBaseUrl;
-  process.env.EXPO_PUBLIC_APP_ENV = originalEnvironment.appEnvironment;
+  // Deleted rather than assigned back when it was absent: assigning
+  // `undefined` sets the literal string "undefined", which every reader would
+  // treat as a configured value.
+  if (originalEnvironment.apiBaseUrl === undefined) {
+    delete process.env.EXPO_PUBLIC_API_BASE_URL;
+  } else {
+    process.env.EXPO_PUBLIC_API_BASE_URL = originalEnvironment.apiBaseUrl;
+  }
+  if (originalEnvironment.appEnvironment === undefined) {
+    delete process.env.EXPO_PUBLIC_APP_ENV;
+  } else {
+    process.env.EXPO_PUBLIC_APP_ENV = originalEnvironment.appEnvironment;
+  }
 });
 
 describe('Consumer Mobile API endpoint resolution', () => {
