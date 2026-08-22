@@ -475,8 +475,10 @@ export function createApplication(
     notifications =
       injectedNotifications ??
       createNotificationsApiRuntime({
+        config,
         consumerContext: users.consumerContext,
         database: ownedDatabase.database,
+        logger,
         safety: safety.directory,
       });
   } else {
@@ -1308,6 +1310,12 @@ export function createApplication(
     .post(
       apiRoutePaths.notificationDeviceRevocations,
       admitted(async (input) => notifications.routes.revokePushDevice(input)),
+    )
+    .post(
+      apiRoutePaths.notificationProviderEvents,
+      admitted(async (input) =>
+        notifications.providerEventRoutes.receive(input),
+      ),
     );
 
   return {

@@ -14,6 +14,9 @@ import {
 } from './channel.js';
 import { NotificationDeliveryService } from './delivery.js';
 import { RegisteredDeviceDestinations } from './destinations.js';
+import { NotificationProviderEventRoutes } from './provider-event-routes.js';
+import { NotificationProviderEventProcessor } from './provider-event-processor.js';
+import { NotificationProviderEventService } from './provider-events.js';
 import { PushDeviceService } from './devices.js';
 import { NotificationFeedService } from './feed.js';
 import {
@@ -31,6 +34,8 @@ import type {
 export interface NotificationsRuntime {
   readonly channel: NotificationChannelPort;
   readonly delivery: NotificationDeliveryService;
+  /** Applies verified provider feedback. Worker-side only. */
+  readonly providerEvents: NotificationProviderEventProcessor;
   /** The outbox consumers that turn published facts into owed notices. */
   readonly intakes: readonly NotificationIntake[];
   readonly repository: NotificationRepository;
@@ -48,6 +53,8 @@ export interface NotificationsRuntime {
  */
 export interface NotificationsApiRuntime {
   readonly devices: PushDeviceService;
+  /** Receives provider feedback. Records it; never applies it. */
+  readonly providerEventRoutes: NotificationProviderEventRoutes;
   readonly feed: NotificationFeedService;
   readonly preferences: NotificationPreferenceService;
   readonly repository: NotificationRepository;
@@ -97,14 +104,21 @@ export function createNotificationsRuntime(input: {
   const now = input.now ?? (() => new Date());
   const repository = new NotificationRepository(input.database);
   const channel = input.channel ?? selectChannel(input.config);
+  const owner = input.owner ?? `notifications-${crypto.randomUUID()}`;
   return {
     channel,
+    providerEvents: new NotificationProviderEventProcessor({
+      logger: input.logger,
+      now,
+      owner,
+      repository,
+    }),
     delivery: new NotificationDeliveryService({
       channel,
       destinations: new RegisteredDeviceDestinations(repository),
       logger: input.logger,
       now,
-      owner: input.owner ?? `notifications-${crypto.randomUUID()}`,
+      owner,
       repository,
       safety: input.safety,
       standing: input.standing,
@@ -127,8 +141,12 @@ export function createNotificationsRuntime(input: {
  * feed service it is built on has no method that returns one.
  */
 export function createNotificationsApiRuntime(input: {
+  /** Only for verifying provider callbacks; the API never delivers. */
+  readonly channel?: NotificationChannelPort;
+  readonly config: ServerConfig;
   readonly consumerContext: ConsumerContextResolver;
   readonly database: DatabaseHandle;
+  readonly logger: SafeLogger;
   readonly now?: () => Date;
   readonly safety: NotificationSafetyPort;
 }): NotificationsApiRuntime {
@@ -145,6 +163,14 @@ export function createNotificationsApiRuntime(input: {
     devices,
     feed,
     preferences,
+    providerEventRoutes: new NotificationProviderEventRoutes(
+      new NotificationProviderEventService({
+        channel: input.channel ?? selectChannel(input.config),
+        logger: input.logger,
+        now,
+        repository,
+      }),
+    ),
     repository,
     routes: new NotificationRoutes({
       consumerContext: input.consumerContext,

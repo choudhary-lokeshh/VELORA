@@ -27,6 +27,8 @@ import {
   mandatoryNotificationCategories,
   notificationCategories,
   notificationChannels,
+  providerEventStates,
+  providerFeedbackTypes,
   pushDeviceDisableReasons,
   pushPlatforms,
   notificationKinds,
@@ -486,6 +488,105 @@ export const notificationPushDevices = pgTable(
     check(
       'notifications_push_devices_seen_check',
       sql`${table.lastSeenAt} >= ${table.createdAt}`,
+    ),
+  ],
+);
+
+/**
+ * What a provider said, after it stopped being trusted.
+ *
+ * The same shape REALTIME uses for its provider events, for the same reasons.
+ *
+ * **Identity is the provider, its account, its environment, and the provider's
+ * own event identifier.** Duplicate delivery is expected rather than
+ * exceptional, and this index is what makes the fiftieth delivery cost one
+ * refused insert. Including the account and environment is what stops a sandbox
+ * event from ever being mistaken for a production one.
+ *
+ * **The body is discarded.** What survives is a digest of the exact bytes that
+ * authenticated and a normalized type in this domain's vocabulary. A retained
+ * webhook body is where an address, a device token, or a message fragment
+ * arrives and stays, and there is no question a later investigation can ask
+ * that the digest and the normalized fields cannot answer.
+ *
+ * **A verified event is an observation, never an instruction.** It may update
+ * what this platform knows about a delivery. It may not create a notice, mark
+ * something delivered that was never attempted, lift a suppression, or
+ * resurrect a retired device registration.
+ */
+export const notificationProviderEvents = pgTable(
+  'notifications_provider_events',
+  {
+    attempts: integer('attempts').notNull().default(0),
+    availableAt: timestamptz('available_at').notNull(),
+    /** A redacted code, never a provider message or a payload fragment. */
+    failureReason: text('failure_reason'),
+    /** This domain's vocabulary, not the vendor's. */
+    feedbackType: text('feedback_type').notNull().$type<string>(),
+    id: uuid('id').primaryKey(),
+    leaseExpiresAt: timestamptz('lease_expires_at'),
+    leaseOwner: text('lease_owner'),
+    occurredAt: timestamptz('occurred_at').notNull(),
+    /** Of the exact bytes that authenticated. The body itself is discarded. */
+    payloadDigest: digestColumn('payload_digest').notNull(),
+    processedAt: timestamptz('processed_at'),
+    provider: text('provider').notNull(),
+    providerAccount: text('provider_account').notNull(),
+    providerEnvironment: text('provider_environment').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    /** The receipt this event is about, when it names one. */
+    providerReference: text('provider_reference'),
+    receivedAt: timestamptz('received_at').notNull(),
+    state: text('state').notNull().$type<string>(),
+    /** The device fingerprint this event is about, when it names one. */
+    tokenFingerprint: digestColumn('token_fingerprint'),
+  },
+  (table) => [
+    uniqueIndex('notifications_provider_events_identity_uk').on(
+      table.provider,
+      table.providerAccount,
+      table.providerEnvironment,
+      table.providerEventId,
+    ),
+    index('notifications_provider_events_claimable_idx')
+      .on(table.availableAt, table.id)
+      .where(sql`${table.state} in ('received', 'retry_wait')`),
+    index('notifications_provider_events_reference_idx')
+      .on(table.provider, table.providerReference)
+      .where(sql`${table.providerReference} is not null`),
+    check(
+      'notifications_provider_events_state_check',
+      inList(table.state, providerEventStates),
+    ),
+    check(
+      'notifications_provider_events_type_check',
+      inList(table.feedbackType, providerFeedbackTypes),
+    ),
+    check(
+      'notifications_provider_events_digest_check',
+      isHexDigest(table.payloadDigest),
+    ),
+    check(
+      'notifications_provider_events_token_check',
+      sql`${table.tokenFingerprint} is null or ${isHexDigest(table.tokenFingerprint)}`,
+    ),
+    check(
+      'notifications_provider_events_attempts_check',
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      'notifications_provider_events_lease_shape_check',
+      nullablePairing(table.leaseOwner, table.leaseExpiresAt),
+    ),
+    // Only work in progress holds a lease. A terminal row holding one would be
+    // indistinguishable from something a worker is still doing.
+    check(
+      'notifications_provider_events_lease_state_check',
+      sql`${table.leaseOwner} is null or ${table.state} = 'received' or ${table.state} = 'retry_wait'`,
+    ),
+    check(
+      'notifications_provider_events_processed_shape_check',
+      sql`(${table.state} = 'processed') = (${table.processedAt} is not null)`,
     ),
   ],
 );

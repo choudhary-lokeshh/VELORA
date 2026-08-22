@@ -42,6 +42,7 @@ import {
 } from '../../src/messaging/composition.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
 import { ConversationParticipation } from '../../src/messaging/participation.js';
+import type { NotificationChannelPort } from '../../src/notifications/channel.js';
 import {
   createNotificationsApiRuntime,
   type NotificationsApiRuntime,
@@ -267,14 +268,20 @@ export function testMessagingRuntime(input: {
  * in the worker, and a suite that wants it builds the worker runtime instead.
  */
 export function testNotificationsApiRuntime(input: {
+  readonly channel?: NotificationChannelPort;
+  readonly config?: ServerConfig;
   readonly database?: UsersDatabase;
+  readonly logger?: SafeLogger;
   readonly now?: () => Date;
   readonly safety: SafetyRuntime;
   readonly users: UsersRuntime;
 }): NotificationsApiRuntime {
   return createNotificationsApiRuntime({
+    ...(input.channel === undefined ? {} : { channel: input.channel }),
+    config: input.config ?? testServerConfig(),
     consumerContext: input.users.consumerContext,
     database: input.database ?? drizzle.mock(),
+    logger: input.logger ?? silentLogger(),
     ...(input.now === undefined ? {} : { now: input.now }),
     safety: input.safety.directory,
   });

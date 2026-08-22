@@ -311,6 +311,7 @@ export const apiRoutePaths = {
   notifications: '/v1/notifications',
   notificationDeviceRevocations: '/v1/notifications/devices/revocations',
   notificationDevices: '/v1/notifications/devices',
+  notificationProviderEvents: '/v1/notifications/provider-events',
   notificationPreferences: '/v1/notifications/preferences',
   notificationsRead: '/v1/notifications/read',
   safetyBlockRemoval: '/v1/safety/blocks/removal',
@@ -3149,6 +3150,31 @@ export const apiOperations = [
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'receiveNotificationProviderEvent',
+    path: apiRoutePaths.notificationProviderEvents,
+    responses: {
+      '202': {
+        description:
+          'Recorded, not applied. Applying happens on a worker against a lease, so a provider\u2019s retry budget is never spent waiting for work this platform chose to do later. A redelivery gets the same answer as a first delivery, so a provider learns nothing about which of its events were already seen.',
+        schemaName: 'ProviderEventAcknowledgement',
+      },
+      '401': {
+        description:
+          'One answer for a bad signature, a mutated body, an unknown event type, and an unparseable payload. Telling them apart would tell a forger which part to fix next.',
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+      '503': {
+        description: `Either no delivery provider is approved — in which case nothing is entitled to be calling this at all — or the instance has no capacity to begin the request. The body is an ApiError; ${apiErrorCodes.serviceUnavailable} distinguishes the capacity case, which carries Retry-After.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The configured provider signature over exact bytes is the credential. The endpoint stores provider/account/environment identity, a normalized feedback type, a body digest, and at most a receipt or device fingerprint; never the callback body, an address, or a device token.',
   },
   {
     method: 'post',

@@ -90,6 +90,22 @@ Registration is serialized by two transaction-scoped advisory locks, on the toke
 
 Revocation is scoped to the caller's own principal and succeeds silently when nothing is registered, so it cannot be used to discover whether an installation identifier exists.
 
+## Provider feedback, and what a verified event is allowed to change
+
+A delivery provider will eventually report what happened to a notice it carried. `notifications_provider_events` is where that arrives and stops being trusted, and it is deliberately the same shape REALTIME uses for its provider events, because it is the same problem: an unauthenticated party asserting facts about work this platform asked for.
+
+**Bytes authenticate before anything parses them.** A signature covers the exact octets that arrived, so verification happens against those and never against a re-serialized object — a body checked after a round trip through JSON authenticates a different document than the one that was signed. Nothing unverified reaches the parser, and an unverifiable request creates no row at all. A bad signature, a mutated body, an unknown event type, and an unparseable payload all get one answer, because telling them apart would tell a forger which part to fix next.
+
+**The body is discarded.** What survives is a digest of the exact bytes and a normalized type in this domain's vocabulary. A retained webhook body is where an address, a device token, or a fragment of somebody's message arrives and stays, and there is nothing a later investigation can ask that the digest and the normalized fields cannot answer.
+
+**Duplication is free and expected.** Identity is the provider, its account, its environment, and the provider's own event identifier together, so the fiftieth delivery of one event costs one refused insert. Including the account and environment is what stops a sandbox event from ever being mistaken for a production one.
+
+**A verified event is an observation, never an instruction.** It may update what this platform knows about a delivery. It may not create a notice, mark delivered something that was never attempted, lift a suppression, or bring back a retired device registration. The endpoint answers `202` rather than `200` for the same reason: the event is recorded, not applied. Applying happens on a worker against a lease, so a provider's retry budget is never spent waiting for work this platform chose to do later.
+
+Today one feedback type has an effect with teeth. `token_invalid` retires every live registration holding that fingerprint, across every account, because a token the provider has retired is one nobody can be reached on — and it is safe in the direction that matters, since the worst case is a device that registers again on next launch. `delivered`, `deferred`, `bounced`, and `complained` are all statements about an email destination, and no domain stores an email address, so they are recorded and applied to nothing. Inventing somewhere to put them would be building against a channel that cannot exist.
+
+An event naming something this platform has no record of is neither an error nor a reason to retry. A provider may report about a device that was never registered here, and the honest response is to record that it did not match rather than to keep asking or to invent the missing row.
+
 ## In-app notifications, and the second V1 event
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.

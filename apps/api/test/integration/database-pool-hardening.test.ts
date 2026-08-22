@@ -239,8 +239,10 @@ function createInstance(name: string): Instance {
       media: mediaRuntime,
       messaging,
       notifications: createNotificationsApiRuntime({
+        config,
         consumerContext: users.consumerContext,
         database: service.database,
+        logger,
         safety: safety.directory,
       }),
       queueRedis: healthy,

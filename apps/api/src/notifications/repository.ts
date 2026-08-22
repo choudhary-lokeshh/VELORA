@@ -24,6 +24,7 @@ import type {
   NotificationChannel,
   NotificationKind,
   NotificationPurpose,
+  ProviderFeedbackType,
   PushDeviceDisableReason,
   PushPlatform,
   SuppressionReason,
@@ -33,6 +34,7 @@ import {
   notificationFeed,
   notificationIntents,
   notificationPreferences,
+  notificationProviderEvents,
   notificationPushDevices,
 } from './schema.js';
 
@@ -43,6 +45,8 @@ export type NotificationPreferenceRow =
   typeof notificationPreferences.$inferSelect;
 export type NotificationPushDeviceRow =
   typeof notificationPushDevices.$inferSelect;
+export type NotificationProviderEventRow =
+  typeof notificationProviderEvents.$inferSelect;
 
 /**
  * Every NOTIFICATIONS read and write.
@@ -709,6 +713,165 @@ export class NotificationRepository {
         ),
       )
       .orderBy(notificationPushDevices.createdAt);
+  }
+
+  /**
+   * Records a verified provider event, or recognises one already seen.
+   *
+   * `onConflictDoNothing` against the identity index is the whole duplicate
+   * story: the fiftieth delivery of one event costs one refused insert, and no
+   * caller has to read first to find out.
+   */
+  async recordProviderEvent(
+    executor: Executor,
+    input: {
+      readonly feedbackType: ProviderFeedbackType;
+      readonly now: Date;
+      readonly occurredAt: Date;
+      readonly payloadDigest: string;
+      readonly provider: string;
+      readonly providerAccount: string;
+      readonly providerEnvironment: string;
+      readonly providerEventId: string;
+      readonly providerReference?: string | undefined;
+      readonly tokenFingerprint?: string | undefined;
+    },
+  ): Promise<void> {
+    await executor
+      .insert(notificationProviderEvents)
+      .values({
+        availableAt: input.now,
+        feedbackType: input.feedbackType,
+        id: crypto.randomUUID(),
+        occurredAt: input.occurredAt,
+        payloadDigest: input.payloadDigest,
+        provider: input.provider,
+        providerAccount: input.providerAccount,
+        providerEnvironment: input.providerEnvironment,
+        providerEventId: input.providerEventId,
+        providerReference: input.providerReference ?? null,
+        receivedAt: input.now,
+        state: 'received',
+        tokenFingerprint: input.tokenFingerprint ?? null,
+      })
+      .onConflictDoNothing();
+  }
+
+  /** Verified events waiting to be applied, oldest first. */
+  async listClaimableProviderEvents(
+    executor: Executor,
+    input: { readonly limit: number; readonly now: Date },
+  ): Promise<readonly NotificationProviderEventRow[]> {
+    return executor
+      .select()
+      .from(notificationProviderEvents)
+      .where(
+        and(
+          inArray(notificationProviderEvents.state, ['received', 'retry_wait']),
+          lte(notificationProviderEvents.availableAt, input.now),
+          or(
+            isNull(notificationProviderEvents.leaseExpiresAt),
+            lt(notificationProviderEvents.leaseExpiresAt, input.now),
+          ),
+        ),
+      )
+      .orderBy(
+        asc(notificationProviderEvents.availableAt),
+        asc(notificationProviderEvents.id),
+      )
+      .limit(input.limit);
+  }
+
+  /** Takes a lease, or reports that somebody else already holds one. */
+  async claimProviderEvent(
+    executor: Executor,
+    input: {
+      readonly id: string;
+      readonly leaseExpiresAt: Date;
+      readonly now: Date;
+      readonly owner: string;
+    },
+  ): Promise<NotificationProviderEventRow | undefined> {
+    const claimed = await executor
+      .update(notificationProviderEvents)
+      .set({
+        attempts: sql`${notificationProviderEvents.attempts} + 1`,
+        leaseExpiresAt: input.leaseExpiresAt,
+        leaseOwner: input.owner,
+      })
+      .where(
+        and(
+          eq(notificationProviderEvents.id, input.id),
+          inArray(notificationProviderEvents.state, ['received', 'retry_wait']),
+          lte(notificationProviderEvents.availableAt, input.now),
+          or(
+            isNull(notificationProviderEvents.leaseExpiresAt),
+            lt(notificationProviderEvents.leaseExpiresAt, input.now),
+          ),
+        ),
+      )
+      .returning();
+    return claimed[0];
+  }
+
+  async settleProviderEvent(
+    executor: Executor,
+    input: {
+      readonly failureReason?: string | undefined;
+      readonly id: string;
+      readonly now: Date;
+      readonly owner: string;
+      readonly state: 'processed' | 'retry_wait' | 'dead_letter';
+      readonly availableAt?: Date | undefined;
+    },
+  ): Promise<NotificationProviderEventRow | undefined> {
+    const settled = await executor
+      .update(notificationProviderEvents)
+      .set({
+        ...(input.availableAt === undefined
+          ? {}
+          : { availableAt: input.availableAt }),
+        failureReason: input.failureReason ?? null,
+        leaseExpiresAt: null,
+        leaseOwner: null,
+        processedAt: input.state === 'processed' ? input.now : null,
+        state: input.state,
+      })
+      .where(
+        and(
+          eq(notificationProviderEvents.id, input.id),
+          eq(notificationProviderEvents.leaseOwner, input.owner),
+        ),
+      )
+      .returning();
+    return settled[0];
+  }
+
+  /**
+   * Retires every live registration holding this fingerprint.
+   *
+   * Used when a provider reports a token invalid. Unlike registration, this
+   * spares nobody: a token the provider retired is one no account can be
+   * reached on.
+   */
+  async disableDevicesByProviderInvalidation(
+    executor: Executor,
+    input: { readonly now: Date; readonly tokenFingerprint: string },
+  ): Promise<number> {
+    const disabled = await executor
+      .update(notificationPushDevices)
+      .set({
+        disableReason: 'provider_invalidated',
+        disabledAt: input.now,
+      })
+      .where(
+        and(
+          eq(notificationPushDevices.tokenFingerprint, input.tokenFingerprint),
+          isNull(notificationPushDevices.disabledAt),
+        ),
+      )
+      .returning();
+    return disabled.length;
   }
 
   private heldBy(id: string, owner: string) {

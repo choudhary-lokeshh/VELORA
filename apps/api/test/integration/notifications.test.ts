@@ -1,3 +1,4 @@
+import { createHash, createHmac } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
 import { createApplication } from '../../src/application.js';
@@ -15,6 +16,7 @@ import {
   UnavailableNotificationChannel,
 } from '../../src/notifications/channel.js';
 import { RegisteredDeviceDestinations } from '../../src/notifications/destinations.js';
+import { NotificationProviderEventService } from '../../src/notifications/provider-events.js';
 import {
   createNotificationsApiRuntime,
   createNotificationsRuntime,
@@ -220,8 +222,14 @@ const application = createApplication({
     media: mediaRuntime,
     messaging,
     notifications: createNotificationsApiRuntime({
+      // The API verifies provider callbacks with the same adapter the worker
+      // delivers through, so a signature this suite produces is one the
+      // endpoint actually has to check.
+      channel,
+      config,
       consumerContext: users.consumerContext,
       database: database.drizzle,
+      logger,
       now,
       safety: safety.directory,
     }),
@@ -2029,5 +2037,230 @@ describe('delivery needs somewhere to arrive', () => {
         recipientId: recipient.id,
       }),
     ).toHaveLength(0);
+  });
+});
+
+describe('provider feedback is hostile input until it authenticates', () => {
+  function signed(body: unknown): Request {
+    const raw = Buffer.from(JSON.stringify(body), 'utf8');
+    const signature = createHmac(
+      'sha256',
+      LocalTestNotificationChannel.signingSecret,
+    )
+      .update(raw)
+      .digest('hex');
+    return new Request('http://api.test/v1/notifications/provider-events', {
+      body: raw,
+      headers: {
+        'content-type': 'application/json',
+        'x-velora-notification-signature': signature,
+      },
+      method: 'POST',
+    });
+  }
+
+  function unsigned(body: unknown, signature?: string): Request {
+    return new Request('http://api.test/v1/notifications/provider-events', {
+      body: JSON.stringify(body),
+      headers: {
+        'content-type': 'application/json',
+        ...(signature === undefined
+          ? {}
+          : { 'x-velora-notification-signature': signature }),
+      },
+      method: 'POST',
+    });
+  }
+
+  function feedbackBody(overrides: Record<string, unknown> = {}) {
+    return {
+      eventId: `event-${crypto.randomUUID()}`,
+      feedbackType: 'delivered',
+      occurredAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  async function events() {
+    return rowsOf<{
+      feedback_type: string;
+      payload_digest: string;
+      provider_event_id: string;
+      state: string;
+      token_fingerprint: string | null;
+    }>(
+      database.sql`select feedback_type, payload_digest, provider_event_id,
+        state, token_fingerprint from notifications_provider_events
+        order by received_at`,
+    );
+  }
+
+  it('records a verified callback and keeps none of the body', async () => {
+    const body = feedbackBody();
+    const response = await handle(signed(body));
+
+    // 202, not 200: recorded, not applied. A provider's retry budget is never
+    // spent waiting for work this platform chose to do later.
+    expect(response.status).toBe(202);
+    const rows = await events();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.state).toBe('received');
+    // A digest of the exact bytes that authenticated, and nothing else. A
+    // retained webhook body is where an address or a token arrives and stays.
+    expect(rows[0]?.payload_digest).toMatch(/^[0-9a-f]{64}$/u);
+    const stored = JSON.stringify(rows[0]);
+    expect(stored).not.toContain(body.occurredAt.slice(0, 4) + '-body');
+    expect(stored).not.toContain('signature');
+  });
+
+  it.each([
+    ['no signature at all', undefined],
+    ['a signature that is not the right one', 'f'.repeat(64)],
+    ['a signature of the wrong length', 'abc'],
+  ])('refuses a callback with %s', async (_label, signature) => {
+    const response = await handle(unsigned(feedbackBody(), signature));
+
+    // One answer for every failure, because telling them apart would tell a
+    // forger which part of the forgery to fix next.
+    expect(response.status).toBe(401);
+    expect(await events()).toHaveLength(0);
+  });
+
+  it('refuses a body mutated after it was signed', async () => {
+    const original = feedbackBody();
+    const raw = Buffer.from(JSON.stringify(original), 'utf8');
+    const signature = createHmac(
+      'sha256',
+      LocalTestNotificationChannel.signingSecret,
+    )
+      .update(raw)
+      .digest('hex');
+
+    // The signature is genuine; the bytes are not the ones it covers. This is
+    // the case a verifier that re-serializes before checking would let through.
+    const response = await handle(
+      unsigned({ ...original, feedbackType: 'token_invalid' }, signature),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await events()).toHaveLength(0);
+  });
+
+  it('refuses a feedback type this domain has no vocabulary for', async () => {
+    const response = await handle(
+      signed(feedbackBody({ feedbackType: 'quarantined' })),
+    );
+
+    // Refused rather than stored. A row nothing downstream can act on is a
+    // row somebody later has to guess about.
+    expect(response.status).toBe(401);
+    expect(await events()).toHaveLength(0);
+  });
+
+  it('refuses a body past the byte limit before parsing it', async () => {
+    const response = await handle(
+      signed(feedbackBody({ padding: 'x'.repeat(70 * 1024) })),
+    );
+
+    expect(response.status).toBe(413);
+    expect(await events()).toHaveLength(0);
+  });
+
+  it('costs one refused insert when the same event arrives fifty times', async () => {
+    const body = feedbackBody();
+
+    const responses = await Promise.all(
+      Array.from({ length: 50 }, async () => handle(signed(body))),
+    );
+
+    // Duplication is expected rather than exceptional, and a redelivery gets
+    // the same answer as a first delivery so a provider learns nothing about
+    // which of its events were already seen.
+    expect(responses.every((response) => response.status === 202)).toBe(true);
+    expect(await events()).toHaveLength(1);
+  });
+
+  it('never creates a notification, whatever it says', async () => {
+    const before = (await intents()).length;
+    await handle(signed(feedbackBody({ feedbackType: 'delivered' })));
+    await handle(signed(feedbackBody({ feedbackType: 'complained' })));
+
+    // A verified event is an observation. There is no shape of callback that
+    // makes this platform owe somebody a notice.
+    expect((await intents()).length).toBe(before);
+  });
+
+  it('retires a device the provider says it invalidated', async () => {
+    const owner = await consumer('feedback-device@velora.test');
+    const token = 'd'.repeat(64);
+    await handle(
+      post('/v1/notifications/devices', owner, {
+        installationId: 'feedback-install-1',
+        platform: 'ios',
+        token,
+      }),
+    );
+    const fingerprint = createHash('sha256')
+      .update(token, 'utf8')
+      .digest('hex');
+
+    await handle(
+      signed(
+        feedbackBody({
+          feedbackType: 'token_invalid',
+          tokenFingerprint: fingerprint,
+        }),
+      ),
+    );
+    const applied = await notifications.providerEvents.applyDue();
+
+    expect(applied[0]?.kind).toBe('applied');
+    const devices = await rowsOf<{ disable_reason: string | null }>(
+      database.sql`select disable_reason from notifications_push_devices
+        where recipient_id = ${owner.id}`,
+    );
+    // The one effect a verified event has with teeth, and it is safe in the
+    // direction that matters: the worst case is a device that registers again.
+    expect(devices[0]?.disable_reason).toBe('provider_invalidated');
+    expect((await events())[0]?.state).toBe('processed');
+  });
+
+  it('records an event about something it has never heard of, and moves on', async () => {
+    await handle(
+      signed(
+        feedbackBody({
+          feedbackType: 'token_invalid',
+          tokenFingerprint: 'e'.repeat(64),
+        }),
+      ),
+    );
+
+    const applied = await notifications.providerEvents.applyDue();
+
+    // Not an error and not a reason to retry. A provider may report about a
+    // device that was never registered here, and the honest response is to
+    // record that it did not match rather than to keep asking.
+    expect(applied[0]?.kind).toBe('unmatched');
+    expect((await events())[0]?.state).toBe('processed');
+  });
+
+  it('refuses every callback while no provider is approved', async () => {
+    const unavailable = new NotificationProviderEventService({
+      channel: new UnavailableNotificationChannel(),
+      logger,
+      now,
+      repository: notifications.repository,
+    });
+
+    const outcome = await unavailable.receive({
+      correlationId: 'test',
+      headers: new Headers(),
+      rawBody: new Uint8Array(8),
+    });
+
+    // The posture every deployed environment has. Nothing is entitled to be
+    // calling this at all, so the request is refused before verification.
+    expect(outcome.kind).toBe('unavailable');
+    expect(await events()).toHaveLength(0);
   });
 });

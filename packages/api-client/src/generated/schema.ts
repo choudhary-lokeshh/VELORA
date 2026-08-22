@@ -1644,6 +1644,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/provider-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The configured provider signature over exact bytes is the credential. The endpoint stores provider/account/environment identity, a normalized feedback type, a body digest, and at most a receipt or device fingerprint; never the callback body, an address, or a device token. */
+        post: operations["receiveNotificationProviderEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/devices": {
         parameters: {
             query?: never;
@@ -16036,6 +16053,86 @@ export interface operations {
                     "x-correlation-id"?: string;
                     /** @description Seconds to wait before retrying. Present on a capacity refusal. */
                     "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    receiveNotificationProviderEvent: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded, not applied. Applying happens on a worker against a lease, so a provider’s retry budget is never spent waiting for work this platform chose to do later. A redelivery gets the same answer as a first delivery, so a provider learns nothing about which of its events were already seen. */
+            202: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderEventAcknowledgement"];
+                };
+            };
+            /** @description One answer for a bad signature, a mutated body, an unknown event type, and an unparseable payload. Telling them apart would tell a forger which part to fix next. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Either no delivery provider is approved — in which case nothing is entitled to be calling this at all — or the instance has no capacity to begin the request. The body is an ApiError; SERVICE_UNAVAILABLE distinguishes the capacity case, which carries Retry-After. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
                     [name: string]: unknown;
                 };
                 content: {

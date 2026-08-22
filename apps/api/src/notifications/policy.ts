@@ -461,6 +461,61 @@ export function isSettablePreferencePair(
 }
 
 /**
+ * What a provider can tell this platform about a notice it carried.
+ *
+ * This domain's vocabulary, not any vendor's. An adapter converts whatever
+ * shape its provider uses into exactly one of these, so a provider that renames
+ * its event types next quarter changes an adapter and nothing else.
+ *
+ * Every one is an *observation*. None of them creates a notice, grants
+ * anything, or reverses a decision this platform made.
+ */
+export const providerFeedbackTypes = [
+  /** The provider says it handed the notice on. Not that anybody read it. */
+  'delivered',
+  /** Refused for now. The destination may accept a later one. */
+  'deferred',
+  /** Refused permanently. The destination will not accept a later one. */
+  'bounced',
+  /** The recipient reported it as unwanted. Stronger than a bounce. */
+  'complained',
+  /** The provider retired this device token. It never becomes valid again. */
+  'token_invalid',
+] as const;
+export type ProviderFeedbackType = (typeof providerFeedbackTypes)[number];
+
+/**
+ * The inbox lifecycle for one verified provider event.
+ *
+ * `received` and `retry_wait` are claimable; the rest are terminal. An event
+ * that cannot be applied is retained as `dead_letter` rather than deleted,
+ * because a provider's account of what happened is evidence even when this
+ * platform could not act on it.
+ */
+export const providerEventStates = [
+  'received',
+  'retry_wait',
+  'processed',
+  'dead_letter',
+] as const;
+export type ProviderEventState = (typeof providerEventStates)[number];
+
+/**
+ * The byte limit, checked before the parser and before the verifier.
+ *
+ * The one check that must not depend on reading what it is limiting.
+ */
+export const maximumProviderEventBytes = 64 * 1024;
+
+export const maximumProviderEventAttempts = 6;
+export const providerEventLeaseMilliseconds = 60_000;
+export const providerEventBatchSize = 50;
+
+export function providerEventBackoffMilliseconds(attempts: number): number {
+  return Math.min(2 ** Math.max(0, attempts) * 5_000, 900_000);
+}
+
+/**
  * Retry budget for one intent.
  *
  * An attempt is counted when the claim is taken, before the provider is called,

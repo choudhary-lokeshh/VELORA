@@ -1,5 +1,12 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 import type { DeliveryDestination } from './destinations.js';
-import type { DeliveryFailureClass, NotificationChannel } from './policy.js';
+import {
+  providerFeedbackTypes,
+  type DeliveryFailureClass,
+  type NotificationChannel,
+  type ProviderFeedbackType,
+} from './policy.js';
 
 /**
  * The external delivery seam.
@@ -53,8 +60,50 @@ export type NotificationReceipt =
     }
   | { readonly kind: 'unavailable' };
 
+/**
+ * What a provider told this platform, after its signature checked out.
+ *
+ * Normalized by the adapter into this domain's vocabulary. Nothing downstream
+ * ever sees the vendor's own event names, so a vendor that renames them
+ * changes one adapter.
+ */
+export interface VerifiedProviderFeedback {
+  readonly eventId: string;
+  readonly feedbackType: ProviderFeedbackType;
+  readonly occurredAt: Date;
+  /** The receipt this is about, when the provider names one. */
+  readonly providerReference?: string | undefined;
+  /** The device this is about, when the provider names one. */
+  readonly tokenFingerprint?: string | undefined;
+}
+
+export class NotificationProviderUnavailableError extends Error {
+  constructor() {
+    super('No approved notification delivery provider is configured');
+    this.name = 'NotificationProviderUnavailableError';
+  }
+}
+
 export interface NotificationChannelPort {
+  /** The adapter's own name. `unavailable` means nothing may call in. */
+  readonly provider: string;
+  /** Which provider account and environment this adapter speaks for. */
+  readonly account: string;
+  readonly environment: string;
   deliver(request: NotificationDeliveryRequest): Promise<NotificationReceipt>;
+  /**
+   * Authenticates the exact bytes that arrived.
+   *
+   * Takes raw octets rather than a parsed object on purpose: a signature
+   * covers what was sent, and a body checked after a round trip through JSON
+   * authenticates a different document than the one that was signed. Throwing
+   * is the only failure mode, so a caller cannot accidentally treat a
+   * verification failure as a value.
+   */
+  verifyFeedback(input: {
+    readonly headers: Headers;
+    readonly rawBody: Uint8Array;
+  }): Promise<VerifiedProviderFeedback>;
 }
 
 /**
@@ -71,8 +120,23 @@ export interface NotificationChannelPort {
  * suppressed once a provider exists.
  */
 export class UnavailableNotificationChannel implements NotificationChannelPort {
+  readonly account = 'unavailable';
+  readonly environment = 'unavailable';
+  readonly provider = 'unavailable';
+
   deliver(): Promise<NotificationReceipt> {
     return Promise.resolve({ kind: 'unavailable' });
+  }
+
+  /**
+   * Refuses every callback, because nothing is entitled to make one.
+   *
+   * There is no approved provider, so any request arriving at the feedback
+   * endpoint is either a misconfiguration or a forgery. Both get the same
+   * answer.
+   */
+  verifyFeedback(): Promise<VerifiedProviderFeedback> {
+    return Promise.reject(new NotificationProviderUnavailableError());
   }
 }
 
@@ -97,6 +161,21 @@ export function reachedDeviceIds(
  * class at all.
  */
 export class LocalTestNotificationChannel implements NotificationChannelPort {
+  readonly account = 'local-test-account';
+  readonly environment = 'local-test';
+  readonly provider = 'local-test';
+  /**
+   * The shared secret a callback is signed with.
+   *
+   * Deterministic and public, because this adapter exists only where nothing
+   * real is at stake: configuration refuses it outside local and test. What it
+   * is for is exercising the verification path with a signature that actually
+   * has to be computed, rather than a stub that accepts anything — a test
+   * against an adapter that never rejects proves nothing about the adapter
+   * that will.
+   */
+  static readonly signingSecret = 'local-test-notification-callback-secret';
+
   private readonly sent: RecordedNotification[] = [];
   private failure: string | undefined;
   private failureClass: DeliveryFailureClass = 'transport';
@@ -153,4 +232,82 @@ export class LocalTestNotificationChannel implements NotificationChannelPort {
     this.failure = undefined;
     this.failureClass = 'transport';
   }
+
+  /**
+   * Authenticates a callback the way a real adapter would.
+   *
+   * HMAC-SHA256 over the exact octets received, compared in constant time. The
+   * signature is checked before anything parses the body, so an unverifiable
+   * request never reaches the parser and never creates a row.
+   */
+  verifyFeedback(input: {
+    readonly headers: Headers;
+    readonly rawBody: Uint8Array;
+  }): Promise<VerifiedProviderFeedback> {
+    const presented = input.headers.get('x-velora-notification-signature');
+    if (presented === null) {
+      return Promise.reject(new Error('notification callback is unsigned'));
+    }
+    const expected = createHmac(
+      'sha256',
+      LocalTestNotificationChannel.signingSecret,
+    )
+      .update(input.rawBody)
+      .digest('hex');
+    const presentedBytes = Buffer.from(presented, 'utf8');
+    const expectedBytes = Buffer.from(expected, 'utf8');
+    if (
+      presentedBytes.byteLength !== expectedBytes.byteLength ||
+      !timingSafeEqual(presentedBytes, expectedBytes)
+    ) {
+      return Promise.reject(
+        new Error('notification callback signature failed'),
+      );
+    }
+
+    // Only after the bytes authenticated.
+    const parsed: unknown = JSON.parse(
+      Buffer.from(input.rawBody).toString('utf8'),
+    );
+    return Promise.resolve(normalizeLocalTestFeedback(parsed));
+  }
+}
+
+function normalizeLocalTestFeedback(parsed: unknown): VerifiedProviderFeedback {
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('notification callback is not an object');
+  }
+  const body = parsed as Record<string, unknown>;
+  const eventId = body.eventId;
+  const feedbackType = body.feedbackType;
+  const occurredAt = body.occurredAt;
+  if (typeof eventId !== 'string' || eventId.length === 0) {
+    throw new Error('notification callback names no event');
+  }
+  if (
+    typeof feedbackType !== 'string' ||
+    !(providerFeedbackTypes as readonly string[]).includes(feedbackType)
+  ) {
+    // An event type this domain has no vocabulary for is refused rather than
+    // stored. Storing one would mean a row nothing downstream can act on.
+    throw new Error('notification callback names an unknown feedback type');
+  }
+  if (typeof occurredAt !== 'string') {
+    throw new Error('notification callback names no instant');
+  }
+  const occurred = new Date(occurredAt);
+  if (Number.isNaN(occurred.getTime())) {
+    throw new Error('notification callback instant is not a date');
+  }
+  return {
+    eventId,
+    feedbackType: feedbackType as ProviderFeedbackType,
+    occurredAt: occurred,
+    ...(typeof body.providerReference === 'string'
+      ? { providerReference: body.providerReference }
+      : {}),
+    ...(typeof body.tokenFingerprint === 'string'
+      ? { tokenFingerprint: body.tokenFingerprint }
+      : {}),
+  };
 }

@@ -147,6 +147,7 @@ describe('AUTH persistence and invariants', () => {
       'notifications_feed',
       'notifications_intents',
       'notifications_preferences',
+      'notifications_provider_events',
       'notifications_push_devices',
       'payouts_instructions',
       'payouts_journal_accounts',

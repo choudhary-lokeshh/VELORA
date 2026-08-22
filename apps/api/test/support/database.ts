@@ -129,6 +129,7 @@ const truncationRoots = [
   // A preference references its owner by opaque identifier with no foreign
   // key, exactly as the intent does, so nothing cascades into it either.
   'notifications_preferences',
+  'notifications_provider_events',
   'notifications_push_devices',
   // REALTIME references consumer accounts and the authorizing introduction by
   // opaque identifier with no foreign key, so nothing cascades into it and the

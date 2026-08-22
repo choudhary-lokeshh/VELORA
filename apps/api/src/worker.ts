@@ -170,6 +170,7 @@ export interface WorkerComposition {
   readonly payouts: PayoutsRuntime;
   close(): Promise<void>;
   readonly deliverySweep: Poller;
+  readonly providerFeedbackSweep: Poller;
   /** Resolves ambiguous financial outcomes from provider truth. */
   readonly financialReconciliation: Poller;
   /** Applies verified provider events. Never runs on a request thread. */
@@ -730,6 +731,22 @@ export function createWorkerComposition(input: {
     name: 'notification-delivery-sweep',
   });
 
+  /**
+   * Applies what providers said, off the request thread.
+   *
+   * The callback endpoint records and acknowledges; this is where a verified
+   * event is allowed to change something. Keeping them apart is what stops a
+   * provider's retry budget being spent on work this platform chose to do
+   * later, and it is why a slow apply can never turn into a redelivery storm.
+   */
+  const providerFeedbackSweep = new Poller({
+    cycle: async () =>
+      admit(async () => notifications.providerEvents.applyDue()),
+    intervalMilliseconds: deliverySweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'notification-provider-feedback-sweep',
+  });
+
   return {
     billing,
     financialReconciliation,
@@ -763,9 +780,11 @@ export function createWorkerComposition(input: {
         mediaUploadSweep.stop(),
         profileMediaReadiness.stop(),
         deliverySweep.stop(),
+        providerFeedbackSweep.stop(),
       ]);
     },
     deliverySweep,
+    providerFeedbackSweep,
     async drainOnce() {
       // Provider events first: applying one is what writes the commercial fact
       // the relay then publishes, so draining in this order settles a payment
@@ -790,6 +809,11 @@ export function createWorkerComposition(input: {
       // change.
       await mediaReconciliation.runOnce();
       await profileMediaReadiness.runOnce();
+      // Provider feedback before the delivery sweep: an event retiring a
+      // device token should be applied before the next claim reads which
+      // devices a person can still be reached on, or that claim aims a notice
+      // at a registration this pass was about to retire.
+      await providerFeedbackSweep.runOnce();
       await deliverySweep.runOnce();
     },
     providerEventDrain,
