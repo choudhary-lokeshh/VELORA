@@ -296,6 +296,25 @@ curl -fsS http://127.0.0.1:4000/v1/health/ready
 Readiness reports PostgreSQL, ephemeral Redis, and queue Redis separately and
 answers 503 while any one of them is down.
 
+## A note on commit 3feb6f3
+
+`3feb6f3` is titled for the notification query-plan suite and also contains an
+unrelated change: the three Next.js `dev` scripts gained
+`--hostname ${VELORA_BIND_HOST:-127.0.0.1}`, and the `VELORA_BIND_HOST` row
+above and its owner description in `scripts/check-env-template.mjs` were updated
+to match.
+
+That change was made in the working tree while the gate for the query-plan
+commit was running, and it was swept in by a `git add -A` that should have named
+its paths. It is recorded here rather than rewritten away, because the commit is
+published and rewriting published history is not something this repository does.
+
+The change itself stands on its own merits and was not reverted. Binding the
+development servers to loopback by default is the safer default — a dev server
+on `0.0.0.0` is reachable by anything on the network — and `VELORA_BIND_HOST`
+still overrides it for anyone who needs to reach a dev server from a device.
+It passed the full gate, because it was present in the tree for that run.
+
 ## What the gate checks
 
 | Command | What it proves |
