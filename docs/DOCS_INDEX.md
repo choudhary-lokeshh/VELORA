@@ -69,7 +69,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | PAYOUTS | [PAYOUTS](domains/payouts.md) | payout compliance, finance operations, BILLING/CREATORS |
 | TRUST & SAFETY | [TRUST & SAFETY](domains/trust-safety.md) | report/enforcement, MODERATION, safety operations |
 | MODERATION | [MODERATION](domains/moderation.md) | moderation operations, report flow, evidence/privacy |
-| NOTIFICATIONS | [NOTIFICATIONS](domains/notifications.md) | notification flow, privacy, provider adapters |
+| NOTIFICATIONS | [NOTIFICATIONS](domains/notifications.md) | notification flow, notification provider eligibility, ADR-0026, privacy, provider adapters |
 | ADMIN | [ADMIN](domains/admin.md) | Admin surface/product, RBAC, Admin operation flow |
 | ANALYTICS | [ANALYTICS](domains/analytics.md) | privacy, observability, metric governance |
 | AI PLATFORM | [AI platform architecture](ai/01-ai-platform-architecture.md) | all documents in AI authority path plus each affected domain |
@@ -100,7 +100,7 @@ Also read [AI-assisted action](flows/ai-assisted-action.md), [AI security integr
 | [Consumer account/profile](flows/consumer-account-profile.md) | Profile, verification, availability, restriction, account lifecycle |
 | [Discovery and introductions](flows/discovery-introductions.md) | Candidate, signal, decline/withdraw, mutual introduction |
 | [Messaging and blocks](flows/messaging-and-blocks.md) | Conversation/message authorization and block precedence |
-| [Notification delivery](flows/notification-delivery.md) | Template/preference/channel, delivery, deep-link and failure lifecycle |
+| [Notification delivery](flows/notification-delivery.md) | Template/preference/channel, delivery, deep-link and failure lifecycle; ADR-0026 owns the delivery platform decisions |
 | [RTC lifecycle](flows/rtc-lifecycle.md) | Invitation, accept/decline/timeout, call/reconnect/termination/safety |
 | [Creator lifecycle/content](flows/creator-lifecycle-content.md) | Application, verification, activation, club/content, suspension/appeal |
 | [Creator entitlement](flows/creator-entitlement.md) | Subscription/PPV access and private media delivery authorization |
@@ -149,6 +149,7 @@ These are architecture/product gates, not legal advice:
 | [Media provider eligibility](compliance/08-media-provider-eligibility.md) | Dated primary-source findings on object-storage, CDN, image-processing, and scanning provider eligibility, and the delivery-capability facts that bound what revocation may claim |
 | [Identity verification provider eligibility](compliance/09-identity-verification-provider-eligibility.md) | Dated official-source findings and production-eligibility gaps for identity/age/KYC providers; silence is unapproved |
 | [RTC provider eligibility](compliance/10-rtc-provider-eligibility.md) | Dated official-source findings on RTC, SFU, and TURN providers: session isolation, credential scope, callback authentication, revocation, and adult-business posture; silence and unreadable terms are unapproved |
+| [Notification provider eligibility](compliance/11-notification-provider-eligibility.md) | Dated official-source findings on email and mobile-push providers: published adult-business posture, callback authentication, bounce and suppression semantics, token invalidation, and the native-build blocker that no vendor answer removes |
 
 ## Operations authority
 
@@ -199,6 +200,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0023](decisions/ADR-0023-media-platform-architecture.md) | MEDIA as a domain owning bytes only, a technical lifecycle disjoint from publication, opaque server-generated keys, capability-bound direct upload, byte-derived inspection ahead of the decoder, in-process image processing, the bounded private-delivery revocation window, four distinct removal concepts, and fail-closed media configuration |
 | [ADR-0024](decisions/ADR-0024-identity-assurance-architecture.md) | Separate Identity Assurance domain, append-only evidence, provider-neutral hosted verification, verified callback inbox, reconciliation, fail-closed jurisdiction/re-verification policy, and owner re-authorization |
 | [ADR-0025](decisions/ADR-0025-rtc-live-communications-architecture.md) | REALTIME as owner of call sessions only, invitation/acceptance/authorization/connection as four separate facts, eligibility composed from owners at every step, participant-scoped short-lived join credentials bound to an authorization generation, provider events as verified observations that never grant permission, ephemeral signalling over durable lifecycle, no recorded media, and fail-closed RTC configuration |
+| [ADR-0026](decisions/ADR-0026-notification-delivery-platform.md) | NOTIFICATIONS as owner of delivery rather than of facts, addresses, or identities; category-driven preference with mandatory classes; deliverability observations keyed by destination generation; push tokens as credentials that are never identity; provider callbacks as verified observations that create nothing; normalized failure classes deciding retry; reconciliation outside transactions; and fail-closed delivery configuration |
 
 ## Technical implementation reading paths
 
@@ -227,6 +229,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 - Platform Admin: phases, Admin product/surface/domain, RBAC, Admin flow, relevant operations document, target domain, audit/observability, Design/Figma.
 - Discovery: phases, consumer product/surface, DISCOVERY, discovery flow, TRUST & SAFETY, privacy, API/testing.
 - Messaging: phases, consumer surface, MESSAGING, messaging/blocks, TRUST & SAFETY, NOTIFICATIONS/notification flow, media/privacy.
+- Notifications and delivery: NOTIFICATIONS, notification delivery flow, notification provider eligibility, ADR-0026, the producing domain for the event being delivered, TRUST & SAFETY and USERS for the eligibility contracts delivery asks, jobs/idempotency, data/migrations, observability, privacy, outbound networking, configuration and environments, ADR-0007, ADR-0014, ADR-0016, ADR-0019, ADR-0022, ADR-0025.
 - RTC: phases, REALTIME, RTC flow, RTC threat model, RTC provider eligibility, surfaces, provider adapters, Trust & Safety, DISCOVERY and MESSAGING for the relationship authority, NOTIFICATIONS, privacy, ADR-0008, ADR-0025, Design/Figma.
 - Billing: phases, monetisation, BILLING, payment lifecycle/security, jobs/concurrency, compliance, finance operations, Admin approval.
 - Payouts: phases, PAYOUTS, CREATORS/BILLING, payout compliance, finance operations, provider adapters, jobs/audit.
