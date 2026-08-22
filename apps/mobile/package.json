@@ -13,10 +13,10 @@
   },
   "scripts": {
     "build": "expo export --platform ios --platform android --output-dir dist",
-    "dev": "expo start --dev-client",
+    "dev": "EXPO_PUBLIC_APP_ENV=${EXPO_PUBLIC_APP_ENV:-local} expo start --dev-client",
     "doctor": "expo-doctor",
     "lint": "eslint app src test",
-    "start": "expo start --dev-client",
+    "start": "EXPO_PUBLIC_APP_ENV=${EXPO_PUBLIC_APP_ENV:-local} expo start --dev-client",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit"
   },
