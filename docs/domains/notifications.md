@@ -120,6 +120,14 @@ There is **no action** at all: no retrying a notice, no suppressing a destinatio
 
 The adapter is reported from what the process actually composed rather than from the configuration meant to select it. A screen naming the configured adapter while the process runs another is exactly the lie an operations screen exists to prevent.
 
+## What a hostile read of the schema is held to
+
+`notifications-red-team.test.ts` attacks the database rather than the routes, because application code can be bypassed by the next code path somebody writes and every invariant it asserts is one where being wrong means a person receives somebody else's notice, stops receiving their own, or is told something the platform never established.
+
+Twenty-five attacks: keeping two live registrations for one token, keeping two for one installation, clearing `disabled_at` on a registration a provider retired while somebody else legitimately holds the token, storing a raw token where a fingerprint belongs, retiring a registration without a reason, claiming delivery with no instant of delivery, suppressing without a reason, carrying a reason without a suppression, holding a lease on a finished notice, telling somebody about their own action, failing an attempt without the class the retry policy reads, carrying a class on an attempt that did not fail, claiming delivery with no receipt, silencing a mandatory category, naming a channel nobody publishes, replaying one provider event, and storing a callback body where a digest belongs.
+
+Every one is refused, and each refusal block carries a positive control that asserts the same statement is accepted when it is well-formed. A refusal test whose statement is malformed passes for the wrong reason, and a suite of those is worse than no suite.
+
 ## In-app notifications, and the second V1 event
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.
