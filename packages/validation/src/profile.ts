@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+import {
+  languagePattern,
+  maximumBioLength,
+  maximumDisplayNameLength,
+  maximumProfileLanguages,
+  maximumProfileMedia,
+  minimumDisplayNameLength,
+  minimumProfileLanguages,
+} from './profile-bounds.js';
 import { profileRequirementSchema, regionSchema } from './users.js';
 
 /**
@@ -17,18 +26,15 @@ import { profileRequirementSchema, regionSchema } from './users.js';
  * sensitive data as the price of being seen.
  */
 
-export const minimumDisplayNameLength = 2;
-export const maximumDisplayNameLength = 32;
-export const maximumBioLength = 500;
-
-/** BCP 47 primary language subtag, kept extensible to three-letter codes. */
-export const languagePattern = /^[a-z]{2,3}$/u;
-
-export const minimumProfileLanguages = 1;
-export const maximumProfileLanguages = 5;
-
-/** Image slots a profile may hold. Positions are zero-based and dense. */
-export const maximumProfileMedia = 6;
+export {
+  languagePattern,
+  maximumBioLength,
+  maximumDisplayNameLength,
+  maximumProfileLanguages,
+  maximumProfileMedia,
+  minimumDisplayNameLength,
+  minimumProfileLanguages,
+} from './profile-bounds.js';
 
 /**
  * Accepted image types. The server decides an object's type from its own bytes;

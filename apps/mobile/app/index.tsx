@@ -1,14 +1,19 @@
-import { ConsumerApp } from '../src/product/app';
+import { Redirect } from 'expo-router';
+
+import { discoverPath } from '../src/frame/links';
 
 /**
- * Consumer Mobile's single authenticated surface.
+ * Where a launch lands.
  *
- * V1 has one screen with peer areas rather than a stack: every area is a sibling
- * a person switches between, none of them is reached "through" another, and a
- * stack would add restoration state without giving anybody anything. When a
- * flow appears that genuinely nests — a conversation opened from a push, say —
- * it gets a route.
+ * Every destination is a named address — `/discover`, `/messages`, and so on —
+ * so that a deep link and a notification can each name one. That leaves `/`
+ * with nothing of its own, and a launch opens `/`. This gives it a home rather
+ * than letting the application start on its own not-found page.
+ *
+ * It redirects rather than rendering Discover directly, so the address bar of
+ * the router matches the tab the person is looking at and the platform restores
+ * the right one on the next cold start.
  */
-export default function ConsumerMobileScreen() {
-  return <ConsumerApp />;
+export default function Index() {
+  return <Redirect href={discoverPath} />;
 }

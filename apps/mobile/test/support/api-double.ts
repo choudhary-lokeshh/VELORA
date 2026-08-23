@@ -20,11 +20,19 @@ export interface MobileApiState {
     state: 'available' | 'unavailable';
     updatedAt: string;
   };
+  appeals: {
+    id: string;
+    decisionId: string;
+    state: string;
+    submittedAt: string;
+  }[];
   blocks: { blockedId: string; createdAt: string }[];
   candidates: {
+    bio?: string;
     displayName: string;
     id: string;
     media: { id: string; position: number }[];
+    region?: string;
     sharedLanguages: string[];
   }[];
   conversations: {
@@ -113,7 +121,20 @@ export interface MobileApiState {
     version?: number;
   } | null;
   /** When false the API refuses every credential, as an ended session does. */
+  notificationPreferences: {
+    category: string;
+    channel: string;
+    enabled: boolean;
+  }[];
+  reports: { createdAt: string; id: string; state: string }[];
   sessionLive: boolean;
+  standing: {
+    appealWindowClosesAt?: string;
+    appealable: boolean;
+    decisionId: string;
+    reasonCode: string;
+    scope: string;
+  }[];
 }
 
 export interface MobileApiDouble {
@@ -208,6 +229,7 @@ export function admittedState(): MobileApiState {
       state: 'unavailable',
       updatedAt: iso(),
     },
+    appeals: [],
     blocks: [],
     candidates: [
       {
@@ -256,7 +278,13 @@ export function admittedState(): MobileApiState {
       outstandingRequirements: [],
       version: 1,
     },
+    notificationPreferences: [
+      { category: 'direct_message', channel: 'push', enabled: true },
+      { category: 'account_security', channel: 'email', enabled: true },
+    ],
+    reports: [],
     sessionLive: true,
+    standing: [],
   };
 }
 
@@ -429,6 +457,59 @@ export function createMobileApiDouble(
     if (path === '/v1/discovery/introductions' && method === 'GET') {
       return json(200, { introductions: state.introductions });
     }
+    /*
+     * Signalling interest. The server records one signal per pair and only
+     * publishes a mutual introduction when both sides have signalled, so the
+     * answer here is `pending` for a first signal and `mutual` for a second —
+     * and the candidate leaves the feed either way, because a decision has been
+     * made about them.
+     */
+    if (path === '/v1/discovery/introductions' && method === 'POST') {
+      const input = body as { candidateId: string };
+      const existing = state.introductions.find(
+        (row) => row.counterpart.id === input.candidateId,
+      );
+      const introduction =
+        existing === undefined
+          ? {
+              counterpart: {
+                displayName:
+                  state.candidates.find(
+                    (candidate) => candidate.id === input.candidateId,
+                  )?.displayName ?? 'Somebody',
+                id: input.candidateId,
+                media: [],
+                sharedLanguages: [],
+              },
+              createdAt: iso(),
+              id: introductionId,
+              role: 'initiator' as const,
+              state: 'pending' as const,
+            }
+          : { ...existing, state: 'mutual' as const };
+      state.introductions = [
+        ...state.introductions.filter(
+          (row) => row.counterpart.id !== input.candidateId,
+        ),
+        introduction,
+      ];
+      state.candidates = state.candidates.filter(
+        (candidate) => candidate.id !== input.candidateId,
+      );
+      return json(200, introduction);
+    }
+    if (path === '/v1/discovery/introductions/decline' && method === 'POST') {
+      const input = body as { introductionId: string };
+      const existing = state.introductions.find(
+        (row) => row.id === input.introductionId,
+      );
+      if (existing === undefined) return error(404, 'HTTP_404');
+      const withdrawn = { ...existing, state: 'withdrawn' as const };
+      state.introductions = state.introductions.filter(
+        (row) => row.id !== input.introductionId,
+      );
+      return json(200, withdrawn);
+    }
 
     // REALTIME. Role, origin state, and one-live-call-per-pair are all
     // enforced, because they are what the server enforces; a double that let a
@@ -572,6 +653,46 @@ export function createMobileApiDouble(
         (candidate) => candidate.id !== input.targetId,
       );
       return json(200, { blockedId: input.targetId, createdAt: iso() });
+    }
+    if (path === '/v1/safety/blocks/removal' && method === 'POST') {
+      const input = body as { targetId: string };
+      const removed = state.blocks.find(
+        (block) => block.blockedId === input.targetId,
+      );
+      state.blocks = state.blocks.filter(
+        (block) => block.blockedId !== input.targetId,
+      );
+      return json(
+        200,
+        removed ?? { blockedId: input.targetId, createdAt: iso() },
+      );
+    }
+    if (path === '/v1/safety/standing' && method === 'GET') {
+      return json(200, { statements: state.standing });
+    }
+    if (path === '/v1/safety/appeals' && method === 'GET') {
+      return json(200, { appeals: state.appeals });
+    }
+    if (path === '/v1/safety/reports' && method === 'GET') {
+      return json(200, { nextCursor: undefined, reports: state.reports });
+    }
+    if (path === '/v1/notifications/preferences' && method === 'GET') {
+      return json(200, { preferences: state.notificationPreferences });
+    }
+    if (path === '/v1/notifications/preferences' && method === 'POST') {
+      const input = body as {
+        category: string;
+        channel: string;
+        enabled: boolean;
+      };
+      state.notificationPreferences = state.notificationPreferences.map(
+        (preference) =>
+          preference.category === input.category &&
+          preference.channel === input.channel
+            ? { ...preference, enabled: input.enabled }
+            : preference,
+      );
+      return json(200, { preferences: state.notificationPreferences });
     }
     if (path === '/v1/safety/reports' && method === 'POST') {
       const input = body as {

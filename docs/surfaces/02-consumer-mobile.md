@@ -68,3 +68,46 @@ Reads may show clearly labeled cached data with freshness and refresh. Mutations
 ## Security, phase, and authority
 
 Follow [consumer product](../product/02-consumer-product.md), [mobile responsive rules](../design/04-responsive-platform-rules.md), [accessibility/motion](../design/05-accessibility-motion.md), and [security baseline](../security/01-security-baseline.md). V1 includes consumer core and no new verification workflow UI. Phase 2 may add approved provider handoff/resume while the server remains evidence authority; Phase 2/3 and Conditional features otherwise follow phase/channel authority. Mobile distribution never silently broadens or narrows backend authorization.
+
+## Implemented: the interface
+
+The interface is NIGHT CURRENT, recorded in [ADR-0030](../decisions/ADR-0030-consumer-mobile-product-interface.md). It is not a fourth expression: the approved Master names exactly one Consumer expression, and this is the same product for the same person on a different device, so it carries the same palette, type scale, radii, motion, and icon set that `apps/web` publishes. What changes is the idiom, not the language — native navigation, native lifecycle, native gestures, touch-first density, and no hover state anywhere.
+
+React Native cannot consume a CSS custom property, so the values exist twice, and neither copy is trusted: `pnpm design:parity` reads both files and fails the build if they disagree about a colour, a spacing step, a radius, a duration, an easing curve, label tracking, or any icon path. Exhaustiveness is checked in both directions, so a value added on one surface and mirrored on neither fails rather than shipping as a difference nobody chose.
+
+Two things the approved DNA fixes needed a dependency each. IBM Plex Sans is not a system font on either platform, so it travels with the bundle in four weights; the 1.75 px icon stroke has no implementation in React Native without a vector library, so the marks are drawn with `react-native-svg` from the same 24-unit path table Consumer Web uses.
+
+## Implemented: navigation and screens
+
+Five destinations, the same five Consumer Web has and named the same way: Discover, Introductions, Messages, Notices, You. They are real routes, so the system back gesture, a deep link, and a notification all land where they should, and the platform restores the right tab on a cold start.
+
+**Calling is not a destination.** A call is placed against a mutual introduction and against nothing else, and the server derives who the other party is from the relationship — so it lives under Introductions, where the relationship is. A calling tab would be a second list of the same people with a field somewhere that took a person.
+
+**Safety is not a destination either.** Blocking and reporting are one unobtrusive control on every surface that shows somebody, opening a sheet where the identifier is already known. A safety flow that asks a frightened person to paste an identifier is a safety flow that does not get used. What sits under You is the record — standing, appeals, blocks, and reports — and it says where the controls are.
+
+Account, availability, notice preferences, safety, and the session sit under one You, each as its own address, so the first four destinations stay about other people and no single screen becomes a settings page nobody can find anything in.
+
+## Implemented: what the surface refuses to claim
+
+Every capability this build does not have is stated on the screen it would have appeared on, rather than hidden or faked.
+
+- **No photograph anywhere, and no control that would add one.** `packages/validation` publishes image references with no address, because authorized delivery needs an approved storage provider and there is none. Every person is an identity mark on a stable tone, and the profile screen says why.
+- **No push notification and no permission prompt.** The preferences screen lists the categories and channels the server publishes and says plainly that nothing is sent outside VELORA yet: no delivery provider is approved, and this build registers no device token. A permission prompt for a capability that does not exist teaches somebody to grant one for nothing.
+- **No call carries media, and it is said before a call is placed** rather than only once one is ringing.
+- **No message preview on the conversation list.** A list screen is read on a phone that may be face-up on a table, and this product has no read receipt to trade for it either.
+- **No name against a block**, because the contract publishes none. The list is by date and says so.
+- **No account closure**, because every retention schedule it depends on is an open legal decision.
+
+## Implemented: the phone-specific behaviour
+
+A cold launch restores from the platform keystore before asking the server anything, and the launch state is real and rendered rather than skipped. An offline launch keeps the stored session and reports that the service could not be reached, rather than claiming somebody is signed out. A session the server has ended drops local material and says which of the two happened.
+
+Nothing polls. Every list asks again when the application returns to the foreground and when somebody acts, because a background timer would spend a battery keeping a screen nobody is looking at fresh.
+
+Bottom sheets rather than centred dialogs, so a confirming control lands under the thumb of a hand already holding the device. A composer that lifts above the keyboard and keeps the words when a send fails. Pull to refresh on every list. Nothing tappable is smaller than 44 points, including a switch whose visible track is 28. Text scales with the system setting — uncapped for body copy, capped for the display steps, because an uncapped heading pushes the thing it heads off the screen.
+
+## Implemented: how it was verified
+
+**There is no simulator, no device, and no Xcode in the environment this was built in**, so the product was rendered through `react-native-web` in a real browser and walked at 320, 360, 390, 430, and 768 points across every screen, checking for element overflow, a document that scrolls sideways, and any tappable control under the minimum target.
+
+That proves layout, state, reachability, and target size. It does not prove native chrome — the real status bar, the real keyboard, the real safe-area insets, the platform's scroll physics, or how the typeface renders on a device. [The freeze report](../architecture/21-consumer-mobile-freeze-report.md) records that limitation alongside the defects the walk did find.

@@ -1,4 +1,9 @@
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react-native';
 import {
   AppState,
   type AppStateStatus,
@@ -6,7 +11,7 @@ import {
 } from 'react-native';
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
-import { ConsumerApp } from '../src/product/app';
+import { IntroductionsScreen } from '../src/product/introductions';
 import {
   admittedState,
   callId,
@@ -15,6 +20,7 @@ import {
   otherPersonId,
   type MobileApiState,
 } from './support/api-double';
+import { renderScreen } from './support/render';
 
 /**
  * Consumer Mobile's calling area.
@@ -32,11 +38,12 @@ import {
  * capability this app does not have.
  */
 
-const apiBaseUrl = 'http://api.test';
-
 const foregroundListeners: ((status: AppStateStatus) => void)[] = [];
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Before mounting rather than after. Unmounting is asynchronous, and a tree
+  // still coming down keeps its in-flight reads alive.
+  await cleanup();
   foregroundListeners.length = 0;
   jest
     .spyOn(AppState, 'addEventListener')
@@ -105,20 +112,16 @@ async function openCalls(state: MobileApiState = withMutualIntroduction()) {
     installationId: 'installation-local-device',
     refreshToken: 'refresh-stored',
   });
-  const view = await render(
-    <ConsumerApp
-      apiBaseUrl={apiBaseUrl}
-      fetchImplementation={double.fetch}
-      store={store}
-    />,
-  );
+  const view = await renderScreen(<IntroductionsScreen />, double, { store });
+  // Every test starts from a screen that has actually answered, rather than
+  // racing the read it fired on mount.
+  await view.findByTestId('introductions-screen');
   await waitFor(() => {
-    expect(view.getByTestId('auth-status')).toHaveTextContent('Signed in');
+    expect(
+      view.queryByTestId(`introduction-${introductionId}`) ??
+        view.queryByTestId('call-current'),
+    ).toBeTruthy();
   });
-  await fireEvent.press(view.getByTestId('nav-calls'));
-  // The area switch resolves asynchronously, so every test starts from a screen
-  // that is actually the calling one rather than racing the one before it.
-  await view.findByTestId('calls-media-unavailable');
   return { double, view };
 }
 
@@ -435,11 +438,30 @@ describe('a credential is asked for, never kept', () => {
 });
 
 describe('the surface claims no capability it does not have', () => {
-  it('says plainly that a call carries no audio or video yet', async () => {
+  it('says plainly that a call carries no sound, before anybody places one', async () => {
     const { view } = await openCalls();
-    expect(view.getByTestId('calls-media-unavailable')).toHaveTextContent(
-      /cannot carry audio or video on this device yet/u,
+    // Said at the point of the control rather than only once a call is
+    // ringing. Somebody who presses "Voice" expecting to be heard has already
+    // been misled by the time a notice arrives on the call card.
+    expect(view.getByTestId('calls-media-unavailable')).toBeTruthy();
+    expect(
+      view.getByText(/cannot open a microphone or a camera/u),
+    ).toBeTruthy();
+  });
+
+  it('repeats it on the call itself, so it is said where the call is', async () => {
+    const { view } = await openCalls(withLiveCall({ state: 'active' }));
+    // Reaching for the pair surfaces the call the server already has; nothing
+    // is restored across a launch, which is what keeps a stale notification
+    // from reviving a finished call.
+    await fireEvent.press(
+      await view.findByTestId(`call-voice-${introductionId}`),
     );
+    await waitFor(() => {
+      expect(view.getByTestId('call-current')).toBeTruthy();
+    });
+
+    expect(view.getByTestId('call-no-media')).toBeTruthy();
   });
 
   it('asks for no permission, because it would use none', async () => {

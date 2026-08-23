@@ -7,9 +7,6 @@
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "plugins": ["expo-router"],
-    "experiments": {
-      "typedRoutes": true
-    },
     "ios": {
       "supportsTablet": true
     }

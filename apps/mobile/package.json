@@ -21,13 +21,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo-google-fonts/ibm-plex-sans": "catalog:",
     "@expo/metro-runtime": "catalog:",
     "@velora/api-client": "workspace:*",
     "@velora/config": "workspace:*",
     "@velora/consumer-client": "workspace:*",
     "@velora/design-tokens": "workspace:*",
+    "@velora/validation": "workspace:*",
     "expo": "catalog:",
     "expo-constants": "catalog:",
+    "expo-font": "catalog:",
     "expo-linking": "catalog:",
     "expo-router": "catalog:",
     "expo-secure-store": "catalog:",
@@ -37,6 +40,7 @@
     "react-native": "catalog:",
     "react-native-safe-area-context": "catalog:",
     "react-native-screens": "catalog:",
+    "react-native-svg": "catalog:",
     "react-native-worklets": "catalog:"
   },
   "devDependencies": {
@@ -48,6 +52,7 @@
     "expo-doctor": "catalog:",
     "jest": "catalog:",
     "jest-expo": "catalog:",
+    "react-native-web": "catalog:",
     "react-test-renderer": "catalog:",
     "typescript": "catalog:"
   }
