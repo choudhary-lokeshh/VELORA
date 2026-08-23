@@ -48,18 +48,24 @@ async function signIn(page: Page, subject: string): Promise<void> {
   await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
 }
 
-/** Declares adult status on Consumer Web, which is where that decision lives. */
+/**
+ * Declares adult status on Consumer Web, which is where that decision lives.
+ *
+ * The consumer surface has its own sign-in address and its own admission ladder;
+ * Studio's shell is a different surface with a different session, which is why
+ * only the Studio half of this journey uses the shared `signIn` above.
+ */
 async function declareAdult(page: Page, subject: string): Promise<void> {
-  await page.goto(consumerWebOrigin);
-  await signIn(page, subject);
+  await page.goto(`${consumerWebOrigin}/sign-in`);
+  await page.getByTestId('sign-in-subject').fill(subject);
+  await page.getByTestId('sign-in-subject').press('Enter');
+  await page.waitForURL(/\/welcome$/u, { timeout: 30_000 });
+
   await page.getByTestId('create-account').click();
-  await expect(page.getByTestId('journey-stage')).toHaveText(
-    'Confirm you are an adult',
-  );
+  await expect(page.getByTestId('declare-adult')).toBeVisible();
+  await page.getByTestId('onboarding-region').fill('ES');
   await page.getByTestId('declare-adult').click();
-  await expect(page.getByTestId('journey-stage')).toHaveText(
-    'Accept the policies',
-  );
+  await expect(page.getByTestId('acknowledge-policies')).toBeVisible();
 }
 
 /** Takes a signed-in Studio session all the way to an active capability. */

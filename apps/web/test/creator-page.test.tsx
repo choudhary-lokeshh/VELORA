@@ -166,7 +166,11 @@ describe('the public creator page', () => {
     renderPage(doubleFor({ body: published, kind: 'ok' }));
     await screen.findByTestId('creator-page');
 
-    const links = screen.getAllByRole('link');
+    // Scoped to the links the creator supplied. The page's own wordmark is a
+    // VELORA link home and is not somebody else's destination.
+    const links = within(screen.getByTestId('creator-page-links')).getAllByRole(
+      'link',
+    );
     expect(links).toHaveLength(2);
     for (const link of links) {
       const rel = link.getAttribute('rel') ?? '';

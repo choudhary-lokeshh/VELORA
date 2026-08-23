@@ -102,6 +102,12 @@ export interface ApiDoubleState {
     role: 'caller' | 'recipient';
     state: string;
   } | null;
+  /** Category and channel pairs the server says are settable. */
+  notificationPreferences: {
+    category: string;
+    channel: string;
+    enabled: boolean;
+  }[];
   notifications: {
     callId?: string;
     conversationId?: string;
@@ -199,6 +205,10 @@ export function emptyState(): ApiDoubleState {
     conversations: [],
     introductions: [],
     messages: [],
+    notificationPreferences: [
+      { category: 'direct_message', channel: 'push', enabled: true },
+      { category: 'introduction', channel: 'push', enabled: true },
+    ],
     notifications: [],
     onboarding: null,
     profile: null,
@@ -484,6 +494,18 @@ export function createApiDouble(
       // Every deployed environment refuses: no media provider is approved.
       return error(503, 'DEPENDENCY_UNAVAILABLE');
     }
+    if (
+      path === '/v1/users/me/profile/media/removal' &&
+      method === 'POST' &&
+      state.profile !== null
+    ) {
+      const input = body as { mediaId: string };
+      state.profile = {
+        ...state.profile,
+        media: state.profile.media.filter((item) => item.id !== input.mediaId),
+      };
+      return json(200, state.profile);
+    }
     if (path === '/v1/users/me/availability' && method === 'GET') {
       return json(200, state.availability);
     }
@@ -522,6 +544,25 @@ export function createApiDouble(
     }
     if (path === '/v1/discovery/introductions' && method === 'POST') {
       const input = body as { candidateId: string };
+      // Signalling somebody who already signalled you is what makes an
+      // introduction mutual, exactly as it is on the server.
+      const waiting = state.introductions.find(
+        (entry) =>
+          entry.counterpart.id === input.candidateId &&
+          entry.state === 'pending' &&
+          entry.role === 'recipient',
+      );
+      if (waiting !== undefined) {
+        const mutual = {
+          ...waiting,
+          mutualAt: iso(),
+          state: 'mutual' as const,
+        };
+        state.introductions = state.introductions.map((entry) =>
+          entry.id === waiting.id ? mutual : entry,
+        );
+        return json(200, mutual);
+      }
       const candidate = state.candidates.find(
         (entry) => entry.id === input.candidateId,
       );
@@ -536,11 +577,28 @@ export function createApiDouble(
         role: 'initiator' as const,
         state: 'pending' as const,
       };
-      state.introductions = [introduction];
+      state.introductions = [...state.introductions, introduction];
       state.candidates = state.candidates.filter(
         (entry) => entry.id !== input.candidateId,
       );
       return json(200, introduction);
+    }
+    if (
+      (path === '/v1/discovery/introductions/decline' ||
+        path === '/v1/discovery/introductions/withdrawal') &&
+      method === 'POST'
+    ) {
+      const input = body as { introductionId: string };
+      const target = state.introductions.find(
+        (entry) => entry.id === input.introductionId,
+      );
+      if (target === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      // A closed introduction stops being listed, which is the same thing
+      // somebody sees when the other person was never there.
+      state.introductions = state.introductions.filter(
+        (entry) => entry.id !== input.introductionId,
+      );
+      return json(200, { ...target, state: 'closed' as const });
     }
 
     // REALTIME. Terminal states are terminal here too: a double that let an
@@ -697,6 +755,25 @@ export function createApiDouble(
         return { ...entry, readAt: iso() };
       });
       return json(200, { readIds });
+    }
+
+    if (path === '/v1/notifications/preferences' && method === 'GET') {
+      return json(200, { preferences: state.notificationPreferences });
+    }
+    if (path === '/v1/notifications/preferences' && method === 'POST') {
+      const input = body as {
+        category: string;
+        channel: string;
+        enabled: boolean;
+      };
+      state.notificationPreferences = state.notificationPreferences.map(
+        (preference) =>
+          preference.category === input.category &&
+          preference.channel === input.channel
+            ? { ...preference, enabled: input.enabled }
+            : preference,
+      );
+      return json(200, { preferences: state.notificationPreferences });
     }
 
     // SAFETY.

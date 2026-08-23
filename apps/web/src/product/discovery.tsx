@@ -1,29 +1,45 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  ApiResult,
-  ConsumerApi,
-  DiscoveryCandidate,
-} from '@velora/consumer-client';
-import { failureMessage } from '@velora/consumer-client';
 
-import { useSingleFlight } from './resource';
+import type { ApiResult, DiscoveryCandidate } from '@velora/consumer-client';
+import { availabilityView, failureMessage } from '@velora/consumer-client';
+
+import { useApi, useToast } from '../app/providers';
 import {
+  Button,
+  Chip,
   EmptyState,
   ErrorMessage,
-  MoreButton,
-  Section,
-  StatusMessage,
-} from './ui';
+  Notice,
+  PageHeader,
+  Skeleton,
+  initialsOf,
+  toneOf,
+} from '../design/primitives';
+import { languageNames, regionName } from './locale';
+import { PersonSafetyMenu } from './safety-actions';
+import { useResource, useSingleFlight } from './resource';
 
 /**
- * How many candidates one screenful tries to hold.
+ * Discovery.
  *
- * The server pages independently of this, and a page it returns may be much
- * shorter after its own eligibility filtering. That is why the fill below is a
- * loop rather than a single request.
+ * Two decisions, both the server's to accept. A pass and a signal are sent and
+ * the answer is rendered; a candidate leaves the list because the request
+ * succeeded, never in anticipation of it succeeding. A refusal — the pair is no
+ * longer eligible, the account is not active, the candidate went away — is shown
+ * as a refusal, and this surface does not guess which of those it was, because
+ * the API deliberately does not say.
+ *
+ * Nothing on a card is invented. There is no distance, no compatibility score,
+ * no popularity, no "online now", and no view count, because
+ * `packages/validation` publishes none of them and the ranking that produced the
+ * page is a fixed deterministic rule rather than a model. What a card shows is
+ * exactly the minimized projection the server sent.
  */
+
+/** How many candidates one screenful tries to hold. */
 const targetCandidateCount = 12;
 
 /**
@@ -33,8 +49,7 @@ const targetCandidateCount = 12;
  * mean there is nothing left, so the client keeps asking — but a client that
  * kept asking without a ceiling would turn one scroll into an unbounded walk of
  * somebody's entire suppression history. When the ceiling is reached the screen
- * shows what it has and offers to continue, which is an honest description of
- * where it stopped.
+ * shows what it has and offers to continue.
  */
 const maximumFillRequests = 5;
 
@@ -51,33 +66,31 @@ const emptyFeed: FeedState = {
   exhausted: false,
 };
 
-/**
- * The discovery feed, and the two decisions it offers.
- *
- * Both decisions are the server's to accept. A pass and a signal are sent and
- * the answer is rendered; the candidate leaves the list because the request
- * succeeded, never in anticipation of it succeeding. A refusal — the pair is no
- * longer eligible, the account is not active, the candidate went away — is
- * shown as a refusal, and this surface does not guess which of those it was,
- * because the API deliberately does not say.
- */
-export function DiscoveryPanel({ api }: { readonly api: ConsumerApi }) {
+export function Discovery() {
+  const api = useApi();
+  const toast = useToast();
   const [feed, setFeed] = useState<FeedState>(emptyFeed);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
   const [retryable, setRetryable] = useState(false);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState<string | undefined>(undefined);
   const decision = useSingleFlight();
   const inFlight = useRef<AbortController | undefined>(undefined);
+
+  const loadAvailability = useCallback(
+    async (signal: AbortSignal) => api.availability(signal),
+    [api],
+  );
+  const availability = useResource(loadAvailability);
+  const view = availabilityView(availability.value);
 
   /**
    * Fills the list from a starting position.
    *
    * Candidates are deduplicated by identifier as they arrive. The server does
    * not promise a candidate cannot appear twice across pages — a profile that
-   * changes between requests can move — and a list that rendered the same
-   * person twice would invite two conflicting decisions about them.
+   * changes between requests can move — and a list that rendered the same person
+   * twice would invite two conflicting decisions about them.
    */
   const fill = useCallback(
     async (from: FeedState) => {
@@ -140,6 +153,15 @@ export function DiscoveryPanel({ api }: { readonly api: ConsumerApi }) {
     };
   }, [fill]);
 
+  const drop = (candidateId: string) => {
+    setFeed((current) => ({
+      ...current,
+      candidates: current.candidates.filter(
+        (candidate) => candidate.id !== candidateId,
+      ),
+    }));
+  };
+
   const decide = (
     candidateId: string,
     work: () => Promise<ApiResult<unknown>>,
@@ -150,21 +172,15 @@ export function DiscoveryPanel({ api }: { readonly api: ConsumerApi }) {
     // either committed, and both would fire.
     decision.run(async () => {
       setPending(candidateId);
-      setNotice(undefined);
       try {
         const result = await work();
         if (result.kind === 'ok') {
-          setNotice(success);
+          toast.show(success, 'positive');
           // Removed because the server accepted it, not in anticipation.
-          setFeed((current) => ({
-            ...current,
-            candidates: current.candidates.filter(
-              (candidate) => candidate.id !== candidateId,
-            ),
-          }));
+          drop(candidateId);
           return;
         }
-        setNotice(failureMessage(result));
+        toast.show(failureMessage(result) ?? 'That did not work.', 'critical');
         // A refused decision leaves the candidate where it was and re-reads, so
         // the list reflects the server rather than this tab's optimism.
         await fill(emptyFeed);
@@ -174,95 +190,218 @@ export function DiscoveryPanel({ api }: { readonly api: ConsumerApi }) {
     });
   };
 
+  const busy = decision.busy || pending !== undefined;
+  const empty = !loading && error === undefined && feed.candidates.length === 0;
+
   return (
-    <Section headingId="discovery-heading" title="Discovery">
-      {notice === undefined ? null : (
-        <StatusMessage testId="discovery-notice">{notice}</StatusMessage>
+    <>
+      <PageHeader
+        lede="People who are available right now, who can see you, and who you have not already decided about."
+        title="Discover"
+      />
+
+      {view === 'available' ? null : (
+        <div style={{ marginBottom: 'var(--space-6)' }}>
+          <Notice
+            icon="clock"
+            testId="discovery-availability"
+            title={
+              view === 'expired'
+                ? 'Your availability window ended'
+                : 'You are not visible right now'
+            }
+            tone="caution"
+          >
+            Other people only see you while you are available, and being
+            available is also how you appear to them.{' '}
+            <Link href="/you">Set a window on your profile.</Link>
+          </Notice>
+        </div>
       )}
+
       {error === undefined ? null : (
-        <div>
+        <div
+          className="v-stack v-stack--3"
+          style={{ marginBottom: 'var(--space-6)' }}
+        >
           <ErrorMessage testId="discovery-failed">{error}</ErrorMessage>
           {retryable ? (
-            <button
-              onClick={() => {
-                void fill(emptyFeed);
-              }}
-              type="button"
-            >
-              Try again
-            </button>
+            <div>
+              <Button
+                onClick={() => {
+                  void fill(emptyFeed);
+                }}
+              >
+                Try again
+              </Button>
+            </div>
           ) : null}
         </div>
       )}
+
       {loading && feed.candidates.length === 0 ? (
-        <StatusMessage testId="discovery-loading">
-          Looking for people…
-        </StatusMessage>
-      ) : null}
-      {!loading && error === undefined && feed.candidates.length === 0 ? (
-        <EmptyState testId="discovery-empty">
-          Nobody is available for you right now. Being available yourself makes
-          you visible to other people too.
-        </EmptyState>
+        <>
+          <p className="v-visually-hidden" role="status">
+            Looking for people
+          </p>
+          <div className="v-deck" data-testid="discovery-loading">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div className="v-person" key={index}>
+                <Skeleton height="0" width="100%" />
+                <div style={{ aspectRatio: '4 / 5' }}>
+                  <Skeleton height="100%" width="100%" />
+                </div>
+                <div
+                  className="v-person__body"
+                  style={{ paddingTop: 'var(--space-4)' }}
+                >
+                  <Skeleton height={12} width="60%" />
+                  <Skeleton height={12} width="90%" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       ) : null}
 
-      <ul className="candidates" data-testid="discovery-candidates">
-        {feed.candidates.map((candidate) => (
-          <li key={candidate.id}>
-            <h3>{candidate.displayName}</h3>
-            {candidate.region === undefined ? null : (
-              <p className="hint">{candidate.region}</p>
-            )}
-            {candidate.bio === undefined ? null : <p>{candidate.bio}</p>}
-            {candidate.sharedLanguages.length === 0 ? null : (
-              <p className="hint">
-                Shared languages: {candidate.sharedLanguages.join(', ')}
-              </p>
-            )}
-            <div className="row">
-              <button
-                data-testid={`discovery-signal-${candidate.id}`}
-                disabled={decision.busy || pending !== undefined}
-                onClick={() => {
-                  decide(
-                    candidate.id,
-                    async () => api.signalIntroduction(candidate.id),
-                    'Interest sent. They will only hear about it if they say yes too.',
-                  );
+      {empty ? (
+        <EmptyState
+          actions={
+            <Button
+              icon="refresh"
+              onClick={() => {
+                void fill(emptyFeed);
+              }}
+            >
+              Look again
+            </Button>
+          }
+          body={
+            feed.exhausted
+              ? 'You have seen everybody available to you for now. People appear here when they make themselves available, so it is worth coming back.'
+              : 'Nobody is available to you right now. Being available yourself is what makes you visible to other people too.'
+          }
+          icon="compass"
+          testId="discovery-empty"
+          title={
+            feed.exhausted ? 'That is everybody for now' : 'Nobody right now'
+          }
+        />
+      ) : null}
+
+      {feed.candidates.length === 0 ? null : (
+        <ul className="v-deck" data-testid="discovery-candidates">
+          {feed.candidates.map((candidate) => (
+            <li key={candidate.id}>
+              <CandidateCard
+                busy={busy}
+                candidate={candidate}
+                onBlocked={() => {
+                  drop(candidate.id);
                 }}
-                type="button"
-              >
-                Say you are interested
-              </button>
-              <button
-                data-testid={`discovery-pass-${candidate.id}`}
-                disabled={decision.busy || pending !== undefined}
-                onClick={() => {
+                onPass={() => {
                   decide(
                     candidate.id,
                     async () => api.pass(candidate.id),
                     'Passed. They are not told, and you will not see them for a while.',
                   );
                 }}
-                type="button"
-              >
-                Pass
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+                onSignal={() => {
+                  decide(
+                    candidate.id,
+                    async () => api.signalIntroduction(candidate.id),
+                    'Interest sent. They only hear about it if they say yes too.',
+                  );
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
 
       {feed.exhausted || feed.cursor === undefined ? null : (
-        <MoreButton
-          busy={loading}
-          label="Look for more"
-          onClick={() => {
-            void fill(feed);
-          }}
-          testId="discovery-more"
-        />
+        <div style={{ marginTop: 'var(--space-8)', textAlign: 'center' }}>
+          <Button
+            busy={loading}
+            data-testid="discovery-more"
+            onClick={() => {
+              void fill(feed);
+            }}
+          >
+            Look for more
+          </Button>
+        </div>
       )}
-    </Section>
+    </>
+  );
+}
+
+function CandidateCard({
+  busy,
+  candidate,
+  onBlocked,
+  onPass,
+  onSignal,
+}: {
+  readonly busy: boolean;
+  readonly candidate: DiscoveryCandidate;
+  readonly onBlocked: () => void;
+  readonly onPass: () => void;
+  readonly onSignal: () => void;
+}) {
+  const region = regionName(candidate.region);
+  return (
+    <article className="v-person" data-testid={`candidate-${candidate.id}`}>
+      <div
+        className={`v-person__portrait v-avatar--tone-${String(
+          toneOf(candidate.id),
+        )}`}
+      >
+        <span aria-hidden="true" className="v-person__portrait-mark">
+          {initialsOf(candidate.displayName)}
+        </span>
+        <div className="v-person__identity">
+          <h2 className="v-heading v-wrap">{candidate.displayName}</h2>
+          <div className="v-inline v-inline--tight">
+            {region === undefined ? null : <Chip>{region}</Chip>}
+            {candidate.sharedLanguages.length === 0 ? null : (
+              <Chip>Both speak {languageNames(candidate.sharedLanguages)}</Chip>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="v-person__body">
+        {candidate.bio === undefined ? (
+          <p className="v-small v-quiet">No bio yet.</p>
+        ) : (
+          <p className="v-person__bio v-small v-wrap">{candidate.bio}</p>
+        )}
+
+        <div className="v-person__actions">
+          <Button
+            data-testid={`discovery-pass-${candidate.id}`}
+            disabled={busy}
+            onClick={onPass}
+            tone="secondary"
+          >
+            Pass
+          </Button>
+          <Button
+            data-testid={`discovery-signal-${candidate.id}`}
+            disabled={busy}
+            icon="heart"
+            onClick={onSignal}
+            tone="primary"
+          >
+            Interested
+          </Button>
+          <PersonSafetyMenu
+            onBlocked={onBlocked}
+            person={{ displayName: candidate.displayName, id: candidate.id }}
+          />
+        </div>
+      </div>
+    </article>
   );
 }

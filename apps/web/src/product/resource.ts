@@ -25,6 +25,17 @@ export interface Resource<T> {
   /** Re-reads from the server, superseding any request already in flight. */
   readonly reload: () => void;
   readonly retryable: boolean;
+  /**
+   * Whether the server has answered at least once since this resource was
+   * enabled.
+   *
+   * `loading` alone cannot carry this. A resource that starts disabled reports
+   * `loading: false`, and a caller reading only `value === undefined` in that
+   * moment would conclude the value is absent when nobody has asked yet — which
+   * is how a gate sends an admitted account back to the beginning of onboarding
+   * for one frame. Nothing may act on an absent value until this is true.
+   */
+  readonly settled: boolean;
   readonly value: T | undefined;
 }
 
@@ -57,6 +68,7 @@ export function useResource<T>(
   const [error, setError] = useState<string | undefined>(undefined);
   const [retryable, setRetryable] = useState(false);
   const [loading, setLoading] = useState(enabled);
+  const [settled, setSettled] = useState(false);
   const inFlight = useRef<AbortController | undefined>(undefined);
   // Held in a ref so a caller that passes an inline callback does not restart
   // every read on every render.
@@ -74,6 +86,7 @@ export function useResource<T>(
       // stops a slow first request from overwriting a fast second one.
       if (controller.signal.aborted) return;
       setLoading(false);
+      setSettled(true);
       if (result.kind === 'ok') {
         setValue(result.value);
         setError(undefined);
@@ -89,15 +102,20 @@ export function useResource<T>(
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
+      setSettled(false);
       return undefined;
     }
+    // Set here rather than left to the read: a caller rendering between the
+    // moment this resource is enabled and the moment the request starts must
+    // see "asking", never "asked and empty".
+    setLoading(true);
     reload();
     return () => {
       inFlight.current?.abort();
     };
   }, [enabled, reload]);
 
-  return { error, loading, reload, retryable, value };
+  return { error, loading, reload, retryable, settled, value };
 }
 
 /**

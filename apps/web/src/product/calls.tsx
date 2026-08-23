@@ -1,46 +1,47 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type {
-  ApiResult,
-  Call,
-  CallMedium,
-  ConsumerApi,
-  Introduction,
-} from '@velora/consumer-client';
+import type { ApiResult, Call, CallMedium } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
-import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
-import { EmptyState, ResourceState, Section, StatusMessage } from './ui';
+
+import { useApi } from '../app/providers';
+import { Dialog } from '../design/dialog';
+import { Icon } from '../design/icons';
+import {
+  Avatar,
+  Badge,
+  BlockedState,
+  Button,
+  ErrorMessage,
+  StatusMessage,
+} from '../design/primitives';
+import { useSingleFlight } from './resource';
 
 /**
- * Calling.
+ * A call, from the invitation to the ending.
  *
- * A call is placed against a mutual introduction and against nothing else. This
- * surface therefore offers a call from an introduction the person already has,
- * and there is no field anywhere in it for naming somebody: no identifier
- * input, no handle lookup, no "call by number". That is not a convenience this
- * screen declined to build — the server derives the other party from the
- * relationship, so a request that named one would be refused.
+ * A call is placed against a mutual introduction and against nothing else. There
+ * is no field anywhere here for naming somebody — no identifier input, no handle
+ * lookup, no dialler — because the server derives the other party from the
+ * relationship and refuses a request that names one.
  *
- * What the server says is what is displayed. A call's state is read back rather
- * than assumed from the action that was just taken, because an accepted call
- * can be overtaken between the click and the answer — the other person hangs
- * up, the invitation expires, a block lands. Every action here re-reads.
+ * Voice and video are separate entry points rather than one control with a
+ * medium toggle: agreeing to be heard is not agreeing to be seen, and a toggle
+ * carrying the last choice forward would make the more exposing option the
+ * default for somebody who never chose it.
  *
- * No credential is retained at all. Joining asks the server for one and drops
- * it: there is nothing to hand it to, because no media stack is opened, no
- * track is captured, and no provider is contacted — no RTC provider is
- * approved, so in a deployed environment the server refuses to mint one in the
- * first place. When there is a media stack, the credential goes straight to it
- * and is still never stored, never put in the address, and never rendered.
+ * What the server says is what is displayed. Every action re-reads, because a
+ * call can be overtaken between the click and the answer — the other person
+ * hangs up, the invitation expires, a block lands. Reaching for a pair that
+ * already has a live call returns that call, on the correct side of it, which is
+ * how somebody meets a call they did not place.
  *
- * That is not only tidiness. A credential a third party honours without asking
- * again is the one secret this surface could leak, and the way to not leak it
- * is to not hold it. Asking again on every join and every reconnect costs a
- * round trip and buys the thing that matters: the server re-composes
- * eligibility at each issuance, so a block landing mid-call is enforced rather
- * than outlived by a credential minted before it.
+ * **No credential is retained.** Joining asks the server for one and drops it:
+ * there is nothing to hand it to, because no media stack is opened, no track is
+ * captured, and no provider is contacted. Asking again on every join and every
+ * reconnect is what lets a block landing mid-call take effect rather than being
+ * outlived by a credential minted before it.
  */
 
 /** How a state reads to the person in the call. */
@@ -87,39 +88,95 @@ const liveCallStates = new Set([
   'ending',
 ]);
 
-export function CallsPanel({ api }: { readonly api: ConsumerApi }) {
-  const load = useCallback(
-    async (signal: AbortSignal) => api.introductions({}, signal),
-    [api],
-  );
-  const introductions = useResource(load);
-  const [call, setCall] = useState<Call | undefined>(undefined);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
-  const action = useSingleFlight();
+/** How often an open call re-reads itself. Not a ring; a read. */
+const pollIntervalMilliseconds = 3000;
 
-  useRevalidateOnFocus(introductions.reload);
+export function CallDialog({
+  counterpart,
+  introductionId,
+  medium,
+  onClose,
+}: {
+  readonly counterpart: { readonly displayName: string; readonly id: string };
+  readonly introductionId: string;
+  readonly medium: CallMedium;
+  readonly onClose: () => void;
+}) {
+  const api = useApi();
+  const [call, setCall] = useState<Call | undefined>(undefined);
+  const [message, setMessage] = useState<string | undefined>(undefined);
+  const [blocked, setBlocked] = useState(false);
+  const [starting, setStarting] = useState(true);
+  const action = useSingleFlight();
+  const started = useRef(false);
+
+  const apply = useCallback((result: ApiResult<Call>) => {
+    if (isOk(result)) {
+      setCall(result.value);
+      setMessage(undefined);
+      return;
+    }
+    if (result.kind === 'refused' && result.code === 'DEPENDENCY_UNAVAILABLE') {
+      setBlocked(true);
+      return;
+    }
+    setMessage(failureMessage(result));
+  }, []);
+
+  useEffect(() => {
+    // Placed once. React runs an effect twice in development, and a second
+    // request here would be a second call rather than a second read.
+    if (started.current) return;
+    started.current = true;
+    void api.call({ introductionId, medium }).then((result) => {
+      setStarting(false);
+      apply(result);
+    });
+  }, [api, apply, introductionId, medium]);
+
+  const live = call !== undefined && liveCallStates.has(call.state);
+
+  // While a call is live this reads it again on a short interval. It is not a
+  // ring and it is not a realtime transport: it is the same authoritative read
+  // every action performs, repeated so an ending on the other side arrives
+  // without somebody having to press something to find out.
+  useEffect(() => {
+    if (call === undefined || !live) return undefined;
+    const callId = call.id;
+    const timer = setInterval(() => {
+      void api.readCall(callId).then((result) => {
+        if (isOk(result)) setCall(result.value);
+      });
+    }, pollIntervalMilliseconds);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [api, call, live]);
 
   const act = (work: () => Promise<ApiResult<Call>>) => {
     action.run(async () => {
-      setNotice(undefined);
-      const result = await work();
-      setNotice(failureMessage(result));
-      if (isOk(result)) setCall(result.value);
+      apply(await work());
     });
   };
 
   /**
    * Asks for a credential, and keeps none.
    *
-   * Called on joining and again on every reconnect, never cached across either.
    * What the request proves is that the server would admit this person right
-   * now; the secret it carries has no consumer on this surface yet, so it is
-   * deliberately not bound to anything.
+   * now; the secret it carries has no consumer on this surface, so it is
+   * deliberately not bound to anything and not stored.
    */
-  const authorize = (callId: string) => {
+  const join = (callId: string) => {
     action.run(async () => {
-      setNotice(undefined);
-      setNotice(failureMessage(await api.joinAuthorization(callId)));
+      const authorization = await api.joinAuthorization(callId);
+      if (
+        authorization.kind === 'refused' &&
+        authorization.code === 'DEPENDENCY_UNAVAILABLE'
+      ) {
+        setBlocked(true);
+        return;
+      }
+      setMessage(failureMessage(authorization));
       // The call is re-read rather than inferred from the issuance: obtaining a
       // credential says nothing about whether the other side is still there.
       const current = await api.readCall(callId);
@@ -127,224 +184,230 @@ export function CallsPanel({ api }: { readonly api: ConsumerApi }) {
     });
   };
 
-  const mutual = (introductions.value?.introductions ?? []).filter(
-    (row) => row.state === 'mutual',
-  );
-
   return (
-    <Section headingId="calls-heading" title="Calls">
-      <ResourceState resource={introductions} testId="calls" />
-      {notice === undefined ? null : (
-        <StatusMessage testId="calls-notice">{notice}</StatusMessage>
+    <Dialog
+      onClose={onClose}
+      testId="call-dialog"
+      title={medium === 'video' ? 'Video call' : 'Voice call'}
+    >
+      {blocked ? (
+        <BlockedState
+          testId="call-blocked"
+          title="Calling is not switched on yet"
+        >
+          <p>
+            VELORA can set a call up between two people who have been
+            introduced, but no approved provider exists to carry the audio or
+            video, so no call can actually connect. Nothing was sent to{' '}
+            {counterpart.displayName}.
+          </p>
+        </BlockedState>
+      ) : (
+        <div className="v-call" data-testid="call-panel">
+          <div
+            className={`v-call__halo${
+              call?.state === 'invited' ? ' v-call__halo--ringing' : ''
+            }`}
+          >
+            <Avatar
+              displayName={counterpart.displayName}
+              seed={counterpart.id}
+              size="lg"
+            />
+          </div>
+
+          <div className="v-stack v-stack--2" style={{ alignItems: 'center' }}>
+            <p className="v-heading">{counterpart.displayName}</p>
+            <p className="v-inline v-inline--tight" data-testid="call-state">
+              <Icon name={medium === 'video' ? 'video' : 'phone'} size="sm" />
+              <span className="v-muted">
+                {starting
+                  ? 'Setting up…'
+                  : call === undefined
+                    ? message === undefined
+                      ? 'Not started'
+                      : 'Could not start'
+                    : (callStateLabels[call.state] ?? call.state)}
+              </span>
+            </p>
+            {call?.endReason === undefined ? null : (
+              <Badge testId="call-end-reason" tone="neutral">
+                {endReasonLabels[call.endReason] ?? 'Ended'}
+              </Badge>
+            )}
+          </div>
+
+          {live ? (
+            <p className="v-caption v-quiet v-measure">
+              VELORA is holding this call open, but there is no audio or video
+              yet: no approved provider exists to carry it.
+            </p>
+          ) : null}
+
+          {message === undefined ? null : (
+            <ErrorMessage testId="call-message">{message}</ErrorMessage>
+          )}
+          {starting ? (
+            <StatusMessage testId="call-starting">Setting up…</StatusMessage>
+          ) : null}
+
+          {/*
+            A dialog always offers a way out. When the server refused to place
+            the call at all there is no call to act on, and a panel whose only
+            exit was Escape would strand somebody who reaches for a control.
+          */}
+          {call === undefined ? (
+            starting ? null : (
+              <div className="v-call__actions">
+                <Button data-testid="call-dismiss" onClick={onClose}>
+                  Close
+                </Button>
+              </div>
+            )
+          ) : (
+            <div className="v-call__actions">
+              {call.state === 'invited' && call.role === 'recipient' ? (
+                <>
+                  <Button
+                    busy={action.busy}
+                    data-testid="call-accept"
+                    icon="phone"
+                    onClick={() => {
+                      act(async () => api.acceptCall(call.id));
+                    }}
+                    tone="primary"
+                  >
+                    Answer
+                  </Button>
+                  <Button
+                    data-testid="call-reject"
+                    disabled={action.busy}
+                    icon="phoneOff"
+                    onClick={() => {
+                      act(async () => api.rejectCall(call.id));
+                    }}
+                    tone="danger"
+                  >
+                    Decline
+                  </Button>
+                </>
+              ) : null}
+
+              {call.state === 'invited' && call.role === 'caller' ? (
+                <Button
+                  data-testid="call-cancel"
+                  disabled={action.busy}
+                  icon="phoneOff"
+                  onClick={() => {
+                    act(async () => api.cancelCall(call.id));
+                  }}
+                  tone="danger"
+                >
+                  Cancel
+                </Button>
+              ) : null}
+
+              {call.state === 'accepted' ||
+              call.state === 'connecting' ||
+              call.state === 'reconnecting' ? (
+                <Button
+                  busy={action.busy}
+                  data-testid="call-join"
+                  onClick={() => {
+                    join(call.id);
+                  }}
+                  tone="primary"
+                >
+                  {call.state === 'reconnecting' ? 'Reconnect' : 'Join'}
+                </Button>
+              ) : null}
+
+              {live && call.state !== 'invited' ? (
+                <Button
+                  data-testid="call-end"
+                  disabled={action.busy}
+                  icon="phoneOff"
+                  onClick={() => {
+                    act(async () => api.endCall(call.id));
+                  }}
+                  tone="danger"
+                >
+                  Hang up
+                </Button>
+              ) : null}
+
+              {live ? null : (
+                <Button data-testid="call-dismiss" onClick={onClose}>
+                  Close
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
-      {call === undefined ? null : (
-        <CurrentCall
-          busy={action.busy}
-          call={call}
-          onAccept={() => {
-            act(async () => api.acceptCall(call.id));
-          }}
-          onCancel={() => {
-            act(async () => api.cancelCall(call.id));
-          }}
-          onDismiss={() => {
-            setCall(undefined);
-          }}
-          onEnd={() => {
-            act(async () => api.endCall(call.id));
-          }}
-          onJoin={() => {
-            authorize(call.id);
-          }}
-          onReject={() => {
-            act(async () => api.rejectCall(call.id));
+      {blocked ? (
+        <div className="v-dialog__actions">
+          <Button data-testid="call-blocked-close" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      ) : null}
+    </Dialog>
+  );
+}
+
+/**
+ * The two ways to start a call, offered where the relationship is.
+ *
+ * Separate controls rather than a medium toggle, for the reason above.
+ */
+export function CallControls({
+  counterpart,
+  disabled = false,
+  introductionId,
+  size = 'md',
+}: {
+  readonly counterpart: { readonly displayName: string; readonly id: string };
+  readonly disabled?: boolean;
+  readonly introductionId: string;
+  readonly size?: 'sm' | 'md';
+}) {
+  const [medium, setMedium] = useState<CallMedium | undefined>(undefined);
+  return (
+    <>
+      <Button
+        data-testid={`call-voice-${introductionId}`}
+        disabled={disabled}
+        icon="phone"
+        onClick={() => {
+          setMedium('voice');
+        }}
+        size={size === 'sm' ? 'sm' : 'md'}
+      >
+        Voice
+      </Button>
+      <Button
+        data-testid={`call-video-${introductionId}`}
+        disabled={disabled}
+        icon="video"
+        onClick={() => {
+          setMedium('video');
+        }}
+        size={size === 'sm' ? 'sm' : 'md'}
+      >
+        Video
+      </Button>
+      {medium === undefined ? null : (
+        <CallDialog
+          counterpart={counterpart}
+          introductionId={introductionId}
+          medium={medium}
+          onClose={() => {
+            setMedium(undefined);
           }}
         />
       )}
-
-      {!introductions.loading &&
-      introductions.error === undefined &&
-      mutual.length === 0 ? (
-        <EmptyState testId="calls-empty">
-          You can call somebody once you both say you are interested.
-        </EmptyState>
-      ) : null}
-
-      <ul data-testid="calls-introductions">
-        {mutual.map((row) => (
-          <li key={row.id}>
-            <CallOffer
-              busy={action.busy || call !== undefined}
-              introduction={row}
-              onCall={(medium) => {
-                act(async () => api.call({ introductionId: row.id, medium }));
-              }}
-            />
-          </li>
-        ))}
-      </ul>
-    </Section>
-  );
-}
-
-/**
- * One person it is currently possible to call.
- *
- * Voice and video are separate buttons rather than a medium toggle, because
- * they are separate consents: agreeing to be heard is not agreeing to be seen,
- * and a control that carried the last choice forward would make the more
- * exposing option the default for somebody who never chose it.
- */
-function CallOffer({
-  busy,
-  introduction,
-  onCall,
-}: {
-  readonly busy: boolean;
-  readonly introduction: Introduction;
-  readonly onCall: (medium: CallMedium) => void;
-}) {
-  return (
-    <div className="row">
-      <span data-testid={`call-offer-${introduction.id}`}>
-        {introduction.counterpart.displayName}
-      </span>
-      <button
-        data-testid={`call-voice-${introduction.id}`}
-        disabled={busy}
-        onClick={() => {
-          onCall('voice');
-        }}
-        type="button"
-      >
-        Voice call
-      </button>
-      <button
-        data-testid={`call-video-${introduction.id}`}
-        disabled={busy}
-        onClick={() => {
-          onCall('video');
-        }}
-        type="button"
-      >
-        Video call
-      </button>
-    </div>
-  );
-}
-
-/**
- * The call in front of the person right now.
- *
- * Which controls exist is decided by the role and the state the server
- * reported, not by what this component would like to offer: only a recipient
- * answers or declines, only a caller withdraws, and either may hang up once
- * there is something to hang up. A control the server would refuse is not
- * rendered disabled — it is not rendered.
- */
-function CurrentCall({
-  busy,
-  call,
-  onAccept,
-  onCancel,
-  onDismiss,
-  onEnd,
-  onJoin,
-  onReject,
-}: {
-  readonly busy: boolean;
-  readonly call: Call;
-  readonly onAccept: () => void;
-  readonly onCancel: () => void;
-  readonly onDismiss: () => void;
-  readonly onEnd: () => void;
-  readonly onJoin: () => void;
-  readonly onReject: () => void;
-}) {
-  const live = liveCallStates.has(call.state);
-  const ringing = call.state === 'invited';
-  return (
-    <div data-testid="call-current">
-      <p data-testid="call-counterpart">{call.counterpart.displayName}</p>
-      <p data-testid="call-state">
-        {callStateLabels[call.state] ?? call.state}
-      </p>
-      <p data-testid="call-medium">
-        {call.medium === 'video' ? 'Video' : 'Voice'}
-      </p>
-      {call.endReason === undefined ? null : (
-        <p data-testid="call-end-reason">
-          {endReasonLabels[call.endReason] ?? 'Ended'}
-        </p>
-      )}
-
-      {ringing && call.role === 'recipient' ? (
-        <div className="row">
-          <button
-            data-testid="call-accept"
-            disabled={busy}
-            onClick={onAccept}
-            type="button"
-          >
-            Answer
-          </button>
-          <button
-            data-testid="call-reject"
-            disabled={busy}
-            onClick={onReject}
-            type="button"
-          >
-            Decline
-          </button>
-        </div>
-      ) : null}
-
-      {ringing && call.role === 'caller' ? (
-        <button
-          data-testid="call-cancel"
-          disabled={busy}
-          onClick={onCancel}
-          type="button"
-        >
-          Cancel
-        </button>
-      ) : null}
-
-      {call.state === 'accepted' ||
-      call.state === 'connecting' ||
-      call.state === 'reconnecting' ? (
-        <button
-          data-testid="call-join"
-          disabled={busy}
-          onClick={onJoin}
-          type="button"
-        >
-          {call.state === 'reconnecting' ? 'Reconnect' : 'Join'}
-        </button>
-      ) : null}
-
-      {live && !ringing ? (
-        <button
-          data-testid="call-end"
-          disabled={busy}
-          onClick={onEnd}
-          type="button"
-        >
-          Hang up
-        </button>
-      ) : null}
-
-      {live ? null : (
-        <button
-          data-testid="call-dismiss"
-          disabled={busy}
-          onClick={onDismiss}
-          type="button"
-        >
-          Dismiss
-        </button>
-      )}
-    </div>
+    </>
   );
 }

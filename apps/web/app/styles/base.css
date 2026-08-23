@@ -1,0 +1,260 @@
+/*
+ * Document-level foundations.
+ *
+ * Everything here is either an accessibility requirement or a consequence of
+ * the token contract: nothing in this file makes a visual decision of its own.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /*
+   * The app shell owns its own scrolling regions, and a page that also scrolls
+   * behind them produces two scrollbars and a header that drifts. Height is
+   * pinned; the body is the flex container the shell lives in.
+   */
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-interface);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  margin: 0;
+  min-height: 100%;
+  /*
+   * Nothing on this surface is wide enough to need sideways scrolling. If a
+   * layout ever produces it, that is a defect to fix rather than a scrollbar to
+   * offer, and clipping it here would hide the defect — so this is `clip` on the
+   * x axis only, which stops the page rocking sideways on touch without
+   * creating a scroll container that would break `position: sticky`.
+   */
+  overflow-x: clip;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd {
+  margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: var(--text-heading-line);
+}
+
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+a {
+  color: var(--ember);
+  text-decoration-color: var(--ember-line);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--ember-bright);
+  text-decoration-color: currentcolor;
+}
+
+/*
+ * The approved 2 px focus treatment, applied once, to everything. The offset
+ * ring plus a canvas-coloured halo keeps it legible on every surface in the
+ * tonal ladder including a control sitting on the brand signal itself.
+ */
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-radius: inherit;
+}
+
+::selection {
+  background: var(--ember-wash-strong);
+  color: var(--text-primary);
+}
+
+/* Long unbroken strings a person supplied must wrap rather than push a layout. */
+.v-wrap {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.v-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v-clamp-2,
+.v-clamp-3 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.v-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.v-clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
+/* Available to assistive technology, absent from the visual layout. */
+.v-visually-hidden {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.v-skip-link {
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  left: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  position: fixed;
+  text-decoration: none;
+  top: var(--space-4);
+  transform: translateY(calc(-100% - var(--space-6)));
+  transition: transform var(--duration-base) var(--ease-out);
+  z-index: var(--layer-toast);
+}
+
+.v-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* --- Typography roles. Named for purpose, used instead of ad-hoc sizes. --- */
+
+.v-display {
+  font-size: var(--text-display-size);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: var(--text-display-line);
+}
+
+.v-title {
+  font-size: var(--text-title-size);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: var(--text-title-line);
+}
+
+.v-heading {
+  font-size: var(--text-heading-size);
+  font-weight: 600;
+  line-height: var(--text-heading-line);
+}
+
+.v-subheading {
+  font-size: var(--text-subheading-size);
+  font-weight: 600;
+  line-height: var(--text-subheading-line);
+}
+
+.v-body {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.v-small {
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+}
+
+.v-caption {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.v-label {
+  font-size: var(--text-micro-size);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  line-height: var(--text-micro-line);
+  text-transform: uppercase;
+}
+
+.v-muted {
+  color: var(--text-secondary);
+}
+
+.v-quiet {
+  color: var(--text-tertiary);
+}
+
+.v-measure {
+  max-width: var(--measure-max);
+}
+
+/*
+ * Motion is an enhancement everywhere on this surface, so removing it removes
+ * nothing. Declared once, at the document level, so a transition added later is
+ * opted out of by default rather than by memory.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

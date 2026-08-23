@@ -1,0 +1,502 @@
+/*
+ * The application shell.
+ *
+ * `docs/design/04-responsive-platform-rules.md` asks each viewport class to
+ * reflow on content and interaction needs rather than on device names, so the
+ * three arrangements here are three different navigations rather than one
+ * navigation at three widths:
+ *
+ *   phone   — a bottom bar within thumb reach, one task on screen at a time;
+ *   tablet  — a labelled rail, still touch-first, with room for a second column;
+ *   desktop — a persistent sidebar and a bounded reading measure beside it.
+ *
+ * Consumer surfaces bound their content on wide screens instead of stretching,
+ * which is the same document's rule for wide desktop.
+ */
+
+.v-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+
+.v-shell__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.v-view {
+  flex: 1;
+  padding: var(--space-6) var(--space-4) var(--space-10);
+  width: 100%;
+}
+
+.v-view__inner {
+  margin: 0 auto;
+  max-width: var(--content-max);
+  width: 100%;
+}
+
+.v-view--narrow .v-view__inner {
+  max-width: 760px;
+}
+
+.v-view--flush {
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------- phone -- */
+
+.v-topbar {
+  align-items: center;
+  background: color-mix(in srgb, var(--canvas) 86%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  gap: var(--space-3);
+  min-height: var(--topbar-height);
+  padding: var(--space-2) var(--space-4);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+  position: sticky;
+  top: 0;
+  z-index: var(--layer-navigation);
+}
+
+.v-topbar__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.v-tabbar {
+  background: color-mix(in srgb, var(--canvas) 92%, transparent);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border-hairline);
+  bottom: 0;
+  display: flex;
+  left: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  position: fixed;
+  right: 0;
+  z-index: var(--layer-navigation);
+}
+
+.v-tabbar__item {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+  min-height: var(--tabbar-height);
+  padding: var(--space-2) var(--space-1);
+  position: relative;
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.v-tabbar__item[aria-current='page'] {
+  color: var(--ember);
+}
+
+.v-tabbar__item[aria-current='page']::before {
+  background: var(--ember);
+  border-radius: var(--radius-pill);
+  content: '';
+  height: 2px;
+  left: 50%;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  width: 26px;
+}
+
+.v-tabbar__label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.v-tabbar__mark {
+  position: relative;
+}
+
+.v-tabbar__badge {
+  background: var(--ember);
+  border: 2px solid var(--canvas);
+  border-radius: var(--radius-pill);
+  height: 10px;
+  position: absolute;
+  right: -4px;
+  top: -3px;
+  width: 10px;
+}
+
+/* Room for the fixed bar, so the last row of a list is never under it. */
+@media (width < 768px) {
+  .v-view {
+    padding-bottom: calc(
+      var(--tabbar-height) + var(--space-8) + env(safe-area-inset-bottom)
+    );
+  }
+}
+
+/* ---------------------------------------------- tablet and desktop rail -- */
+
+.v-sidebar {
+  border-right: 1px solid var(--border-hairline);
+  display: none;
+  flex-direction: column;
+  flex: none;
+  gap: var(--space-2);
+  height: 100dvh;
+  padding: var(--space-6) var(--space-3) var(--space-4);
+  position: sticky;
+  top: 0;
+  width: var(--rail-width);
+  z-index: var(--layer-navigation);
+}
+
+.v-sidebar__brand {
+  align-items: center;
+  color: var(--ember);
+  display: flex;
+  font-size: var(--text-micro-size);
+  font-weight: 700;
+  gap: var(--space-3);
+  letter-spacing: var(--tracking-wordmark);
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
+  text-decoration: none;
+}
+
+.v-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-4);
+}
+
+.v-sidebar__item {
+  align-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-small-size);
+  font-weight: 500;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  position: relative;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.v-sidebar__item:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.v-sidebar__item[aria-current='page'] {
+  background: var(--ember-wash);
+  color: var(--ember);
+}
+
+.v-sidebar__item[aria-current='page']::before {
+  background: var(--ember);
+  border-radius: var(--radius-pill);
+  content: '';
+  height: 18px;
+  left: -12px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+}
+
+.v-sidebar__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.v-sidebar__foot {
+  border-top: 1px solid var(--border-hairline);
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.v-sidebar__account {
+  align-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  display: flex;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  text-decoration: none;
+  width: 100%;
+}
+
+.v-sidebar__account:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.v-sidebar__account-name {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (width >= 768px) {
+  .v-sidebar {
+    display: flex;
+  }
+
+  .v-tabbar {
+    display: none;
+  }
+
+  .v-topbar {
+    display: none;
+  }
+
+  .v-view {
+    padding: var(--space-8) var(--space-6) var(--space-12);
+  }
+
+  /* Rail: the label sits under the mark rather than beside it. */
+  .v-sidebar__item {
+    flex-direction: column;
+    gap: 2px;
+    justify-content: center;
+    min-height: 60px;
+    padding: var(--space-2);
+  }
+
+  .v-sidebar__item[aria-current='page']::before {
+    display: none;
+  }
+
+  .v-sidebar__label {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .v-sidebar__brand {
+    justify-content: center;
+    letter-spacing: 0.1em;
+    padding: 0;
+  }
+
+  .v-sidebar__brand-text {
+    display: none;
+  }
+
+  .v-sidebar__account {
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
+  }
+
+  .v-sidebar__account-name {
+    display: none;
+  }
+}
+
+@media (width >= 1024px) {
+  .v-sidebar {
+    padding: var(--space-6) var(--space-4) var(--space-5);
+    width: var(--sidebar-width);
+  }
+
+  .v-sidebar__item {
+    flex-direction: row;
+    gap: var(--space-3);
+    justify-content: flex-start;
+    min-height: var(--control-height);
+    padding: 0 var(--space-3);
+  }
+
+  .v-sidebar__item[aria-current='page']::before {
+    display: block;
+  }
+
+  .v-sidebar__label {
+    flex: 1;
+    font-size: var(--text-small-size);
+    font-weight: 500;
+    letter-spacing: normal;
+  }
+
+  .v-sidebar__brand {
+    justify-content: flex-start;
+    letter-spacing: var(--tracking-wordmark);
+    padding: 0 var(--space-2);
+  }
+
+  .v-sidebar__brand-text {
+    display: inline;
+  }
+
+  .v-sidebar__account {
+    flex-direction: row;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .v-sidebar__account-name {
+    display: block;
+  }
+
+  .v-view {
+    padding: var(--space-10) var(--space-8) var(--space-16);
+  }
+}
+
+/* ------------------------------------------------------------- columns -- */
+
+/*
+ * A list beside a detail. On a phone the two are separate destinations, because
+ * a browser Back that closed a pane instead of leaving the page is a Back that
+ * does not behave like Back.
+ */
+/*
+ * `minmax(0, 1fr)` rather than `1fr`, and `min-width: 0` on the panes.
+ *
+ * A grid item's default minimum is its content's minimum, so one unbreakable
+ * run of characters somebody typed — a 400-character word, a pasted URL — makes
+ * the column wider than the viewport and the whole page scrolls sideways. The
+ * text already wraps anywhere; this is what lets the box it wraps inside get
+ * smaller than the text's natural minimum.
+ */
+.v-split {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.v-split__list,
+.v-split__detail {
+  min-width: 0;
+}
+
+/*
+ * Below the desktop breakpoint the two panes are two destinations rather than
+ * two columns, so exactly one of them is in the layout at a time. Which one is
+ * decided by the address, which is what keeps the browser's own Back working.
+ */
+@media (width < 1024px) {
+  .v-messages__title--detail {
+    display: none;
+  }
+}
+
+/* The shell's own header carries a back control at this width; two would be a
+   confusing pair pointing at the same place. */
+@media (width < 768px) {
+  .v-thread__back {
+    display: none;
+  }
+}
+
+.v-split:not(.v-split--detail) .v-split__detail {
+  display: none;
+}
+
+.v-split--detail .v-split__list {
+  display: none;
+}
+
+@media (width >= 1024px) {
+  .v-split {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .v-split:not(.v-split--detail) .v-split__detail,
+  .v-split--detail .v-split__list {
+    display: block;
+  }
+
+  /* The list is right there; a back control would go nowhere. */
+  .v-thread__back {
+    display: none;
+  }
+}
+
+.v-columns {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.v-columns > * {
+  min-width: 0;
+}
+
+@media (width >= 900px) {
+  .v-columns--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width >= 1024px) {
+  .v-columns--aside {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  }
+}
+
+.v-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.v-stack--2 {
+  gap: var(--space-2);
+}
+
+.v-stack--3 {
+  gap: var(--space-3);
+}
+
+.v-stack--4 {
+  gap: var(--space-4);
+}
+
+.v-stack--5 {
+  gap: var(--space-5);
+}
+
+.v-stack--6 {
+  gap: var(--space-6);
+}
+
+.v-stack--8 {
+  gap: var(--space-8);
+}
+
+.v-inline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.v-inline--tight {
+  gap: var(--space-2);
+}
+
+.v-inline--between {
+  justify-content: space-between;
+}
+
+.v-spread {
+  flex: 1;
+}

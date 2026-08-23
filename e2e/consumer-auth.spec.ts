@@ -1,4 +1,10 @@
 import { authApiBaseUrl, consumerWebOrigin } from './auth-environment.js';
+import {
+  cookieSkipReason,
+  signIn,
+  skipWhenCookieRequiresHttps,
+  uniqueSubject,
+} from './consumer.js';
 import { expect, test } from './fixtures.js';
 
 /**
@@ -9,12 +15,6 @@ import { expect, test } from './fixtures.js';
 
 const sessionCookieName = '__Host-velora_consumer_web_session';
 const csrfCookieName = '__Host-velora_consumer_web_csrf';
-
-function uniqueSubject(scope: string): string {
-  return `e2e-${scope}-${String(Date.now())}-${String(
-    Math.floor(Math.random() * 1_000_000),
-  )}@velora.test`;
-}
 
 function cookieHeaderFor(response: {
   headersArray(): { name: string; value: string }[];
@@ -28,23 +28,6 @@ function cookieHeaderFor(response: {
     .join('; ');
 }
 
-/**
- * WebKit will not store a `Secure` cookie delivered over plain-HTTP loopback,
- * where Chromium and Firefox both do. That is measured, not assumed: the local
- * API answers WebKit with `201` and both `Set-Cookie` headers, and the cookie
- * jar stays empty. The cookie attributes are locked by ADR-0017 and are not
- * relaxed to make a local browser cooperate, so every assertion that depends on
- * the browser holding a session runs where a browser will hold one. WebKit still
- * runs the transport, security-header, and surface-isolation assertions below
- * and in the sibling specs, and it can now reach the local API at all, which it
- * could not before `upgrade-insecure-requests` was scoped to deployed
- * environments.
- */
-const skipWhenCookieRequiresHttps = (browserName: string) =>
-  browserName === 'webkit';
-const cookieSkipReason =
-  'WebKit does not store Secure cookies delivered over plain-HTTP loopback';
-
 test.describe('Consumer Web session lifecycle', () => {
   test.skip(
     ({ browserName }) => skipWhenCookieRequiresHttps(browserName),
@@ -52,19 +35,15 @@ test.describe('Consumer Web session lifecycle', () => {
   );
 
   test('signs in, restores across reloads, and signs out', async ({ page }) => {
-    await page.goto(consumerWebOrigin);
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed out');
-    await expect(page.getByTestId('auth-cause')).toHaveText(
-      'No active session',
-    );
+    await page.goto(`${consumerWebOrigin}/sign-in`);
+    // No form until the session check has answered: the page is deliverable
+    // before anybody knows whose it is.
+    await expect(page.getByTestId('sign-in-subject')).toBeVisible();
 
-    await page.getByLabel('Development identity').fill(uniqueSubject('web'));
-    await page.getByTestId('auth-sign-in').click();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
-    await expect(page.getByTestId('auth-audience')).toHaveText('consumer_web');
-    await expect(page.getByTestId('auth-assurance')).toHaveText(
-      'single_factor',
-    );
+    await signIn(page, uniqueSubject('web'));
+    // A brand-new identity has no consumer account yet, so the server's own
+    // admission ladder is where a session lands.
+    await expect(page).toHaveURL(/\/welcome$/u);
 
     // Cookies are read unfiltered: a `Secure` cookie is not reported for an
     // `http://` URL filter even though loopback is a trustworthy origin, and the
@@ -83,19 +62,20 @@ test.describe('Consumer Web session lifecycle', () => {
     const csrf = cookies.find((cookie) => cookie.name === csrfCookieName);
     expect(csrf?.httpOnly).toBe(false);
 
-    // A reload has no client state at all, so an authenticated result proves the
+    // A reload has no client state at all, so staying on the ladder proves the
     // cookie alone restored the session.
     await page.reload();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
+    await expect(page).toHaveURL(/\/welcome$/u);
 
     await page.getByTestId('auth-sign-out').click();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed out');
+    await page.waitForURL(/\/sign-in/u, { timeout: 30_000 });
     await expect(page.getByTestId('auth-cause')).toHaveText(
       'Signed out on this device',
     );
 
-    await page.reload();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed out');
+    // And it stays gone: a reload with no cookie cannot restore anything.
+    await page.goto(`${consumerWebOrigin}/welcome`);
+    await page.waitForURL(/\/sign-in/u, { timeout: 30_000 });
   });
 
   test('ends every session for the account on global sign-out', async ({
@@ -113,7 +93,7 @@ test.describe('Consumer Web session lifecycle', () => {
     try {
       for (const context of [first, second]) {
         const page = await context.newPage();
-        await page.goto(consumerWebOrigin);
+        await page.goto(`${consumerWebOrigin}/sign-in`);
         // Submitted from the field rather than by clicking the button. These
         // two pages are driven within a few hundred milliseconds of being
         // created, and Firefox drops a synthesised mouse click aimed at a
@@ -122,23 +102,22 @@ test.describe('Consumer Web session lifecycle', () => {
         // signed out. Enter goes to the focused field instead of to a
         // coordinate, and submits the same form through the same handler. The
         // pointer path is covered by the sign-in assertions above and below.
-        await page.getByLabel('Development identity').fill(subject);
-        await page.getByLabel('Development identity').press('Enter');
-        await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
+        await page.getByTestId('sign-in-subject').fill(subject);
+        await page.getByTestId('sign-in-subject').press('Enter');
+        await page.waitForURL(/\/welcome$/u, { timeout: 30_000 });
       }
 
       const closer = await first.newPage();
-      await closer.goto(consumerWebOrigin);
-      await expect(closer.getByTestId('auth-status')).toHaveText('Signed in');
+      await closer.goto(`${consumerWebOrigin}/welcome`);
+      await expect(
+        closer.getByTestId('auth-sign-out-everywhere'),
+      ).toBeVisible();
       await closer.getByTestId('auth-sign-out-everywhere').click();
-      await expect(closer.getByTestId('auth-status')).toHaveText('Signed out');
+      await closer.waitForURL(/\/sign-in/u, { timeout: 30_000 });
 
       const other = await second.newPage();
-      await other.goto(consumerWebOrigin);
-      await expect(other.getByTestId('auth-status')).toHaveText('Signed out');
-      await expect(other.getByTestId('auth-cause')).toHaveText(
-        'No active session',
-      );
+      await other.goto(`${consumerWebOrigin}/welcome`);
+      await other.waitForURL(/\/sign-in/u, { timeout: 30_000 });
     } finally {
       await Promise.all([first.close(), second.close()]);
     }
@@ -149,10 +128,7 @@ test.describe('Consumer Web session lifecycle', () => {
     request,
   }) => {
     const subject = uniqueSubject('revoked');
-    await page.goto(consumerWebOrigin);
-    await page.getByLabel('Development identity').fill(subject);
-    await page.getByTestId('auth-sign-in').click();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
+    await signIn(page, subject);
 
     // Sign the same identity in from an unrelated client and revoke everything.
     const created = await request.post(
@@ -173,18 +149,21 @@ test.describe('Consumer Web session lifecycle', () => {
     });
     expect(revoked.status()).toBe(200);
 
-    await page.getByTestId('auth-refresh').click();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed out');
+    // Coming back to the tab is what makes it ask again, and this time fail.
+    // A reload would prove less: a page that has just loaded has no memory of
+    // having held a session, so the honest thing it could say is only that there
+    // is not one now. Within a tab's life the surface knows the difference.
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await page.waitForURL(/\/sign-in/u, { timeout: 30_000 });
     await expect(page.getByTestId('auth-cause')).toHaveText(
       'Session ended. Sign in again.',
     );
   });
 
   test('never exposes a session token to page scripts', async ({ page }) => {
-    await page.goto(consumerWebOrigin);
-    await page.getByLabel('Development identity').fill(uniqueSubject('script'));
-    await page.getByTestId('auth-sign-in').click();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
+    await signIn(page, uniqueSubject('script'));
 
     const readable = await page.evaluate(() => document.cookie);
     expect(readable).not.toContain(sessionCookieName);

@@ -1,0 +1,1167 @@
+/*
+ * The Consumer component layer.
+ *
+ * One rule governs the whole file: a component may express visual state, and it
+ * may never express business truth. A button that looks primary has not been
+ * authorized; a badge that reads "Ready" is repeating what the server said. That
+ * separation is `docs/design/02-design-system-contract.md`, and it is why
+ * nothing here has a variant named after a permission.
+ */
+
+/* ============================ Buttons ================================= */
+
+.v-btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  gap: var(--space-2);
+  justify-content: center;
+  line-height: 1;
+  min-height: var(--control-height);
+  padding: 0 var(--space-5);
+  position: relative;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.v-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.v-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.v-btn--primary {
+  background: var(--ember);
+  color: var(--text-on-accent);
+}
+
+.v-btn--primary:hover:not(:disabled) {
+  background: var(--ember-bright);
+}
+
+.v-btn--secondary {
+  background: var(--surface-3);
+  border-color: var(--border-soft);
+  color: var(--text-primary);
+}
+
+.v-btn--secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.v-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.v-btn--ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.v-btn--danger {
+  background: var(--status-critical-wash);
+  border-color: rgb(242 96 106 / 40%);
+  color: var(--status-critical);
+}
+
+.v-btn--danger:hover:not(:disabled) {
+  background: rgb(242 96 106 / 22%);
+  border-color: var(--status-critical);
+}
+
+.v-btn--sm {
+  font-size: var(--text-caption-size);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-4);
+}
+
+.v-btn--lg {
+  font-size: var(--text-body-size);
+  min-height: var(--control-height-lg);
+  padding: 0 var(--space-7);
+}
+
+.v-btn--block {
+  width: 100%;
+}
+
+.v-btn__spinner {
+  animation: v-spin 720ms linear infinite;
+  border: 2px solid currentcolor;
+  border-radius: 50%;
+  border-right-color: transparent;
+  flex: none;
+  height: 14px;
+  width: 14px;
+}
+
+@keyframes v-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+ * An icon-only control. It always carries an accessible name; the class only
+ * decides the shape.
+ */
+.v-icon-btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  height: var(--control-height);
+  justify-content: center;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  width: var(--control-height);
+}
+
+.v-icon-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.v-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.v-icon-btn--solid {
+  background: var(--surface-3);
+  border-color: var(--border-soft);
+  color: var(--text-primary);
+}
+
+.v-icon-btn--sm {
+  height: var(--control-height-sm);
+  width: var(--control-height-sm);
+}
+
+/* ============================ Forms =================================== */
+
+.v-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.v-field__label {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+  font-weight: 500;
+  line-height: var(--text-small-line);
+}
+
+.v-field__optional {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.v-field__hint {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.v-field__error {
+  align-items: flex-start;
+  color: var(--status-critical);
+  display: flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-2);
+  line-height: var(--text-caption-line);
+}
+
+.v-field__error svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.v-field__count {
+  color: var(--text-tertiary);
+  font-size: var(--text-micro-size);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.v-field__foot {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.v-control {
+  background: var(--surface-inset);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  min-height: var(--control-height);
+  padding: var(--space-3) var(--space-4);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+  width: 100%;
+}
+
+.v-control::placeholder {
+  color: var(--text-tertiary);
+}
+
+.v-control:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.v-control:focus-visible {
+  background: var(--surface-1);
+  border-color: var(--ember-line);
+}
+
+.v-control:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.v-control[aria-invalid='true'] {
+  border-color: var(--status-critical);
+}
+
+textarea.v-control {
+  min-height: calc(var(--space-16) + var(--space-8));
+  resize: vertical;
+}
+
+select.v-control {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
+    linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-position:
+    right var(--space-5) center,
+    right var(--space-4) center;
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px;
+  padding-right: var(--space-10);
+}
+
+/* A switch is a control with two states, and both are announced by the input. */
+.v-switch {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  min-height: var(--control-height);
+  width: 100%;
+}
+
+.v-switch__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v-switch__track {
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  flex: none;
+  height: 28px;
+  position: relative;
+  transition:
+    background-color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
+  width: 48px;
+}
+
+.v-switch__thumb {
+  background: var(--text-secondary);
+  border-radius: 50%;
+  height: 20px;
+  left: 3px;
+  position: absolute;
+  top: 3px;
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out);
+  width: 20px;
+}
+
+.v-switch input:checked + .v-switch__track {
+  background: var(--ember);
+  border-color: var(--ember);
+}
+
+.v-switch input:checked + .v-switch__track .v-switch__thumb {
+  background: var(--text-on-accent);
+  transform: translateX(20px);
+}
+
+.v-switch input:disabled + .v-switch__track {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.v-switch input:focus-visible + .v-switch__track {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.v-choice {
+  align-items: flex-start;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-3) var(--space-4);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.v-choice:hover {
+  background: var(--surface-2);
+}
+
+.v-choice:has(input:checked) {
+  background: var(--ember-wash);
+  border-color: var(--ember-line);
+}
+
+.v-choice:has(input:focus-visible) {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.v-choice input {
+  accent-color: var(--ember);
+  flex: none;
+  height: 20px;
+  margin: 2px 0 0;
+  width: 20px;
+}
+
+.v-fieldset {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.v-fieldset > legend {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+  font-weight: 500;
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+
+/* ============================ Surfaces ================================ */
+
+.v-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+  padding: var(--space-6);
+}
+
+.v-card--flush {
+  padding: 0;
+}
+
+.v-card--inset {
+  background: var(--surface-inset);
+}
+
+.v-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.v-divider {
+  background: var(--border-hairline);
+  border: 0;
+  height: 1px;
+  margin: 0;
+}
+
+.v-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-6);
+}
+
+.v-page-header__row {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.v-page-header__lede {
+  color: var(--text-secondary);
+  max-width: var(--measure-max);
+}
+
+.v-section-header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.v-section-header__title {
+  color: var(--text-tertiary);
+}
+
+/* ============================ Identity ================================ */
+
+/*
+ * An identity mark, and never a photograph.
+ *
+ * Consumer media has no durable address and no delivery route exists, so this
+ * surface has no image to render for anybody. What it renders instead is a
+ * monogram on a deterministic tone derived from the person's identifier — the
+ * same person is always the same colour, which makes a list scannable — and it
+ * is deliberately never captioned as a photo.
+ */
+.v-avatar {
+  align-items: center;
+  border-radius: 50%;
+  color: var(--text-primary);
+  display: inline-flex;
+  flex: none;
+  font-weight: 600;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+}
+
+.v-avatar::after {
+  border: 1px solid rgb(246 241 243 / 10%);
+  border-radius: 50%;
+  content: '';
+  inset: 0;
+  position: absolute;
+}
+
+.v-avatar--xs {
+  font-size: var(--text-micro-size);
+  height: 28px;
+  width: 28px;
+}
+
+.v-avatar--sm {
+  font-size: var(--text-caption-size);
+  height: 40px;
+  width: 40px;
+}
+
+.v-avatar--md {
+  font-size: var(--text-subheading-size);
+  height: 56px;
+  width: 56px;
+}
+
+.v-avatar--lg {
+  font-size: var(--text-title-size);
+  height: 88px;
+  width: 88px;
+}
+
+.v-avatar--xl {
+  font-size: var(--text-display-size);
+  height: 128px;
+  width: 128px;
+}
+
+.v-avatar--tone-1 {
+  background: linear-gradient(150deg, #4a2f3a, #2a1c26);
+}
+
+.v-avatar--tone-2 {
+  background: linear-gradient(150deg, #2e3a46, #1a2029);
+}
+
+.v-avatar--tone-3 {
+  background: linear-gradient(150deg, #45322a, #26191a);
+}
+
+.v-avatar--tone-4 {
+  background: linear-gradient(150deg, #2f4038, #1a2420);
+}
+
+.v-avatar--tone-5 {
+  background: linear-gradient(150deg, #3d3550, #221d2e);
+}
+
+.v-avatar--tone-6 {
+  background: linear-gradient(150deg, #4a3b2c, #29201a);
+}
+
+.v-avatar-stack {
+  display: flex;
+}
+
+.v-avatar-stack > * + * {
+  margin-left: -10px;
+}
+
+/* ============================ Status =================================== */
+
+.v-badge {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  flex: none;
+  font-size: var(--text-micro-size);
+  font-weight: 600;
+  gap: var(--space-2);
+  line-height: 1;
+  padding: 5px var(--space-3);
+  white-space: nowrap;
+}
+
+.v-badge--neutral {
+  background: var(--surface-3);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.v-badge--accent {
+  background: var(--ember-wash);
+  border-color: var(--ember-line);
+  color: var(--ember);
+}
+
+.v-badge--positive {
+  background: var(--status-positive-wash);
+  color: var(--status-positive);
+}
+
+.v-badge--caution {
+  background: var(--status-caution-wash);
+  color: var(--status-caution);
+}
+
+.v-badge--critical {
+  background: var(--status-critical-wash);
+  color: var(--status-critical);
+}
+
+.v-badge--info {
+  background: var(--status-neutral-wash);
+  color: var(--status-neutral);
+}
+
+/* Colour is never alone: the dot is paired with a word by every caller. */
+.v-dot {
+  border-radius: 50%;
+  flex: none;
+  height: 8px;
+  width: 8px;
+}
+
+.v-dot--positive {
+  background: var(--status-positive);
+}
+
+.v-dot--caution {
+  background: var(--status-caution);
+}
+
+.v-dot--critical {
+  background: var(--status-critical);
+}
+
+.v-dot--neutral {
+  background: var(--text-tertiary);
+}
+
+.v-dot--unread {
+  background: var(--ember);
+  height: 9px;
+  width: 9px;
+}
+
+.v-count {
+  align-items: center;
+  background: var(--ember);
+  border-radius: var(--radius-pill);
+  color: var(--text-on-accent);
+  display: inline-flex;
+  font-size: var(--text-micro-size);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  justify-content: center;
+  line-height: 1;
+  min-width: 20px;
+  padding: 3px 6px;
+}
+
+/* ============================ Messages ================================= */
+
+.v-notice {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.v-notice__icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.v-notice__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.v-notice--info {
+  background: var(--status-neutral-wash);
+  border-color: rgb(130 169 222 / 26%);
+}
+
+.v-notice--info .v-notice__icon {
+  color: var(--status-neutral);
+}
+
+.v-notice--caution {
+  background: var(--status-caution-wash);
+  border-color: rgb(228 176 74 / 26%);
+}
+
+.v-notice--caution .v-notice__icon {
+  color: var(--status-caution);
+}
+
+.v-notice--critical {
+  background: var(--status-critical-wash);
+  border-color: rgb(242 96 106 / 30%);
+}
+
+.v-notice--critical .v-notice__icon {
+  color: var(--status-critical);
+}
+
+.v-notice--quiet {
+  background: var(--surface-1);
+}
+
+.v-notice--quiet .v-notice__icon {
+  color: var(--text-tertiary);
+}
+
+.v-inline-status {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+}
+
+.v-inline-error {
+  align-items: flex-start;
+  color: var(--status-critical);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+  line-height: var(--text-small-line);
+}
+
+.v-inline-error svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* ============================ Empty and blocked ======================== */
+
+.v-empty {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+}
+
+.v-empty__mark {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: 50%;
+  color: var(--text-tertiary);
+  display: flex;
+  height: 56px;
+  justify-content: center;
+  margin-bottom: var(--space-1);
+  width: 56px;
+}
+
+.v-empty__body {
+  color: var(--text-secondary);
+  max-width: 44ch;
+}
+
+.v-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+  margin-top: var(--space-2);
+}
+
+/*
+ * A capability that is deliberately not available.
+ *
+ * Visually distinct from an error on purpose: nothing here broke, and a screen
+ * that looked broken would send somebody to support over a decision the platform
+ * has already made and can explain.
+ */
+.v-blocked {
+  background:
+    linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
+    repeating-linear-gradient(
+        135deg,
+        var(--border-hairline) 0 1px,
+        transparent 1px 9px
+      )
+      border-box;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.v-blocked__head {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* ============================ Skeletons ================================ */
+
+.v-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 37%,
+    var(--surface-2) 63%
+  );
+  background-size: 400% 100%;
+  border-radius: var(--radius-sm);
+  animation: v-shimmer 1400ms ease-in-out infinite;
+}
+
+@keyframes v-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+
+  to {
+    background-position: 0 50%;
+  }
+}
+
+.v-skeleton--circle {
+  border-radius: 50%;
+}
+
+.v-skeleton--text {
+  height: 12px;
+}
+
+/* ============================ Tabs ===================================== */
+
+.v-segmented {
+  background: var(--surface-inset);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  gap: 2px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 3px;
+  scrollbar-width: none;
+}
+
+.v-segmented::-webkit-scrollbar {
+  display: none;
+}
+
+.v-segmented__item {
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-4);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.v-segmented__item:hover {
+  color: var(--text-primary);
+}
+
+.v-segmented__item[aria-selected='true'],
+.v-segmented__item[aria-current='true'] {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.v-segmented__count {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  margin-left: var(--space-2);
+}
+
+/* ============================ Rows ===================================== */
+
+.v-row {
+  align-items: center;
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out);
+  width: 100%;
+}
+
+.v-row--interactive:hover {
+  background: var(--surface-2);
+}
+
+.v-row[aria-current='true'] {
+  background: var(--ember-wash);
+}
+
+.v-row__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.v-row__title {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.v-row__meta {
+  color: var(--text-tertiary);
+  flex: none;
+  font-size: var(--text-micro-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.v-row__preview {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+}
+
+.v-row__aside {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.v-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.v-list--divided > li + li {
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* ============================ Overlays ================================= */
+
+.v-scrim {
+  animation: v-fade-in var(--duration-base) var(--ease-out);
+  background: var(--surface-overlay);
+  inset: 0;
+  position: fixed;
+  z-index: var(--layer-overlay);
+}
+
+@keyframes v-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.v-dialog {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  left: 50%;
+  max-height: calc(100dvh - var(--space-12));
+  max-width: min(520px, calc(100vw - var(--space-8)));
+  overflow-y: auto;
+  padding: var(--space-7);
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  z-index: var(--layer-dialog);
+  animation: v-dialog-in var(--duration-base) var(--ease-out);
+}
+
+@keyframes v-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 12px)) scale(0.98);
+  }
+}
+
+.v-dialog__head {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.v-dialog__head > h2 {
+  min-width: 0;
+}
+
+.v-dialog__close {
+  flex: none;
+  margin-top: -4px;
+}
+
+.v-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+/*
+ * Below the tablet breakpoint a dialog becomes a sheet. Thumb reach is the
+ * reason: a centred panel puts its actions in the middle of a phone screen,
+ * where the hand holding the phone cannot get to them.
+ */
+@media (width < 768px) {
+  .v-dialog {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    bottom: 0;
+    left: 0;
+    max-height: 88dvh;
+    max-width: none;
+    padding-bottom: calc(var(--space-7) + env(safe-area-inset-bottom));
+    top: auto;
+    transform: none;
+    animation: v-sheet-in var(--duration-base) var(--ease-out);
+  }
+
+  .v-dialog__actions {
+    flex-direction: column-reverse;
+  }
+
+  .v-dialog__actions > .v-btn {
+    width: 100%;
+  }
+}
+
+@keyframes v-sheet-in {
+  from {
+    transform: translateY(16px);
+  }
+}
+
+.v-sheet-grip {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  height: 4px;
+  margin: 0 auto;
+  width: 40px;
+}
+
+@media (width >= 768px) {
+  .v-sheet-grip {
+    display: none;
+  }
+}
+
+/* ============================ Menu ===================================== */
+
+.v-menu {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: var(--space-2);
+  position: absolute;
+  z-index: var(--layer-dialog);
+}
+
+.v-menu__item {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-3);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  text-align: left;
+  text-decoration: none;
+  width: 100%;
+}
+
+.v-menu__item:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.v-menu__item--critical {
+  color: var(--status-critical);
+}
+
+/* ============================ Toasts =================================== */
+
+.v-toaster {
+  bottom: calc(
+    var(--tabbar-height) + var(--space-4) + env(safe-area-inset-bottom)
+  );
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  left: 50%;
+  pointer-events: none;
+  position: fixed;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - var(--space-8)));
+  z-index: var(--layer-toast);
+}
+
+@media (width >= 768px) {
+  .v-toaster {
+    bottom: var(--space-6);
+    left: auto;
+    right: var(--space-6);
+    transform: none;
+  }
+}
+
+.v-toast {
+  align-items: flex-start;
+  animation: v-toast-in var(--duration-base) var(--ease-out);
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  pointer-events: auto;
+}
+
+@keyframes v-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.v-toast__icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.v-toast--positive .v-toast__icon {
+  color: var(--status-positive);
+}
+
+.v-toast--critical .v-toast__icon {
+  color: var(--status-critical);
+}
+
+.v-toast--neutral .v-toast__icon {
+  color: var(--text-tertiary);
+}
+
+.v-toast__body {
+  flex: 1;
+  font-size: var(--text-small-size);
+  min-width: 0;
+}
+
+/* ============================ Chips ==================================== */
+
+.v-chip {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: var(--text-micro-size);
+  gap: var(--space-2);
+  line-height: 1;
+  padding: 6px var(--space-3);
+  white-space: nowrap;
+}
+
+.v-chip-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

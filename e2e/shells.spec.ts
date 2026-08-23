@@ -64,10 +64,18 @@ test('Consumer Web carries the consumer product and nothing privileged', async (
   page,
 }) => {
   await page.goto('http://127.0.0.1:3000');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Consumer');
-  await expect(page.getByRole('heading', { name: 'Session' })).toBeVisible();
+  // The public entry, which is what somebody with no session reaches.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Meet people who said yes too.',
+  );
+  await expect(page.getByTestId('landing-start')).toBeVisible();
   for (const forbidden of ['Creator Studio', 'Platform Admin', 'Moderation']) {
     await expect(page.getByText(forbidden)).toHaveCount(0);
+  }
+  // Nothing purchasable and nothing fabricated on the one page a stranger sees.
+  const rendered = await page.locator('body').innerText();
+  for (const forbidden of ['Subscribe', 'members', 'Trusted by', 'reviews']) {
+    expect(rendered, forbidden).not.toContain(forbidden);
   }
 });
 

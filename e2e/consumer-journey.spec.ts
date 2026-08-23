@@ -1,127 +1,117 @@
-import type { Page } from '@playwright/test';
-
-import { consumerWebOrigin } from './auth-environment.js';
+import { cohortFor, consumerWebOrigin } from './auth-environment.js';
+import {
+  cookieSkipReason,
+  navigateTo,
+  signIn,
+  signInAdmitted,
+  skipWhenCookieRequiresHttps,
+  uniqueSubject,
+} from './consumer.js';
 import { expect, test } from './fixtures.js';
 
 /**
  * The Consumer Web product journey in a real browser.
  *
- * This is the only place tab order, focus, and activation semantics are real,
- * so the keyboard pass lives here rather than in jsdom. It runs against the
- * same API the integration suite uses, with the configuration a deployed
- * environment actually has — which is why the journey stops where it does.
+ * This is the only place navigation, focus, activation semantics, and layout are
+ * real, so everything that depends on any of them is proved here rather than in
+ * jsdom. It runs against the same API the integration suite uses, with the
+ * development adapters the configuration schema admits in local and test.
  *
- * **The journey cannot reach a discoverable profile in any environment.** The
- * minimum profile requires one ready image; no media storage provider is
- * approved (`docs/decisions/DECISIONS_REQUIRED.md`); the configured adapter
- * refuses to issue an upload target at all. So the browser can complete adult
- * assurance, policy acknowledgement, and the profile fields, and then stops —
- * and that is asserted here rather than worked around. A test that injected a
- * storage provider would be proving something no deployment can do.
+ * **A browser still cannot complete a profile in any environment**, and that is
+ * asserted below rather than worked around: the media adapter has no HTTP upload
+ * transport and no approved storage provider exists. The accounts these tests
+ * drive were admitted by a fixture that placed bytes the way the integration
+ * suite does, which is what makes the product past that wall reachable at all.
  *
- * Everything past that gate is proved elsewhere: the product surfaces against
- * the published contract in `apps/web/test/shell.test.tsx`, and the server
- * behaviour they depend on against real PostgreSQL in the API integration
- * suite.
+ * Each browser project drives its own cohort of accounts, because nearly every
+ * assertion here changes something — a pass suppresses a candidate, an answer
+ * closes an introduction, a block ends a conversation — and a shared cohort
+ * would make one project's result depend on another's.
  */
-
-const skipWhenCookieRequiresHttps = (browserName: string) =>
-  browserName === 'webkit';
-const cookieSkipReason =
-  'WebKit does not store Secure cookies delivered over plain-HTTP loopback';
-
-function uniqueSubject(scope: string): string {
-  return `e2e-${scope}-${String(Date.now())}-${String(
-    Math.floor(Math.random() * 1_000_000),
-  )}@velora.test`;
-}
-
-async function signIn(page: Page, subject: string): Promise<void> {
-  await page.goto(consumerWebOrigin);
-  await expect(page.getByTestId('auth-status')).toHaveText('Signed out');
-  await page.getByLabel('Development identity').fill(subject);
-  await page.getByTestId('auth-sign-in').click();
-  await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
-}
-
-/** Signs in and completes every admission step the platform will accept. */
-async function admitAsFarAsPossible(
-  page: Page,
-  subject: string,
-): Promise<void> {
-  await signIn(page, subject);
-  await page.getByTestId('create-account').click();
-  await page.getByTestId('declare-adult').click();
-  await page.getByTestId('acknowledge-policies').click();
-  await page.getByLabel('Display name').fill('Journey Tester');
-  await page.getByTestId('save-profile').click();
-  await expect(page.getByTestId('profile-media-state')).toBeVisible();
-}
 
 test.describe('Consumer Web product journey', () => {
   test.skip(
     ({ browserName }) => skipWhenCookieRequiresHttps(browserName),
     cookieSkipReason,
   );
+  // Serial within a project: these tests share one cohort deliberately, so that
+  // a conversation opened by one is the conversation another reads.
+  test.describe.configure({ mode: 'serial' });
 
-  test('walks the admission ladder the server publishes', async ({ page }) => {
-    await signIn(page, uniqueSubject('journey'));
+  test('lets somebody in from the public entry and shows them the product', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
 
-    await expect(page.getByTestId('account-required')).toBeVisible();
+    await page.goto(consumerWebOrigin);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Meet people who said yes too.',
+    );
+    await page.getByTestId('landing-start').click();
+    await page.waitForURL(/\/sign-in$/u);
+
+    await page.getByTestId('sign-in-subject').fill(person.subject);
+    await page.getByTestId('sign-in-subject').press('Enter');
+    await page.waitForURL(/\/discover$/u, { timeout: 30_000 });
+
+    // Somebody available, with a name, a place, and a bio the server sent.
+    await expect(page.getByTestId('discovery-candidates')).toBeVisible();
+    await expect(
+      page.getByTestId('discovery-candidates').getByRole('heading'),
+    ).not.toHaveCount(0);
+
+    // Nothing invented anywhere on it.
+    const rendered = await page.locator('body').innerText();
+    for (const forbidden of ['Online now', '% match', 'km away', 'Views']) {
+      expect(rendered, forbidden).not.toContain(forbidden);
+    }
+  });
+
+  test('walks the admission ladder and stops exactly where the platform does', async ({
+    page,
+  }) => {
+    await signIn(page, uniqueSubject('ladder'));
+    await page.waitForURL(/\/welcome$/u);
+
     await page.getByTestId('create-account').click();
-
     await expect(page.getByTestId('declare-adult')).toBeVisible();
-    // The surface calls a declaration a declaration.
-    await expect(page.getByText(/not a verified age check/)).toBeVisible();
+    // A declaration, said to be a declaration.
+    await expect(page.getByText(/not an identity or age check/u)).toBeVisible();
+    await page.getByTestId('onboarding-region').fill('ES');
     await page.getByTestId('declare-adult').click();
 
     await expect(page.getByTestId('acknowledge-policies')).toBeVisible();
     await expect(page.getByTestId('outstanding-policies')).toContainText(
-      'terms_of_service',
+      'Terms of service',
     );
     await page.getByTestId('acknowledge-policies').click();
 
     await expect(page.getByTestId('save-profile')).toBeVisible();
-    await page.getByLabel('Display name').fill('Journey Tester');
-    await page
-      .getByLabel('Languages you speak, comma separated')
-      .fill('en, es');
+    await page.getByTestId('onboarding-display-name').fill('Journey Tester');
+    await page.getByTestId('language-input').fill('en');
+    await page.getByTestId('language-add').click();
     await page.getByTestId('save-profile').click();
 
     // The ladder is the server's, and it has not finished: the profile still
-    // lacks the one image the minimum requires.
-    await expect(page.getByTestId('journey-stage')).toHaveText(
-      'Complete your profile',
-    );
-    await expect(page.getByTestId('outstanding-profile')).toContainText(
-      'ready media',
-    );
-    // Nothing that needs an admitted account is offered before there is one.
-    await expect(page.getByTestId('nav-discovery')).toHaveCount(0);
-  });
-
-  test('keeps calling behind the same admission as everything else', async ({
-    page,
-  }) => {
-    // Absent after going as far as this environment allows. Calling sits behind
-    // the admission that needs a discoverable profile, and no media storage
-    // provider is approved, so the browser cannot reach it — the same wall
-    // discovery and conversations are behind. A test that reached the calling
-    // screen here would be proving something no deployment can do; the surface
-    // itself is proved against the published contract in
-    // `apps/web/test/calls.test.tsx`.
-    await admitAsFarAsPossible(page, uniqueSubject('calls'));
-    await expect(page.getByTestId('nav-calls')).toHaveCount(0);
-    await expect(page.getByTestId('nav-discovery')).toHaveCount(0);
+    // lacks the one image the minimum requires, and no browser can supply one.
+    await expect(page.getByTestId('profile-photo')).toBeVisible();
+    await expect(page).toHaveURL(/\/welcome$/u);
   });
 
   test('says honestly that no photo storage exists rather than failing silently', async ({
     page,
   }) => {
-    await admitAsFarAsPossible(page, uniqueSubject('media'));
-    await expect(page.getByTestId('profile-media-state')).toHaveText(
-      'No image yet',
-    );
+    await signIn(page, uniqueSubject('media'));
+    await page.waitForURL(/\/welcome$/u);
+    await page.getByTestId('create-account').click();
+    await page.getByTestId('onboarding-region').fill('ES');
+    await page.getByTestId('declare-adult').click();
+    await page.getByTestId('acknowledge-policies').click();
+    await page.getByTestId('onboarding-display-name').fill('Media Tester');
+    await page.getByTestId('language-input').fill('en');
+    await page.getByTestId('language-add').click();
+    await page.getByTestId('save-profile').click();
 
     await page.getByTestId('profile-photo').setInputFiles({
       buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
@@ -129,150 +119,327 @@ test.describe('Consumer Web product journey', () => {
       name: 'photo.jpg',
     });
 
-    // The refusal is the environment's, said plainly, with no storage detail.
-    await expect(page.getByTestId('profile-photo-error')).toHaveText(
-      'Photo storage is not available in this environment yet.',
-    );
+    // The upload address the platform issues is deliberately unroutable, so the
+    // write fails and the surface says so without naming a provider or a key.
+    await expect(page.getByTestId('profile-photo-error')).toBeVisible();
     const body = await page.locator('body').innerText();
     expect(body).not.toContain('velora.invalid');
     expect(body).not.toContain('uploadUrl');
   });
 
-  test('restores a session across a reload and reports one that ended', async ({
+  test('answers an introduction and opens the conversation it creates', async ({
     page,
-  }) => {
-    const subject = uniqueSubject('restore');
-    await admitAsFarAsPossible(page, subject);
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person] = cohort.people;
+    const waiting = cohort.people[2];
+    if (person === undefined || waiting === undefined) {
+      throw new Error('the cohort needs somebody waiting');
+    }
 
-    // A reload starts with no client state at all, so seeing the profile step
-    // again proves the cookie alone restored both session and journey.
-    await page.reload();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
-    await expect(page.getByTestId('journey-stage')).toHaveText(
-      'Complete your profile',
-    );
+    await signInAdmitted(page, person.subject);
+    await navigateTo(page, 'introductions');
 
-    await page.getByTestId('auth-sign-out').click();
-    await expect(page.getByTestId('auth-status')).toHaveText('Signed out');
-    await expect(page.getByTestId('journey-stage')).toHaveCount(0);
+    const card = page
+      .locator('[data-testid^="introduction-"]')
+      .filter({ hasText: waiting.displayName })
+      .first();
+    await expect(card).toBeVisible();
+    await card.getByRole('button', { name: 'Interested too' }).click();
+
+    await page.getByTestId('segment-mutual').click();
+    const mutual = page
+      .locator('[data-testid^="introduction-"]')
+      .filter({ hasText: waiting.displayName })
+      .first();
+    await expect(mutual).toBeVisible();
+    await mutual.getByRole('button', { name: 'Message' }).click();
+    await page.waitForURL(/\/messages\/[0-9a-f-]+$/u);
+    await expect(page.getByTestId('conversation-view')).toBeVisible();
   });
 
-  test('treats a session ended in another tab as ended, on its next question', async ({
-    browser,
-  }) => {
-    // One device with two tabs: the point of the test is that they share a
-    // session, so they must also share a requester.
-    const context = await browser.newContext({
-      extraHTTPHeaders: { 'x-velora-device': uniqueSubject('tabs-device') },
-    });
-    try {
-      const first = await context.newPage();
-      await signIn(first, uniqueSubject('tabs'));
-      const second = await context.newPage();
-      await second.goto(consumerWebOrigin);
-      await expect(second.getByTestId('auth-status')).toHaveText('Signed in');
-
-      // Signing out in one tab is a server-side fact. V1 has no realtime
-      // transport and does not invent one, so the other tab does not hear about
-      // it — it simply gets the truth the next time it asks.
-      await first.getByTestId('auth-sign-out').click();
-      await expect(first.getByTestId('auth-status')).toHaveText('Signed out');
-
-      // Asking again is what the surface does on its own when a tab is looked
-      // at; the same code path is exercised here without depending on a
-      // headless browser's window-activation semantics.
-      await second.getByTestId('auth-refresh').click();
-      await expect(second.getByTestId('auth-status')).toHaveText('Signed out');
-      await expect(second.getByTestId('auth-cause')).toHaveText(
-        'Session ended. Sign in again.',
-      );
-
-      // And a stale tab cannot act on what it was showing: the server refuses.
-      await second.reload();
-      await expect(second.getByTestId('auth-status')).toHaveText('Signed out');
-      await expect(second.getByTestId('journey-stage')).toHaveCount(0);
-    } finally {
-      await context.close();
+  test('sends a message and shows it in the order the server assigned', async ({
+    page,
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person, counterpart] = cohort.people;
+    if (person === undefined || counterpart === undefined) {
+      throw new Error('the cohort needs a pair');
     }
+
+    await signInAdmitted(page, person.subject);
+    await navigateTo(page, 'messages');
+    await page.getByTestId(`conversation-${cohort.conversationId}`).click();
+    await expect(page.getByTestId('conversation-view')).toBeVisible();
+
+    // The seeded transcript is there, and it is somebody else's words as well
+    // as this person's.
+    await expect(page.getByTestId('messages')).toContainText(
+      'It is definitely both.',
+    );
+
+    const written = `A message written in a browser at ${String(Date.now())}`;
+    await page.getByTestId('message-body').fill(written);
+    await page.getByTestId('message-body').press('Enter');
+    await expect(page.getByTestId('messages')).toContainText(written);
+
+    // Nothing on this surface claims the message is end-to-end encrypted.
+    await expect(page.getByText('Not end-to-end encrypted.')).toBeVisible();
+
+    // And it survives a reload, because the server has it rather than this tab.
+    await page.reload();
+    await expect(page.getByTestId('messages')).toContainText(written);
+  });
+
+  test('refuses a message longer than the contract accepts before sending it', async ({
+    page,
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person] = cohort.people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+
+    await signInAdmitted(page, person.subject);
+    await page.goto(`${consumerWebOrigin}/messages/${cohort.conversationId}`);
+    await page.getByTestId('message-body').fill('x'.repeat(4001));
+
+    await expect(page.getByTestId('message-too-long')).toBeVisible();
+    await expect(page.getByTestId('message-send')).toBeDisabled();
+  });
+
+  test('opens what a notice is about', async ({ page }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [, counterpart] = cohort.people;
+    if (counterpart === undefined) throw new Error('the cohort needs a pair');
+
+    await signInAdmitted(page, counterpart.subject);
+    await navigateTo(page, 'notifications');
+    await expect(page.getByTestId('notification-list')).toBeVisible();
+
+    // Said plainly, at the top, rather than implied by an empty inbox.
+    await expect(page.getByTestId('notifications-delivery')).toContainText(
+      'no approved email or push provider',
+    );
+
+    await page.locator('[data-testid^="notification-"]').first().click();
+    await page.waitForURL(/\/(messages|introductions)/u);
+  });
+
+  test('places a call against a relationship and never against a person', async ({
+    page,
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person, counterpart] = cohort.people;
+    if (person === undefined || counterpart === undefined) {
+      throw new Error('the cohort needs a pair');
+    }
+
+    await signInAdmitted(page, person.subject);
+    await navigateTo(page, 'introductions');
+    await page.getByTestId('segment-mutual').click();
+
+    const card = page
+      .locator('[data-testid^="introduction-"]')
+      .filter({ hasText: counterpart.displayName })
+      .first();
+    await card.getByRole('button', { name: 'Voice' }).click();
+
+    const dialog = page.getByTestId('call-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId('call-state')).toContainText('Ringing');
+    // Only the caller's control exists. A control the server would refuse is not
+    // rendered disabled — it is not rendered.
+    await expect(page.getByTestId('call-cancel')).toBeVisible();
+    await expect(page.getByTestId('call-accept')).toHaveCount(0);
+    // Nothing on this screen takes a person as a value.
+    await expect(dialog.locator('input')).toHaveCount(0);
+
+    await page.getByTestId('call-cancel').click();
+    await expect(page.getByTestId('call-end-reason')).toContainText(
+      'Withdrawn',
+    );
+  });
+
+  test('blocks somebody from where they appear and removes them from the feed', async ({
+    page,
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person] = cohort.people;
+    const spare = cohort.people[3];
+    if (person === undefined || spare === undefined) {
+      throw new Error('the cohort needs a spare candidate');
+    }
+
+    await signInAdmitted(page, person.subject);
+    await page.getByTestId(`safety-menu-${spare.id}`).click();
+    await page.getByTestId('safety-open-block').click();
+    await page.getByTestId('block-person-accept').click();
+
+    await expect(page.getByTestId(`candidate-${spare.id}`)).toHaveCount(0);
+
+    await page.goto(`${consumerWebOrigin}/you/safety`);
+    await expect(page.getByTestId('block-list')).toBeVisible();
+    // The list says when, never who: no identifier is published for a block.
+    expect(await page.locator('body').innerText()).not.toContain(spare.id);
+  });
+
+  test('restores a session across a reload and reports one that ended', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+
+    await signInAdmitted(page, person.subject);
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Discover',
+    );
+
+    await page.goto(`${consumerWebOrigin}/you/settings`);
+    await page.getByTestId('auth-sign-out').click();
+    await page.waitForURL(/\/sign-in/u, { timeout: 30_000 });
+    await expect(page.getByTestId('auth-cause')).toHaveText(
+      'Signed out on this device',
+    );
+  });
+
+  test('sends an unauthenticated deep link through sign-in and back', async ({
+    page,
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person] = cohort.people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+
+    await page.goto(`${consumerWebOrigin}/messages/${cohort.conversationId}`);
+    await page.waitForURL(/\/sign-in\?next=/u);
+
+    await page.getByTestId('sign-in-subject').fill(person.subject);
+    await page.getByTestId('sign-in-subject').press('Enter');
+    // The intended destination is restored, and only after authentication.
+    await page.waitForURL(
+      new RegExp(`/messages/${cohort.conversationId}$`, 'u'),
+      { timeout: 30_000 },
+    );
   });
 
   test('offers a retry rather than a blank screen when the API is unreachable', async ({
     page,
-  }) => {
-    await admitAsFarAsPossible(page, uniqueSubject('offline'));
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
 
-    await page.route('**/v1/users/me', async (route) => {
+    await signInAdmitted(page, person.subject);
+    await page.route('**/v1/discovery/candidates*', async (route) => {
       await route.abort('failed');
     });
-    // Coming back to the tab is what makes it ask again, and this time fail.
-    await page.evaluate(() => {
-      window.dispatchEvent(new Event('focus'));
-    });
+    await page.reload();
 
-    await expect(page.getByTestId('account-failed')).toContainText(
+    await expect(page.getByTestId('discovery-failed')).toContainText(
       'VELORA could not be reached',
     );
     await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
   });
+});
 
-  test('can be driven from the keyboard alone', async ({ page }) => {
-    await admitAsFarAsPossible(page, uniqueSubject('keyboard'));
+test.describe('Consumer Web keyboard and semantics', () => {
+  test.skip(
+    ({ browserName }) => skipWhenCookieRequiresHttps(browserName),
+    cookieSkipReason,
+  );
+
+  test('can be driven from the keyboard alone', async ({ page }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await signInAdmitted(page, person.subject);
 
     // Document order is the tab order: nothing carries a positive tabindex,
-    // which is the one thing that would let the visual order and the keyboard
-    // order disagree.
+    // which is the one thing that would let visual order and keyboard order
+    // disagree.
     const reordered = await page
       .locator('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])')
       .count();
     expect(reordered).toBe(0);
 
-    // From one control, Tab reaches the next in reading order, and every field
-    // on the step can be filled and submitted without a pointer.
-    const displayName = page.getByLabel('Display name');
-    await page.getByTestId('auth-sign-out-everywhere').focus();
+    // The first thing Tab reaches is the skip link, and it goes to the content.
     await page.keyboard.press('Tab');
-    await expect(displayName).toBeFocused();
-    await page.keyboard.type('Keyboard Only');
-    await expect(displayName).toHaveValue('Keyboard Only');
-
-    const languages = page.getByLabel('Languages you speak, comma separated');
-    await page.keyboard.press('Tab');
-    await expect(languages).toBeFocused();
-
-    // Submitted from the field, not from the button. Whether Tab stops on a
-    // button is a platform setting rather than a property of this page —
-    // Firefox and WebKit on macOS both follow the system full-keyboard-access
-    // preference and skip buttons when it is off — so asserting it would be
-    // asserting the machine. Implicit submission is the keyboard path that
-    // works everywhere, and it is the one somebody actually uses.
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('profile-media-state')).toBeVisible();
-    await expect(page.getByTestId('journey-stage')).toHaveText(
-      'Complete your profile',
-    );
-
-    // Focus is always visible: nothing suppresses the ring.
-    const outline = await displayName.evaluate(
-      (node) => getComputedStyle(node).outlineStyle,
-    );
-    expect(outline).not.toBe('');
+    await expect(
+      page.getByRole('link', { name: 'Skip to content' }),
+    ).toBeFocused();
   });
 
-  test('exposes one document heading and named landmarks', async ({ page }) => {
-    await admitAsFarAsPossible(page, uniqueSubject('landmarks'));
+  test('traps focus in a dialog and gives it back on Escape', async ({
+    page,
+  }, testInfo) => {
+    const cohort = cohortFor(testInfo.project.name);
+    const [person] = cohort.people;
+    const spare = cohort.people[1];
+    if (person === undefined || spare === undefined) {
+      throw new Error('the cohort needs a second person');
+    }
+    await signInAdmitted(page, person.subject);
+    await navigateTo(page, 'introductions');
+    await page.getByTestId('segment-mutual').click();
+
+    const trigger = page.getByTestId(`safety-menu-${spare.id}`);
+    await trigger.click();
+    const dialog = page.getByTestId('safety-menu');
+    await expect(dialog).toBeVisible();
+
+    // Focus is inside, and Tab cannot leave.
+    for (let press = 0; press < 6; press += 1) {
+      await page.keyboard.press('Tab');
+      expect(
+        await dialog.evaluate((node) => node.contains(document.activeElement)),
+      ).toBe(true);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
+  test('exposes one document heading, a main landmark, and named navigation', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await signInAdmitted(page, person.subject);
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('main')).toBeVisible();
-    for (const region of ['Session', 'Account', 'Getting started']) {
-      await expect(page.getByRole('region', { name: region })).toBeVisible();
-    }
+    // One navigation is in the accessible tree at a time. Both are in the
+    // document so the first paint after hydration is never the wrong one, and
+    // the stylesheet takes the other one out of the layout entirely.
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toHaveCount(
+      1,
+    );
+
     // Every control that takes input carries a name, computed the way a screen
     // reader computes it rather than by looking for one particular attribute.
-    const fields = page.locator('input, select, textarea');
+    await page.goto(`${consumerWebOrigin}/you`);
+    await page.getByTestId('profile-edit').click();
+    const fields = page.locator(
+      'input:visible, select:visible, textarea:visible',
+    );
     const count = await fields.count();
     expect(count).toBeGreaterThan(0);
     for (let index = 0; index < count; index += 1) {
       await expect(fields.nth(index)).toHaveAccessibleName(/\S/u);
     }
+  });
+
+  test('keeps the focus ring visible on every control', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await signInAdmitted(page, person.subject);
+    await page.goto(`${consumerWebOrigin}/you`);
+
+    const control = page.getByTestId('profile-edit');
+    await control.focus();
+    const outline = await control.evaluate(
+      (node) => getComputedStyle(node).outlineStyle,
+    );
+    expect(outline).not.toBe('none');
   });
 });

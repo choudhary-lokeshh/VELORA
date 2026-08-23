@@ -44,6 +44,14 @@ export interface AccountState {
   readonly onboarding: Resource<OnboardingState | undefined>;
   readonly profile: Resource<ConsumerProfile | undefined>;
   readonly reloadAll: () => void;
+  /**
+   * Whether the account and its admission step have both been answered.
+   *
+   * Every gate waits for this. Acting on an unanswered read is how a signed-in,
+   * admitted person gets bounced back to onboarding for a frame and then
+   * forward again, which is a redirect loop somebody can actually see.
+   */
+  readonly settled: boolean;
 }
 
 export function useAccountState(input: {
@@ -80,5 +88,11 @@ export function useAccountState(input: {
 
   useRevalidateOnFocus(reloadAll);
 
-  return { account, onboarding, profile, reloadAll };
+  return {
+    account,
+    onboarding,
+    profile,
+    reloadAll,
+    settled: account.settled && onboarding.settled,
+  };
 }

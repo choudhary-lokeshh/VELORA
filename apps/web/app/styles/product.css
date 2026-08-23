@@ -1,0 +1,778 @@
+/*
+ * Screen-level composition.
+ *
+ * Only arrangements that belong to one product surface live here. Anything two
+ * surfaces share is a component, and anything three share is a token.
+ */
+
+/* ============================ Public entry ============================= */
+
+.v-landing {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  position: relative;
+}
+
+.v-landing__bar {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-5) var(--space-4);
+  padding-top: calc(var(--space-5) + env(safe-area-inset-top));
+  width: 100%;
+}
+
+.v-wordmark {
+  align-items: center;
+  color: var(--ember);
+  display: inline-flex;
+  font-size: var(--text-caption-size);
+  font-weight: 700;
+  gap: var(--space-3);
+  letter-spacing: var(--tracking-wordmark);
+  text-decoration: none;
+}
+
+.v-landing__hero {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-10) var(--space-4) var(--space-12);
+  position: relative;
+  width: 100%;
+}
+
+/*
+ * The one atmospheric element on the surface. A slow tonal wash behind the
+ * entry copy, drawn from the signal colour rather than a new one, and absent
+ * everywhere behind the product itself — an ambient gradient under a
+ * conversation would be decoration competing with content.
+ *
+ * It spans the viewport rather than the content column, because a wash that
+ * stops at a max-width has a visible rectangular edge, which reads as a panel
+ * somebody forgot to style rather than as light.
+ */
+.v-landing__glow {
+  background:
+    radial-gradient(
+      55% 55% at 22% 18%,
+      rgb(225 122 102 / 20%) 0%,
+      transparent 72%
+    ),
+    radial-gradient(
+      45% 50% at 82% 8%,
+      rgb(130 169 222 / 10%) 0%,
+      transparent 74%
+    );
+  height: min(860px, 90dvh);
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.v-landing__copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 30ch;
+  position: relative;
+}
+
+.v-landing__lede {
+  color: var(--text-secondary);
+  font-size: var(--text-subheading-size);
+  line-height: 1.5;
+  max-width: 46ch;
+}
+
+.v-landing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.v-landing__points {
+  border-top: 1px solid var(--border-hairline);
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: 1fr;
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-10) var(--space-4) var(--space-12);
+  width: 100%;
+}
+
+@media (width >= 768px) {
+  .v-landing__points {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-8);
+  }
+
+  .v-landing__hero {
+    padding: var(--space-20) var(--space-6) var(--space-16);
+  }
+
+  .v-landing__bar {
+    padding: var(--space-6);
+  }
+
+  /*
+   * Centred once there is room. Left-aligned copy on a wide screen leaves half
+   * the viewport empty, and there is nothing honest to put in it: the product
+   * has no photograph of anybody to show.
+   */
+  .v-landing__copy {
+    align-items: center;
+    margin: 0 auto;
+    max-width: 40ch;
+    text-align: center;
+  }
+
+  .v-landing__lede {
+    max-width: 52ch;
+  }
+
+  .v-landing__actions {
+    justify-content: center;
+  }
+}
+
+.v-landing__point {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.v-landing__point-mark {
+  align-items: center;
+  background: var(--ember-wash);
+  border: 1px solid var(--ember-line);
+  border-radius: var(--radius-md);
+  color: var(--ember);
+  display: flex;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.v-landing__foot {
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-tertiary);
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-6) var(--space-4)
+    calc(var(--space-8) + env(safe-area-inset-bottom));
+  width: 100%;
+}
+
+/* A single centred panel: sign-in, and any other one-decision page. */
+.v-focus-page {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+}
+
+.v-focus-page__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 420px;
+  width: 100%;
+}
+
+/* ============================ Bootstrap =============================== */
+
+/*
+ * The moment before anybody knows whose page this is. It is a real state with a
+ * real duration, so it is designed rather than left blank.
+ */
+.v-bootstrap {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6);
+}
+
+.v-bootstrap__mark {
+  animation: v-breathe 2400ms var(--ease-in-out) infinite;
+  color: var(--ember);
+  font-size: var(--text-caption-size);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wordmark);
+}
+
+@keyframes v-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ============================ Onboarding ============================== */
+
+.v-onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0 auto;
+  max-width: 560px;
+  padding: var(--space-8) var(--space-4)
+    calc(var(--space-12) + env(safe-area-inset-bottom));
+  width: 100%;
+}
+
+.v-steps {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.v-steps__step {
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+}
+
+.v-steps__step--done {
+  background: var(--ember);
+}
+
+.v-steps__step--current {
+  background: linear-gradient(
+    90deg,
+    var(--ember) 0%,
+    var(--ember) 50%,
+    var(--surface-3) 50%
+  );
+}
+
+/* ============================ Discovery =============================== */
+
+/*
+ * `minmax(0, 1fr)` and `min-width: 0`, for the reason recorded on `.v-split`: a
+ * grid item's default minimum is its content's, and a bio can contain an
+ * unbreakable run of any length that somebody typed.
+ */
+.v-deck {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.v-deck > * {
+  min-width: 0;
+}
+
+@media (width >= 768px) {
+  .v-deck {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width >= 1280px) {
+  .v-deck {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.v-person {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.v-person:hover {
+  border-color: var(--border-soft);
+}
+
+/*
+ * The portrait area.
+ *
+ * There is no photograph here and there is not going to be one: consumer media
+ * has no delivery route on this platform yet, so what fills this space is an
+ * identity mark rather than an image that failed to load. Its aspect ratio is
+ * fixed so nothing reflows when the surrounding data arrives.
+ */
+.v-person__portrait {
+  align-items: center;
+  aspect-ratio: 4 / 5;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.v-person__portrait::after {
+  background: linear-gradient(
+    to top,
+    var(--surface-1) 0%,
+    rgb(20 17 21 / 60%) 34%,
+    transparent 72%
+  );
+  content: '';
+  inset: 0;
+  position: absolute;
+}
+
+.v-person__portrait-mark {
+  color: rgb(246 241 243 / 76%);
+  font-size: clamp(3rem, 12vw, 4.5rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.v-person__identity {
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  left: 0;
+  min-width: 0;
+  padding: var(--space-5);
+  position: absolute;
+  right: 0;
+  z-index: 1;
+}
+
+.v-person__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+.v-person__bio {
+  color: var(--text-secondary);
+}
+
+.v-person__actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: auto;
+}
+
+.v-person__actions > .v-btn {
+  flex: 1;
+}
+
+@media (width >= 768px) {
+  .v-person__portrait {
+    aspect-ratio: 1 / 1;
+  }
+}
+
+/* ============================ Introductions =========================== */
+
+.v-intro-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.v-intro-grid > * {
+  min-width: 0;
+}
+
+@media (width >= 900px) {
+  .v-intro-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.v-intro {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.v-intro__head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.v-intro__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.v-intro__actions > .v-btn {
+  flex: 1 1 auto;
+}
+
+/* ============================ Messaging =============================== */
+
+.v-thread {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* For the reason recorded on `.v-split`: a flex column's minimum is its
+     content's, and a message can contain an unbreakable run of any length. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.v-thread__head {
+  align-items: center;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/*
+ * The transcript scrolls inside itself rather than making the page taller.
+ *
+ * A single message may be four thousand characters, and a page that grew to fit
+ * one would put the composer below a wall of text somebody has to scroll past
+ * to answer. Bounding it in viewport units rather than in pixels keeps the
+ * composer on screen without depending on the exact height of the chrome above
+ * and below it.
+ */
+.v-thread__scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 58dvh;
+  min-height: 240px;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-4);
+  overscroll-behavior: contain;
+}
+
+@media (width >= 1024px) {
+  .v-thread__scroll {
+    height: calc(100dvh - 320px);
+    max-height: none;
+    min-height: 360px;
+  }
+}
+
+.v-thread__day {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+}
+
+.v-thread__day::before,
+.v-thread__day::after {
+  background: var(--border-hairline);
+  content: '';
+  flex: 1;
+  height: 1px;
+}
+
+.v-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(78%, 60ch);
+  min-width: 0;
+}
+
+.v-message--theirs {
+  align-self: flex-start;
+}
+
+.v-message--mine {
+  align-self: flex-end;
+}
+
+.v-message__bubble {
+  border-radius: var(--radius-lg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: var(--space-3) var(--space-4);
+}
+
+.v-message--theirs .v-message__bubble {
+  background: var(--surface-3);
+  border-bottom-left-radius: var(--radius-xs);
+}
+
+.v-message--mine .v-message__bubble {
+  background: var(--ember);
+  border-bottom-right-radius: var(--radius-xs);
+  color: var(--text-on-accent);
+}
+
+.v-message--grouped .v-message__bubble {
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+}
+
+.v-message__meta {
+  color: var(--text-tertiary);
+  font-size: var(--text-micro-size);
+  padding: 0 var(--space-2);
+}
+
+.v-message--mine .v-message__meta {
+  text-align: right;
+}
+
+.v-composer {
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4)
+    calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+
+.v-composer__row {
+  align-items: flex-end;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.v-composer__input {
+  background: var(--surface-inset);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  max-height: 160px;
+  min-height: var(--control-height);
+  padding: var(--space-3) var(--space-4);
+  resize: none;
+  width: 100%;
+}
+
+.v-composer__input:focus-visible {
+  border-color: var(--ember-line);
+}
+
+.v-composer__foot {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  font-size: var(--text-micro-size);
+  gap: var(--space-3);
+  justify-content: space-between;
+  min-height: 16px;
+}
+
+.v-composer__count {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.v-composer__count--near {
+  color: var(--status-caution);
+}
+
+.v-composer__count--over {
+  color: var(--status-critical);
+}
+
+/* ============================ Calls =================================== */
+
+.v-call {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
+.v-call__halo {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.v-call__halo--ringing::before {
+  animation: v-pulse 2000ms var(--ease-in-out) infinite;
+  border: 2px solid var(--ember-line);
+  border-radius: 50%;
+  content: '';
+  inset: -12px;
+  position: absolute;
+}
+
+@keyframes v-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.94);
+  }
+
+  70% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.v-call__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+/* ============================ Profile ================================= */
+
+.v-profile-hero {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) 0 var(--space-2);
+  text-align: center;
+}
+
+@media (width >= 768px) {
+  .v-profile-hero {
+    align-items: flex-start;
+    flex-direction: row;
+    gap: var(--space-6);
+    text-align: left;
+  }
+
+  .v-profile-hero__body {
+    padding-top: var(--space-2);
+  }
+}
+
+.v-profile-hero__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.v-media-slot {
+  align-items: center;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.v-media-slot__input {
+  position: absolute;
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.v-media-list {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.v-media-item {
+  align-items: center;
+  aspect-ratio: 4 / 5;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  justify-content: center;
+  padding: var(--space-3);
+  position: relative;
+  text-align: center;
+}
+
+/* ============================ Notifications =========================== */
+
+.v-notification {
+  align-items: flex-start;
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  position: relative;
+  text-align: left;
+  width: 100%;
+}
+
+.v-notification--unread {
+  background: var(--surface-1);
+}
+
+.v-notification--unread::before {
+  background: var(--ember);
+  border-radius: 50%;
+  content: '';
+  height: 7px;
+  left: 4px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+}
+
+.v-notification__mark {
+  align-items: center;
+  background: var(--surface-2);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  display: flex;
+  flex: none;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.v-notification__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}

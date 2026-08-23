@@ -1,0 +1,164 @@
+/*
+ * NIGHT CURRENT — the Consumer expression of the approved Master Visual
+ * Language.
+ *
+ * `docs/design/01-design-principles.md` fixes the shared DNA this file is bound
+ * by: a 4 px rhythm, IBM Plex Sans for interface text with Noto global-script
+ * fallbacks, Living Ember `#B85645` with the dark expression `#E17A66`, a
+ * 1.75 px icon stroke, a 2 px focus treatment, and a semantic safety/status
+ * system. It also fixes the Consumer character: tonal dark, media-first,
+ * intimate, socially alive.
+ *
+ * Everything below is the code-level semantic contract that
+ * `docs/design/02-design-system-contract.md` reserves for
+ * `packages/design-tokens` to name and for a surface to fill in. The role names
+ * come from `@velora/design-tokens`; the values are this surface's, and
+ * `ADR-0027` records the authority under which they were chosen. No value here
+ * contradicts an approved one, and the approved ones appear verbatim.
+ *
+ * Consumer Web is dark only, deliberately. The approved Consumer expression is
+ * tonal dark; a light theme nobody has approved would be a second visual
+ * direction invented here, so `color-scheme` is declared rather than offered.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Rhythm. Every spacing value is a multiple of the approved 4 px. --- */
+  --rhythm: 4px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* --- Surfaces. A tonal ladder, warm-neutral rather than blue-black. --- */
+  --canvas: #0c0a0c;
+  --canvas-deep: #070508;
+  --surface-1: #141115;
+  --surface-2: #1b171c;
+  --surface-3: #242028;
+  --surface-inset: #100d11;
+  --surface-overlay: rgb(7 5 8 / 72%);
+
+  /* --- Foreground. --- */
+  --text-primary: #f6f1f3;
+  --text-secondary: #bab0b7;
+  --text-tertiary: #918691;
+  --text-on-accent: #1b0f0c;
+
+  /* --- Borders and dividers. --- */
+  --border-hairline: rgb(246 241 243 / 8%);
+  --border-soft: rgb(246 241 243 / 14%);
+  --border-strong: rgb(246 241 243 / 26%);
+
+  /*
+   * --- Brand signal. ---
+   * `#B85645` is the approved Living Ember and `#E17A66` its approved dark
+   * expression. The dark expression is the one a dark surface uses; the base
+   * value is kept for pressed states, where a darker step is what a press
+   * should look like.
+   */
+  --ember: #e17a66;
+  --ember-bright: #ee8f7a;
+  --ember-deep: #b85645;
+  --ember-wash: rgb(225 122 102 / 14%);
+  --ember-wash-strong: rgb(225 122 102 / 22%);
+  --ember-line: rgb(225 122 102 / 38%);
+
+  /*
+   * --- Semantic status. ---
+   * Distinct in hue from the brand signal, because a destructive action that
+   * looks like the primary action is a trap. Colour is never the only cue: every
+   * status in this product also carries an icon and words.
+   */
+  --status-positive: #5fc08a;
+  --status-positive-wash: rgb(95 192 138 / 14%);
+  --status-caution: #e4b04a;
+  --status-caution-wash: rgb(228 176 74 / 14%);
+  --status-critical: #f2606a;
+  --status-critical-wash: rgb(242 96 106 / 14%);
+  --status-neutral: #82a9de;
+  --status-neutral-wash: rgb(130 169 222 / 14%);
+
+  /* --- Focus. The approved 2 px treatment. --- */
+  --focus-ring: var(--ember-bright);
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  /* --- Radii. --- */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* --- Elevation. Shadow rather than a lighter fill, so depth survives. --- */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 8px 24px -8px rgb(0 0 0 / 60%);
+  --shadow-3: 0 24px 60px -20px rgb(0 0 0 / 78%);
+
+  /* --- Typography. --- */
+  --font-interface:
+    var(--font-plex-sans, 'IBM Plex Sans'), 'Noto Sans', system-ui,
+    -apple-system, 'Segoe UI', sans-serif;
+  --text-display-size: clamp(1.875rem, 1.2rem + 3vw, 2.75rem);
+  --text-display-line: 1.1;
+  --text-title-size: clamp(1.5rem, 1.2rem + 1.2vw, 1.875rem);
+  --text-title-line: 1.2;
+  --text-heading-size: 1.375rem;
+  --text-heading-line: 1.28;
+  --text-subheading-size: 1.0625rem;
+  --text-subheading-line: 1.4;
+  --text-body-size: 1rem;
+  --text-body-line: 1.55;
+  --text-small-size: 0.875rem;
+  --text-small-line: 1.45;
+  --text-caption-size: 0.8125rem;
+  --text-caption-line: 1.4;
+  --text-micro-size: 0.75rem;
+  --text-micro-line: 1.35;
+  --tracking-label: 0.08em;
+  --tracking-wordmark: 0.24em;
+
+  /* --- Icons. The approved 1.75 px stroke. --- */
+  --icon-stroke: 1.75;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+
+  /* --- Motion. Short, eased, and never in the way of an action. --- */
+  --ease-out: cubic-bezier(0.22, 0.8, 0.28, 1);
+  --ease-in-out: cubic-bezier(0.5, 0, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  /* --- Layout. --- */
+  --content-max: 1160px;
+  --measure-max: 68ch;
+  --sidebar-width: 264px;
+  --rail-width: 84px;
+  --tabbar-height: 60px;
+  --topbar-height: 60px;
+  --control-height: 44px;
+  --control-height-sm: 36px;
+  --control-height-lg: 52px;
+
+  /* --- Layering. Named because a bare number tells a reader nothing. --- */
+  --layer-sticky: 20;
+  --layer-navigation: 30;
+  --layer-overlay: 40;
+  --layer-dialog: 50;
+  --layer-toast: 60;
+}

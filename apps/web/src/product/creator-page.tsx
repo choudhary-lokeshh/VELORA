@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useMemo } from 'react';
 
 import {
@@ -10,8 +11,16 @@ import {
   type PublicCreatorCatalog,
 } from '@velora/creator-client';
 
+import { Icon } from '../design/icons';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  ErrorMessage,
+  Skeleton,
+} from '../design/primitives';
 import { useResource } from './resource';
-import { ErrorMessage, StatusMessage } from './ui';
 
 /**
  * A creator's public page.
@@ -20,8 +29,8 @@ import { ErrorMessage, StatusMessage } from './ui';
  * only one whose whole job is to render somebody else. Everything it shows came
  * from the explicitly public projection the server publishes: there is no
  * creator identifier, no account state, no member count, and nothing
- * purchasable, because none of those are in the response and none of them could
- * be added here without the server deciding to publish them first.
+ * purchasable, because none of those are in the response and none could be added
+ * here without the server deciding to publish them first.
  *
  * There is deliberately no control that suggests somebody can buy something. No
  * payment path exists, and a button offering one would be a lie regardless of
@@ -49,9 +58,8 @@ export function CreatorPublicPage({
         ...(fetchImplementation === undefined
           ? {}
           : { fetch: fetchImplementation }),
-        // No credential is sent. The answer is identical for every requester,
-        // so attaching a session to the request would collect an identity for
-        // no purpose.
+        // No credential is sent. The answer is identical for every requester, so
+        // attaching a session would collect an identity for no purpose.
         transport: { headers: () => Promise.resolve({}) },
       }),
     [apiBaseUrl, fetchImplementation],
@@ -64,38 +72,116 @@ export function CreatorPublicPage({
   const creator = useResource<PublicCreator>(load);
 
   return (
-    <div className="shell">
-      <header>
-        <p className="wordmark">VELORA</p>
+    <div className="v-landing">
+      <header className="v-landing__bar">
+        <Link className="v-wordmark" href="/">
+          <Icon name="sparkle" size="md" />
+          VELORA
+        </Link>
       </header>
-      <main>
+
+      <main
+        className="v-view"
+        id="main"
+        style={{ margin: '0 auto', maxWidth: '760px', width: '100%' }}
+      >
         {creator.loading && creator.value === undefined ? (
-          <StatusMessage testId="creator-page-loading">Loading…</StatusMessage>
+          <div
+            className="v-stack v-stack--5"
+            data-testid="creator-page-loading"
+          >
+            <p className="v-visually-hidden" role="status">
+              Loading
+            </p>
+            <Skeleton circle height={88} width={88} />
+            <Skeleton height={24} width="40%" />
+            <Skeleton height={14} width="80%" />
+          </div>
         ) : null}
 
         {creator.value === undefined && !creator.loading ? (
-          <section aria-labelledby="creator-missing-heading">
-            <h1 id="creator-missing-heading">This page is not available</h1>
+          <section
+            aria-labelledby="creator-missing-heading"
+            className="v-stack v-stack--5"
+          >
+            <h1 className="v-title" id="creator-missing-heading">
+              This page is not available
+            </h1>
             <ErrorMessage testId="creator-page-missing">
               There is nothing to show at this address.
             </ErrorMessage>
             {creator.retryable ? (
-              <button onClick={creator.reload} type="button">
-                Try again
-              </button>
+              <div>
+                <Button onClick={creator.reload}>Try again</Button>
+              </div>
             ) : null}
           </section>
         ) : null}
 
         {creator.value === undefined ? null : (
-          <>
+          <div className="v-stack v-stack--8">
             <CreatorProfileView creator={creator.value} />
             <CreatorCatalogView api={api} handle={handle} />
             <CreatorClubsView api={api} handle={handle} />
-          </>
+          </div>
         )}
       </main>
     </div>
+  );
+}
+
+function CreatorProfileView({ creator }: { readonly creator: PublicCreator }) {
+  return (
+    <article
+      aria-labelledby="creator-name"
+      className="v-profile-hero"
+      data-testid="creator-page"
+    >
+      <Avatar
+        displayName={creator.displayName}
+        seed={creator.handle}
+        size="lg"
+      />
+      <div className="v-profile-hero__body">
+        <h1 className="v-title v-wrap" id="creator-name">
+          {creator.displayName}
+        </h1>
+        <p className="v-small v-quiet" data-testid="creator-page-handle">
+          @{creator.handle}
+        </p>
+        {creator.bio === undefined ? null : (
+          <p className="v-muted v-wrap" data-testid="creator-page-bio">
+            {creator.bio}
+          </p>
+        )}
+
+        {creator.links.length === 0 ? null : (
+          <nav aria-label="Links this creator chose to show">
+            <ul className="v-chip-set" data-testid="creator-page-links">
+              {creator.links.map((link) => (
+                <li key={link.url}>
+                  {/*
+                    A link somebody else supplied. `noopener` and `noreferrer`
+                    keep the new document away from this one and stop this page's
+                    address travelling with the click; `nofollow` keeps the
+                    platform from lending its standing to a destination nobody
+                    reviewed. The server never fetches any of these.
+                  */}
+                  <a
+                    className="v-chip"
+                    href={link.url}
+                    rel="nofollow noopener noreferrer"
+                  >
+                    {link.label ?? link.url}
+                    <Icon name="link" size="sm" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -122,17 +208,32 @@ function CreatorCatalogView({
 
   if (catalog.value === undefined) return null;
   return (
-    <section aria-labelledby="creator-catalog-heading">
-      <h2 id="creator-catalog-heading">Published</h2>
+    <section
+      aria-labelledby="creator-catalog-heading"
+      className="v-stack v-stack--4"
+    >
+      <h2 className="v-label v-quiet" id="creator-catalog-heading">
+        Published
+      </h2>
       {catalog.value.content.length === 0 ? (
-        <p data-testid="creator-catalog-empty">Nothing published yet.</p>
+        <p className="v-small v-quiet" data-testid="creator-catalog-empty">
+          Nothing published yet.
+        </p>
       ) : (
-        <ul data-testid="creator-catalog">
+        <ul className="v-stack v-stack--3" data-testid="creator-catalog">
           {catalog.value.content.map((item) => (
             <li key={item.id}>
-              <h3>{item.title}</h3>
-              {item.summary === undefined ? null : <p>{item.summary}</p>}
-              {item.body === undefined ? null : <p>{item.body}</p>}
+              <Card>
+                <div className="v-stack v-stack--2">
+                  <h3 className="v-subheading v-wrap">{item.title}</h3>
+                  {item.summary === undefined ? null : (
+                    <p className="v-small v-muted v-wrap">{item.summary}</p>
+                  )}
+                  {item.body === undefined ? null : (
+                    <p className="v-small v-wrap">{item.body}</p>
+                  )}
+                </div>
+              </Card>
             </li>
           ))}
         </ul>
@@ -146,9 +247,9 @@ function CreatorCatalogView({
  *
  * Metadata only: a name and a description. No member count, no member list, no
  * invitation, no content, and no control implying anybody can pay to join — no
- * payment path exists, so a join button would be a lie regardless of what it
- * did when pressed. Access to a club comes from an invitation the creator
- * sends, which is not something a public page can offer.
+ * payment path exists, so a join button would be a lie regardless of what it did
+ * when pressed. Access to a club comes from an invitation the creator sends,
+ * which is not something a public page can offer.
  */
 function CreatorClubsView({
   api,
@@ -162,50 +263,37 @@ function CreatorClubsView({
 
   if (clubs.value === undefined || clubs.value.clubs.length === 0) return null;
   return (
-    <section aria-labelledby="creator-clubs-heading">
-      <h2 id="creator-clubs-heading">Private clubs</h2>
-      <ul data-testid="creator-public-clubs">
+    <section
+      aria-labelledby="creator-clubs-heading"
+      className="v-stack v-stack--4"
+    >
+      <h2 className="v-label v-quiet" id="creator-clubs-heading">
+        Private clubs
+      </h2>
+      <ul className="v-stack v-stack--3" data-testid="creator-public-clubs">
         {clubs.value.clubs.map((club) => (
           <li key={club.slug}>
-            <h3>{club.name}</h3>
-            {club.description === undefined ? null : <p>{club.description}</p>}
+            <Card>
+              <div className="v-stack v-stack--2">
+                <div className="v-inline v-inline--between">
+                  <h3 className="v-subheading v-wrap">{club.name}</h3>
+                  <Badge tone="neutral">
+                    <Icon name="lock" size="sm" />
+                    By invitation
+                  </Badge>
+                </div>
+                {club.description === undefined ? null : (
+                  <p className="v-small v-muted v-wrap">{club.description}</p>
+                )}
+              </div>
+            </Card>
           </li>
         ))}
       </ul>
-      <p className="hint">Membership is by invitation from this creator.</p>
+      <p className="v-caption v-quiet">
+        Membership is by invitation from this creator. Nothing here can be
+        bought.
+      </p>
     </section>
-  );
-}
-
-function CreatorProfileView({ creator }: { readonly creator: PublicCreator }) {
-  return (
-    <article aria-labelledby="creator-name" data-testid="creator-page">
-      <h1 id="creator-name">{creator.displayName}</h1>
-      <p data-testid="creator-page-handle">@{creator.handle}</p>
-      {creator.bio === undefined ? null : (
-        <p data-testid="creator-page-bio">{creator.bio}</p>
-      )}
-
-      {creator.links.length === 0 ? null : (
-        <nav aria-label="Links this creator chose to show">
-          <ul data-testid="creator-page-links">
-            {creator.links.map((link) => (
-              <li key={link.url}>
-                {/*
-                  A link somebody else supplied. `noopener` and `noreferrer`
-                  keep the new document away from this one and stop this page's
-                  address travelling with the click; `nofollow` keeps the
-                  platform from lending its standing to a destination nobody
-                  reviewed. The server never fetches any of these.
-                */}
-                <a href={link.url} rel="nofollow noopener noreferrer">
-                  {link.label ?? link.url}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
-    </article>
   );
 }

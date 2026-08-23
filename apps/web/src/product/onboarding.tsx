@@ -1,47 +1,75 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 
-import type {
-  ApiResult,
-  ConsumerApi,
-  JourneyStage,
-} from '@velora/consumer-client';
-import { failureMessage } from '@velora/consumer-client';
-import type { AccountState } from './account';
-import { ProfilePhoto } from './media';
+import {
+  maximumBioLength,
+  maximumDisplayNameLength,
+  maximumProfileLanguages,
+  minimumDisplayNameLength,
+} from '@velora/validation';
+import type { ApiResult, JourneyStage } from '@velora/consumer-client';
+import { failureMessage, journeyStage } from '@velora/consumer-client';
+
+import { useAccount, useApi, useSession } from '../app/providers';
+import { Icon } from '../design/icons';
+import {
+  Button,
+  ErrorMessage,
+  Field,
+  Notice,
+  TextArea,
+  TextInput,
+} from '../design/primitives';
+import { LanguagePicker } from './language-picker';
+import { ProfilePhotos } from './media';
+import { regionName } from './locale';
 import { useSingleFlight } from './resource';
-import { ErrorMessage, Section, StatusMessage } from './ui';
 
 /**
- * Adult assurance, policy acknowledgement, and the minimum profile.
+ * Admission, one step at a time.
  *
- * The order is the server's. `docs/flows/onboarding.md` fixes the ladder and
- * the API derives the current step from stored evidence, so this surface asks
- * for whatever the server says is outstanding and never decides that somebody
- * has finished.
+ * The order is the server's. `docs/flows/onboarding.md` fixes the ladder and the
+ * API derives the current step from stored evidence, so this screen asks for
+ * whatever the server says is outstanding and never decides that somebody has
+ * finished. The progress indicator counts the server's steps rather than a
+ * client-side wizard position, which is why it stays correct when somebody
+ * completes a step on another device.
  *
  * The declaration collects a region and a yes. It does not collect a date of
  * birth: the minimum age per country is unresolved
  * (`docs/compliance/02-adult-age-verification.md`), and asking for a birth date
- * would gather sensitive data for a rule that does not exist yet. Nothing on
- * this screen calls a declaration a verified check, because it is not one.
+ * would gather sensitive data for a rule that does not exist yet. Nothing here
+ * calls a declaration a verified check, because it is not one.
  */
-export function OnboardingPanel({
-  account,
-  api,
-  stage,
-}: {
-  readonly account: AccountState;
-  readonly api: ConsumerApi;
-  readonly stage: JourneyStage;
-}) {
-  const [region, setRegion] = useState('ES');
-  const [displayName, setDisplayName] = useState('');
-  const [languages, setLanguages] = useState('es');
+
+const ladder: readonly JourneyStage[] = [
+  'account_required',
+  'adult_declaration',
+  'policy_acknowledgement',
+  'profile',
+];
+
+/** What each policy key is, in words. Anything unlisted is shown as sent. */
+const policyTitles: Readonly<Record<string, string>> = {
+  community_guidelines: 'Community guidelines',
+  privacy_notice: 'Privacy notice',
+  terms_of_service: 'Terms of service',
+};
+
+function policyTitle(key: string): string {
+  return policyTitles[key] ?? key.replaceAll('_', ' ');
+}
+
+export function Welcome() {
+  const api = useApi();
+  const account = useAccount();
+  const session = useSession();
+  const stage = journeyStage(account.onboarding.value);
+  const position = ladder.indexOf(stage);
   const [message, setMessage] = useState<string | undefined>(undefined);
   const { busy, run } = useSingleFlight();
-  const onboarding = account.onboarding.value;
 
   const submit = (work: () => Promise<ApiResult<unknown>>) => {
     run(async () => {
@@ -52,146 +80,433 @@ export function OnboardingPanel({
   };
 
   return (
-    <Section headingId="onboarding-heading" title="Getting started">
-      {account.onboarding.loading && onboarding === undefined ? (
-        <StatusMessage testId="onboarding-loading">
-          Loading your next step…
-        </StatusMessage>
-      ) : null}
-      {message === undefined ? null : (
-        <ErrorMessage testId="onboarding-error">{message}</ErrorMessage>
-      )}
+    <div className="v-onboarding">
+      <header className="v-stack v-stack--5">
+        <Link className="v-wordmark" href="/welcome">
+          <Icon name="sparkle" size="md" />
+          VELORA
+        </Link>
+        <ol className="v-steps" data-testid="welcome-progress">
+          {ladder.map((step, index) => (
+            <li
+              className={`v-steps__step${
+                index < position
+                  ? ' v-steps__step--done'
+                  : index === position
+                    ? ' v-steps__step--current'
+                    : ''
+              }`}
+              key={step}
+            >
+              <span className="v-visually-hidden">
+                Step {index + 1} of {ladder.length}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </header>
 
-      {stage === 'adult_declaration' ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(async () => api.declareAdult(region));
-          }}
-        >
-          <h3>Adult declaration</h3>
-          {onboarding?.adultAssuranceRefused === true ? (
-            <ErrorMessage testId="adult-refused">
-              This account is not eligible to continue.
-            </ErrorMessage>
-          ) : null}
-          <label htmlFor="onboarding-region">
-            Country or region (two letters)
-          </label>
-          <input
-            aria-describedby="onboarding-region-help"
-            autoComplete="country"
-            id="onboarding-region"
-            maxLength={2}
-            name="region"
-            onChange={(event) => {
-              setRegion(event.target.value.toUpperCase());
-            }}
-            pattern="[A-Za-z]{2}"
-            required
-            value={region}
-          />
-          <p className="hint" id="onboarding-region-help">
-            VELORA is adults only. Confirming here is a declaration, not a
-            verified age check.
+      <main className="v-stack v-stack--6" id="main">
+        {account.onboarding.loading &&
+        account.onboarding.value === undefined ? (
+          <p className="v-muted" data-testid="welcome-loading" role="status">
+            Loading your next step…
           </p>
-          <button data-testid="declare-adult" disabled={busy} type="submit">
-            I am an adult
-          </button>
-        </form>
-      ) : null}
+        ) : null}
+        {message === undefined ? null : (
+          <ErrorMessage testId="welcome-error">{message}</ErrorMessage>
+        )}
 
-      {stage === 'policy_acknowledgement' ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(async () =>
-              api.acknowledgePolicies(onboarding?.outstandingPolicies ?? []),
-            );
-          }}
-        >
-          <h3>Policies</h3>
-          <ul data-testid="outstanding-policies">
-            {(onboarding?.outstandingPolicies ?? []).map((document) => (
-              <li key={`${document.key}:${document.version}`}>
-                {document.key} (version {document.version})
-              </li>
-            ))}
-          </ul>
-          <button
-            data-testid="acknowledge-policies"
-            disabled={busy}
-            type="submit"
-          >
-            Accept these policies
-          </button>
-        </form>
-      ) : null}
+        {stage === 'account_required' ? (
+          <CreateAccountStep
+            busy={busy}
+            onCreate={() => {
+              submit(async () => api.createAccount());
+            }}
+          />
+        ) : null}
 
-      {stage === 'profile' ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(async () =>
-              api.saveProfile({
-                displayName,
-                languages: languages
-                  .split(',')
-                  .map((value) => value.trim().toLowerCase())
-                  .filter((value) => value.length > 0),
-              }),
-            );
-          }}
-        >
-          <h3>Profile</h3>
-          <ul data-testid="outstanding-profile">
-            {(onboarding?.outstandingProfile ?? []).map((requirement) => (
-              <li key={requirement}>{requirement.replaceAll('_', ' ')}</li>
-            ))}
-          </ul>
-          <label htmlFor="onboarding-display-name">Display name</label>
-          <input
-            id="onboarding-display-name"
-            maxLength={32}
-            minLength={2}
-            name="displayName"
-            onChange={(event) => {
-              setDisplayName(event.target.value);
+        {stage === 'adult_declaration' ? (
+          <AdultStep
+            busy={busy}
+            onDeclare={(region) => {
+              submit(async () => api.declareAdult(region));
             }}
-            required
-            value={displayName}
+            refused={account.onboarding.value?.adultAssuranceRefused === true}
           />
-          <label htmlFor="onboarding-languages">
-            Languages you speak, comma separated
-          </label>
-          <input
-            id="onboarding-languages"
-            name="languages"
-            onChange={(event) => {
-              setLanguages(event.target.value);
+        ) : null}
+
+        {stage === 'policy_acknowledgement' ? (
+          <PoliciesStep
+            busy={busy}
+            documents={account.onboarding.value?.outstandingPolicies ?? []}
+            onAccept={() => {
+              submit(async () =>
+                api.acknowledgePolicies(
+                  account.onboarding.value?.outstandingPolicies ?? [],
+                ),
+              );
             }}
-            required
-            value={languages}
           />
-          <button data-testid="save-profile" disabled={busy} type="submit">
-            Save profile
-          </button>
-        </form>
-      ) : null}
+        ) : null}
+
+        {stage === 'profile' ? (
+          <ProfileStep
+            busy={busy}
+            onSave={(input) => {
+              submit(async () => api.saveProfile(input));
+            }}
+            outstanding={account.onboarding.value?.outstandingProfile ?? []}
+          />
+        ) : null}
+      </main>
 
       {/*
-        The photo lives on this step too, not only on the profile screen. An
-        image is one of the requirements this step lists, and somebody told they
-        are missing one has to be able to supply it where they are told.
+        A way out, before there is a product to leave.
+        Everything else that ends a session lives behind the admission this
+        screen is asking somebody to complete, so without this a person who
+        signed in as the wrong identity — or on somebody else's machine — would
+        have no control at all.
       */}
-      {stage === 'profile' ? (
-        <ProfilePhoto
-          api={api}
-          busy={busy}
-          onFinished={account.reloadAll}
-          profile={account.profile.value}
-        />
-      ) : null}
-    </Section>
+      <footer className="v-stack v-stack--3">
+        <p className="v-caption v-quiet">Not you, or not now?</p>
+        <div className="v-inline">
+          <Button
+            busy={session.busy}
+            data-testid="auth-sign-out"
+            icon="logOut"
+            onClick={session.signOut}
+            size="sm"
+            tone="ghost"
+          >
+            Sign out
+          </Button>
+          <Button
+            data-testid="auth-sign-out-everywhere"
+            disabled={session.busy}
+            onClick={session.signOutEverywhere}
+            size="sm"
+            tone="ghost"
+          >
+            Sign out everywhere
+          </Button>
+        </div>
+      </footer>
+    </div>
   );
 }
+
+function StepFrame({
+  children,
+  lede,
+  title,
+}: {
+  readonly children: React.ReactNode;
+  readonly lede: string;
+  readonly title: string;
+}) {
+  return (
+    <section className="v-stack v-stack--6">
+      <div className="v-stack v-stack--3">
+        <h1 className="v-title">{title}</h1>
+        <p className="v-muted">{lede}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CreateAccountStep({
+  busy,
+  onCreate,
+}: {
+  readonly busy: boolean;
+  readonly onCreate: () => void;
+}) {
+  return (
+    <StepFrame
+      lede="You are signed in, but there is no VELORA account behind it yet. Creating one takes a moment and nothing is shown to anybody until you finish."
+      title="Welcome to VELORA"
+    >
+      <Button
+        block
+        busy={busy}
+        data-testid="create-account"
+        onClick={onCreate}
+        size="lg"
+        tone="primary"
+      >
+        Create my account
+      </Button>
+    </StepFrame>
+  );
+}
+
+function AdultStep({
+  busy,
+  onDeclare,
+  refused,
+}: {
+  readonly busy: boolean;
+  readonly onDeclare: (region: string) => void;
+  readonly refused: boolean;
+}) {
+  const [region, setRegion] = useState('');
+  const [touched, setTouched] = useState(false);
+  const normalized = region.trim().toUpperCase();
+  const valid = /^[A-Z]{2}$/u.test(normalized);
+  const resolved = regionName(normalized);
+
+  return (
+    <StepFrame
+      lede="VELORA is for adults. Confirming here is a declaration you are making, not an identity or age check we have run."
+      title="Confirm you are an adult"
+    >
+      {refused ? (
+        <ErrorMessage testId="adult-refused">
+          This account is not eligible to continue.
+        </ErrorMessage>
+      ) : null}
+
+      <form
+        className="v-stack v-stack--5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setTouched(true);
+          if (!valid) return;
+          onDeclare(normalized);
+        }}
+      >
+        <Field
+          error={
+            touched && !valid
+              ? 'Enter a two-letter country code, such as ES.'
+              : undefined
+          }
+          hint={
+            resolved === undefined
+              ? 'Two letters, such as ES for Spain or JP for Japan. It decides which rules apply to your account.'
+              : `That is ${resolved}.`
+          }
+          label="Where you are"
+        >
+          {(control) => (
+            <TextInput
+              {...control}
+              autoCapitalize="characters"
+              autoComplete="country"
+              data-testid="onboarding-region"
+              maxLength={2}
+              name="region"
+              onChange={(event) => {
+                setRegion(event.target.value.toUpperCase());
+              }}
+              placeholder="ES"
+              value={region}
+            />
+          )}
+        </Field>
+
+        <Button
+          block
+          busy={busy}
+          data-testid="declare-adult"
+          size="lg"
+          tone="primary"
+          type="submit"
+        >
+          I am an adult
+        </Button>
+      </form>
+    </StepFrame>
+  );
+}
+
+function PoliciesStep({
+  busy,
+  documents,
+  onAccept,
+}: {
+  readonly busy: boolean;
+  readonly documents: readonly {
+    readonly key: string;
+    readonly version: string;
+  }[];
+  readonly onAccept: () => void;
+}) {
+  return (
+    <StepFrame
+      lede="These are the terms your account is held to. Accepting records which version you saw, so a later change is a new decision rather than a silent one."
+      title="Accept the policies"
+    >
+      <ul className="v-list v-list--divided" data-testid="outstanding-policies">
+        {documents.map((document) => (
+          <li key={`${document.key}:${document.version}`}>
+            <div className="v-row">
+              <span className="v-row__body">
+                <span className="v-subheading">
+                  {policyTitle(document.key)}
+                </span>
+                <span className="v-caption v-quiet">
+                  Version {document.version}
+                </span>
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <Notice tone="quiet">
+        The full text of these documents is not published yet. What is recorded
+        is which version you accepted, so nothing is applied to your account
+        retroactively.
+      </Notice>
+
+      <Button
+        block
+        busy={busy}
+        data-testid="acknowledge-policies"
+        onClick={onAccept}
+        size="lg"
+        tone="primary"
+      >
+        Accept and continue
+      </Button>
+    </StepFrame>
+  );
+}
+
+function ProfileStep({
+  busy,
+  onSave,
+  outstanding,
+}: {
+  readonly busy: boolean;
+  readonly onSave: (input: {
+    readonly bio?: string;
+    readonly displayName: string;
+    readonly languages: string[];
+  }) => void;
+  readonly outstanding: readonly string[];
+}) {
+  const [displayName, setDisplayName] = useState('');
+  const [bio, setBio] = useState('');
+  const [languages, setLanguages] = useState<readonly string[]>([]);
+  const [touched, setTouched] = useState(false);
+
+  const nameValid =
+    displayName.trim().length >= minimumDisplayNameLength &&
+    displayName.trim().length <= maximumDisplayNameLength;
+  const languagesValid = languages.length > 0;
+  const needsPhoto = outstanding.includes('ready_media');
+
+  return (
+    <StepFrame
+      lede="This is what other people see. You can change any of it later, and you are not shown to anybody until you choose to be."
+      title="Set up your profile"
+    >
+      <form
+        className="v-stack v-stack--5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setTouched(true);
+          if (!nameValid || !languagesValid) return;
+          onSave({
+            ...(bio.trim().length === 0 ? {} : { bio: bio.trim() }),
+            displayName: displayName.trim(),
+            languages: [...languages],
+          });
+        }}
+      >
+        <Field
+          count={{
+            length: displayName.length,
+            maximum: maximumDisplayNameLength,
+          }}
+          error={
+            touched && !nameValid
+              ? `Between ${String(minimumDisplayNameLength)} and ${String(
+                  maximumDisplayNameLength,
+                )} characters.`
+              : undefined
+          }
+          label="Display name"
+        >
+          {(control) => (
+            <TextInput
+              {...control}
+              autoComplete="nickname"
+              data-testid="onboarding-display-name"
+              maxLength={maximumDisplayNameLength}
+              name="displayName"
+              onChange={(event) => {
+                setDisplayName(event.target.value);
+              }}
+              value={displayName}
+            />
+          )}
+        </Field>
+
+        <LanguagePicker
+          error={
+            touched && !languagesValid
+              ? 'Add at least one language.'
+              : undefined
+          }
+          onChange={setLanguages}
+          value={languages}
+        />
+
+        <Field
+          count={{ length: bio.length, maximum: maximumBioLength }}
+          hint="A couple of sentences is plenty. What you are into, what you are looking for."
+          label="About you"
+          optional
+        >
+          {(control) => (
+            <TextArea
+              {...control}
+              data-testid="onboarding-bio"
+              maxLength={maximumBioLength}
+              name="bio"
+              onChange={(event) => {
+                setBio(event.target.value);
+              }}
+              rows={4}
+              value={bio}
+            />
+          )}
+        </Field>
+
+        <Button
+          block
+          busy={busy}
+          data-testid="save-profile"
+          size="lg"
+          tone="primary"
+          type="submit"
+        >
+          Save and continue
+        </Button>
+      </form>
+
+      {/*
+        The photo lives on this step too, not only on the profile screen. It is
+        one of the requirements this step lists, and somebody told they are
+        missing one has to be able to supply it where they are told.
+      */}
+      {needsPhoto ? (
+        <section className="v-stack v-stack--4">
+          <h2 className="v-subheading">Add a photo</h2>
+          <p className="v-small v-muted">
+            One photo is part of the minimum, so other people are meeting a
+            person rather than a blank card.
+          </p>
+          <ProfilePhotos />
+        </section>
+      ) : null}
+    </StepFrame>
+  );
+}
+
+export { policyTitle, ladder as onboardingLadder, maximumProfileLanguages };
