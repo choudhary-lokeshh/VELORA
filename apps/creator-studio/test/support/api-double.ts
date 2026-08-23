@@ -123,6 +123,8 @@ export interface CreatorApiDoubleState {
     state: string;
   }[];
   content: {
+    body?: string;
+    clubId?: string;
     id: string;
     lifecycle: 'draft' | 'published' | 'archived';
     summary?: string;
@@ -283,6 +285,8 @@ export function createCreatorApiDouble(
   });
 
   const entryBody = (entry: CreatorApiDoubleState['content'][number]) => ({
+    ...(entry.body === undefined ? {} : { body: entry.body }),
+    ...(entry.clubId === undefined ? {} : { clubId: entry.clubId }),
     createdAt: iso(),
     id: entry.id,
     lifecycle: entry.lifecycle,
@@ -308,6 +312,28 @@ export function createCreatorApiDouble(
     const raw = await request.clone().text();
     const body = raw.length > 0 ? (JSON.parse(raw) as unknown) : undefined;
     calls.push({ body, method, path });
+
+    /**
+     * Keyset paging, the way the server does it: a cursor names the row after
+     * which the next page starts, and it is only present when there is one. A
+     * double that always returned everything would let a surface that ignores
+     * paging pass its own tests.
+     */
+    const page = <T extends { id: string }>(
+      rows: readonly T[],
+    ): { readonly next: string | undefined; readonly rows: readonly T[] } => {
+      const cursor = url.searchParams.get('cursor');
+      const size = Number(url.searchParams.get('pageSize') ?? '25');
+      const from =
+        cursor === null ? 0 : rows.findIndex((row) => row.id === cursor) + 1;
+      const slice = rows.slice(from, from + size);
+      const last = slice.at(-1);
+      const more = from + slice.length < rows.length;
+      return {
+        next: more && last !== undefined ? last.id : undefined,
+        rows: slice,
+      };
+    };
 
     if ((failures.get(path) ?? 0) > 0) {
       failures.set(path, (failures.get(path) ?? 0) - 1);
@@ -337,6 +363,57 @@ export function createCreatorApiDouble(
         handle: state.profile.handle,
         links: state.profile.links,
         publishedAt: state.profile.publishedAt ?? iso(),
+      });
+    }
+
+    if (path === '/v1/creators/catalog' && method === 'GET') {
+      const handle = url.searchParams.get('handle');
+      if (
+        state.profile?.publication !== 'published' ||
+        state.account?.status !== 'active' ||
+        handle !== state.profile.handle
+      ) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      // Only published, public items reach a visitor. A draft or a
+      // members-only item is absent rather than redacted.
+      return json(200, {
+        content: state.content
+          .filter(
+            (entry) =>
+              entry.lifecycle === 'published' && entry.visibility === 'public',
+          )
+          .map((entry) => ({
+            ...(entry.body === undefined ? {} : { body: entry.body }),
+            id: entry.id,
+            publishedAt: iso(),
+            ...(entry.summary === undefined ? {} : { summary: entry.summary }),
+            title: entry.title,
+          })),
+        handle: state.profile.handle,
+      });
+    }
+
+    if (path === '/v1/creators/clubs' && method === 'GET') {
+      const handle = url.searchParams.get('handle');
+      if (
+        state.profile?.publication !== 'published' ||
+        state.account?.status !== 'active' ||
+        handle !== state.profile.handle
+      ) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      return json(200, {
+        clubs: state.clubs
+          .filter((club) => club.lifecycle === 'published')
+          .map((club) => ({
+            ...(club.description === undefined
+              ? {}
+              : { description: club.description }),
+            name: club.name,
+            slug: club.slug,
+          })),
+        handle: state.profile.handle,
       });
     }
 
@@ -401,17 +478,23 @@ export function createCreatorApiDouble(
     }
     if (path === '/v1/creator/earnings/history' && method === 'GET') {
       const currency = url.searchParams.get('currency') ?? '';
+      const { next, rows } = page(
+        state.earningsHistory.filter(
+          (entry) => entry.amount.currency === currency,
+        ),
+      );
       return json(200, {
         currency,
-        entries: state.earningsHistory
-          .filter((entry) => entry.amount.currency === currency)
-          .map((entry) => ({ ...entry })),
+        entries: rows.map((entry) => ({ ...entry })),
+        ...(next === undefined ? {} : { nextCursor: next }),
       });
     }
 
     if (path === '/v1/creator/offers' && method === 'GET') {
+      const { next, rows } = page(state.offers);
       return json(200, {
-        offers: state.offers.map((offer) => ({ ...offer })),
+        offers: rows.map((offer) => ({ ...offer })),
+        ...(next === undefined ? {} : { nextCursor: next }),
         readiness: {
           currencies: [],
           enabled: false,
@@ -452,6 +535,40 @@ export function createCreatorApiDouble(
         recipientStatus: state.payoutReadiness.recipientStatus,
       });
     }
+    if (path === '/v1/creator/payouts/onboarding' && method === 'POST') {
+      if (state.payoutReadiness.providerSource === 'unavailable') {
+        return error(409, 'DEPENDENCY_UNAVAILABLE');
+      }
+      state.payoutReadiness = {
+        ...state.payoutReadiness,
+        recipientStatus: 'onboarding',
+      };
+      return json(201, {
+        onboardingUrl: 'https://provider.test/onboarding',
+        recipientStatus: 'onboarding',
+      });
+    }
+    if (path === '/v1/creator/payouts' && method === 'POST') {
+      if (!state.payoutReadiness.enabled) {
+        return error(409, 'DEPENDENCY_UNAVAILABLE');
+      }
+      const requested = body as { amountMinor: string; currency: string };
+      const key = request.headers.get('x-velora-idempotency-key') ?? '';
+      const existing = state.payouts.find((payout) => payout.id === key);
+      if (existing !== undefined) return json(201, { payout: existing });
+      const created = {
+        amount: {
+          amountMinor: requested.amountMinor,
+          currency: requested.currency,
+        },
+        createdAt: iso(),
+        id: key,
+        state: 'requested',
+        updatedAt: iso(),
+      };
+      state.payouts = [created, ...state.payouts];
+      return json(201, { payout: created });
+    }
     if (path === '/v1/creator/payouts' && method === 'GET') {
       return json(200, {
         payouts: state.payouts.map((payout) => ({ ...payout })),
@@ -459,17 +576,43 @@ export function createCreatorApiDouble(
     }
 
     if (path === '/v1/creator/clubs' && method === 'GET') {
-      return json(200, { clubs: state.clubs.map((club) => clubBody(club)) });
+      const { next, rows } = page(state.clubs);
+      return json(200, {
+        clubs: rows.map((club) => clubBody(club)),
+        ...(next === undefined ? {} : { nextCursor: next }),
+      });
     }
     if (path === '/v1/creator/clubs' && method === 'POST') {
       if (state.account.status !== 'active')
         return error(409, 'STATE_CONFLICT');
       const requested = body as {
+        clubId?: string;
         description?: string;
         name: string;
         slug: string;
+        version?: number;
       };
       const slug = requested.slug.toLowerCase();
+      if (requested.clubId !== undefined) {
+        const current = state.clubs.find(
+          (club) => club.id === requested.clubId,
+        );
+        if (current === undefined || current.version !== requested.version) {
+          return error(409, 'STATE_CONFLICT');
+        }
+        const edited = {
+          ...current,
+          ...(requested.description === undefined
+            ? {}
+            : { description: requested.description }),
+          name: requested.name,
+          version: current.version + 1,
+        };
+        state.clubs = state.clubs.map((club) =>
+          club.id === edited.id ? edited : club,
+        );
+        return json(200, { clubs: [clubBody(edited)] });
+      }
       if (state.clubs.some((club) => club.slug === slug)) {
         return error(409, 'STATE_CONFLICT');
       }
@@ -511,10 +654,23 @@ export function createCreatorApiDouble(
       return json(200, { clubs: [clubBody(moved)] });
     }
     if (path === '/v1/creator/clubs/invites' && method === 'GET') {
-      return json(200, { invites: state.invites });
+      const clubId = url.searchParams.get('clubId');
+      return json(200, {
+        invites: state.invites.filter(
+          (entry) => clubId === null || entry.clubId === clubId,
+        ),
+      });
     }
     if (path === '/v1/creator/clubs/members' && method === 'GET') {
-      return json(200, { memberships: state.memberships });
+      const clubId = url.searchParams.get('clubId');
+      const owned = state.memberships.filter(
+        (entry) => clubId === null || entry.clubId === clubId,
+      );
+      const { next, rows } = page(owned);
+      return json(200, {
+        memberships: rows,
+        ...(next === undefined ? {} : { nextCursor: next }),
+      });
     }
     if (path === '/v1/creator/clubs/members/revocation' && method === 'POST') {
       if (state.account.status !== 'active')
@@ -555,17 +711,56 @@ export function createCreatorApiDouble(
       });
     }
     if (path === '/v1/creator/content' && method === 'GET') {
-      return json(200, { content: contentBody() });
+      const { next, rows } = page(state.content);
+      return json(200, {
+        content: rows.map((entry) => entryBody(entry)),
+        ...(next === undefined ? {} : { nextCursor: next }),
+      });
     }
     if (path === '/v1/creator/content' && method === 'POST') {
       if (state.account.status !== 'active')
         return error(409, 'STATE_CONFLICT');
       const requested = body as {
+        body?: string;
+        clubId?: string;
+        contentId?: string;
         summary?: string;
         title: string;
+        version?: number;
         visibility: 'public' | 'members_only';
       };
+      if (requested.clubId !== undefined) {
+        const club = state.clubs.find((entry) => entry.id === requested.clubId);
+        if (club === undefined) return error(422, 'VALIDATION_FAILED');
+      }
+      if (requested.contentId !== undefined) {
+        const current = state.content.find(
+          (entry) => entry.id === requested.contentId,
+        );
+        if (current === undefined || current.version !== requested.version) {
+          return error(409, 'STATE_CONFLICT');
+        }
+        const edited = {
+          ...current,
+          ...(requested.body === undefined ? {} : { body: requested.body }),
+          ...(requested.clubId === undefined
+            ? {}
+            : { clubId: requested.clubId }),
+          ...(requested.summary === undefined
+            ? {}
+            : { summary: requested.summary }),
+          title: requested.title,
+          version: current.version + 1,
+          visibility: requested.visibility,
+        };
+        state.content = state.content.map((entry) =>
+          entry.id === edited.id ? edited : entry,
+        );
+        return json(200, { content: [entryBody(edited)] });
+      }
       const created = {
+        ...(requested.body === undefined ? {} : { body: requested.body }),
+        ...(requested.clubId === undefined ? {} : { clubId: requested.clubId }),
         id: `content-${String(state.content.length + 1)}`,
         lifecycle: 'draft' as const,
         ...(requested.summary === undefined
@@ -576,7 +771,7 @@ export function createCreatorApiDouble(
         visibility: requested.visibility,
       };
       state.content = [created, ...state.content];
-      return json(201, { content: [entryBody(created)] });
+      return json(201, { content: contentBody() });
     }
     if (path === '/v1/creator/content/lifecycle' && method === 'POST') {
       if (state.account.status !== 'active')

@@ -1,0 +1,1141 @@
+/*
+ * The Studio component surface, built entirely from the token contract.
+ *
+ * No literal colour, radius, duration, or spacing value appears below. Every
+ * one is a token, so reconciling this surface with an approved Figma handoff is
+ * a change to one stylesheet rather than a search through components.
+ */
+
+/* ============================== Rhythm =============================== */
+
+.s-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.s-stack--1 {
+  gap: var(--space-1);
+}
+.s-stack--2 {
+  gap: var(--space-2);
+}
+.s-stack--3 {
+  gap: var(--space-3);
+}
+.s-stack--4 {
+  gap: var(--space-4);
+}
+.s-stack--5 {
+  gap: var(--space-5);
+}
+.s-stack--6 {
+  gap: var(--space-6);
+}
+.s-stack--8 {
+  gap: var(--space-8);
+}
+.s-stack--10 {
+  gap: var(--space-10);
+}
+
+.s-inline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.s-inline--tight {
+  gap: var(--space-2);
+}
+
+.s-inline--between {
+  justify-content: space-between;
+  width: 100%;
+}
+
+.s-inline--baseline {
+  align-items: baseline;
+}
+
+/*
+ * Cards that fill the width they are given and wrap when they cannot.
+ * `auto-fit` rather than a fixed count, so the same declaration produces one
+ * column on a phone and four on a wide desktop without a breakpoint per step.
+ */
+.s-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+}
+
+.s-grid--wide {
+  grid-template-columns: repeat(auto-fit, minmax(min(21rem, 100%), 1fr));
+}
+
+/* A working column and a supporting one, collapsing to one below the desktop. */
+.s-split {
+  align-items: start;
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (width >= 64rem) {
+  .s-split {
+    grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  }
+
+  .s-split--even {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ============================== Buttons ============================== */
+
+.s-btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  gap: var(--space-2);
+  justify-content: center;
+  line-height: 1;
+  min-height: var(--control-height);
+  padding-inline: var(--space-5);
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.s-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.s-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.s-btn--primary {
+  background: var(--ember);
+  box-shadow: var(--shadow-1);
+  color: var(--text-on-accent);
+}
+
+.s-btn--primary:not(:disabled):hover {
+  background: var(--ember-ink);
+}
+
+.s-btn--primary:not(:disabled):active {
+  background: var(--ember-deep);
+}
+
+.s-btn--secondary {
+  background: var(--surface-1);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+}
+
+.s-btn--secondary:not(:disabled):hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.s-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.s-btn--ghost:not(:disabled):hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.s-btn--danger {
+  background: var(--surface-1);
+  border-color: var(--status-critical);
+  box-shadow: var(--shadow-1);
+  color: var(--status-critical);
+}
+
+.s-btn--danger:not(:disabled):hover {
+  background: var(--status-critical-wash);
+}
+
+.s-btn--sm {
+  font-size: var(--text-caption-size);
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-4);
+}
+
+.s-btn--lg {
+  font-size: var(--text-body-size);
+  min-height: var(--control-height-lg);
+  padding-inline: var(--space-7);
+}
+
+.s-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/*
+ * A card is a column that stretches its children, which is right for a form and
+ * wrong for a single control: a lone button has no reason to run the width of
+ * the card it sits in.
+ */
+.s-card > .s-btn,
+.s-card > .s-inline > .s-btn {
+  align-self: flex-start;
+}
+
+/*
+ * The working indicator. A ring rather than a bar, because it sits inside a
+ * control whose width must not change while it spins.
+ */
+.s-btn__spinner {
+  animation: s-spin 720ms linear infinite;
+  border: 2px solid currentcolor;
+  border-radius: var(--radius-pill);
+  border-top-color: transparent;
+  display: block;
+  height: var(--icon-sm);
+  width: var(--icon-sm);
+}
+
+@keyframes s-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.s-icon-btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  height: var(--control-height);
+  justify-content: center;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  width: var(--control-height);
+}
+
+.s-icon-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.s-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.s-icon-btn--sm {
+  height: var(--control-height-sm);
+  width: var(--control-height-sm);
+}
+
+/* =============================== Forms =============================== */
+
+.s-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.s-field__label {
+  color: var(--text-primary);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  line-height: var(--text-small-line);
+}
+
+.s-field__optional {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.s-field__foot {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.s-field__hint {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  margin: 0;
+}
+
+.s-field__count {
+  color: var(--text-tertiary);
+  flex: none;
+  font-size: var(--text-caption-size);
+}
+
+.s-field__error {
+  align-items: center;
+  color: var(--status-critical);
+  display: flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-2);
+  line-height: var(--text-caption-line);
+}
+
+.s-control {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  display: block;
+  min-height: var(--control-height);
+  padding: var(--space-3) var(--space-4);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+  width: 100%;
+}
+
+.s-control::placeholder {
+  color: var(--text-tertiary);
+}
+
+.s-control:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.s-control:focus-visible {
+  border-color: var(--ember-ink);
+}
+
+.s-control:disabled {
+  background: var(--surface-inset);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.s-control[aria-invalid='true'] {
+  border-color: var(--status-critical);
+}
+
+.s-control--area {
+  line-height: var(--text-body-line);
+  min-height: calc(var(--space-24) - var(--space-4));
+  resize: vertical;
+}
+
+/*
+ * A composer. Tall enough to hold a paragraph without scrolling and capped so a
+ * long draft does not push the save control off a phone screen.
+ */
+.s-control--tall {
+  max-height: 60vh;
+  min-height: calc(var(--space-24) * 2);
+}
+
+.s-select {
+  display: block;
+  position: relative;
+}
+
+.s-select select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: var(--space-10);
+}
+
+.s-select__mark {
+  color: var(--text-tertiary);
+  inset-block-start: 50%;
+  inset-inline-end: var(--space-4);
+  pointer-events: none;
+  position: absolute;
+  transform: translateY(-50%);
+}
+
+.s-choice {
+  align-items: flex-start;
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.s-choice:hover {
+  border-color: var(--border-strong);
+}
+
+.s-choice--on {
+  background: var(--ember-wash);
+  border-color: var(--ember-line);
+}
+
+.s-choice__input {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.s-choice__mark {
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  flex: none;
+  height: var(--icon-md);
+  margin-top: 2px;
+  position: relative;
+  width: var(--icon-md);
+}
+
+.s-choice--on .s-choice__mark {
+  border-color: var(--ember);
+}
+
+.s-choice--on .s-choice__mark::after {
+  background: var(--ember);
+  border-radius: var(--radius-pill);
+  content: '';
+  inset: 3px;
+  position: absolute;
+}
+
+.s-choice__input:focus-visible + .s-choice__mark {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.s-choice__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ============================== Surfaces ============================= */
+
+.s-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+}
+
+.s-card--flush {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+/*
+ * The one card that carries the brand signal. Used for the single next action a
+ * screen wants somebody to take, and never for more than one of them.
+ */
+.s-card--accent {
+  background:
+    linear-gradient(var(--ember-wash), var(--ember-wash)), var(--surface-1);
+  border-color: var(--ember-line);
+}
+
+.s-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.s-card__head-row {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.s-card--flush .s-card__head {
+  padding: var(--space-6) var(--space-6) var(--space-4);
+}
+
+.s-section-head {
+  align-items: center;
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding-top: var(--space-5);
+}
+
+.s-section-head:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.s-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.s-page-header__row {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.s-page-header__lede {
+  color: var(--text-secondary);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.s-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+/* ============================== Identity ============================= */
+
+.s-avatar {
+  align-items: center;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  flex: none;
+  font-family: var(--font-editorial);
+  font-weight: 600;
+  justify-content: center;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  overflow: hidden;
+  user-select: none;
+}
+
+.s-avatar--xs {
+  font-size: var(--text-micro-size);
+  height: var(--space-7);
+  width: var(--space-7);
+}
+
+.s-avatar--sm {
+  font-size: var(--text-caption-size);
+  height: var(--space-10);
+  width: var(--space-10);
+}
+
+.s-avatar--md {
+  border-radius: var(--radius-lg);
+  font-size: var(--text-subheading-size);
+  height: var(--space-14);
+  width: var(--space-14);
+}
+
+.s-avatar--lg {
+  border-radius: var(--radius-lg);
+  font-size: var(--text-title-size);
+  height: var(--space-20);
+  width: var(--space-20);
+}
+
+/*
+ * Six tones, all warm, all carrying the same ink. A monogram is decoration
+ * attached to a name that is already on the screen, so it is `aria-hidden` at
+ * the component and does not need to clear a text-contrast bar on its own —
+ * but each pairing clears it anyway, because a tone that washed out would look
+ * like a rendering fault.
+ */
+.s-avatar--tone-1 {
+  background: #f0dbc9;
+  color: #6b3a1c;
+}
+.s-avatar--tone-2 {
+  background: #e8dcc4;
+  color: #5c4a17;
+}
+.s-avatar--tone-3 {
+  background: #d9e2cf;
+  color: #38501f;
+}
+.s-avatar--tone-4 {
+  background: #d5dfe6;
+  color: #274b5c;
+}
+.s-avatar--tone-5 {
+  background: #e3d9e8;
+  color: #4d3660;
+}
+.s-avatar--tone-6 {
+  background: #f0d6d3;
+  color: #7a3230;
+}
+
+/* =============================== Status ============================== */
+
+.s-badge {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  font-size: var(--text-micro-size);
+  font-weight: 600;
+  gap: var(--space-1);
+  line-height: 1;
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+}
+
+.s-badge--neutral {
+  background: var(--surface-3);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.s-badge--accent {
+  background: var(--ember-wash);
+  border-color: var(--ember-line);
+  color: var(--ember-ink);
+}
+
+.s-badge--positive {
+  background: var(--status-positive-wash);
+  color: var(--status-positive);
+}
+
+.s-badge--caution {
+  background: var(--status-caution-wash);
+  color: var(--status-caution);
+}
+
+.s-badge--critical {
+  background: var(--status-critical-wash);
+  color: var(--status-critical);
+}
+
+.s-badge--info {
+  background: var(--status-neutral-wash);
+  color: var(--status-neutral);
+}
+
+.s-chip {
+  align-items: center;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-2);
+  max-width: 100%;
+  overflow: hidden;
+  padding: var(--space-1) var(--space-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.s-metric__value {
+  font-size: var(--text-title-size);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.s-metric__caption {
+  max-width: 22ch;
+}
+
+.s-info-row {
+  align-items: baseline;
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: space-between;
+  padding-block: var(--space-3);
+}
+
+.s-info-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.s-info-row__value {
+  color: var(--text-primary);
+  font-weight: 500;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+/* ============================== Messages ============================= */
+
+.s-notice {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.s-notice__icon {
+  flex: none;
+  line-height: 0;
+  padding-top: 2px;
+}
+
+.s-notice__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.s-notice--info {
+  background: var(--status-neutral-wash);
+}
+
+.s-notice--info .s-notice__icon {
+  color: var(--status-neutral);
+}
+
+.s-notice--caution {
+  background: var(--status-caution-wash);
+}
+
+.s-notice--caution .s-notice__icon {
+  color: var(--status-caution);
+}
+
+.s-notice--critical {
+  background: var(--status-critical-wash);
+}
+
+.s-notice--critical .s-notice__icon {
+  color: var(--status-critical);
+}
+
+.s-notice--quiet {
+  background: var(--surface-2);
+}
+
+.s-notice--quiet .s-notice__icon {
+  color: var(--text-tertiary);
+}
+
+.s-inline-status {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+  line-height: var(--text-small-line);
+}
+
+.s-inline-error {
+  align-items: flex-start;
+  color: var(--status-critical);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+  line-height: var(--text-small-line);
+}
+
+.s-inline-error svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+/* =========================== Empty and blocked ======================= */
+
+.s-empty {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-5);
+  text-align: center;
+}
+
+.s-empty__mark {
+  align-items: center;
+  background: var(--surface-3);
+  border-radius: var(--radius-lg);
+  color: var(--text-tertiary);
+  display: flex;
+  height: var(--space-14);
+  justify-content: center;
+  width: var(--space-14);
+}
+
+.s-empty__mark--failed {
+  background: var(--status-critical-wash);
+  color: var(--status-critical);
+}
+
+.s-empty__body {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  max-width: 44ch;
+}
+
+.s-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+  padding-top: var(--space-2);
+}
+
+/*
+ * Deliberately unavailable, and deliberately not shaped like a failure: no
+ * alarm colour, no retry, and a lock rather than a warning triangle.
+ */
+.s-blocked {
+  background: var(--surface-2);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+}
+
+.s-blocked__head {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ============================== Skeletons ============================ */
+
+.s-skeleton {
+  animation: s-pulse 1600ms var(--ease-in-out) infinite;
+  background: var(--surface-3);
+  border-radius: var(--radius-xs);
+}
+
+@keyframes s-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ================================ Rows =============================== */
+
+.s-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.s-row {
+  align-items: center;
+  border-top: 1px solid var(--border-hairline);
+  color: inherit;
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  text-align: start;
+  text-decoration: none;
+  width: 100%;
+}
+
+.s-list > *:first-child .s-row,
+.s-list > .s-row:first-child {
+  border-top: 0;
+}
+
+.s-row__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.s-row__aside {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.s-row--interactive {
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.s-row--interactive:hover {
+  background: var(--surface-2);
+}
+
+/* ================================ Tabs =============================== */
+
+/*
+ * A filter that wraps rather than scrolls sideways. A segment pushed off the
+ * edge of a phone is a filter nobody knows is there, and the horizontal scroll
+ * that would reveal it is not an affordance anybody looks for.
+ */
+.s-segmented {
+  align-self: flex-start;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1);
+}
+
+.s-segmented__item {
+  align-items: center;
+  flex: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-4);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.s-segmented__item:hover {
+  color: var(--text-primary);
+}
+
+.s-segmented__item[aria-selected='true'] {
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+}
+
+.s-segmented__count {
+  color: var(--text-tertiary);
+  font-size: var(--text-micro-size);
+  font-weight: 500;
+}
+
+.s-segmented__item[aria-selected='true'] .s-segmented__count {
+  color: var(--ember-ink);
+}
+
+/* ============================== Dialogs ============================== */
+
+.s-scrim {
+  animation: s-fade var(--duration-base) var(--ease-out);
+  background: var(--surface-overlay);
+  inset: 0;
+  position: fixed;
+  z-index: var(--layer-overlay);
+}
+
+@keyframes s-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.s-dialog {
+  animation: s-sheet-in var(--duration-base) var(--ease-out);
+  background: var(--surface-1);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  bottom: 0;
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  left: 0;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5)
+    calc(var(--space-6) + env(safe-area-inset-bottom));
+  position: fixed;
+  right: 0;
+  z-index: var(--layer-dialog);
+}
+
+@keyframes s-sheet-in {
+  from {
+    transform: translateY(var(--space-8));
+  }
+}
+
+/* From the tablet up the same component is a centred panel. */
+@media (width >= 48rem) {
+  .s-dialog {
+    animation-name: s-dialog-in;
+    border-radius: var(--radius-lg);
+    bottom: auto;
+    left: 50%;
+    max-height: 84vh;
+    max-width: 30rem;
+    padding: var(--space-6);
+    right: auto;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100% - var(--space-10));
+  }
+
+  .s-dialog--wide {
+    max-width: 44rem;
+  }
+
+  @keyframes s-dialog-in {
+    from {
+      transform: translate(-50%, calc(-50% + var(--space-4)));
+    }
+  }
+}
+
+/* The grip is a phone affordance only; a centred panel has no sheet to drag. */
+.s-sheet-grip {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  display: block;
+  height: var(--space-1);
+  margin: 0 auto var(--space-2);
+  width: var(--space-10);
+}
+
+@media (width >= 48rem) {
+  .s-sheet-grip {
+    display: none;
+  }
+}
+
+.s-dialog__head {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.s-dialog__close {
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) 0 0;
+}
+
+.s-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+.s-dialog__actions > .s-btn {
+  flex: 1;
+}
+
+@media (width >= 30rem) {
+  .s-dialog__actions > .s-btn {
+    flex: none;
+  }
+}
+
+/* =============================== Toasts ============================== */
+
+.s-toaster {
+  bottom: calc(
+    var(--tabbar-height) + var(--space-4) + env(safe-area-inset-bottom)
+  );
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  left: var(--space-4);
+  pointer-events: none;
+  position: fixed;
+  right: var(--space-4);
+  z-index: var(--layer-toast);
+}
+
+@media (width >= 48rem) {
+  .s-toaster {
+    bottom: var(--space-6);
+    left: auto;
+    max-width: 26rem;
+    right: var(--space-6);
+  }
+}
+
+.s-toast {
+  align-items: flex-start;
+  animation: s-toast-in var(--duration-base) var(--ease-out);
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  pointer-events: auto;
+}
+
+@keyframes s-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+.s-toast__icon {
+  flex: none;
+  line-height: 0;
+  padding-top: var(--space-2);
+}
+
+.s-toast--positive .s-toast__icon {
+  color: var(--status-positive);
+}
+.s-toast--critical .s-toast__icon {
+  color: var(--status-critical);
+}
+.s-toast--neutral .s-toast__icon {
+  color: var(--status-neutral);
+}
+
+.s-toast__body {
+  flex: 1;
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  padding-top: var(--space-1);
+}

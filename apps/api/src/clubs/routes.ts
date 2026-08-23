@@ -21,13 +21,22 @@ import {
 import type { CreatorContentRow } from './repository.js';
 import type { ClubsService, ContentPage } from './service.js';
 
-/** The creator's own view of one item, drafts and all. */
+/**
+ * The creator's own view of one item, drafts and all.
+ *
+ * `clubId` is here and deliberately absent from the visitor's view below. It is
+ * the difference between a members-only item that has somebody to admit and one
+ * that reaches nobody, which is a fact its own creator has to be able to read
+ * back; a visitor learning which room an item belongs to would be learning
+ * about a room they are not in.
+ */
 function contentBody(row: CreatorContentRow) {
   return {
     ...(row.archivedAt === null
       ? {}
       : { archivedAt: row.archivedAt.toISOString() }),
     ...(row.body === null ? {} : { body: row.body }),
+    ...(row.clubId === null ? {} : { clubId: row.clubId }),
     createdAt: row.createdAt.toISOString(),
     id: row.id,
     lifecycle: row.lifecycle,

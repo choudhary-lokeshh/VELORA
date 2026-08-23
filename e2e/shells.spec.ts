@@ -42,11 +42,17 @@ test('Platform Admin carries the operator product and nothing else', async ({
 test('Creator Studio carries the creator product and nothing consumer', async ({
   page,
 }) => {
+  // The workspace is behind a door: the root sends somebody with no session to
+  // the only page they can act on.
   await page.goto('http://127.0.0.1:3001');
+  await page.waitForURL(/\/sign-in/u, { timeout: 30_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Creator Studio',
   );
-  await expect(page.getByRole('heading', { name: 'Session' })).toBeVisible();
+  // Its own audience, its own cookie, and it says what is behind the form.
+  await expect(page.getByTestId('sign-in-development')).toContainText(
+    'no live sign-in provider',
+  );
   // Consumer discovery, introductions, and messaging never appear here, and
   // neither does anything privileged.
   for (const forbidden of [

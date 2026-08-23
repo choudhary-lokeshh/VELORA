@@ -1,0 +1,362 @@
+/*
+ * The screens.
+ *
+ * Everything here composes the primitives above into one product surface, and
+ * every value it uses is a token. A class earns a place in this file when the
+ * same arrangement appears on more than one screen or when it carries a
+ * decision — never to hold a one-off margin, which belongs to the stack and
+ * inline utilities.
+ */
+
+/* ============================ Card padding =========================== */
+
+/*
+ * The inside edge of a flush card, for the occasional element that has to sit
+ * between two full-bleed lists rather than inside one.
+ */
+.s-card__pad {
+  padding-inline: var(--space-6);
+}
+
+.s-card__pad--block {
+  padding-block: var(--space-4);
+}
+
+/* ============================== Fieldsets ============================ */
+
+.s-fieldset {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.s-fieldset > .s-btn {
+  align-self: flex-start;
+}
+
+.s-form-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/*
+ * A label, an address, and a way to remove the row. Two columns from the
+ * tablet up; stacked below it, because two inputs side by side on a phone are
+ * two inputs nobody can read.
+ */
+.s-link-row {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.s-link-row > :first-child {
+  grid-column: 1 / -1;
+}
+
+@media (width >= 40rem) {
+  .s-link-row {
+    grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto;
+  }
+
+  .s-link-row > :first-child {
+    grid-column: auto;
+  }
+}
+
+.s-handle-fixed {
+  align-items: center;
+  display: flex;
+  font-size: var(--text-subheading-size);
+  font-weight: 600;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/*
+ * A statement with a mark beside it. The mark never wraps away from its words,
+ * which is why this is not the generic inline row.
+ */
+.s-point {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.s-point__mark {
+  color: var(--ember-ink);
+  flex: none;
+  line-height: 0;
+  padding-top: 3px;
+}
+
+.s-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-inline-start: var(--space-4);
+}
+
+.s-bullets > li {
+  list-style: disc;
+}
+
+/* =============================== Home ================================ */
+
+/*
+ * The one next step. The action sits beside the words on a wide screen and
+ * under them on a narrow one, full width, because a primary action a thumb has
+ * to stretch for is a primary action that gets missed.
+ */
+.s-next-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.s-next-step__action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.s-next-step__action > * {
+  flex: 1;
+}
+
+@media (width >= 40rem) {
+  .s-next-step {
+    align-items: center;
+    flex-direction: row;
+    gap: var(--space-6);
+    justify-content: space-between;
+  }
+
+  .s-next-step__action {
+    flex: none;
+  }
+
+  .s-next-step__action > * {
+    flex: none;
+  }
+}
+
+.s-shortcuts {
+  display: flex;
+  flex-direction: column;
+}
+
+.s-shortcut {
+  align-items: center;
+  border-top: 1px solid var(--border-hairline);
+  color: inherit;
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.s-shortcut:first-child {
+  border-top: 0;
+}
+
+.s-shortcut:hover {
+  background: var(--surface-2);
+  color: inherit;
+}
+
+.s-shortcut__mark {
+  align-items: center;
+  background: var(--ember-wash);
+  border-radius: var(--radius-sm);
+  color: var(--ember-ink);
+  display: flex;
+  flex: none;
+  height: var(--space-10);
+  justify-content: center;
+  width: var(--space-10);
+}
+
+.s-shortcut__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* ============================== Catalog ============================== */
+
+/*
+ * A row and its controls. The row is a link covering the whole item, so the
+ * controls sit outside it rather than inside — a button nested in an anchor is
+ * a control whose activation depends on which pixel was pressed.
+ */
+.s-item-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.s-item-row__main {
+  min-width: 0;
+}
+
+.s-item-row__actions {
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+}
+
+@media (width >= 48rem) {
+  .s-item-row {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .s-item-row__main {
+    flex: 1;
+  }
+
+  .s-item-row__actions {
+    border-top: 0;
+    flex: none;
+    flex-wrap: nowrap;
+    padding-inline: var(--space-6) var(--space-6);
+  }
+}
+
+/* ============================== Preview ============================== */
+
+.s-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.s-preview__identity {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+@media (width >= 40rem) {
+  .s-preview__identity {
+    align-items: center;
+    flex-direction: row;
+    gap: var(--space-6);
+  }
+}
+
+.s-preview-item {
+  border-left: 2px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
+}
+
+/* ============================ Invitations ============================ */
+
+/*
+ * The one moment a bearer secret is on a screen. Marked out from the list
+ * around it, because it is the only thing on the page that stops being
+ * recoverable the moment it is dismissed.
+ */
+.s-secret {
+  background: var(--ember-wash);
+  border: 1px solid var(--ember-line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 var(--space-6) var(--space-4);
+  padding: var(--space-5);
+}
+
+.s-secret__head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.s-secret__head .s-point__mark {
+  padding-top: 0;
+}
+
+.s-secret__row {
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+}
+
+.s-secret__value {
+  flex: 1;
+  font-family: ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+  font-size: var(--text-caption-size);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+  word-break: break-all;
+}
+
+/* =============================== Money =============================== */
+
+.s-subnav {
+  align-self: flex-start;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1);
+}
+
+.s-subnav__item {
+  align-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-4);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.s-subnav__item:hover {
+  color: var(--text-primary);
+}
+
+.s-subnav__item[aria-current='page'] {
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+}
+
+/* ============================== Account ============================== */
+
+.s-account-identity {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+}

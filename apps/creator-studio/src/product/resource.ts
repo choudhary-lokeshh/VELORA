@@ -22,6 +22,17 @@ import { failureMessage, isRetryable } from '@velora/creator-client';
 export interface Resource<T> {
   readonly error: string | undefined;
   readonly loading: boolean;
+  /**
+   * The server said the thing does not exist.
+   *
+   * Deliberately not an error. A creator with no capability yet, and a creator
+   * with no public page yet, both get the same 404 the API gives a route that
+   * is not there — that is the platform's way of saying "there is nothing here"
+   * without disclosing whether there could be. A surface that rendered it as a
+   * failure would tell somebody their account was broken when in fact they had
+   * simply not started.
+   */
+  readonly missing: boolean;
   /** Re-reads from the server, superseding any request already in flight. */
   readonly reload: () => void;
   readonly retryable: boolean;
@@ -55,8 +66,19 @@ export function useResource<T>(
   const { onUnauthenticated } = options;
   const [value, setValue] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [missing, setMissing] = useState(false);
   const [retryable, setRetryable] = useState(false);
-  const [loading, setLoading] = useState(enabled);
+  const [reading, setReading] = useState(enabled);
+  /**
+   * Whether a read has ever answered.
+   *
+   * Needed because a resource that is enabled part-way through — which is what
+   * happens when the session answer arrives — is not reading yet during the
+   * render that enables it, and would otherwise report itself as finished with
+   * nothing. A screen reading that would show a creator who already has a page
+   * the form for claiming one, for a frame.
+   */
+  const [answered, setAnswered] = useState(false);
   const inFlight = useRef<AbortController | undefined>(undefined);
   // Held in a ref so a caller that passes an inline callback does not restart
   // every read on every render.
@@ -68,27 +90,37 @@ export function useResource<T>(
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
-    setLoading(true);
+    setReading(true);
     void load(controller.signal).then((result) => {
       // A superseded read has no answer worth showing. Returning here is what
       // stops a slow first request from overwriting a fast second one.
       if (controller.signal.aborted) return;
-      setLoading(false);
+      setReading(false);
+      setAnswered(true);
       if (result.kind === 'ok') {
         setValue(result.value);
         setError(undefined);
+        setMissing(false);
+        setRetryable(false);
+        return;
+      }
+      if (result.kind === 'not-found') {
+        setValue(undefined);
+        setError(undefined);
+        setMissing(true);
         setRetryable(false);
         return;
       }
       if (result.kind === 'unauthenticated') expired.current?.();
       setError(failureMessage(result));
+      setMissing(false);
       setRetryable(isRetryable(result));
     });
   }, [enabled, load]);
 
   useEffect(() => {
     if (!enabled) {
-      setLoading(false);
+      setReading(false);
       return undefined;
     }
     reload();
@@ -97,7 +129,14 @@ export function useResource<T>(
     };
   }, [enabled, reload]);
 
-  return { error, loading, reload, retryable, value };
+  return {
+    error,
+    loading: enabled && (reading || !answered),
+    missing,
+    reload,
+    retryable,
+    value,
+  };
 }
 
 /**
@@ -158,4 +197,147 @@ export function useSingleFlight(): {
   }, []);
 
   return { busy, run };
+}
+
+/**
+ * One page of a keyset-paged list, in the shape every caller reduces to.
+ *
+ * The API publishes a differently named array per route — `content`, `clubs`,
+ * `memberships`, `entries` — and a cursor beside it. Reducing each to this pair
+ * at the call site keeps one paging implementation instead of five.
+ */
+export interface Page<TItem, TMeta = undefined> {
+  readonly items: readonly TItem[];
+  /**
+   * Whatever the route publishes beside its page. Some lists carry a statement
+   * about the whole capability — whether selling is enabled at all, for
+   * instance — and reading it from the same response is one request rather than
+   * two answers that could disagree.
+   */
+  readonly meta?: TMeta;
+  readonly nextCursor: string | undefined;
+}
+
+export interface Collection<TItem, TMeta = undefined> {
+  readonly error: string | undefined;
+  /** True while the server has told us there is another page. */
+  readonly hasMore: boolean;
+  readonly items: readonly TItem[];
+  /** The first read, with nothing on the screen yet. */
+  readonly loading: boolean;
+  /** A later page, with the earlier ones still on the screen. */
+  readonly loadingMore: boolean;
+  readonly loadMore: () => void;
+  /** What the most recent page carried beside its items. */
+  readonly meta: TMeta | undefined;
+  readonly reload: () => void;
+  readonly retryable: boolean;
+  /** False until the first read has finished, however it finished. */
+  readonly settled: boolean;
+}
+
+/**
+ * A list the server hands over one page at a time.
+ *
+ * Keyset paging, because that is what the contract publishes: there is no page
+ * number and no total, so this never claims one. `hasMore` is the presence of a
+ * cursor and nothing else — a short page with a cursor is not the end, and a
+ * surface that guessed otherwise would silently hide a creator's own work.
+ *
+ * Reloading returns to the first page rather than re-reading every page that
+ * was open. A creator who has just archived something is looking at the top of
+ * the list; refetching four pages to preserve a scroll position they have
+ * already left would be four requests to show them the same thing.
+ */
+export function useCollection<TItem, TMeta = undefined>(
+  load: (
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ) => Promise<ApiResult<Page<TItem, TMeta>>>,
+  options: ResourceOptions = {},
+): Collection<TItem, TMeta> {
+  const enabled = options.enabled ?? true;
+  const { onUnauthenticated } = options;
+  const [items, setItems] = useState<readonly TItem[]>([]);
+  const [meta, setMeta] = useState<TMeta | undefined>(undefined);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [retryable, setRetryable] = useState(false);
+  const [loading, setLoading] = useState(enabled);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [settled, setSettled] = useState(false);
+  const inFlight = useRef<AbortController | undefined>(undefined);
+  const expired = useRef(onUnauthenticated);
+  expired.current = onUnauthenticated;
+
+  const read = useCallback(
+    (from: string | undefined) => {
+      if (!enabled) return;
+      inFlight.current?.abort();
+      const controller = new AbortController();
+      inFlight.current = controller;
+      if (from === undefined) setLoading(true);
+      else setLoadingMore(true);
+
+      void load(from, controller.signal).then((result) => {
+        // A superseded read has no answer worth showing. Returning here is what
+        // stops a slow first request from overwriting a fast second one.
+        if (controller.signal.aborted) return;
+        setLoading(false);
+        setLoadingMore(false);
+        setSettled(true);
+        if (result.kind === 'ok') {
+          setItems((existing) =>
+            from === undefined
+              ? result.value.items
+              : [...existing, ...result.value.items],
+          );
+          setCursor(result.value.nextCursor);
+          setMeta(result.value.meta);
+          setError(undefined);
+          setRetryable(false);
+          return;
+        }
+        if (result.kind === 'unauthenticated') expired.current?.();
+        setError(failureMessage(result));
+        setRetryable(isRetryable(result));
+      });
+    },
+    [enabled, load],
+  );
+
+  const reload = useCallback(() => {
+    setCursor(undefined);
+    read(undefined);
+  }, [read]);
+
+  const loadMore = useCallback(() => {
+    if (cursor === undefined || loadingMore || loading) return;
+    read(cursor);
+  }, [cursor, loading, loadingMore, read]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setSettled(true);
+      return undefined;
+    }
+    read(undefined);
+    return () => {
+      inFlight.current?.abort();
+    };
+  }, [enabled, read]);
+
+  return {
+    error,
+    hasMore: cursor !== undefined,
+    items,
+    loading,
+    loadingMore,
+    loadMore,
+    meta,
+    reload,
+    retryable,
+    settled,
+  };
 }

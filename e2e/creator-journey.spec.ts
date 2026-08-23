@@ -3,8 +3,18 @@ import {
   consumerWebOrigin,
   creatorStudioOrigin,
 } from './auth-environment.js';
-import type { Page } from '@playwright/test';
-
+import {
+  activateCreator,
+  claimHandle,
+  cookieSkipReason,
+  createClub,
+  declareAdult,
+  publishPage,
+  signInToStudio,
+  skipWhenCookieRequiresHttps,
+  uniqueHandle,
+  uniqueSubject,
+} from './creator.js';
 import { expect, test } from './fixtures.js';
 
 /**
@@ -20,72 +30,6 @@ import { expect, test } from './fixtures.js';
  * renders once the server has answered, so a slow machine makes the test slower
  * rather than flaky.
  */
-
-const skipWhenCookieRequiresHttps = (browserName: string) =>
-  browserName === 'webkit';
-const cookieSkipReason =
-  'WebKit does not store Secure cookies delivered over plain-HTTP loopback';
-
-function uniqueSubject(scope: string): string {
-  return `e2e-${scope}-${String(Date.now())}-${String(
-    Math.floor(Math.random() * 1_000_000),
-  )}@velora.test`;
-}
-
-/** A handle nobody else in this run will claim. */
-function uniqueHandle(scope: string): string {
-  return `e2e-${scope}-${String(Date.now() % 100_000_000)}`.toLowerCase();
-}
-
-/**
- * Signs in on a surface by submitting the identity field.
- *
- * Enter rather than a click, for the reason recorded in `consumer-auth.spec.ts`:
- * Firefox drops a synthesised mouse click aimed at a control the page has only
- * just painted, and this journey drives a page within a few hundred
- * milliseconds of opening it. Enter goes to the focused field and submits the
- * same form through the same handler.
- */
-async function signIn(page: Page, subject: string): Promise<void> {
-  await page.getByLabel('Development identity').fill(subject);
-  await page.getByLabel('Development identity').press('Enter');
-  await expect(page.getByTestId('auth-status')).toHaveText('Signed in');
-}
-
-/**
- * Declares adult status on Consumer Web, which is where that decision lives.
- *
- * The consumer surface has its own sign-in address and its own admission ladder;
- * Studio's shell is a different surface with a different session, which is why
- * only the Studio half of this journey uses the shared `signIn` above.
- */
-async function declareAdult(page: Page, subject: string): Promise<void> {
-  await page.goto(`${consumerWebOrigin}/sign-in`);
-  await page.getByTestId('sign-in-subject').fill(subject);
-  await page.getByTestId('sign-in-subject').press('Enter');
-  await page.waitForURL(/\/welcome$/u, { timeout: 30_000 });
-
-  await page.getByTestId('create-account').click();
-  await expect(page.getByTestId('declare-adult')).toBeVisible();
-  await page.getByTestId('onboarding-region').fill('ES');
-  await page.getByTestId('declare-adult').click();
-  await expect(page.getByTestId('acknowledge-policies')).toBeVisible();
-}
-
-/** Takes a signed-in Studio session all the way to an active capability. */
-async function activateCreator(page: Page, subject: string): Promise<void> {
-  await page.goto(creatorStudioOrigin);
-  await signIn(page, subject);
-  await expect(page.getByTestId('creator-onboard')).toBeVisible();
-  await page.getByTestId('creator-onboard').click();
-  await expect(page.getByTestId('creator-stage')).toHaveText(
-    'Accept the creator policies',
-  );
-  await page.getByTestId('creator-accept-policies').click();
-  await expect(page.getByTestId('creator-standing')).toHaveText(
-    'Creator access active',
-  );
-}
 
 test.describe('Creator Studio journey', () => {
   test.skip(
@@ -104,13 +48,9 @@ test.describe('Creator Studio journey', () => {
 
     // Creator access is a capability on the same person, not a second account:
     // the Studio session was established by signing in with the same identity.
-    await page.getByTestId('nav-profile').click();
-    await page.getByTestId('creator-handle').fill(handle);
-    await page.getByTestId('creator-display-name').fill('Ember Vale');
-    await page.getByTestId('creator-bio').fill('Ceramics, slowly.');
-    await page.getByTestId('creator-save-profile').click();
-    await expect(page.getByTestId('creator-publication')).toHaveText(
-      'Draft. Only you can see this.',
+    await claimHandle(page, handle);
+    await expect(page.getByTestId('creator-publication')).toContainText(
+      'Draft',
     );
 
     // A draft page is not reachable, and the visitor is told nothing else.
@@ -123,10 +63,7 @@ test.describe('Creator Studio journey', () => {
         'This page is not available',
       );
 
-      await page.getByTestId('creator-toggle-publication').click();
-      await expect(page.getByTestId('creator-publication')).toHaveText(
-        'Published. Anyone with the link can see this.',
-      );
+      await publishPage(page);
 
       await anonymous.reload();
       await expect(anonymous.getByRole('heading', { level: 1 })).toHaveText(
@@ -146,6 +83,38 @@ test.describe('Creator Studio journey', () => {
     }
   });
 
+  /**
+   * The preview reads the public addresses rather than local form state.
+   *
+   * That is the whole point of the screen: a preview assembled from what this
+   * tab holds would show a creator their drafts and tell them nothing about
+   * what they had actually published.
+   */
+  test('previews the public page as a visitor would find it', async ({
+    page,
+  }) => {
+    const subject = uniqueSubject('preview');
+    const handle = uniqueHandle('v');
+
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+    await claimHandle(page, handle);
+
+    await page.goto(`${creatorStudioOrigin}/profile/preview`);
+    await expect(page.getByTestId('preview-draft')).toContainText(
+      'Nobody can open',
+    );
+    await expect(page.getByTestId('preview-empty')).toBeVisible();
+
+    await page.goto(`${creatorStudioOrigin}/profile`);
+    await publishPage(page);
+    await page.goto(`${creatorStudioOrigin}/profile/preview`);
+    await expect(page.getByTestId('preview-identity')).toContainText(
+      'Ember Vale',
+    );
+    await expect(page.getByTestId('preview-catalog-empty')).toBeVisible();
+  });
+
   test('publishes an item and a club, and shows both to a visitor', async ({
     page,
   }) => {
@@ -154,37 +123,30 @@ test.describe('Creator Studio journey', () => {
 
     await declareAdult(page, subject);
     await activateCreator(page, subject);
-    await page.getByTestId('nav-profile').click();
-    await page.getByTestId('creator-handle').fill(handle);
-    await page.getByTestId('creator-display-name').fill('Ember Vale');
-    await page.getByTestId('creator-save-profile').click();
-    await page.getByTestId('creator-toggle-publication').click();
-    await expect(page.getByTestId('creator-publication')).toHaveText(
-      'Published. Anyone with the link can see this.',
-    );
+    await claimHandle(page, handle);
+    await publishPage(page);
 
-    await page.getByTestId('nav-catalog').click();
+    // Writing and publishing are two decisions, and the surface keeps them
+    // apart: saving produces a draft nobody can see.
+    await page.goto(`${creatorStudioOrigin}/catalog/new`);
     await page.getByTestId('content-title').fill('A first post');
     await page.getByTestId('content-summary').fill('Short form.');
-    await page.getByTestId('content-create').click();
-    // The row for the item is the authoritative signal that the server
-    // answered; the list element exists while the read is still in flight.
+    await page.getByTestId('content-body').fill('The body of the thing.');
+    await page.getByTestId('content-save').click();
+    await page.waitForURL(/\/catalog\/[0-9a-f-]+$/u, { timeout: 30_000 });
+    await expect(page.getByTestId('content-editor-lifecycle')).toContainText(
+      'Draft',
+    );
+    await page.getByTestId('content-editor-publish').click();
+    await page.waitForURL(/\/catalog$/u, { timeout: 30_000 });
     const item = page.locator('[data-testid^="content-item-"]').first();
-    await expect(item).toBeVisible();
-    await expect(item).toContainText('Draft. Only you can see this.');
-    await item.getByRole('button', { name: 'Publish' }).click();
-    await expect(item).toContainText('Published.');
+    await expect(item).toContainText('Published');
 
-    await page.getByTestId('nav-clubs').click();
-    await page.getByTestId('club-name').fill('Inner Circle');
-    await page.getByTestId('club-slug').fill('inner');
-    await page.getByTestId('club-description').fill('A quiet room.');
-    await page.getByTestId('club-create').click();
-    const club = page.locator('[data-testid^="club-item-"]').first();
-    await expect(club).toContainText('Draft. Nobody can see this');
-    await club.getByRole('button', { name: 'Publish' }).click();
-    await expect(club).toContainText('Published. Visible on your public page.');
-    await expect(club).toContainText('0 members');
+    await createClub(page);
+    await expect(page.getByTestId('club-lifecycle')).toContainText('Draft');
+    await page.getByTestId('club-publish').click();
+    await expect(page.getByTestId('club-lifecycle')).toContainText('Published');
+    await expect(page.getByTestId('club-member-count')).toHaveText('0');
 
     const visitor = await page.context().browser()?.newContext();
     if (visitor === undefined) throw new Error('no browser for the visitor');
@@ -206,7 +168,51 @@ test.describe('Creator Studio journey', () => {
     }
   });
 
-  test('shows an invitation once and says it cannot be shown again', async ({
+  /**
+   * A members-only item with no club has nobody to admit.
+   *
+   * The surface says so rather than letting a creator believe their work is
+   * behind a door somebody could be given a key to.
+   */
+  test('says a members-only item reaches nobody until it has a club', async ({
+    page,
+  }) => {
+    const subject = uniqueSubject('members');
+    const handle = uniqueHandle('m');
+
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+    await claimHandle(page, handle);
+
+    await page.goto(`${creatorStudioOrigin}/catalog/new`);
+    await page.getByTestId('content-title').fill('For the inner circle');
+    await page.getByTestId('content-audience-members').click();
+    await expect(page.getByTestId('content-no-clubs')).toContainText(
+      'reachable by nobody',
+    );
+    await page.getByTestId('content-save').click();
+    await page.waitForURL(/\/catalog\/[0-9a-f-]+$/u, { timeout: 30_000 });
+
+    await page.goto(`${creatorStudioOrigin}/catalog`);
+    const item = page.locator('[data-testid^="content-unreachable-"]').first();
+    await expect(item).toContainText('Reaches nobody');
+
+    // Give it a club and the warning goes away, because it is no longer true.
+    await createClub(page);
+    await page.goto(`${creatorStudioOrigin}/catalog`);
+    await page.locator('[data-testid^="content-open-"]').first().click();
+    await page.waitForURL(/\/catalog\/[0-9a-f-]+$/u, { timeout: 30_000 });
+    await page.getByTestId('content-club').selectOption({ index: 1 });
+    await page.getByTestId('content-save').click();
+    // The save has landed when the surface stops offering to save again.
+    await expect(page.getByTestId('content-unsaved')).toHaveCount(0);
+    await page.goto(`${creatorStudioOrigin}/catalog`);
+    await expect(
+      page.locator('[data-testid^="content-unreachable-"]'),
+    ).toHaveCount(0);
+  });
+
+  test('shows an invitation once, masked, and says it cannot be shown again', async ({
     page,
   }) => {
     const subject = uniqueSubject('invite');
@@ -214,32 +220,37 @@ test.describe('Creator Studio journey', () => {
 
     await declareAdult(page, subject);
     await activateCreator(page, subject);
-    await page.getByTestId('nav-profile').click();
-    await page.getByTestId('creator-handle').fill(handle);
-    await page.getByTestId('creator-display-name').fill('Ember Vale');
-    await page.getByTestId('creator-save-profile').click();
+    await claimHandle(page, handle);
+    await createClub(page);
 
-    await page.getByTestId('nav-clubs').click();
-    await page.getByTestId('club-name').fill('Inner Circle');
-    await page.getByTestId('club-slug').fill('inner');
-    await page.getByTestId('club-create').click();
-    const club = page.locator('[data-testid^="club-item-"]').first();
-    await club.getByRole('button', { name: 'Publish' }).click();
-    await expect(club).toContainText('Published.');
+    // A draft club admits nobody, so no invitation is offered for one.
+    await expect(page.getByTestId('club-invite-blocked')).toBeVisible();
+    await expect(page.getByTestId('club-invite')).toHaveCount(0);
 
-    await club
-      .getByRole('button', { name: 'Create a complimentary invitation' })
-      .click();
+    await page.getByTestId('club-publish').click();
+    await expect(page.getByTestId('club-invite')).toBeVisible();
+    await page.getByTestId('club-invite').click();
+
     const shown = page.getByTestId('club-invite-secret');
     await expect(shown).toContainText('shown once');
-    await expect(shown).toContainText('cannot be shown again');
+    await expect(shown).toContainText('cannot show it to you again');
 
-    // The listing of invitations never carries the secret.
-    await club.getByRole('button', { name: 'Manage access' }).click();
-    const secret = (await shown.locator('code').innerText()).trim();
-    const panel = page.locator('[data-testid^="club-access-panel-"]').first();
-    await expect(panel).toBeVisible();
-    expect(await panel.innerText()).not.toContain(secret);
+    // Masked until somebody asks, because the likeliest place an invitation
+    // leaks is a shoulder or a screen share.
+    const masked = await page
+      .getByTestId('club-invite-secret-value')
+      .innerText();
+    expect(masked).toMatch(/^•+$/u);
+    await page.getByTestId('club-invite-reveal').click();
+    const secret = (
+      await page.getByTestId('club-invite-secret-value').innerText()
+    ).trim();
+    expect(secret).not.toMatch(/^•+$/u);
+
+    // Dismissing it takes it off the screen, and the listing never carried it.
+    await page.getByTestId('club-invite-done').click();
+    await expect(shown).toHaveCount(0);
+    expect(await page.locator('body').innerText()).not.toContain(secret);
   });
 
   /**
@@ -262,31 +273,20 @@ test.describe('Creator Studio journey', () => {
 
     await declareAdult(page, subject);
     await activateCreator(page, subject);
-    await page.getByTestId('nav-profile').click();
-    await page.getByTestId('creator-handle').fill(handle);
-    await page.getByTestId('creator-display-name').fill('Ember Vale');
-    await page.getByTestId('creator-save-profile').click();
+    await claimHandle(page, handle);
     // The public page is published too, and that matters to the member rather
     // than to the creator: an entitlement whose creator has no published page
     // is omitted from what the member is shown, because the listing carries the
     // handle CREATORS publishes and there is none to carry.
-    await page.getByTestId('creator-toggle-publication').click();
-    await expect(
-      page.getByRole('button', { name: 'Unpublish this page' }),
-    ).toBeVisible();
+    await publishPage(page);
 
-    await page.getByTestId('nav-clubs').click();
-    await page.getByTestId('club-name').fill('Inner Circle');
-    await page.getByTestId('club-slug').fill('inner');
-    await page.getByTestId('club-create').click();
-    const club = page.locator('[data-testid^="club-item-"]').first();
-    await club.getByRole('button', { name: 'Publish' }).click();
-    await expect(club).toContainText('Published.');
-    await club
-      .getByRole('button', { name: 'Create a complimentary invitation' })
-      .click();
+    await createClub(page);
+    await page.getByTestId('club-publish').click();
+    await expect(page.getByTestId('club-invite')).toBeVisible();
+    await page.getByTestId('club-invite').click();
+    await page.getByTestId('club-invite-reveal').click();
     const secret = (
-      await page.getByTestId('club-invite-secret').locator('code').innerText()
+      await page.getByTestId('club-invite-secret-value').innerText()
     ).trim();
 
     // A different person, a different account, a different audience cookie.
@@ -322,6 +322,15 @@ test.describe('Creator Studio journey', () => {
       await expect(
         memberPage.getByText('That is not possible right now.'),
       ).toBeVisible();
+
+      // The creator now sees one live grant, and nothing about who holds it.
+      await page.reload();
+      await expect(page.getByTestId('club-member-count')).toHaveText('1');
+      await expect(page.getByTestId('club-access')).toContainText(
+        'Admitted by your invitation',
+      );
+      const access = await page.getByTestId('club-access').innerText();
+      expect(access).not.toContain(member.subject);
     } finally {
       await consumer.close();
     }
@@ -335,18 +344,37 @@ test.describe('Creator Studio journey', () => {
 
     await declareAdult(page, subject);
     await activateCreator(page, subject);
-    await page.getByTestId('nav-profile').click();
-    await page.getByTestId('creator-handle').fill(handle);
-    await page.getByTestId('creator-display-name').fill('First');
-    await page.getByTestId('creator-save-profile').click();
-    await expect(page.getByTestId('creator-handle-fixed')).toHaveText(handle);
+    await claimHandle(page, handle, 'First');
 
-    // A second tab, holding the version the first one has already replaced.
+    // A second tab, holding the version the first one is about to replace.
+    //
+    // Its reads are pinned to the first answer on purpose. Studio re-reads when
+    // a tab becomes the one being looked at, which is the right behaviour and
+    // would resolve the conflict before it happened; two tabs side by side in
+    // one window do not both get focus, and that is the case this asserts.
     const second = await page.context().newPage();
-    await second.goto(creatorStudioOrigin);
-    await expect(second.getByTestId('auth-status')).toHaveText('Signed in');
-    await second.getByTestId('nav-profile').click();
-    await expect(second.getByTestId('creator-handle-fixed')).toHaveText(handle);
+    let pinned: string | undefined;
+    await second.route('**/v1/creator/profile', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      if (pinned === undefined) {
+        const response = await route.fetch();
+        pinned = await response.text();
+        await route.fulfill({ body: pinned, response });
+        return;
+      }
+      await route.fulfill({
+        body: pinned,
+        contentType: 'application/json',
+        status: 200,
+      });
+    });
+    await second.goto(`${creatorStudioOrigin}/profile`);
+    await expect(second.getByTestId('creator-handle-fixed')).toContainText(
+      `@${handle}`,
+    );
 
     await page.getByTestId('creator-display-name').fill('Second');
     await page.getByTestId('creator-save-profile').click();
@@ -365,11 +393,10 @@ test.describe('Creator Studio journey', () => {
   }) => {
     const subject = uniqueSubject('offline');
     await declareAdult(page, subject);
-    await page.goto(creatorStudioOrigin);
-    await signIn(page, subject);
-    await expect(page.getByTestId('creator-onboard')).toBeVisible();
+    await signInToStudio(page, subject);
+    await page.waitForURL(/\/start$/u, { timeout: 30_000 });
 
-    // Every API call fails from here. The surface has to say so and offer a
+    // Every creator call fails from here. The surface has to say so and offer a
     // way forward rather than spinning.
     await page.route('**/v1/creator/**', async (route) => route.abort());
     await page.reload();
@@ -381,11 +408,24 @@ test.describe('Creator Studio journey', () => {
     ).toBeVisible();
   });
 
+  test('says a session that has ended has ended, and asks again', async ({
+    page,
+  }) => {
+    const subject = uniqueSubject('expiry');
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+
+    await page.context().clearCookies();
+    await page.goto(`${creatorStudioOrigin}/catalog`);
+    await page.waitForURL(/\/sign-in\?next=%2Fcatalog$/u, { timeout: 30_000 });
+    await expect(page.getByTestId('sign-in-subject')).toBeVisible();
+  });
+
   test('can be driven from the keyboard alone', async ({ page }) => {
     const subject = uniqueSubject('keyboard');
     await declareAdult(page, subject);
-    await page.goto(creatorStudioOrigin);
-    await signIn(page, subject);
+    await signInToStudio(page, subject);
+    await page.waitForURL(/\/start$/u, { timeout: 30_000 });
 
     const onboard = page.getByTestId('creator-onboard');
     await expect(onboard).toBeVisible();
@@ -395,14 +435,47 @@ test.describe('Creator Studio journey', () => {
 
     await page.getByTestId('creator-accept-policies').focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('creator-standing')).toHaveText(
-      'Creator access active',
-    );
+    await page.waitForURL(/\/home$/u, { timeout: 30_000 });
 
-    // The area navigation is reachable and operable the same way.
+    // The navigation is reachable and operable the same way.
     await page.getByTestId('nav-catalog').focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('content-title')).toBeVisible();
+    await page.waitForURL(/\/catalog$/u, { timeout: 30_000 });
+  });
+
+  /**
+   * A dialog has to take focus, keep it, and give it back.
+   *
+   * All three are asserted here rather than in the unit suite because focus is
+   * only real in a browser.
+   */
+  test('contains focus in a dialog and returns it on close', async ({
+    page,
+  }) => {
+    const subject = uniqueSubject('dialog');
+    const handle = uniqueHandle('d');
+
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+    await claimHandle(page, handle);
+
+    await page.goto(`${creatorStudioOrigin}/clubs`);
+    await page.getByTestId('club-new').click();
+    const dialog = page.getByTestId('club-create-dialog');
+    await expect(dialog).toBeVisible();
+
+    // Focus is inside, and Tab keeps it there.
+    for (let step = 0; step < 12; step += 1) {
+      await page.keyboard.press('Tab');
+      const inside = await dialog.evaluate((node) =>
+        node.contains(document.activeElement),
+      );
+      expect(inside).toBe(true);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('club-new')).toBeFocused();
   });
 
   test('exposes one document heading and named landmarks', async ({ page }) => {
@@ -412,8 +485,57 @@ test.describe('Creator Studio journey', () => {
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
-    await expect(
-      page.getByRole('navigation', { name: 'Creator Studio areas' }),
-    ).toHaveCount(1);
+    // One navigation model in three arrangements, and the stylesheet shows
+    // exactly one of them: a second navigation reachable at the same width
+    // would be two places to look for the same five destinations.
+    await expect(page.getByRole('navigation', { name: 'Studio' })).toHaveCount(
+      1,
+    );
+  });
+
+  /**
+   * Nothing on this surface states a figure the platform does not compute.
+   *
+   * Asserted against the rendered text of every destination rather than against
+   * a component, because the failure this guards against is somebody adding a
+   * plausible-looking number to a screen.
+   */
+  test('shows no fabricated figure anywhere in the workspace', async ({
+    page,
+  }) => {
+    const subject = uniqueSubject('honest');
+    const handle = uniqueHandle('h');
+
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+    await claimHandle(page, handle);
+
+    for (const route of [
+      '/home',
+      '/profile',
+      '/catalog',
+      '/clubs',
+      '/money',
+      '/money/payouts',
+      '/money/selling',
+      '/account',
+    ]) {
+      await page.goto(`${creatorStudioOrigin}${route}`);
+      await expect(page.getByRole('main')).toBeVisible();
+      const body = (await page.locator('body').innerText()).toLowerCase();
+      for (const forbidden of [
+        'followers',
+        'subscribers',
+        'impressions',
+        'engagement',
+        'conversion',
+        'growth',
+        'this month',
+        'last 30 days',
+        'trending',
+      ]) {
+        expect(body, `${route} says "${forbidden}"`).not.toContain(forbidden);
+      }
+    }
   });
 });

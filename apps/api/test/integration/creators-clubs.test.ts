@@ -214,6 +214,7 @@ async function publishedCreator(
 }
 
 interface ContentItem {
+  readonly clubId?: string;
   readonly id: string;
   readonly lifecycle: string;
   readonly title: string;
@@ -918,6 +919,50 @@ describe('club audience isolation', () => {
     expect(invited.status).toBe(409);
     expect(members.status).toBe(404);
     expect(transitioned.status).toBe(409);
+  });
+
+  /**
+   * A creator can read back which club an item belongs to; a visitor cannot.
+   *
+   * The distinction is load-bearing rather than cosmetic. A members-only item
+   * with no club has nobody to admit and is reachable by nobody at all, so its
+   * creator has to be able to tell the two apart — and a visitor learning which
+   * room an item belongs to would be learning about a room they are not in.
+   */
+  it('tells a creator which club an item belongs to and a visitor nothing', async () => {
+    const creator = await publishedCreator(
+      'clubs-association@velora.test',
+      'association-test',
+    );
+    const club = await publishedClub(creator.studio, 'association');
+    const item = await clubItem(creator.studio, club, 'For members');
+
+    expect(item.clubId).toBe(club.id);
+
+    // The same item read back through the list, not merely echoed by the write.
+    const listed = (await (
+      await handle(studioRequest('/v1/creator/content', creator.studio))
+    ).json()) as { content: ContentItem[] };
+    expect(listed.content[0]?.clubId).toBe(club.id);
+
+    // An item with no club carries no club, rather than carrying a null.
+    const unattached = await firstOf(
+      await saveContent(creator.studio, {
+        title: 'For everybody',
+        visibility: 'public',
+      }),
+    );
+    expect(unattached.clubId).toBeUndefined();
+
+    const visitorCatalog = await (
+      await handle(
+        new Request(
+          `http://api.test/v1/creators/catalog?handle=${creator.handle}`,
+        ),
+      )
+    ).text();
+    expect(visitorCatalog).not.toContain(club.id);
+    expect(visitorCatalog).not.toContain('clubId');
   });
 
   it('shows a visitor club metadata and nothing about who is in it', async () => {

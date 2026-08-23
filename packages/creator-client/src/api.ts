@@ -74,8 +74,17 @@ export interface CreatorApi {
     readonly pageSize?: number | undefined;
   }): Promise<ApiResult<CreatorContentList>>;
   clubInvites(clubId: string): Promise<ApiResult<ClubInviteList>>;
-  clubMembers(clubId: string): Promise<ApiResult<ClubMembershipList>>;
-  clubs(): Promise<ApiResult<CreatorClubList>>;
+  clubMembers(
+    clubId: string,
+    query?: {
+      readonly cursor?: string | undefined;
+      readonly pageSize?: number | undefined;
+    },
+  ): Promise<ApiResult<ClubMembershipList>>;
+  clubs(query?: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<CreatorClubList>>;
   /** Currency-separated earnings, every figure derived from server truth. */
   earnings(): Promise<ApiResult<CreatorEarnings>>;
   /** One currency's commercial history, keyset paged. */
@@ -86,7 +95,10 @@ export interface CreatorApi {
   }): Promise<ApiResult<CreatorEarningsHistory>>;
   issueClubInvite(clubId: string): Promise<ApiResult<ClubInviteIssued>>;
   /** This creator's commercial offers and what the platform may currently sell. */
-  offers(): Promise<ApiResult<CommercialOfferList>>;
+  offers(query?: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<CommercialOfferList>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
   /** This creator's own payout instructions, newest first. */
   payouts(): Promise<ApiResult<CreatorPayoutHistory>>;
@@ -204,17 +216,22 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
       );
     },
 
-    async clubMembers(clubId) {
+    async clubMembers(clubId, query) {
       return attempt(async () =>
         api.GET('/v1/creator/clubs/members', {
           ...(await read()),
-          params: { query: { clubId } },
+          params: { query: { clubId, ...pageQuery(query) } },
         }),
       );
     },
 
-    async clubs() {
-      return attempt(async () => api.GET('/v1/creator/clubs', await read()));
+    async clubs(query) {
+      return attempt(async () =>
+        api.GET('/v1/creator/clubs', {
+          ...(await read()),
+          params: { query: pageQuery(query) },
+        }),
+      );
     },
 
     async earnings() {
@@ -285,8 +302,13 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
       );
     },
 
-    async offers() {
-      return attempt(async () => api.GET('/v1/creator/offers', await read()));
+    async offers(query) {
+      return attempt(async () =>
+        api.GET('/v1/creator/offers', {
+          ...(await read()),
+          params: { query: pageQuery(query) },
+        }),
+      );
     },
 
     async payouts() {

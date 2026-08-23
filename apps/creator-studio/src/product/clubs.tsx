@@ -1,19 +1,31 @@
 'use client';
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
-import type {
-  ApiResult,
-  ClubInviteList,
-  ClubMembershipList,
-  CreatorApi,
-  CreatorClub,
-  CreatorClubList,
-} from '@velora/creator-client';
-import { failureMessage } from '@velora/creator-client';
+import type { CreatorClub } from '@velora/creator-client';
+import { failureMessage, isOk } from '@velora/creator-client';
 
-import { useResource, useSingleFlight } from './resource';
-import { EmptyState, ErrorMessage, ResourceState, Section } from './ui';
+import { Dialog } from '../design/dialog';
+import {
+  Badge,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  ErrorMessage,
+  ErrorState,
+  Field,
+  ListRow,
+  Notice,
+  PageHeader,
+  RowSkeleton,
+  TextArea,
+  TextInput,
+} from '../design/primitives';
+import { useApi, useCreator, useToast } from '../app/providers';
+import { clubLifecycleLook, plural } from './format';
+import { useCollection, useSingleFlight } from './resource';
 
 /**
  * Private clubs.
@@ -25,403 +37,320 @@ import { EmptyState, ErrorMessage, ResourceState, Section } from './ui';
  * that flatters anybody.
  *
  * There is no price, no subscription control, and no purchase language, because
- * no payment path exists. An invitation is complimentary and says so.
+ * no payment path exists. The only way anybody gets into a club today is an
+ * invitation the creator issues, and the surface says so rather than implying a
+ * door that could be bought through.
  */
 
-const clubLifecycleLabels: Readonly<Record<string, string>> = {
-  closed: 'Closed. Nobody can be admitted, and this cannot be undone.',
-  draft: 'Draft. Nobody can see this or be admitted to it.',
-  published: 'Published. Visible on your public page.',
-};
+export const clubNameBounds = { maximum: 80, minimum: 2 };
+export const clubDescriptionMaximum = 600;
+const slugPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{1,38}[A-Za-z0-9]$/u;
+const clubsPageSize = 25;
 
-export function ClubsPanel({
-  api,
-  editable,
-  onSessionEnded,
-}: {
-  readonly api: CreatorApi;
-  readonly editable: boolean;
-  readonly onSessionEnded: () => void;
-}) {
-  const load = useCallback(async () => api.clubs(), [api]);
-  const clubs = useResource<CreatorClubList>(load, {
-    onUnauthenticated: onSessionEnded,
-  });
-  const [message, setMessage] = useState<string | undefined>(undefined);
-  const [secret, setSecret] = useState<string | undefined>(undefined);
-  const [open, setOpen] = useState<string | undefined>(undefined);
-  const { busy, run } = useSingleFlight();
+export function Clubs() {
+  const api = useApi();
+  const creator = useCreator();
+  const [creating, setCreating] = useState(false);
 
-  const act = (work: () => Promise<ApiResult<unknown>>) => {
-    run(async () => {
-      setMessage(failureMessage(await work()));
-      clubs.reload();
-    });
-  };
+  const load = useCallback(
+    async (cursor: string | undefined) => {
+      const result = await api.clubs({ cursor, pageSize: clubsPageSize });
+      return result.kind === 'ok'
+        ? {
+            kind: 'ok' as const,
+            value: {
+              items: result.value.clubs,
+              nextCursor: result.value.nextCursor,
+            },
+          }
+        : result;
+    },
+    [api],
+  );
+  const clubs = useCollection<CreatorClub>(load);
 
   return (
-    <Section headingId="clubs-heading" title="Private clubs">
-      <ResourceState resource={clubs} testId="creator-clubs" />
-      {message === undefined ? null : (
-        <ErrorMessage testId="creator-clubs-error">{message}</ErrorMessage>
+    <>
+      <PageHeader
+        actions={
+          creator.canWrite ? (
+            <Button
+              data-testid="club-new"
+              icon="plus"
+              onClick={() => {
+                setCreating(true);
+              }}
+              tone="primary"
+            >
+              New club
+            </Button>
+          ) : undefined
+        }
+        lede="A club is a private space you admit people to yourself. It starts with nobody in it and stays invisible until you publish it."
+        title="Private clubs"
+      />
+
+      {!creator.settled || creator.canWrite ? null : (
+        <Notice
+          testId="clubs-read-only"
+          title="Read only for now"
+          tone="caution"
+        >
+          Your creator access cannot change clubs at the moment. Everything you
+          run is still listed below.
+        </Notice>
       )}
 
-      {editable ? (
-        <NewClub
-          busy={busy}
-          onCreate={(body) => {
-            act(async () => api.saveClub(body));
+      <Card flush testId="creator-clubs-list">
+        {clubs.error !== undefined && clubs.items.length === 0 ? (
+          <ErrorState
+            body={clubs.error}
+            onRetry={clubs.retryable ? clubs.reload : undefined}
+            testId="creator-clubs-failed"
+          />
+        ) : clubs.loading ? (
+          <RowSkeleton rows={3} />
+        ) : clubs.items.length === 0 ? (
+          <EmptyState
+            actions={
+              creator.canWrite ? (
+                <Button
+                  icon="plus"
+                  onClick={() => {
+                    setCreating(true);
+                  }}
+                  tone="primary"
+                >
+                  Create a club
+                </Button>
+              ) : undefined
+            }
+            body="Nobody joins a club by accident. You issue an invitation, and whoever holds it is admitted once."
+            icon="users"
+            testId="creator-clubs-empty"
+            title="No clubs yet"
+          />
+        ) : (
+          <ul className="s-list">
+            {clubs.items.map((club) => (
+              <li key={club.id}>
+                <ClubRow club={club} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {clubs.hasMore ? (
+        <Button
+          block
+          busy={clubs.loadingMore}
+          data-testid="clubs-load-more"
+          onClick={clubs.loadMore}
+        >
+          Load more
+        </Button>
+      ) : null}
+
+      {creating ? (
+        <NewClubDialog
+          onClose={() => {
+            setCreating(false);
           }}
         />
       ) : null}
-
-      {secret === undefined ? null : (
-        <div data-testid="club-invite-secret">
-          <p>
-            This invitation is shown once. Copy it now — it is not stored and
-            cannot be shown again.
-          </p>
-          <code>{secret}</code>
-        </div>
-      )}
-
-      {clubs.value === undefined ? null : clubs.value.clubs.length === 0 ? (
-        <EmptyState testId="creator-clubs-empty">
-          No clubs yet. A club starts with nobody in it and stays private until
-          you publish it.
-        </EmptyState>
-      ) : (
-        <ul data-testid="creator-clubs-list">
-          {clubs.value.clubs.map((club) => (
-            <ClubRow
-              busy={busy}
-              club={club}
-              editable={editable}
-              key={club.id}
-              onInvite={() => {
-                run(async () => {
-                  const result = await api.issueClubInvite(club.id);
-                  setMessage(failureMessage(result));
-                  setSecret(
-                    result.kind === 'ok' ? result.value.secret : undefined,
-                  );
-                  clubs.reload();
-                });
-              }}
-              onLifecycle={(lifecycle) => {
-                act(async () =>
-                  api.setClubLifecycle({
-                    clubId: club.id,
-                    lifecycle,
-                    version: club.version,
-                  }),
-                );
-              }}
-              onToggleAccess={() => {
-                setOpen(open === club.id ? undefined : club.id);
-              }}
-              open={open === club.id}
-            >
-              {open === club.id ? (
-                <ClubAccess
-                  api={api}
-                  busy={busy}
-                  clubId={club.id}
-                  editable={editable}
-                  onAct={act}
-                />
-              ) : null}
-            </ClubRow>
-          ))}
-        </ul>
-      )}
-    </Section>
+    </>
   );
 }
 
-function NewClub({
-  busy,
-  onCreate,
-}: {
-  readonly busy: boolean;
-  readonly onCreate: (body: {
-    readonly description?: string;
-    readonly name: string;
-    readonly slug: string;
-  }) => void;
-}) {
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [description, setDescription] = useState('');
-
+function ClubRow({ club }: { readonly club: CreatorClub }) {
+  const lifecycle = clubLifecycleLook(club.lifecycle);
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        onCreate({
-          ...(description.length === 0 ? {} : { description }),
-          name,
-          slug,
-        });
-        setName('');
-        setSlug('');
-        setDescription('');
-      }}
-    >
-      <label htmlFor="club-name">Name</label>
-      <input
-        data-testid="club-name"
-        id="club-name"
-        onChange={(event) => {
-          setName(event.target.value);
-        }}
-        value={name}
-      />
-
-      <label htmlFor="club-slug">Address</label>
-      <input
-        data-testid="club-slug"
-        id="club-slug"
-        onChange={(event) => {
-          setSlug(event.target.value);
-        }}
-        value={slug}
-      />
-      <p>
-        The address is fixed once the club exists, because it appears in links
-        people keep.
-      </p>
-
-      <label htmlFor="club-description">Description</label>
-      <input
-        data-testid="club-description"
-        id="club-description"
-        onChange={(event) => {
-          setDescription(event.target.value);
-        }}
-        value={description}
-      />
-
-      <button data-testid="club-create" disabled={busy} type="submit">
-        Create a draft club
-      </button>
-    </form>
-  );
-}
-
-function ClubRow({
-  busy,
-  children,
-  club,
-  editable,
-  onInvite,
-  onLifecycle,
-  onToggleAccess,
-  open,
-}: {
-  readonly busy: boolean;
-  readonly children?: ReactNode;
-  readonly club: CreatorClub;
-  readonly editable: boolean;
-  readonly onInvite: () => void;
-  readonly onLifecycle: (lifecycle: 'draft' | 'published' | 'closed') => void;
-  readonly onToggleAccess: () => void;
-  readonly open: boolean;
-}) {
-  return (
-    <li data-testid={`club-item-${club.id}`}>
-      <h3>{club.name}</h3>
-      {club.description === undefined ? null : <p>{club.description}</p>}
-      <p data-testid={`club-lifecycle-${club.id}`}>
-        {clubLifecycleLabels[club.lifecycle] ?? club.lifecycle}
-      </p>
-      {/*
-        Computed from live entitlements every time this page is read. It is a
-        real count of people who currently have access, and it is the only
-        number this surface shows.
-      */}
-      <p data-testid={`club-members-${club.id}`}>
-        {club.memberCount === 1
-          ? '1 member'
-          : `${String(club.memberCount)} members`}
-      </p>
-
-      {editable && club.lifecycle !== 'closed' ? (
-        <>
-          {club.lifecycle === 'draft' ? (
-            <button
-              data-testid={`club-publish-${club.id}`}
-              disabled={busy}
-              onClick={() => {
-                onLifecycle('published');
-              }}
-              type="button"
-            >
-              Publish
-            </button>
-          ) : (
-            <>
-              <button
-                data-testid={`club-unpublish-${club.id}`}
-                disabled={busy}
-                onClick={() => {
-                  onLifecycle('draft');
-                }}
-                type="button"
-              >
-                Return to draft
-              </button>
-              <button
-                data-testid={`club-invite-${club.id}`}
-                disabled={busy}
-                onClick={onInvite}
-                type="button"
-              >
-                Create a complimentary invitation
-              </button>
-            </>
-          )}
-          <button
-            data-testid={`club-close-${club.id}`}
-            disabled={busy}
-            onClick={() => {
-              onLifecycle('closed');
-            }}
-            type="button"
-          >
-            Close permanently
-          </button>
-        </>
-      ) : null}
-
-      {club.lifecycle === 'published' ? (
-        <button
-          aria-expanded={open}
-          data-testid={`club-access-${club.id}`}
-          onClick={onToggleAccess}
-          type="button"
+    <ListRow href={`/clubs/${club.id}`} testId={`club-item-${club.id}`}>
+      <span className="s-subheading s-wrap">{club.name}</span>
+      {club.description === undefined ? null : (
+        <span className="s-small s-muted s-wrap s-clamp-2">
+          {club.description}
+        </span>
+      )}
+      <span className="s-inline s-inline--tight">
+        <Badge
+          icon={lifecycle.icon}
+          testId={`club-lifecycle-${club.id}`}
+          tone={lifecycle.tone}
         >
-          {open ? 'Hide access' : 'Manage access'}
-        </button>
-      ) : null}
-      {children}
-    </li>
+          {lifecycle.label}
+        </Badge>
+        {/*
+          Computed from live entitlements every time this page is read. It is a
+          real count of people who currently have access, and it is the only
+          number this screen shows.
+        */}
+        <Chip icon="users">
+          <span data-testid={`club-members-${club.id}`}>
+            {plural(club.memberCount, 'member', 'members')}
+          </span>
+        </Chip>
+        <span className="s-caption s-quiet s-truncate">/{club.slug}</span>
+      </span>
+    </ListRow>
   );
 }
 
 /**
- * Who holds access to one club, and the invitations that could create more.
+ * Creating a club.
  *
- * A creator sees how many people hold access and can withdraw one. They do not
- * see who those people are: there is no name, no identifier, and no behaviour
- * here, because subscriber privacy is not a setting a creator turns off.
+ * In a dialog rather than at the top of the list, because it is an occasional
+ * act and a permanent form above a list of things is a form that dominates the
+ * screen a creator came to read. The address is fixed on creation and the
+ * dialog says so before anybody types it.
  */
-function ClubAccess({
-  api,
-  busy,
-  clubId,
-  editable,
-  onAct,
-}: {
-  readonly api: CreatorApi;
-  readonly busy: boolean;
-  readonly clubId: string;
-  readonly editable: boolean;
-  readonly onAct: (work: () => Promise<ApiResult<unknown>>) => void;
-}) {
-  const loadMembers = useCallback(
-    async () => api.clubMembers(clubId),
-    [api, clubId],
-  );
-  const loadInvites = useCallback(
-    async () => api.clubInvites(clubId),
-    [api, clubId],
-  );
-  const members = useResource<ClubMembershipList>(loadMembers);
-  const invites = useResource<ClubInviteList>(loadInvites);
+function NewClubDialog({ onClose }: { readonly onClose: () => void }) {
+  const api = useApi();
+  const router = useRouter();
+  const toast = useToast();
+  const { busy, run } = useSingleFlight();
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [touched, setTouched] = useState(false);
+  const [message, setMessage] = useState<string | undefined>(undefined);
 
-  const live = (members.value?.memberships ?? []).filter(
-    (entry) => entry.state === 'active',
-  );
-  const usable = (invites.value?.invites ?? []).filter(
-    (entry) => entry.redeemedAt === undefined && entry.revokedAt === undefined,
-  );
+  const trimmedName = name.trim();
+  const trimmedSlug = slug.trim();
+  const nameError =
+    !touched || trimmedName.length >= clubNameBounds.minimum
+      ? undefined
+      : 'Give the club a name of at least two characters.';
+  const slugError =
+    !touched || slugPattern.test(trimmedSlug)
+      ? undefined
+      : 'Use 3 to 40 letters, numbers, hyphens or underscores, starting and ending with a letter or number.';
+  const blocked =
+    trimmedName.length < clubNameBounds.minimum ||
+    !slugPattern.test(trimmedSlug) ||
+    description.length > clubDescriptionMaximum;
 
   return (
-    <div data-testid={`club-access-panel-${clubId}`}>
-      <ResourceState
-        resource={members}
-        testId={`club-members-list-${clubId}`}
-      />
+    <Dialog onClose={onClose} testId="club-create-dialog" title="New club">
+      <p className="s-small s-muted">
+        It is created as a draft. Nobody can see it or be admitted to it until
+        you publish it.
+      </p>
 
-      <h4>Access</h4>
-      {live.length === 0 ? (
-        <p data-testid={`club-no-members-${clubId}`}>
-          Nobody has access to this club yet.
-        </p>
-      ) : (
-        <ul>
-          {live.map((entry) => (
-            <li key={entry.id}>
-              {/*
-                Where the access came from, never a claim that money moved.
-                Today there is only one source it can be.
-              */}
-              <span data-testid={`club-member-source-${entry.id}`}>
-                {entry.source === 'creator_invite'
-                  ? 'Admitted by your invitation'
-                  : 'Admitted by the platform'}
-              </span>
-              {editable ? (
-                <button
-                  data-testid={`club-revoke-${entry.id}`}
-                  disabled={busy}
-                  onClick={() => {
-                    onAct(async () =>
-                      api.revokeClubMembership({
-                        clubId,
-                        membershipId: entry.id,
-                      }),
-                    );
-                    members.reload();
-                  }}
-                  type="button"
-                >
-                  Withdraw access
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+      {message === undefined ? null : (
+        <ErrorMessage testId="creator-clubs-error">{message}</ErrorMessage>
       )}
 
-      <h4>Unused invitations</h4>
-      {usable.length === 0 ? (
-        <p data-testid={`club-no-invites-${clubId}`}>No unused invitations.</p>
-      ) : (
-        <ul>
-          {usable.map((entry) => (
-            <li key={entry.id}>
-              <span>Expires {entry.expiresAt}</span>
-              {editable ? (
-                <button
-                  data-testid={`club-revoke-invite-${entry.id}`}
-                  disabled={busy}
-                  onClick={() => {
-                    onAct(async () =>
-                      api.revokeClubInvite({ clubId, inviteId: entry.id }),
-                    );
-                    invites.reload();
-                  }}
-                  type="button"
-                >
-                  Withdraw invitation
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      <form
+        className="s-stack s-stack--5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setTouched(true);
+          if (blocked) return;
+          run(async () => {
+            const result = await api.saveClub({
+              ...(description.trim().length === 0
+                ? {}
+                : { description: description.trim() }),
+              name: trimmedName,
+              slug: trimmedSlug,
+            });
+            const failure = failureMessage(result);
+            setMessage(failure);
+            if (!isOk(result)) return;
+            toast.show('Club created as a draft.', 'positive');
+            const created = result.value.clubs.find(
+              (club) => club.slug.toLowerCase() === trimmedSlug.toLowerCase(),
+            );
+            onClose();
+            if (created !== undefined) router.push(`/clubs/${created.id}`);
+          });
+        }}
+      >
+        <Field
+          count={{
+            length: trimmedName.length,
+            maximum: clubNameBounds.maximum,
+          }}
+          error={nameError}
+          label="Name"
+        >
+          {(control) => (
+            <TextInput
+              {...control}
+              data-testid="club-name"
+              maxLength={clubNameBounds.maximum}
+              name="name"
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+              value={name}
+            />
+          )}
+        </Field>
+
+        <Field
+          error={slugError}
+          hint="The address is fixed once the club exists, because it appears in links people keep."
+          label="Address"
+        >
+          {(control) => (
+            <TextInput
+              {...control}
+              autoCapitalize="none"
+              autoComplete="off"
+              data-testid="club-slug"
+              maxLength={40}
+              name="slug"
+              onChange={(event) => {
+                setSlug(event.target.value);
+              }}
+              placeholder="inner-circle"
+              spellCheck={false}
+              value={slug}
+            />
+          )}
+        </Field>
+
+        <Field
+          count={{
+            length: description.length,
+            maximum: clubDescriptionMaximum,
+          }}
+          hint="What somebody is joining. It appears on your public page."
+          label="Description"
+          optional
+        >
+          {(control) => (
+            <TextArea
+              {...control}
+              data-testid="club-description"
+              maxLength={clubDescriptionMaximum}
+              name="description"
+              onChange={(event) => {
+                setDescription(event.target.value);
+              }}
+              rows={3}
+              value={description}
+            />
+          )}
+        </Field>
+
+        <div className="s-dialog__actions">
+          <Button disabled={busy} onClick={onClose} tone="ghost">
+            Cancel
+          </Button>
+          <Button
+            busy={busy}
+            data-testid="club-create"
+            tone="primary"
+            type="submit"
+          >
+            Create a draft club
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
