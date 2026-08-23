@@ -38,6 +38,12 @@
   align-self: flex-start;
 }
 
+/* A legend indents itself by default, which puts it out of line with every
+   other label in the form it sits in. */
+.s-fieldset > legend {
+  padding: 0;
+}
+
 .s-form-actions {
   align-items: center;
   display: flex;
@@ -198,10 +204,22 @@
  * A row and its controls. The row is a link covering the whole item, so the
  * controls sit outside it rather than inside — a button nested in an anchor is
  * a control whose activation depends on which pixel was pressed.
+ *
+ * The divider therefore belongs to the pair rather than to the link, or it
+ * would stop where the link stops and leave the controls floating beside a
+ * line that does not reach them.
  */
 .s-item-row {
   display: flex;
   flex-direction: column;
+}
+
+.s-list > li + li > .s-item-row {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.s-item-row > .s-item-row__main > .s-row {
+  border-top: 0;
 }
 
 .s-item-row__main {
