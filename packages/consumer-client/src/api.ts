@@ -22,12 +22,14 @@ import type {
   Message,
   MessageList,
   NotificationList,
+  NotificationPreferenceList,
   OnboardingState,
   PolicyDocument,
   ProfileMediaUpload,
   Report,
   ReportList,
   SafetyStanding,
+  SaveNotificationPreferenceBody,
   SaveAvailabilityBody,
   SavePreferencesBody,
   SaveProfileBody,
@@ -174,6 +176,19 @@ export interface ConsumerApi {
     query: PageQuery,
     signal?: AbortSignal,
   ): Promise<ApiResult<NotificationList>>;
+  /**
+   * The delivery decisions this person can actually make.
+   *
+   * Only category and channel pairs the platform has an approved template for
+   * are returned, so a surface that renders the answer never offers a switch
+   * that does nothing.
+   */
+  notificationPreferences(
+    signal?: AbortSignal,
+  ): Promise<ApiResult<NotificationPreferenceList>>;
+  saveNotificationPreference(
+    body: SaveNotificationPreferenceBody,
+  ): Promise<ApiResult<NotificationPreferenceList>>;
   onboarding(signal?: AbortSignal): Promise<ApiResult<OnboardingState>>;
   openConversation(introductionId: string): Promise<ApiResult<Conversation>>;
   pass(candidateId: string): Promise<ApiResult<{ suppressedUntil: string }>>;
@@ -406,6 +421,19 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         api.GET('/v1/notifications', {
           ...(await reading(signal)),
           params: { query: pageParameters(query) },
+        }),
+      ),
+
+    notificationPreferences: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/notifications/preferences', await reading(signal)),
+      ),
+
+    saveNotificationPreference: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/notifications/preferences', {
+          ...(await writing()),
+          body,
         }),
       ),
 

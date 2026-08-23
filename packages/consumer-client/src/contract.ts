@@ -57,6 +57,27 @@ export type MessageList = JsonBody<'/v1/messaging/messages', 'get', 200>;
 export type Message = MessageList['messages'][number];
 export type NotificationList = JsonBody<'/v1/notifications', 'get', 200>;
 export type NotificationEntry = NotificationList['notifications'][number];
+
+/**
+ * What a person may decide about, and on what.
+ *
+ * The vocabulary is the platform's rather than the client's: a surface renders
+ * whatever pairs this returns instead of hard-coding a list of switches, so
+ * adding a category never means shipping a client to match. Mandatory classes —
+ * account security, safety, and legal notices — never appear, because they are
+ * not offers.
+ */
+export type NotificationPreferenceList = JsonBody<
+  '/v1/notifications/preferences',
+  'get',
+  200
+>;
+export type NotificationPreference =
+  NotificationPreferenceList['preferences'][number];
+export type SaveNotificationPreferenceBody = RequestBody<
+  '/v1/notifications/preferences',
+  'post'
+>;
 /**
  * One call, as the person in it is allowed to see it.
  *
