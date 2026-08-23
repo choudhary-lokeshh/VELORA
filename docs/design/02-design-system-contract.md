@@ -48,6 +48,8 @@ Handoff requires component inventory, state coverage, responsive examples, conte
 
 `DESIGN REQUIRED`: complete theme values, component inventory, chart/data-visualization system, icon/asset library, content templates, full responsive system, versioning process, and ownership beyond the approved Master checkpoint.
 
+Consumer Web is the one surface with an owner-authorised interim filling of those values, bounded and recorded in [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md). Its component layer, its icon set drawn at the approved 1.75 px stroke, and its responsive arrangements live in `apps/web` rather than in this contract, and an approved handoff supersedes them.
+
 ## Cross-references
 
 See [Figma source of truth](03-figma-source-of-truth.md), [responsive rules](04-responsive-platform-rules.md), [accessibility/motion](05-accessibility-motion.md), and [testing/release](../engineering/05-testing-release.md).

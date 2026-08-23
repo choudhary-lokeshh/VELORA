@@ -36,6 +36,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [RTC stability evidence](architecture/15-rtc-stability-evidence.md) | Twenty repeated runs of the non-deterministic gate stages before the RTC freeze, what was and was not repeated, and the three environment hazards each iteration enforces |
 | [RTC freeze report](architecture/16-rtc-freeze-report.md) | What the one-to-one voice and video core froze with, what still blocks a real call, and what unfreezes it |
 | [Notifications delivery freeze report](architecture/17-notifications-freeze-report.md) | What the production notification delivery platform froze with, the dated provider matrix behind it, the privacy and security answers in full, and the two independent blockers on each live channel — no approved vendor, and separately no email address anywhere and no native build pipeline |
+| [Consumer Web freeze report](architecture/18-consumer-web-freeze-report.md) | What the Consumer Web product interface froze with, the defects driving the real surface found, the responsive, accessibility, and performance evidence behind it, and which consumer capabilities are blocked on a provider or a legal decision rather than on client work |
 | [Product phases](product/01-product-phases.md) | Only authority for feature phase classification |
 | [Consumer product](product/02-consumer-product.md) | Consumer product scope and shared Web/Mobile behavior |
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
@@ -201,6 +202,7 @@ These are architecture/product gates, not legal advice:
 | [ADR-0023](decisions/ADR-0023-media-platform-architecture.md) | MEDIA as a domain owning bytes only, a technical lifecycle disjoint from publication, opaque server-generated keys, capability-bound direct upload, byte-derived inspection ahead of the decoder, in-process image processing, the bounded private-delivery revocation window, four distinct removal concepts, and fail-closed media configuration |
 | [ADR-0024](decisions/ADR-0024-identity-assurance-architecture.md) | Separate Identity Assurance domain, append-only evidence, provider-neutral hosted verification, verified callback inbox, reconciliation, fail-closed jurisdiction/re-verification policy, and owner re-authorization |
 | [ADR-0025](decisions/ADR-0025-rtc-live-communications-architecture.md) | REALTIME as owner of call sessions only, invitation/acceptance/authorization/connection as four separate facts, eligibility composed from owners at every step, participant-scoped short-lived join credentials bound to an authorization generation, provider events as verified observations that never grant permission, ephemeral signalling over durable lifecycle, no recorded media, and fail-closed RTC configuration |
+| [ADR-0027](decisions/ADR-0027-consumer-web-product-interface.md) | NIGHT CURRENT as the implemented Consumer expression of the approved Master Visual Language, bounded to `apps/web`; Consumer Web as dark-only; the five-destination consumer information architecture with calling reached from a mutual introduction; and the rule that no consumer surface states a fact the server did not publish |
 | [ADR-0026](decisions/ADR-0026-notification-delivery-platform.md) | NOTIFICATIONS as owner of delivery rather than of facts, addresses, or identities; category-driven preference with mandatory classes; deliverability observations keyed by destination generation; push tokens as credentials that are never identity; provider callbacks as verified observations that create nothing; normalized failure classes deciding retry; reconciliation outside transactions; and fail-closed delivery configuration |
 
 ## Technical implementation reading paths
@@ -208,7 +210,7 @@ These are architecture/product gates, not legal advice:
 Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](architecture/09-technical-stack.md), [product phases](product/01-product-phases.md), the owning surface/domain/flow, and relevant security/compliance authority.
 
 - Backend foundation: repository shape, domain boundaries, contracts/events, data ownership, configuration and environments, ADR-0016, then unaffected portions of ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0013, and ADR-0014.
-- Consumer Web bootstrap: Consumer Web surface, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
+- Consumer Web bootstrap: Consumer Web surface, Design/Figma authority, ADR-0016, ADR-0027, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Consumer Mobile bootstrap: Consumer Mobile surface, notification/deep-link authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
 - Creator Studio bootstrap: Creator Studio surface, creator/club domains and flows, Design/Figma authority, ADR-0016, ADR-0020, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0010, ADR-0013, ADR-0014, ADR-0015.
 - Platform Admin bootstrap: Platform Admin surface/domain/flow, RBAC, operations authority, Design/Figma authority, ADR-0016, unaffected portions of ADR-0003, ADR-0004, ADR-0005, ADR-0009, ADR-0013, ADR-0014, ADR-0015.
@@ -224,7 +226,7 @@ Every implementation path starts with [AGENTS](../AGENTS.md), [technical stack](
 
 ## Implementer reading paths
 
-- Consumer Web: phases, consumer product, Consumer Web surface, relevant domain/flow, Design/Figma set, security baseline, RBAC, privacy, API contracts, testing/release.
+- Consumer Web: phases, consumer product, Consumer Web surface, relevant domain/flow, Design/Figma set, ADR-0027 and the Consumer Web freeze report, security baseline, RBAC, privacy, API contracts, testing/release.
 - Consumer Mobile: phases, consumer product, Consumer Mobile surface, notification flow, relevant domain/flow, Design/Figma set, security baseline/RBAC/privacy, API contracts, testing/release.
 - Creator Studio/Private Clubs: phases, creator product, Creator Studio surface, CREATORS, PRIVATE CLUBS, creator lifecycle/entitlement, ADR-0020, media, billing/payout as applicable, creator compliance, Design/Figma.
 - Platform Admin: phases, Admin product/surface/domain, RBAC, Admin flow, relevant operations document, target domain, audit/observability, Design/Figma.

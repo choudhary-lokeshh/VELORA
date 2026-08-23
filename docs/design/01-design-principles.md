@@ -41,6 +41,8 @@ Approved shared DNA is a 4 px rhythm; restrained surfaces; IBM Plex Sans for int
 
 The approved checkpoint does not authorize invention of the remaining palette, full component system, product screens, responsive layouts, imagery assets, elevation details, or motion tokens. Those remain `DESIGN REQUIRED` until an approved Figma handoff specifies them.
 
+The Consumer dark expression is named NIGHT CURRENT and the Creator workspace expression WARM SIGNAL. NIGHT CURRENT is implemented in `apps/web` under [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md), which is an owner-authorised interim filling of the values above for one surface — not an approval of them for any other, and not a change to anything the Master already fixes.
+
 ## Cross-references
 
 See [design-system contract](02-design-system-contract.md), [Figma source of truth](03-figma-source-of-truth.md), [accessibility/motion](05-accessibility-motion.md), and [product surfaces](../DOCS_INDEX.md#product-surface-authority).

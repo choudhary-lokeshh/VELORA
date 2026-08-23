@@ -213,7 +213,7 @@ for anything a local run agrees with too easily.
 - **Email rendering and templates.** No email template exists, because no email destination can be resolved for anybody.
 - **Consumer Mobile push integration.** No native build pipeline, so no token can be issued to register.
 - **Creator Studio notification surface.** No creator notification event is product-authorized; inventing one to exercise the platform is exactly what the brief forbids.
-- **Consumer Web preference controls.** The preference API and its contract exist; the surface does not.
+- **Consumer Web preference controls.** Built after this freeze and recorded in the [Consumer Web freeze report](18-consumer-web-freeze-report.md): the surface renders exactly the category and channel pairs the server publishes, and states that nothing leaves the platform because no channel is approved. Nothing about delivery changed.
 - **Provider-drift reconciliation.** Comparing local state against provider state requires a provider to read from. The detectable local classes are surfaced as backlog ages and counts instead.
 - **SMS.** Not implemented. The channel vocabulary exists so a template can name a channel; nothing uses it.
 
