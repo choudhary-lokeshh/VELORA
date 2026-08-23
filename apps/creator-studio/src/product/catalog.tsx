@@ -114,6 +114,10 @@ export function Catalog() {
           lifecycle,
           version: item.version,
         }),
+        {
+          conflict:
+            'This item changed somewhere else since this page was loaded. Reload and try again.',
+        },
       );
       setMessage(failure);
       if (failure === undefined) toast.show(confirmation, 'positive');
@@ -181,7 +185,7 @@ export function Catalog() {
             onRetry={catalog.retryable ? catalog.reload : undefined}
             testId="creator-content-failed"
           />
-        ) : catalog.loading ? (
+        ) : catalog.loading && catalog.items.length === 0 ? (
           <RowSkeleton rows={4} />
         ) : catalog.items.length === 0 ? (
           <EmptyState

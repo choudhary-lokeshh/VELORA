@@ -117,11 +117,37 @@ describe('failure messages', () => {
       kind: 'refused',
       status: 409,
     });
-    // A conflict covers a taken handle, a stale edit, and a capability that may
-    // not act. The server does not say which, so neither does this.
-    expect(conflict).toContain('unavailable');
+    // A conflict covers something already taken, a stale edit, and a capability
+    // that may not act. The server does not say which, so neither does this —
+    // and it never names who took the thing.
+    expect(conflict).toContain('already taken');
+    expect(conflict).toContain('changed somewhere else');
     expect(conflict).toContain('Reload');
     expect(conflict).not.toContain('taken by');
+    expect(conflict).not.toContain('handle');
+  });
+
+  /**
+   * A caller that knows which two things a conflict could be *on its screen*
+   * may say so. A club form talking about a handle would be wrong about the
+   * noun while still being right about the ambiguity, which is the worst of
+   * both.
+   */
+  it('lets a caller name the nouns without naming the cause', () => {
+    const conflict = failureMessage(
+      { code: 'STATE_CONFLICT', kind: 'refused', status: 409 },
+      { conflict: 'That address already belongs to one of your clubs.' },
+    );
+    expect(conflict).toBe('That address already belongs to one of your clubs.');
+
+    // The override applies to a conflict and to nothing else, so a refusal for
+    // a different reason still reads as that reason.
+    expect(
+      failureMessage(
+        { code: 'RATE_LIMITED', kind: 'refused', status: 429 },
+        { conflict: 'That address already belongs to one of your clubs.' },
+      ),
+    ).toContain('Too many attempts');
   });
 
   it('falls back to one honest sentence for a code it does not know', () => {

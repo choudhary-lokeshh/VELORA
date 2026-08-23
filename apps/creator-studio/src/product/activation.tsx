@@ -42,6 +42,14 @@ export function Activation() {
   const creator = useCreator();
   const onboarding = creator.onboarding.value;
 
+  // Answered once rather than answered now, for the same reason the public
+  // page screen keeps its form: a failed activation re-reads, and a placeholder
+  // in that window would unmount the card the refusal was written on.
+  const answered =
+    onboarding !== undefined ||
+    creator.onboarding.missing ||
+    creator.onboarding.error !== undefined;
+
   if (creator.onboarding.error !== undefined) {
     return (
       <EntryLayout>
@@ -59,7 +67,7 @@ export function Activation() {
     );
   }
 
-  if (!creator.settled && onboarding === undefined) {
+  if (!answered) {
     return (
       <EntryLayout>
         <Card testId="activation-loading">

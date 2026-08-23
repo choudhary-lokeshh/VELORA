@@ -123,7 +123,7 @@ export function Selling() {
             onRetry={offers.retryable ? offers.reload : undefined}
             testId="offers-failed"
           />
-        ) : offers.loading ? (
+        ) : offers.loading && offers.items.length === 0 ? (
           <RowSkeleton rows={2} />
         ) : offers.items.length === 0 ? (
           <EmptyState

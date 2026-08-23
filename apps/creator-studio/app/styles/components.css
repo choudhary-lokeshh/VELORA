@@ -318,8 +318,13 @@
   border-color: var(--border-strong);
 }
 
+/*
+ * A focused field takes the approved 2 px ring and a stronger neutral edge.
+ * Not the brand colour: a lone red-edged input reads as an invalid one, and
+ * this surface already spends a red on saying exactly that.
+ */
 .s-control:focus-visible {
-  border-color: var(--ember-ink);
+  border-color: var(--border-strong);
 }
 
 .s-control:disabled {

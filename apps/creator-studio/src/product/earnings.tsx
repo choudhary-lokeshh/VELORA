@@ -232,7 +232,7 @@ function HistoryCard({
           onRetry={history.retryable ? history.reload : undefined}
           testId="earnings-history-failed"
         />
-      ) : history.loading ? (
+      ) : history.loading && history.items.length === 0 ? (
         <RowSkeleton rows={3} />
       ) : history.items.length === 0 ? (
         <EmptyState

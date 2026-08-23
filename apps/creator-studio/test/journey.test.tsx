@@ -471,6 +471,43 @@ describe('the public page', () => {
     ).toContain('Reload and try again');
   });
 
+  /**
+   * A refused save is exactly when somebody most needs to still be looking at
+   * what they wrote.
+   */
+  it('keeps what was typed, and says why, when a handle is already taken', async () => {
+    const double = createCreatorApiDouble({
+      ...activeCreatorState(),
+      takenHandles: ['embervale'],
+    });
+    renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
+
+    fireEvent.change(await screen.findByTestId('creator-handle'), {
+      target: { value: 'embervale' },
+    });
+    fireEvent.change(screen.getByTestId('creator-display-name'), {
+      target: { value: 'Ember Vale' },
+    });
+    fireEvent.change(screen.getByTestId('creator-bio'), {
+      target: { value: 'Ceramics, slowly.' },
+    });
+    fireEvent.click(screen.getByTestId('creator-save-profile'));
+
+    expect(
+      (await screen.findByTestId('creator-profile-error')).textContent,
+    ).toContain('already taken');
+    // The re-read that follows a refusal must not take the form with it.
+    expect(screen.getByTestId<HTMLInputElement>('creator-handle').value).toBe(
+      'embervale',
+    );
+    expect(
+      screen.getByTestId<HTMLInputElement>('creator-display-name').value,
+    ).toBe('Ember Vale');
+    expect(screen.getByTestId<HTMLTextAreaElement>('creator-bio').value).toBe(
+      'Ceramics, slowly.',
+    );
+  });
+
   it('says a picture cannot be added, and why it is not the creator’s problem', async () => {
     const double = createCreatorApiDouble(withProfile());
     renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
@@ -641,6 +678,35 @@ describe('the catalog', () => {
     );
     await waitFor(() => {
       expect(textOf('content-lifecycle-content-1')).toContain('Archived');
+    });
+  });
+
+  /**
+   * A list that blanked while it re-read would punish somebody for the app
+   * being careful, and would move the row under a finger already on its way to
+   * the next control.
+   */
+  it('keeps the list on the screen while it re-reads after a change', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        content: [
+          {
+            id: 'content-1',
+            lifecycle: 'draft',
+            title: 'A first post',
+            version: 1,
+            visibility: 'public',
+          },
+        ],
+      }),
+    );
+    renderStudio(<Catalog />, double, { pathname: '/catalog' });
+
+    fireEvent.click(await screen.findByTestId('content-publish-content-1'));
+    // Still there, mid-flight, rather than replaced by placeholders.
+    expect(screen.getByTestId('content-item-content-1')).toBeDefined();
+    await waitFor(() => {
+      expect(textOf('content-lifecycle-content-1')).toContain('Published');
     });
   });
 
@@ -994,6 +1060,81 @@ describe('private clubs', () => {
     const dialog = await screen.findByTestId('club-close-confirm');
     expect(dialog.textContent).toContain('cannot be undone');
     expect(dialog.textContent).toContain('2 people currently hold access');
+  });
+});
+
+describe('a creator whose capability may not operate', () => {
+  /** Active in every respect except the one the server refuses. */
+  function suspended(): CreatorApiDoubleState {
+    const base = withProfile();
+    return {
+      ...base,
+      account: {
+        activatedAt: '2026-08-15T12:00:00.000Z',
+        createdAt: '2026-08-15T12:00:00.000Z',
+        id: 'creator',
+        status: 'suspended',
+        statusReason: 'safety_enforcement',
+      },
+      content: [
+        {
+          id: 'content-1',
+          lifecycle: 'published',
+          title: 'A first post',
+          version: 1,
+          visibility: 'public',
+        },
+      ],
+    };
+  }
+
+  it('still shows the catalog, and offers none of the controls the server would refuse', async () => {
+    const double = createCreatorApiDouble(suspended());
+    renderStudio(<Catalog />, double, { pathname: '/catalog' });
+
+    // Theirs, and still listed.
+    expect(await screen.findByTestId('content-item-content-1')).toBeDefined();
+    expect(screen.queryByTestId('content-new')).toBeNull();
+    expect(screen.queryByTestId('content-unpublish-content-1')).toBeNull();
+    expect(screen.queryByTestId('content-archive-content-1')).toBeNull();
+    expect(
+      (await screen.findByTestId('catalog-read-only')).textContent,
+    ).toContain('Read only');
+  });
+
+  it('says what happened on Home without explaining a safety decision', async () => {
+    const double = createCreatorApiDouble(suspended());
+    renderStudio(<Home />, double, { pathname: '/home' });
+
+    const notice = await screen.findByTestId('home-standing');
+    expect(notice.textContent).toContain('following a safety decision');
+    expect(notice.textContent).toContain('still yours');
+    // No case, no score, no reviewer, no evidence.
+    for (const forbidden of ['case', 'score', 'reviewer', 'report']) {
+      expect(notice.textContent.toLowerCase()).not.toContain(forbidden);
+    }
+  });
+
+  it('keeps the money readouts, because the money is still owed', async () => {
+    const double = createCreatorApiDouble({
+      ...suspended(),
+      earnings: [
+        {
+          currency: 'EUR',
+          disputed: '0',
+          gross: '5000',
+          payable: '4000',
+          platform: '1000',
+          reversed: '0',
+          tax: '0',
+        },
+      ],
+    });
+    renderStudio(<Earnings />, double, { pathname: '/money' });
+
+    expect(
+      (await screen.findByTestId('earnings-EUR-gross')).textContent,
+    ).toContain('50.00 EUR');
   });
 });
 

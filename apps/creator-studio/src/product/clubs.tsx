@@ -108,7 +108,7 @@ export function Clubs() {
             onRetry={clubs.retryable ? clubs.reload : undefined}
             testId="creator-clubs-failed"
           />
-        ) : clubs.loading ? (
+        ) : clubs.loading && clubs.items.length === 0 ? (
           <RowSkeleton rows={3} />
         ) : clubs.items.length === 0 ? (
           <EmptyState
@@ -256,7 +256,10 @@ function NewClubDialog({ onClose }: { readonly onClose: () => void }) {
               name: trimmedName,
               slug: trimmedSlug,
             });
-            const failure = failureMessage(result);
+            const failure = failureMessage(result, {
+              conflict:
+                'That address already belongs to one of your clubs. Choose another one.',
+            });
             setMessage(failure);
             if (!isOk(result)) return;
             toast.show('Club created as a draft.', 'positive');

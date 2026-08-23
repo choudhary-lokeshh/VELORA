@@ -41,7 +41,7 @@ Approved shared DNA is a 4 px rhythm; restrained surfaces; IBM Plex Sans for int
 
 The approved checkpoint does not authorize invention of the remaining palette, full component system, product screens, responsive layouts, imagery assets, elevation details, or motion tokens. Those remain `DESIGN REQUIRED` until an approved Figma handoff specifies them.
 
-The Consumer dark expression is named NIGHT CURRENT and the Creator workspace expression WARM SIGNAL. NIGHT CURRENT is implemented in `apps/web` under [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md), which is an owner-authorised interim filling of the values above for one surface — not an approval of them for any other, and not a change to anything the Master already fixes.
+The Consumer dark expression is named NIGHT CURRENT and the Creator workspace expression WARM SIGNAL. NIGHT CURRENT is implemented in `apps/web` under [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md) and WARM SIGNAL in `apps/creator-studio` under [ADR-0028](../decisions/ADR-0028-creator-studio-product-interface.md). Each is an owner-authorised interim filling of the values above for one surface — not an approval of them for any other, and not a change to anything the Master already fixes. The two share the approved DNA and nothing else: separate tokens, separate components, separate icon sets, because `AGENTS.md` keeps the surfaces separate and a consumer feed and a creator workspace do not want the same things.
 
 ## Cross-references
 

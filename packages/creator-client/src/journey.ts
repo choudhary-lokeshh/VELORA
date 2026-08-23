@@ -129,8 +129,16 @@ export const publicationLabels: Readonly<
  * reads as a conflict, because the server deliberately does not say whether a
  * handle was taken, an edit was stale, or a capability may not act — and a
  * client that guessed would be creating the disclosure the server withheld.
+ *
+ * `conflict` lets a caller name the two things a conflict could be *on that
+ * screen* without narrowing which one happened. A club form saying a handle was
+ * unavailable would be wrong about the noun while still being right about the
+ * ambiguity, which is the worst of both.
  */
-export function failureMessage(result: ApiResult<unknown>): string | undefined {
+export function failureMessage(
+  result: ApiResult<unknown>,
+  copy: { readonly conflict?: string } = {},
+): string | undefined {
   switch (result.kind) {
     case 'ok': {
       return undefined;
@@ -145,6 +153,9 @@ export function failureMessage(result: ApiResult<unknown>): string | undefined {
       return 'VELORA could not be reached. Try again.';
     }
     default: {
+      if (result.code === 'STATE_CONFLICT' && copy.conflict !== undefined) {
+        return copy.conflict;
+      }
       return refusalMessages[result.code] ?? 'That is not possible right now.';
     }
   }
@@ -159,7 +170,7 @@ const refusalMessages: Readonly<Record<string, string>> = {
     'That is not available in this environment yet. Nothing was lost.',
   RATE_LIMITED: 'Too many attempts. Wait a moment and try again.',
   STATE_CONFLICT:
-    'That handle is unavailable, or the profile changed while you were editing. Reload and try again.',
+    'That is already taken, or it changed somewhere else while you were working. Reload and try again.',
   VALIDATION_FAILED: 'Check the details and try again.',
 };
 

@@ -36,6 +36,17 @@ test.describe('Creator Studio journey', () => {
     ({ browserName }) => skipWhenCookieRequiresHttps(browserName),
     cookieSkipReason,
   );
+  /*
+   * Longer than the default, because these are the only tests that drive two
+   * surfaces. One of them signs a person in on Consumer Web, walks the whole
+   * admission ladder, activates a creator on a second origin with a second
+   * cookie, claims a handle, publishes, creates and publishes a club, issues an
+   * invitation, opens a third browser context for a second person, and redeems
+   * it. Thirty seconds is a bound on how busy the machine is rather than on
+   * whether the product works, and a bound like that fails the suite for the
+   * wrong reason.
+   */
+  test.describe.configure({ timeout: 120_000 });
 
   test('carries one person from adult declaration to a public creator page', async ({
     page,

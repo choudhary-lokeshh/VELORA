@@ -278,6 +278,15 @@
     display: none;
   }
 
+  /*
+   * On the pages that keep the bar, it keeps only the way back. The page's own
+   * heading is directly beneath it, and printing the same words twice is not a
+   * second piece of information.
+   */
+  .s-topbar__title {
+    display: none;
+  }
+
   .s-topbar__brand,
   .s-topbar__account {
     display: none;

@@ -75,6 +75,30 @@ export function ProfileScreen() {
   const creator = useCreator();
   const profile = creator.profile.value;
 
+  /*
+   * Answered once, rather than answered right now.
+   *
+   * Every save re-reads, and a screen that fell back to a placeholder while a
+   * re-read was in flight would unmount the form — taking the creator's typing
+   * and the refusal it was just told about with it. A refused save is exactly
+   * when somebody most needs to still be looking at what they wrote.
+   */
+  const answered =
+    profile !== undefined ||
+    creator.profile.missing ||
+    creator.profile.error !== undefined;
+
+  if (!answered) {
+    return (
+      <>
+        <PageHeader title="Public page" />
+        <Card testId="creator-profile-loading">
+          <CardSkeleton rows={4} />
+        </Card>
+      </>
+    );
+  }
+
   if (creator.profile.error !== undefined && profile === undefined) {
     return (
       <>
@@ -85,17 +109,6 @@ export function ProfileScreen() {
             onRetry={creator.profile.retryable ? creator.reloadAll : undefined}
             testId="creator-profile-failed"
           />
-        </Card>
-      </>
-    );
-  }
-
-  if (!creator.settled && profile === undefined) {
-    return (
-      <>
-        <PageHeader title="Public page" />
-        <Card testId="creator-profile-loading">
-          <CardSkeleton rows={4} />
         </Card>
       </>
     );
@@ -201,7 +214,12 @@ function ProfileEditor({
         })),
         ...(profile === undefined ? {} : { version: profile.version }),
       });
-      const failure = failureMessage(result);
+      const failure = failureMessage(result, {
+        conflict:
+          profile === undefined
+            ? 'That handle is already taken. Choose another one.'
+            : 'Your page changed somewhere else while you were editing. Reload and try again.',
+      });
       setMessage(failure);
       if (failure === undefined) {
         toast.show(
@@ -442,6 +460,10 @@ function PublicationCard({ profile }: { readonly profile: CreatorProfile }) {
                     publication: published ? 'draft' : 'published',
                     version: profile.version,
                   }),
+                  {
+                    conflict:
+                      'Your page changed somewhere else since this page was loaded. Reload and try again.',
+                  },
                 );
                 setMessage(failure);
                 if (failure === undefined) {

@@ -233,7 +233,10 @@ function ContentEditor({
         title: trimmedTitle,
         visibility: audience,
       });
-      const failure = failureMessage(result);
+      const failure = failureMessage(result, {
+        conflict:
+          'This item changed somewhere else since you opened it. Reload and try again.',
+      });
       setMessage(failure);
       if (!isOk(result)) return;
       toast.show(item === undefined ? 'Draft saved.' : 'Saved.', 'positive');
@@ -263,6 +266,10 @@ function ContentEditor({
           lifecycle,
           version: item.version,
         }),
+        {
+          conflict:
+            'This item changed somewhere else since you opened it. Reload and try again.',
+        },
       );
       setMessage(failure);
       if (failure === undefined) {
