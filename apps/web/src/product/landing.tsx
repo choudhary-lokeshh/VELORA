@@ -45,6 +45,12 @@ const points: readonly Point[] = [
 export function Landing() {
   return (
     <div className="v-landing">
+      {/*
+        Outside the hero on purpose. The hero is a bounded reading column, and a
+        wash anchored to it stops at that column's edge — which reads as a panel
+        somebody forgot to style rather than as light.
+      */}
+      <div className="v-landing__glow" />
       <header className="v-landing__bar">
         <Link className="v-wordmark" href="/">
           <Icon name="sparkle" size="md" />
@@ -60,7 +66,6 @@ export function Landing() {
       </header>
 
       <main className="v-landing__hero" id="main">
-        <div className="v-landing__glow" />
         <div className="v-landing__copy">
           <p className="v-label v-accent">Adults only</p>
           <h1 className="v-display">Meet people who said yes too.</h1>
