@@ -201,7 +201,7 @@ export function Discovery() {
       />
 
       {view === 'available' ? null : (
-        <div style={{ marginBottom: 'var(--space-6)' }}>
+        <div className="v-lede-gap">
           <Notice
             icon="clock"
             testId="discovery-availability"
@@ -220,10 +220,7 @@ export function Discovery() {
       )}
 
       {error === undefined ? null : (
-        <div
-          className="v-stack v-stack--3"
-          style={{ marginBottom: 'var(--space-6)' }}
-        >
+        <div className="v-stack v-stack--3 v-lede-gap">
           <ErrorMessage testId="discovery-failed">{error}</ErrorMessage>
           {retryable ? (
             <div>
@@ -320,7 +317,7 @@ export function Discovery() {
       )}
 
       {feed.exhausted || feed.cursor === undefined ? null : (
-        <div style={{ marginTop: 'var(--space-8)', textAlign: 'center' }}>
+        <div className="v-continue">
           <Button
             busy={loading}
             data-testid="discovery-more"

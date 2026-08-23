@@ -151,12 +151,7 @@ export function AppShell({
             </Link>
           )}
           <p className="v-topbar__title v-subheading v-truncate">{title}</p>
-          <Link
-            aria-label="Your account"
-            className="v-icon-btn"
-            href="/you"
-            style={{ color: 'var(--text-secondary)' }}
-          >
+          <Link aria-label="Your account" className="v-icon-btn" href="/you">
             <Avatar displayName={displayName} size="xs" />
           </Link>
         </header>

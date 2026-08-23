@@ -62,9 +62,7 @@ export function Landing() {
       <main className="v-landing__hero" id="main">
         <div className="v-landing__glow" />
         <div className="v-landing__copy">
-          <p className="v-label" style={{ color: 'var(--ember)' }}>
-            Adults only
-          </p>
+          <p className="v-label v-accent">Adults only</p>
           <h1 className="v-display">Meet people who said yes too.</h1>
           <p className="v-landing__lede">
             VELORA introduces two adults only when both of them want it. You

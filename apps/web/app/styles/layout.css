@@ -474,3 +474,18 @@
 .v-spread {
   flex: 1;
 }
+
+.v-inline--nowrap {
+  flex-wrap: nowrap;
+}
+
+/* The gap between a page's opening statement and the first thing under it. */
+.v-lede-gap {
+  margin-bottom: var(--space-6);
+}
+
+/* A centred continuation control at the end of a list. */
+.v-continue {
+  margin-top: var(--space-8);
+  text-align: center;
+}

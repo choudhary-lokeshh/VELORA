@@ -132,7 +132,7 @@ export function Notifications() {
         title="Notices"
       />
 
-      <div style={{ marginBottom: 'var(--space-6)' }}>
+      <div className="v-lede-gap">
         <Notice
           icon="info"
           testId="notifications-delivery"
@@ -187,7 +187,7 @@ export function Notifications() {
       )}
 
       {cursor === undefined ? null : (
-        <div style={{ marginTop: 'var(--space-6)', textAlign: 'center' }}>
+        <div className="v-continue">
           <Button
             busy={loadingMore}
             data-testid="notifications-more"
@@ -243,7 +243,7 @@ function NotificationRow({
         <Icon name={shown.icon} size="md" />
       </span>
       <span className="v-notification__body">
-        <span style={{ fontWeight: unread ? 600 : 400 }}>{shown.text}</span>
+        <span>{shown.text}</span>
         <span className="v-caption v-quiet">
           <time dateTime={entry.createdAt}>
             {formatRelative(entry.createdAt)}
@@ -288,7 +288,6 @@ function NotificationRow({
       data-testid={`notification-${entry.id}`}
       href={destination}
       onClick={onRead}
-      style={{ color: 'inherit', textDecoration: 'none' }}
     >
       {body}
     </Link>

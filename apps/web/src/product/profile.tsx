@@ -72,7 +72,7 @@ export function You() {
       <PageHeader title="You" />
 
       {standing === 'restricted' ? (
-        <div style={{ marginBottom: 'var(--space-6)' }}>
+        <div className="v-lede-gap">
           {/*
             Said once, to the account it describes, in the coarse terms the
             server publishes. No enforcement detail and no appeal invented here.

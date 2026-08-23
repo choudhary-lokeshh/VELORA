@@ -520,6 +520,11 @@
   align-self: flex-end;
 }
 
+/* In flight. The transcript says so, so the bubble only has to look unsettled. */
+.v-message--sending .v-message__bubble {
+  opacity: 0.6;
+}
+
 .v-message__bubble {
   border-radius: var(--radius-lg);
   min-width: 0;

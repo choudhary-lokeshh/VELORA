@@ -128,7 +128,7 @@ export function Introductions() {
         title="Introductions"
       />
 
-      <div style={{ marginBottom: 'var(--space-6)' }}>
+      <div className="v-lede-gap">
         <Segmented
           label="Which introductions"
           onChange={setGroup}

@@ -145,6 +145,7 @@ export function ConversationsList({
               current={row.id === selectedId}
               href={`/messages/${row.id}`}
               testId={`conversation-${row.id}`}
+              unread={unread}
             >
               <Avatar
                 displayName={row.counterpart.displayName}
@@ -153,10 +154,7 @@ export function ConversationsList({
               />
               <span className="v-row__body">
                 <span className="v-row__title">
-                  <span
-                    className="v-truncate"
-                    style={{ fontWeight: unread ? 600 : 500 }}
-                  >
+                  <span className="v-truncate">
                     {row.counterpart.displayName}
                   </span>
                   <span className="v-row__meta">
@@ -475,10 +473,7 @@ function Thread({
           </p>
           {closed ? <p className="v-caption v-quiet">Closed</p> : null}
         </div>
-        <div
-          className="v-inline v-inline--tight"
-          style={{ flexWrap: 'nowrap' }}
-        >
+        <div className="v-inline v-inline--tight v-inline--nowrap">
           <PersonSafetyMenu
             onBlocked={onChanged}
             person={{
@@ -551,13 +546,12 @@ function Thread({
 
         {pending === undefined ? null : (
           <div
-            className="v-message v-message--mine"
+            className={`v-message v-message--mine${
+              pending.state === 'sending' ? ' v-message--sending' : ''
+            }`}
             data-testid="message-pending"
           >
-            <div
-              className="v-message__bubble"
-              style={{ opacity: pending.state === 'sending' ? 0.6 : 1 }}
-            >
+            <div className="v-message__bubble">
               <p className="v-wrap">{pending.body}</p>
             </div>
             <div className="v-message__meta">

@@ -705,6 +705,7 @@ export function ListRow({
   href,
   onClick,
   testId,
+  unread = false,
 }: {
   readonly aside?: ReactNode;
   readonly children: ReactNode;
@@ -712,10 +713,18 @@ export function ListRow({
   readonly href?: string;
   readonly onClick?: () => void;
   readonly testId?: string;
+  /** Something in this row has not been read. Never the only cue. */
+  readonly unread?: boolean;
 }) {
-  const className = `v-row${
-    href === undefined && onClick === undefined ? '' : ' v-row--interactive'
-  }`;
+  const className = [
+    'v-row',
+    href === undefined && onClick === undefined
+      ? undefined
+      : 'v-row--interactive',
+    unread ? 'v-row--unread' : undefined,
+  ]
+    .filter((value) => value !== undefined)
+    .join(' ');
   const content = (
     <>
       {children}
@@ -732,7 +741,6 @@ export function ListRow({
         className={className}
         data-testid={testId}
         href={href}
-        style={{ color: 'inherit', textDecoration: 'none' }}
       >
         {content}
       </Link>
