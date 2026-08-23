@@ -1,0 +1,137 @@
+/*
+ * The screens.
+ *
+ * Everything here composes the primitives above into one console, and every
+ * value it uses is a token. A class earns a place in this file when the same
+ * arrangement appears on more than one screen or when it carries a decision —
+ * never to hold a one-off margin, which belongs to the stack utilities.
+ */
+
+/* ============================== Sub-navigation ======================= */
+
+/*
+ * The four platform subsystems, as four addresses. They are links rather than
+ * tabs because each is a page an operator may bookmark, send to a colleague, or
+ * reach with the browser's Back — and a tab that looked identical but lived in
+ * component state would take all three away.
+ */
+.a-subnav {
+  align-self: flex-start;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1);
+}
+
+.a-subnav__item {
+  align-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.a-subnav__item:hover {
+  color: var(--text-primary);
+}
+
+.a-subnav__item[aria-current='page'] {
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+}
+
+/* ================================ Search ============================= */
+
+/*
+ * The one search on the surface, and it searches handles. It is laid out as a
+ * field with its controls beside it rather than as a bare box, because the hint
+ * under it — that only the beginning of a handle is matched — is the part that
+ * stops an operator typing a name and concluding somebody does not exist.
+ */
+.a-search {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.a-search > .a-field {
+  flex: 1;
+  min-width: 14rem;
+}
+
+/* =============================== Fieldsets =========================== */
+
+.a-fieldset {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.a-fieldset > legend {
+  padding: 0;
+}
+
+/* ================================ Quotes ============================= */
+
+/*
+ * What somebody wrote when they filed a report, kept visually apart from the
+ * platform's own words. An operator has to be able to tell a report from a
+ * finding at a glance, and indentation is the oldest way of saying "these are
+ * not my words".
+ */
+.a-quote {
+  border-left: 2px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+/* ================================ Lists ============================== */
+
+.a-door-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-inline-start: var(--space-4);
+}
+
+.a-door-list > li {
+  list-style: disc;
+}
+
+/* ============================== Skeletons ============================ */
+
+/*
+ * A placeholder row is the height of a real one, so the table does not move
+ * when the answer arrives. A table that moves under a cursor is a table where
+ * the wrong row gets opened, and on this surface opening the wrong row means
+ * reading somebody else's case.
+ */
+.a-skeleton-row {
+  align-items: center;
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  min-height: var(--row-height);
+}
+
+.a-skeleton-row:last-child {
+  border-bottom: 0;
+}

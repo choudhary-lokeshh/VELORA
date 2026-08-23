@@ -1,0 +1,1000 @@
+/*
+ * The console's component surface, built entirely from the token contract.
+ *
+ * No literal colour, radius, duration, or spacing value appears below. Every
+ * one is a token, so reconciling this surface with an approved Figma handoff is
+ * a change to one stylesheet rather than a search through components.
+ *
+ * The defining component here is the table. The other two VELORA surfaces are
+ * built out of cards because they show one thing at a time; this one is built
+ * out of rows because an operator's question is almost always "which of these
+ * is different from the others".
+ */
+
+/* ============================== Rhythm =============================== */
+
+.a-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.a-stack--1 {
+  gap: var(--space-1);
+}
+.a-stack--2 {
+  gap: var(--space-2);
+}
+.a-stack--3 {
+  gap: var(--space-3);
+}
+.a-stack--4 {
+  gap: var(--space-4);
+}
+.a-stack--5 {
+  gap: var(--space-5);
+}
+.a-stack--6 {
+  gap: var(--space-6);
+}
+.a-stack--8 {
+  gap: var(--space-8);
+}
+
+.a-inline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.a-inline--tight {
+  gap: var(--space-2);
+}
+
+.a-inline--between {
+  justify-content: space-between;
+  width: 100%;
+}
+
+/*
+ * Panels that fill the width they are given and wrap when they cannot. A
+ * console's dashboard is a set of independent readouts, so `auto-fit` rather
+ * than a fixed count: the same declaration gives one column on a tablet and
+ * three on a wide desktop without a breakpoint per step.
+ */
+.a-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
+}
+
+.a-grid--narrow {
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+}
+
+/* A working column and a supporting one, collapsing to one below the desktop. */
+.a-split {
+  align-items: start;
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (width >= 64rem) {
+  .a-split {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+/* ============================== Buttons ============================== */
+
+.a-btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  gap: var(--space-2);
+  justify-content: center;
+  line-height: 1;
+  min-height: var(--control-height);
+  padding-inline: var(--space-4);
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.a-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.a-btn--primary {
+  background: var(--ember);
+  color: var(--text-on-accent);
+}
+
+.a-btn--primary:not(:disabled):hover {
+  background: var(--ember-ink);
+}
+.a-btn--primary:not(:disabled):active {
+  background: var(--ember-deep);
+}
+
+.a-btn--secondary {
+  background: var(--surface-1);
+  border-color: var(--border-soft);
+  color: var(--text-primary);
+}
+
+.a-btn--secondary:not(:disabled):hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.a-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.a-btn--ghost:not(:disabled):hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/*
+ * A destructive operation. This is the only surface in the product where one
+ * exists, so it is stated rather than implied: a filled critical face, not a
+ * quiet outline that reads like every other secondary control on the row.
+ */
+.a-btn--danger {
+  background: var(--status-critical);
+  color: var(--text-on-accent);
+}
+
+.a-btn--danger:not(:disabled):hover {
+  filter: brightness(0.92);
+}
+
+.a-btn--sm {
+  font-size: var(--text-caption-size);
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-3);
+}
+
+.a-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+.a-btn__spinner {
+  animation: a-spin 700ms linear infinite;
+  border: 2px solid currentcolor;
+  border-radius: var(--radius-pill);
+  border-top-color: transparent;
+  display: block;
+  height: var(--icon-sm);
+  width: var(--icon-sm);
+}
+
+@keyframes a-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.a-icon-btn {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  height: var(--control-height);
+  justify-content: center;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+  width: var(--control-height);
+}
+
+.a-icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.a-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.a-icon-btn--sm {
+  height: var(--control-height-sm);
+  width: var(--control-height-sm);
+}
+
+/* =============================== Forms =============================== */
+
+.a-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.a-field__label {
+  color: var(--text-primary);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  line-height: var(--text-small-line);
+}
+
+.a-field__optional {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.a-field__hint {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.a-field__error {
+  align-items: center;
+  color: var(--status-critical);
+  display: flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-2);
+  line-height: var(--text-caption-line);
+}
+
+.a-control {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  display: block;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  transition: border-color var(--duration-fast) var(--ease-out);
+  width: 100%;
+}
+
+.a-control::placeholder {
+  color: var(--text-tertiary);
+}
+
+.a-control:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.a-control:focus-visible {
+  border-color: var(--border-strong);
+}
+
+.a-control:disabled {
+  background: var(--surface-inset);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.a-control[aria-invalid='true'] {
+  border-color: var(--status-critical);
+}
+
+.a-control--area {
+  line-height: var(--text-body-line);
+  min-height: calc(var(--space-20) + var(--space-2));
+  resize: vertical;
+}
+
+.a-select {
+  display: block;
+  position: relative;
+}
+
+.a-select select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: var(--space-8);
+}
+
+.a-select__mark {
+  color: var(--text-tertiary);
+  inset-block-start: 50%;
+  inset-inline-end: var(--space-3);
+  pointer-events: none;
+  position: absolute;
+  transform: translateY(-50%);
+}
+
+/*
+ * A checkbox an operator has to tick before a high-impact operation. It is a
+ * real control rather than a styled div, and its label is the sentence it is
+ * confirming.
+ */
+.a-check {
+  align-items: flex-start;
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.a-check input {
+  accent-color: var(--ember);
+  flex: none;
+  height: var(--space-5);
+  margin: 0;
+  width: var(--space-5);
+}
+
+/* ============================== Panels =============================== */
+
+/*
+ * A panel is a bordered region rather than a floating card. On a console,
+ * shadow spent on every readout is depth that no longer means anything when
+ * something genuinely does sit above the page.
+ */
+.a-panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.a-panel__head {
+  align-items: baseline;
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+}
+
+.a-panel__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.a-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  /*
+   * A flex item is as wide as its content unless it is told otherwise, and the
+   * content here is a table that is deliberately wider than a phone. Without
+   * this the table takes the panel with it, the panel takes the page, and the
+   * whole console scrolls sideways instead of the one region designed to.
+   */
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.a-panel__body--flush {
+  padding: 0;
+}
+
+.a-panel__foot {
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-3) var(--space-5);
+}
+
+.a-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.a-page-header__row {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.a-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+/* =============================== Tables ============================== */
+
+/*
+ * A wide table scrolls inside its own bounds. It is the one place on this
+ * surface where sideways scrolling is a designed answer rather than a defect:
+ * a decision row genuinely has more columns than a tablet has width, and
+ * dropping one of them would be dropping a fact from an audit trail.
+ */
+.a-scroller {
+  max-width: 100%;
+  /* Same reason as the panel body: the scroller has to be bounded before it
+     can scroll anything. */
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /*
+   * A containing block, so that what the scroller holds cannot escape it.
+   *
+   * The screen-reader-only text inside a wide table row is positioned
+   * absolutely, and an absolutely positioned box is clipped by an ancestor's
+   * overflow only when that ancestor is in its containing-block chain. With the
+   * scroller left static, those 1px spans resolved against the page instead,
+   * landed at the table's full width, and grew the document itself — so the
+   * whole page rocked sideways on a phone while the region built to scroll sat
+   * still. This holds them where they belong.
+   */
+  position: relative;
+}
+
+.a-table {
+  font-size: var(--text-small-size);
+  min-width: 100%;
+}
+
+.a-table th {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: var(--text-micro-size);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  padding: var(--space-2) var(--space-4);
+  position: sticky;
+  text-align: start;
+  text-transform: uppercase;
+  top: 0;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.a-table td {
+  border-bottom: 1px solid var(--border-hairline);
+  height: var(--row-height);
+  padding: var(--space-2) var(--space-4);
+  vertical-align: middle;
+}
+
+.a-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.a-table tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.a-table td:has(.a-numeric),
+.a-table th.a-table__numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+.a-table__right {
+  text-align: end;
+}
+
+/* A row that leads somewhere. The whole cell is the target, not the words. */
+.a-table__link {
+  color: inherit;
+  display: block;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.a-table__link:hover {
+  color: var(--ember-ink);
+}
+
+/* ============================ Key and value ========================== */
+
+/*
+ * The console's other repeating shape: a fact and its value. Used wherever an
+ * operator is reading one record rather than comparing many.
+ */
+.a-facts {
+  display: flex;
+  flex-direction: column;
+}
+
+.a-fact {
+  align-items: baseline;
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: space-between;
+  padding-block: var(--space-2);
+}
+
+.a-fact:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.a-fact__term {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+}
+
+.a-fact__value {
+  color: var(--text-primary);
+  font-size: var(--text-small-size);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+/* =============================== Status ============================== */
+
+.a-badge {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  display: inline-flex;
+  font-size: var(--text-micro-size);
+  font-weight: 600;
+  gap: var(--space-1);
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.a-badge--neutral {
+  background: var(--surface-3);
+  color: var(--text-secondary);
+}
+
+.a-badge--accent {
+  background: var(--ember-wash);
+  color: var(--ember-ink);
+}
+
+.a-badge--positive {
+  background: var(--status-positive-wash);
+  color: var(--status-positive);
+}
+
+.a-badge--caution {
+  background: var(--status-caution-wash);
+  color: var(--status-caution);
+}
+
+.a-badge--critical {
+  background: var(--status-critical-wash);
+  color: var(--status-critical);
+}
+
+.a-badge--info {
+  background: var(--status-neutral-wash);
+  color: var(--status-neutral);
+}
+
+.a-chip {
+  align-items: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-1);
+  max-width: 100%;
+  overflow: hidden;
+  padding: var(--space-1) var(--space-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A figure the platform counted, with the words that say what it counted.
+ * Never a figure the client derived: on this surface a wrong number is an
+ * operator acting on a wrong number.
+ */
+.a-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.a-metric__value {
+  font-size: var(--text-title-size);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.a-metric__caption {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+/* ============================== Messages ============================= */
+
+.a-notice {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.a-notice__icon {
+  flex: none;
+  line-height: 0;
+  padding-top: 2px;
+}
+
+.a-notice__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.a-notice--info {
+  background: var(--status-neutral-wash);
+}
+.a-notice--info .a-notice__icon {
+  color: var(--status-neutral);
+}
+
+.a-notice--caution {
+  background: var(--status-caution-wash);
+}
+.a-notice--caution .a-notice__icon {
+  color: var(--status-caution);
+}
+
+.a-notice--critical {
+  background: var(--status-critical-wash);
+}
+.a-notice--critical .a-notice__icon {
+  color: var(--status-critical);
+}
+
+.a-notice--quiet {
+  background: var(--surface-2);
+}
+.a-notice--quiet .a-notice__icon {
+  color: var(--text-tertiary);
+}
+
+.a-inline-status {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+}
+
+.a-inline-error {
+  align-items: flex-start;
+  color: var(--status-critical);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+  line-height: var(--text-small-line);
+}
+
+.a-inline-error svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* =========================== Empty and blocked ======================= */
+
+.a-empty {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-5);
+  text-align: center;
+}
+
+.a-empty__mark {
+  align-items: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  display: flex;
+  height: var(--space-12);
+  justify-content: center;
+  width: var(--space-12);
+}
+
+.a-empty__mark--failed {
+  background: var(--status-critical-wash);
+  color: var(--status-critical);
+}
+
+.a-empty__body {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  max-width: 48ch;
+}
+
+.a-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+  padding-top: var(--space-2);
+}
+
+/*
+ * Deliberately unavailable, and deliberately not shaped like a failure: no
+ * alarm colour, no retry, and a lock rather than a warning triangle. On this
+ * surface it is the state an operator meets most often, so it had better not
+ * look like something broke.
+ */
+.a-blocked {
+  background: var(--surface-2);
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+}
+
+.a-blocked__head {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ============================== Skeletons ============================ */
+
+.a-skeleton {
+  animation: a-pulse 1500ms var(--ease-in-out) infinite;
+  background: var(--surface-3);
+  border-radius: var(--radius-xs);
+}
+
+@keyframes a-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ============================== Segments ============================= */
+
+.a-segmented {
+  align-self: flex-start;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1);
+}
+
+.a-segmented__item {
+  align-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-3);
+  white-space: nowrap;
+}
+
+.a-segmented__item:hover {
+  color: var(--text-primary);
+}
+
+.a-segmented__item[aria-selected='true'] {
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+}
+
+.a-segmented__count {
+  color: var(--text-tertiary);
+  font-size: var(--text-micro-size);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* ============================== Dialogs ============================== */
+
+.a-scrim {
+  animation: a-fade var(--duration-base) var(--ease-out);
+  background: var(--surface-overlay);
+  inset: 0;
+  position: fixed;
+  z-index: var(--layer-overlay);
+}
+
+@keyframes a-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.a-dialog {
+  animation: a-sheet-in var(--duration-base) var(--ease-out);
+  background: var(--surface-1);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  bottom: 0;
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  left: 0;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5)
+    calc(var(--space-5) + env(safe-area-inset-bottom));
+  position: fixed;
+  right: 0;
+  z-index: var(--layer-dialog);
+}
+
+@keyframes a-sheet-in {
+  from {
+    transform: translateY(var(--space-6));
+  }
+}
+
+@media (width >= 48rem) {
+  .a-dialog {
+    animation-name: a-dialog-in;
+    border-radius: var(--radius-lg);
+    bottom: auto;
+    left: 50%;
+    max-height: 84vh;
+    max-width: 32rem;
+    padding: var(--space-5);
+    right: auto;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100% - var(--space-10));
+  }
+
+  .a-dialog--wide {
+    max-width: 44rem;
+  }
+
+  @keyframes a-dialog-in {
+    from {
+      transform: translate(-50%, calc(-50% + var(--space-3)));
+    }
+  }
+}
+
+.a-sheet-grip {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  display: block;
+  height: var(--space-1);
+  margin: 0 auto var(--space-2);
+  width: var(--space-10);
+}
+
+@media (width >= 48rem) {
+  .a-sheet-grip {
+    display: none;
+  }
+}
+
+.a-dialog__head {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.a-dialog__close {
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) 0 0;
+}
+
+.a-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+.a-dialog__actions > .a-btn {
+  flex: 1;
+}
+
+@media (width >= 30rem) {
+  .a-dialog__actions > .a-btn {
+    flex: none;
+  }
+}
+
+/* =============================== Toasts ============================== */
+
+.a-toaster {
+  bottom: calc(
+    var(--tabbar-height) + var(--space-4) + env(safe-area-inset-bottom)
+  );
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  left: var(--space-4);
+  pointer-events: none;
+  position: fixed;
+  right: var(--space-4);
+  z-index: var(--layer-toast);
+}
+
+@media (width >= 48rem) {
+  .a-toaster {
+    bottom: var(--space-5);
+    left: auto;
+    max-width: 26rem;
+    right: var(--space-5);
+  }
+}
+
+.a-toast {
+  align-items: flex-start;
+  animation: a-toast-in var(--duration-base) var(--ease-out);
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  pointer-events: auto;
+}
+
+@keyframes a-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+.a-toast__icon {
+  flex: none;
+  line-height: 0;
+  padding-top: var(--space-2);
+}
+
+.a-toast--positive .a-toast__icon {
+  color: var(--status-positive);
+}
+.a-toast--critical .a-toast__icon {
+  color: var(--status-critical);
+}
+.a-toast--neutral .a-toast__icon {
+  color: var(--status-neutral);
+}
+
+.a-toast__body {
+  flex: 1;
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  padding-top: var(--space-1);
+}

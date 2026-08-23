@@ -1,0 +1,275 @@
+/*
+ * Document-level foundations.
+ *
+ * Everything here is either an accessibility requirement or a consequence of
+ * the token contract: nothing in this file makes a visual decision of its own.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-interface);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  margin: 0;
+  min-height: 100%;
+  /*
+   * Nothing on this surface is wide enough to need sideways scrolling. A table
+   * that is genuinely wider than the viewport scrolls inside its own container
+   * rather than taking the page with it, which is what `.a-scroller` is for.
+   */
+  overflow-x: clip;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd {
+  margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: var(--text-heading-line);
+}
+
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+a {
+  color: var(--ember-ink);
+  text-decoration-color: var(--ember-line);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--ember-deep);
+  text-decoration-color: currentcolor;
+}
+
+/*
+ * The approved 2 px focus treatment, applied once, to everything. An offset
+ * ring rather than an inset one, so it stays legible on a dense table row where
+ * a border already runs along every edge.
+ */
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+  border-radius: inherit;
+}
+
+::selection {
+  background: var(--ember-wash-strong);
+  color: var(--text-primary);
+}
+
+/* Long unbroken strings must wrap rather than push a layout. */
+.a-wrap {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.a-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-clamp-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Available to assistive technology, absent from the visual layout. */
+.a-visually-hidden {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.a-skip-link {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-3);
+  color: var(--text-primary);
+  left: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  position: fixed;
+  text-decoration: none;
+  top: var(--space-4);
+  transform: translateY(calc(-100% - var(--space-6)));
+  transition: transform var(--duration-base) var(--ease-out);
+  z-index: var(--layer-toast);
+}
+
+.a-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* --- Typography roles. Named for purpose, used instead of ad-hoc sizes. --- */
+
+.a-display {
+  font-size: var(--text-display-size);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: var(--text-display-line);
+}
+
+.a-title {
+  font-size: var(--text-title-size);
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  line-height: var(--text-title-line);
+}
+
+.a-heading {
+  font-size: var(--text-heading-size);
+  font-weight: 600;
+  line-height: var(--text-heading-line);
+}
+
+.a-subheading {
+  font-size: var(--text-subheading-size);
+  font-weight: 600;
+  line-height: var(--text-subheading-line);
+}
+
+.a-body {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.a-small {
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+}
+
+.a-caption {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.a-label {
+  font-size: var(--text-micro-size);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  line-height: var(--text-micro-line);
+  text-transform: uppercase;
+}
+
+.a-muted {
+  color: var(--text-secondary);
+}
+
+.a-quiet {
+  color: var(--text-tertiary);
+}
+
+.a-accent {
+  color: var(--ember-ink);
+}
+
+.a-measure {
+  max-width: var(--measure-max);
+}
+
+/*
+ * Figures that line up in a column. Every count and every amount on this
+ * surface is compared against the one above it, and proportional digits make
+ * that comparison harder than it needs to be.
+ */
+.a-numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * An identifier, shown as the opaque string it is rather than as prose. Used
+ * only where an operator genuinely has to carry one between systems.
+ */
+.a-mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  letter-spacing: 0;
+}
+
+/*
+ * Motion is an enhancement everywhere on this surface, so removing it removes
+ * nothing. Declared once, at the document level, so a transition added later is
+ * opted out of by default rather than by memory.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

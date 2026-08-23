@@ -11,8 +11,10 @@ import type { Page } from '@playwright/test';
  *
  * Sideways scrolling is the assertion that catches the most: a single element
  * wider than the viewport turns every page into one that rocks under a thumb.
- * It is measured against the element rectangles rather than `scrollWidth`, so a
- * failure names the element rather than the symptom.
+ * It is measured two ways, because either alone lets a real defect through. The
+ * element rectangles name the culprit when there is one to name. The document's
+ * own scroll width catches the case where every element looks contained and the
+ * page moves anyway.
  */
 export const viewportWidths = [
   320, 360, 390, 430, 768, 820, 1024, 1280, 1440, 1728,
@@ -22,7 +24,8 @@ export async function overflowingElements(
   page: Page,
 ): Promise<readonly string[]> {
   return page.evaluate(() => {
-    const limit = document.documentElement.clientWidth;
+    const root = document.documentElement;
+    const limit = root.clientWidth;
     const offenders: string[] = [];
 
     /**
@@ -33,12 +36,31 @@ export async function overflowingElements(
      * narrow screen; its children extend past the viewport and nothing about the
      * page moves. What this function is looking for is the other thing — an
      * element that pushes the *page* sideways.
+     *
+     * Position matters to that question and is easy to miss. An absolutely
+     * positioned box is clipped by an ancestor's overflow only when that
+     * ancestor is in its containing-block chain, so a static scroller does not
+     * hold it: screen-reader-only text inside a wide table looks contained,
+     * resolves against the page instead, and grows the document. Ancestors that
+     * establish no containing block are therefore skipped for such a box, and a
+     * fixed box is treated as contained by nothing at all.
      */
     const contained = (node: Element): boolean => {
+      const position = getComputedStyle(node).position;
+      if (position === 'fixed') return false;
+      const needsPositionedAncestor = position === 'absolute';
       let parent = node.parentElement;
       while (parent !== null && parent !== document.body) {
-        const overflow = getComputedStyle(parent).overflowX;
-        if (overflow !== 'visible') return true;
+        const style = getComputedStyle(parent);
+        const establishesContainingBlock =
+          style.position !== 'static' ||
+          style.transform !== 'none' ||
+          style.filter !== 'none';
+        if (needsPositionedAncestor && !establishesContainingBlock) {
+          parent = parent.parentElement;
+          continue;
+        }
+        if (style.overflowX !== 'visible') return true;
         parent = parent.parentElement;
       }
       return false;
@@ -59,6 +81,16 @@ export async function overflowingElements(
         )}..${String(Math.round(rectangle.right))} of ${String(limit)}`,
       );
     }
+
+    // The symptom itself, whether or not an element owned up to causing it.
+    if (root.scrollWidth > limit + 0.5) {
+      offenders.push(
+        `document scrolls sideways: ${String(root.scrollWidth)} of ${String(
+          limit,
+        )}`,
+      );
+    }
+
     return offenders;
   });
 }

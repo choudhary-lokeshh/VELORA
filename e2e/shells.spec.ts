@@ -13,24 +13,18 @@ import { expect, test } from './fixtures.js';
 test('Platform Admin carries the operator product and nothing else', async ({
   page,
 }) => {
+  // The console is behind a door nobody can currently open, so the root sends
+  // an operator to the page that explains it. `admin.spec.ts` asserts the
+  // refusal itself; this is about which surface this is.
   await page.goto('http://127.0.0.1:3002');
+  await page.waitForURL(/\/access/u, { timeout: 30_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Platform Admin',
   );
-  // Two operator panels, and both read. With no API reachable from the browser
-  // here they report that rather than rendering an empty screen, which is
-  // itself the property under test.
-  await expect(
-    page.getByRole('heading', { name: 'Financial operations' }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Media operations' }),
-  ).toBeVisible();
-  // No consumer or creator product reaches this surface, and nothing on it
-  // writes: an operator's one financial action goes through BILLING's service,
-  // and MEDIA's one action names an asset an operator already has an identifier
-  // for — so there is no lookup box here either, because a search field over
-  // media on a dashboard is a browsing surface over private images.
+  await expect(page.getByTestId('access-blocked')).toBeVisible();
+  // No consumer or creator product reaches this surface, and nothing on the one
+  // reachable page acts: no navigation, because there is nowhere to navigate
+  // to, and nothing to type, because no route would accept it.
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await expect(page.locator('input')).toHaveCount(0);
   await expect(page.locator('form')).toHaveCount(0);

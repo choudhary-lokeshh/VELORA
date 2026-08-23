@@ -38,6 +38,7 @@ export const authApiPort = 4100;
 export const authApiBaseUrl = `http://127.0.0.1:${String(authApiPort)}`;
 export const consumerWebOrigin = 'http://127.0.0.1:3000';
 export const creatorStudioOrigin = 'http://127.0.0.1:3001';
+export const platformAdminOrigin = 'http://127.0.0.1:3002';
 
 /**
  * HMAC material for the development media adapter's delivery grants.
@@ -133,6 +134,17 @@ export async function startAuthEnvironment(): Promise<void> {
     // it reaches a handler, which is the correct production behaviour and would
     // make the creator journey untestable rather than merely failing.
     AUTH_BROWSER_ORIGINS_CREATOR_STUDIO: creatorStudioOrigin,
+    /*
+     * Platform Admin is allowed to *ask*, and nothing more.
+     *
+     * Admitting an origin lets a browser reach the session endpoint; it grants
+     * no audience and no assurance, and every privileged route still refuses on
+     * both counts. Without it AUTH rejects the console's request before it
+     * arrives, and the browser suite could only ever observe a network failure
+     * — which would prove that the origin is unconfigured rather than that the
+     * platform refuses privileged access, and those are very different claims.
+     */
+    AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN: platformAdminOrigin,
     DATABASE_URL: databaseUrl,
     EPHEMERAL_REDIS_URL: `${redisUrl}/0`,
     LOG_LEVEL: 'warn',

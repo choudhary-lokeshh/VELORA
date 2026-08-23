@@ -1,19 +1,15 @@
-:root {
-  color-scheme: light;
-  font-family: 'IBM Plex Sans', 'Noto Sans', system-ui, sans-serif;
-}
+/*
+ * Platform Admin's stylesheet, assembled in dependency order.
+ *
+ * `tokens` names every value the surface may use, `base` applies the document
+ * foundations and accessibility requirements, `components` builds the shared
+ * primitives out of the tokens, `layout` arranges the console for each viewport
+ * class, and `product` composes the screens. Nothing later in the list is
+ * allowed to introduce a value the first file does not name.
+ */
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  background: Canvas;
-  color: CanvasText;
-  margin: 0;
-}
-
-:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/components.css';
+@import './styles/layout.css';
+@import './styles/product.css';
