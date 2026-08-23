@@ -57,13 +57,16 @@ try {
     );
   }
 
+  // Large enough that every derivative the platform makes is a real resize, and
+  // no larger: a fixture is measured in how much of the pipeline it exercises,
+  // not in megapixels, and a browser suite pays for every one of them.
   const sharp = (await import('sharp')).default;
   const bytes = await sharp({
     create: {
       background: { b: blue, g: green, r: red },
       channels: 3,
-      height: 1000,
-      width: 800,
+      height: 600,
+      width: 480,
     },
   })
     .jpeg({ quality: 80 })

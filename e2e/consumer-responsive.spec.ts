@@ -88,8 +88,18 @@ test.describe('Consumer Web responsive behaviour', () => {
 
   for (const width of widths) {
     test(`fits every screen at ${String(width)}px`, async ({
+      browserName,
       page,
     }, testInfo) => {
+      // One engine for the full matrix. What this asserts is a property of the
+      // stylesheet rather than of an engine, and ten widths across eleven
+      // addresses on every project is two hundred page loads for one answer.
+      // The arrangements below — which navigation, which pane, which target
+      // size — still run everywhere a browser can hold a session.
+      test.skip(
+        browserName !== 'chromium',
+        'the width matrix asserts the stylesheet, and runs once',
+      );
       const [person] = cohortFor(testInfo.project.name).people;
       if (person === undefined) throw new Error('the cohort has nobody in it');
 

@@ -129,7 +129,6 @@ export function IconButton({
   label,
   name,
   size = 'md',
-  solid = false,
   ...rest
 }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'> & {
   readonly 'data-testid'?: string;
@@ -137,22 +136,15 @@ export function IconButton({
   readonly label: string;
   readonly name: IconName;
   readonly size?: 'sm' | 'md';
-  readonly solid?: boolean;
 }) {
   return (
     <button
       {...rest}
       aria-label={label}
-      className={[
-        'v-icon-btn',
-        solid ? 'v-icon-btn--solid' : undefined,
-        size === 'sm' ? 'v-icon-btn--sm' : undefined,
-      ]
-        .filter((value) => value !== undefined)
-        .join(' ')}
+      className={`v-icon-btn${size === 'sm' ? ' v-icon-btn--sm' : ''}`}
       type={rest.type ?? 'button'}
     >
-      <Icon name={name} size={size === 'sm' ? 'sm' : 'md'} />
+      <Icon name={name} size={size} />
     </button>
   );
 }
@@ -333,23 +325,15 @@ export function Choice({
 export function Card({
   children,
   flush = false,
-  inset = false,
   testId,
 }: {
   readonly children: ReactNode;
   readonly flush?: boolean;
-  readonly inset?: boolean;
   readonly testId?: string;
 }) {
   return (
     <div
-      className={[
-        'v-card',
-        flush ? 'v-card--flush' : undefined,
-        inset ? 'v-card--inset' : undefined,
-      ]
-        .filter((value) => value !== undefined)
-        .join(' ')}
+      className={`v-card${flush ? ' v-card--flush' : ''}`}
       data-testid={testId}
     >
       {children}
@@ -378,21 +362,6 @@ export function PageHeader({
         <p className="v-page-header__lede">{lede}</p>
       )}
     </header>
-  );
-}
-
-export function SectionHeader({
-  action,
-  title,
-}: {
-  readonly action?: ReactNode;
-  readonly title: string;
-}) {
-  return (
-    <div className="v-section-header">
-      <h2 className="v-label v-section-header__title">{title}</h2>
-      {action}
-    </div>
   );
 }
 
@@ -445,7 +414,7 @@ export function Avatar({
   readonly displayName: string;
   /** Usually the person's identifier, so the tone survives a name change. */
   readonly seed?: string;
-  readonly size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  readonly size?: 'xs' | 'sm' | 'md' | 'lg';
 }) {
   return (
     <span
@@ -485,10 +454,6 @@ export function Badge({
 
 export function Chip({ children }: { readonly children: ReactNode }) {
   return <span className="v-chip">{children}</span>;
-}
-
-export function Count({ value }: { readonly value: number }) {
-  return <span className="v-count">{value > 99 ? '99+' : value}</span>;
 }
 
 /* ============================== Messages ============================= */

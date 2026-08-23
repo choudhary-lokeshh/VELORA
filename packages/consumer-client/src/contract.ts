@@ -133,6 +133,18 @@ export type SavePreferencesBody = RequestBody<
   'post'
 >;
 
+/**
+ * A private club this person may currently read, as they may see it.
+ *
+ * `source` records what created the entitlement rather than whether it was
+ * paid: `creator_invite` is the only one anything can carry today, because the
+ * commercial seam refuses in every environment. There is no member count and no
+ * member list, because a club is not a public place.
+ */
+export type ClubAccessList = JsonBody<'/v1/clubs/access', 'get', 200>;
+export type ClubAccess = ClubAccessList['access'][number];
+export type RedeemClubInviteBody = RequestBody<'/v1/clubs/redemptions', 'post'>;
+
 export type ConsumerSubscriptionList = JsonBody<
   '/v1/billing/subscriptions',
   'get',

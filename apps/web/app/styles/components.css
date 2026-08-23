@@ -143,12 +143,6 @@
   opacity: 0.45;
 }
 
-.v-icon-btn--solid {
-  background: var(--surface-3);
-  border-color: var(--border-soft);
-  color: var(--text-primary);
-}
-
 .v-icon-btn--sm {
   height: var(--control-height-sm);
   width: var(--control-height-sm);
@@ -392,10 +386,6 @@ select.v-control {
   padding: 0;
 }
 
-.v-card--inset {
-  background: var(--surface-inset);
-}
-
 .v-panel {
   display: flex;
   flex-direction: column;
@@ -427,19 +417,6 @@ select.v-control {
 .v-page-header__lede {
   color: var(--text-secondary);
   max-width: var(--measure-max);
-}
-
-.v-section-header {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  justify-content: space-between;
-  margin-bottom: var(--space-4);
-}
-
-.v-section-header__title {
-  color: var(--text-tertiary);
 }
 
 /* ============================ Identity ================================ */
@@ -499,12 +476,6 @@ select.v-control {
   width: 88px;
 }
 
-.v-avatar--xl {
-  font-size: var(--text-display-size);
-  height: 128px;
-  width: 128px;
-}
-
 .v-avatar--tone-1 {
   background: linear-gradient(150deg, #4a2f3a, #2a1c26);
 }
@@ -527,14 +498,6 @@ select.v-control {
 
 .v-avatar--tone-6 {
   background: linear-gradient(150deg, #4a3b2c, #29201a);
-}
-
-.v-avatar-stack {
-  display: flex;
-}
-
-.v-avatar-stack > * + * {
-  margin-left: -10px;
 }
 
 /* ============================ Status =================================== */
@@ -585,32 +548,14 @@ select.v-control {
   color: var(--status-neutral);
 }
 
-/* Colour is never alone: the dot is paired with a word by every caller. */
-.v-dot {
-  border-radius: 50%;
-  flex: none;
-  height: 8px;
-  width: 8px;
-}
-
-.v-dot--positive {
-  background: var(--status-positive);
-}
-
-.v-dot--caution {
-  background: var(--status-caution);
-}
-
-.v-dot--critical {
-  background: var(--status-critical);
-}
-
-.v-dot--neutral {
-  background: var(--text-tertiary);
-}
-
+/*
+ * An unread mark. Colour is never alone: every caller pairs it with words that
+ * a screen reader gets and a sighted reader does not need.
+ */
 .v-dot--unread {
   background: var(--ember);
+  border-radius: 50%;
+  flex: none;
   height: 9px;
   width: 9px;
 }
@@ -804,10 +749,6 @@ select.v-control {
 
 .v-skeleton--circle {
   border-radius: 50%;
-}
-
-.v-skeleton--text {
-  height: 12px;
 }
 
 /* ============================ Tabs ===================================== */
@@ -1035,44 +976,6 @@ select.v-control {
   .v-sheet-grip {
     display: none;
   }
-}
-
-/* ============================ Menu ===================================== */
-
-.v-menu {
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-2);
-  display: flex;
-  flex-direction: column;
-  min-width: 220px;
-  padding: var(--space-2);
-  position: absolute;
-  z-index: var(--layer-dialog);
-}
-
-.v-menu__item {
-  align-items: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  display: flex;
-  font-size: var(--text-small-size);
-  gap: var(--space-3);
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-3);
-  text-align: left;
-  text-decoration: none;
-  width: 100%;
-}
-
-.v-menu__item:hover {
-  background: var(--surface-3);
-  color: var(--text-primary);
-}
-
-.v-menu__item--critical {
-  color: var(--status-critical);
 }
 
 /* ============================ Toasts =================================== */

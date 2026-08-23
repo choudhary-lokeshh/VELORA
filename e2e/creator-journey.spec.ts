@@ -1,4 +1,8 @@
-import { consumerWebOrigin, creatorStudioOrigin } from './auth-environment.js';
+import {
+  cohortFor,
+  consumerWebOrigin,
+  creatorStudioOrigin,
+} from './auth-environment.js';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from './fixtures.js';
@@ -236,6 +240,91 @@ test.describe('Creator Studio journey', () => {
     const panel = page.locator('[data-testid^="club-access-panel-"]').first();
     await expect(panel).toBeVisible();
     expect(await panel.innerText()).not.toContain(secret);
+  });
+
+  /**
+   * The whole invitation path, across both surfaces and two people.
+   *
+   * A creator issues a bearer secret in Studio; a consumer with a different
+   * account and a different audience cookie presents it on Consumer Web and is
+   * admitted. This is the only way anybody gets into a private club — no payment
+   * path exists — so it is the one commercial-adjacent journey that can be
+   * proved end to end today.
+   */
+  test('carries an invitation from Studio to a consumer who redeems it', async ({
+    browser,
+    page,
+  }, testInfo) => {
+    const subject = uniqueSubject('redeem');
+    const handle = uniqueHandle('r');
+    const [member] = cohortFor(testInfo.project.name).people;
+    if (member === undefined) throw new Error('the cohort has nobody in it');
+
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+    await page.getByTestId('nav-profile').click();
+    await page.getByTestId('creator-handle').fill(handle);
+    await page.getByTestId('creator-display-name').fill('Ember Vale');
+    await page.getByTestId('creator-save-profile').click();
+    // The public page is published too, and that matters to the member rather
+    // than to the creator: an entitlement whose creator has no published page
+    // is omitted from what the member is shown, because the listing carries the
+    // handle CREATORS publishes and there is none to carry.
+    await page.getByTestId('creator-toggle-publication').click();
+    await expect(
+      page.getByRole('button', { name: 'Unpublish this page' }),
+    ).toBeVisible();
+
+    await page.getByTestId('nav-clubs').click();
+    await page.getByTestId('club-name').fill('Inner Circle');
+    await page.getByTestId('club-slug').fill('inner');
+    await page.getByTestId('club-create').click();
+    const club = page.locator('[data-testid^="club-item-"]').first();
+    await club.getByRole('button', { name: 'Publish' }).click();
+    await expect(club).toContainText('Published.');
+    await club
+      .getByRole('button', { name: 'Create a complimentary invitation' })
+      .click();
+    const secret = (
+      await page.getByTestId('club-invite-secret').locator('code').innerText()
+    ).trim();
+
+    // A different person, a different account, a different audience cookie.
+    const consumer = await browser.newContext({
+      extraHTTPHeaders: { 'x-velora-device': `${subject}-member` },
+    });
+    try {
+      const memberPage = await consumer.newPage();
+      await memberPage.goto(`${consumerWebOrigin}/sign-in`);
+      await memberPage.getByTestId('sign-in-subject').fill(member.subject);
+      await memberPage.getByTestId('sign-in-subject').press('Enter');
+      await memberPage.waitForURL(/\/discover$/u, { timeout: 30_000 });
+
+      await memberPage.goto(`${consumerWebOrigin}/you/memberships`);
+      await expect(memberPage.getByTestId('club-access-empty')).toBeVisible();
+      await memberPage.getByTestId('club-invite-secret').fill(secret);
+      await memberPage.getByTestId('club-invite-redeem').click();
+
+      await expect(memberPage.getByTestId('club-access-list')).toContainText(
+        'Inner Circle',
+      );
+      // Spent, and never rendered again.
+      const rendered = await memberPage.locator('body').innerText();
+      expect(rendered).not.toContain(secret);
+      await expect(memberPage.getByTestId('club-invite-secret')).toHaveValue(
+        '',
+      );
+
+      // And it works exactly once: presenting it again is the same answer as an
+      // invitation that never existed.
+      await memberPage.getByTestId('club-invite-secret').fill(secret);
+      await memberPage.getByTestId('club-invite-redeem').click();
+      await expect(
+        memberPage.getByText('That is not possible right now.'),
+      ).toBeVisible();
+    } finally {
+      await consumer.close();
+    }
   });
 
   test('refuses a stale edit rather than overwriting a newer one', async ({

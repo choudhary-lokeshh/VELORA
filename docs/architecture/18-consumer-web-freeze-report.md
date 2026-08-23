@@ -15,7 +15,7 @@ A working engineering scaffold: one client-rendered page at `/`, a tab-switched 
 | Concern | What exists now |
 | --- | --- |
 | Design foundation | NIGHT CURRENT: the approved Master DNA verbatim plus a filled-in surface ladder, foreground and border weights, four semantic status hues, radii, elevation, a type scale, and motion timing — one file, semantic names, [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md) |
-| Component layer | Button, icon button, field with wired label/hint/error/count, text input, textarea, select, switch, choice, card, page and section headers, list row, avatar, badge, chip, count, notice, status and error messages, empty state, blocked state, skeletons, segmented tabs, dialog, confirmation dialog, toaster |
+| Component layer | Button, link button, icon button, field with wired label/hint/error/count, text input, textarea, select, switch, choice, card, page header, list row, avatar, badge, chip, notice, status and error messages, empty state, blocked state, skeletons, segmented tabs, dialog, confirmation dialog, toaster — and nothing else, because a component nothing renders is a demo rather than a system |
 | Icons | 35 marks drawn on one grid at the approved 1.75 px stroke, so no icon dependency was added and no shape overrides it |
 | Information architecture | Five addressed destinations — Discover, Introductions, Messages, Notices, You — with availability, safety, memberships, and settings under You, and calling reached from a mutual introduction rather than from the navigation |
 | Shell | One navigation model in three arrangements: a bottom bar below 768 px, a labelled rail from 768 px, a persistent sidebar from 1024 px; a skip link, a named main landmark, and a back control on every page underneath a destination |
@@ -23,6 +23,7 @@ A working engineering scaffold: one client-rendered page at `/`, a tab-switched 
 | Admission | A four-step ladder counting the server's steps, a region field that echoes the country it resolves to, a language picker that names each code, and a way out for somebody who signed in as the wrong person |
 | Screens | Discovery, introductions, conversation list and thread with grouping and day separators, the call lifecycle, notices, profile with a distinct read and edit state, availability, photos, memberships, settings, and safety |
 | Safety | Block and report from every surface that shows a person, with confirmation, honest consequences, and no identifier to paste |
+| Private clubs | The access a person holds, and the invitation path that creates it: a bearer secret typed once, settled by the database, never echoed back, and the same answer for a spent one as for one that never existed |
 
 ## The rule everything was built to
 
@@ -57,7 +58,7 @@ Two presses in one frame on Send issued **one** request. A reload during a pendi
 
 ## Responsive and accessibility evidence
 
-Ten widths — 320, 360, 390, 430, 768, 820, 1024, 1280, 1440, 1728 — across every product address and every public address, asserted per element rather than by page scroll width, with a fixture whose bio and longest message contain unbreakable runs specifically to keep that assertion honest. Also asserted in a real browser: the phone gets a bottom bar and the desktop a sidebar; a conversation is its own screen on a phone and sits beside the list on a desktop; every primary control clears a comfortable target on a phone; the page survives text scaled to 200%.
+Ten widths — 320, 360, 390, 430, 768, 820, 1024, 1280, 1440, 1728 — across every product address and every public address, asserted per element rather than by page scroll width, with a fixture whose bio and longest message contain unbreakable runs specifically to keep that assertion honest. The matrix runs on one engine, because what it asserts is a property of the stylesheet and two hundred page loads per project buys the same answer twice. Asserted on every engine that can hold a session: the phone gets a bottom bar and the desktop a sidebar; a conversation is its own screen on a phone and sits beside the list on a desktop; every primary control clears a comfortable target on a phone; the page survives text scaled to 200%.
 
 Accessibility: one first-level heading per page, a named main landmark, named navigation, an accessible name on every input and every icon-only control, focus visible on every control, focus entering a dialog, unable to leave it, and returning to the control that opened it, `role="status"` for progress and `role="alert"` for failure, non-colour cues beside every status colour, and a measured contrast floor of 4.59:1 with every other pair above 5:1.
 
@@ -69,12 +70,12 @@ Measured against the production build. The first navigation transfers 353 KB and
 
 | Layer | Count |
 | --- | --- |
-| Consumer Web unit assertions, through the generated client against a contract-shaped stand-in | 84 |
+| Consumer Web unit assertions, through the generated client against a contract-shaped stand-in | 88 |
 | Other workspace unit suites | 479 |
 | API integration against real PostgreSQL, Redis, and BullMQ | 1348 |
-| Browser, three engines | 111 passed, 42 skipped |
+| Browser, three engines | 103 passed, 53 skipped |
 
-The 42 skips are WebKit's, and they are the same skips the repository already had: WebKit will not store a `Secure` cookie delivered over plain-HTTP loopback, the cookie attributes are locked by [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md), and no attribute was relaxed to make a local browser cooperate. WebKit still runs the transport, security-header, and surface-isolation assertions.
+The skips are WebKit's, plus the width matrix on the two engines that do not run it. WebKit's are the same skips the repository already had: it will not store a `Secure` cookie delivered over plain-HTTP loopback, the cookie attributes are locked by [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md), and no attribute was relaxed to make a local browser cooperate. WebKit still runs the transport, security-header, and surface-isolation assertions.
 
 ## How the browser suite reaches the product at all
 
@@ -92,6 +93,7 @@ The browser environment runs the development adapters the configuration schema a
 
 - **Any rendered photograph.** No authorized consumer media delivery route exists. Recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 - **A name against a block.** The block list publishes an identifier and a timestamp; publishing a name for somebody a pair may no longer reach is a product decision nobody has taken.
+- **Anything inside a private club.** A member's access is real and listed; the contract has no route that publishes what a club contains, only one that reads a single item by an identifier nothing hands out. The screen says so rather than rendering an empty shelf. Note also a server rule the surface renders rather than second-guesses: a live entitlement is omitted from the member's list while its creator has no published public page, because the listing carries the handle CREATORS publishes and there is none to carry.
 - **Account closure or deletion.** The flow is specified and no consumer route exists, because every retention schedule it depends on is unapproved.
 - **Purchase, checkout, or price.** No approved payment provider and no published commercial terms.
 - **Legal and policy copy.** Both required documents sit at `0-unpublished`; the acknowledgement step records which version was accepted and does not invent text.
@@ -106,7 +108,9 @@ The browser environment runs the development adapters the configuration schema a
 
 **EXTERNAL NOTIFICATION DELIVERY: BLOCKED** — unchanged from the [notifications freeze](17-notifications-freeze-report.md): no approved email or push provider, no stored email address, and no native build pipeline. Consumer Web now renders the preference controls the contract publishes and states that nothing leaves the platform yet.
 
-**CONSUMER PURCHASE: BLOCKED** — no approved payment provider and no published terms.
+**CONSUMER PURCHASE: BLOCKED** — no approved payment provider and no published terms. A creator's invitation is the only path into a private club, and it works end to end.
+
+**CLUB CONTENT: UNREACHABLE** — a member holds real access and no route lists what is behind it.
 
 ## What unfreezes each
 

@@ -954,6 +954,85 @@ describe('memberships', () => {
     }
   });
 
+  it('says nobody is in a club, and how somebody gets into one', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    await screen.findByTestId('club-access-empty');
+    expect(textOf('club-access-empty')).toContain(
+      'no way to ask for one and nothing to buy',
+    );
+  });
+
+  it('redeems an invitation and never shows the secret again', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      clubInvites: [
+        {
+          clubId: '77777777-7777-4777-8777-777777777777',
+          clubName: 'Inner Circle',
+          creatorHandle: 'ember_vale',
+          secret: 'a-bearer-secret-nobody-should-see-twice',
+        },
+      ],
+    });
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    fireEvent.change(await screen.findByTestId('club-invite-secret'), {
+      target: { value: 'a-bearer-secret-nobody-should-see-twice' },
+    });
+    await click('club-invite-redeem');
+
+    await screen.findByTestId(
+      'club-access-77777777-7777-4777-8777-777777777777',
+    );
+    expect(textOf('club-access-list')).toContain('Inner Circle');
+    // Sent once and settled by the server. A surface that echoed it back would
+    // put a live credential in a screenshot and a browser history.
+    expect(document.body.textContent).not.toContain(
+      'a-bearer-secret-nobody-should-see-twice',
+    );
+    expect(
+      screen.getByTestId<HTMLInputElement>('club-invite-secret').value,
+    ).toBe('');
+  });
+
+  it('says an invitation that will not work did not work, and nothing more', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    fireEvent.change(await screen.findByTestId('club-invite-secret'), {
+      target: { value: 'never-issued' },
+    });
+    await click('club-invite-redeem');
+
+    // A spent invitation and one that never existed are one answer, so the
+    // screen has no vocabulary that could tell them apart.
+    await screen.findByText('That is not possible right now.');
+    expect(double.state.clubAccess).toHaveLength(0);
+  });
+
+  it('does not pretend a club can be opened from here', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      clubAccess: [
+        {
+          clubId: '77777777-7777-4777-8777-777777777777',
+          clubName: 'Inner Circle',
+          creatorHandle: 'ember_vale',
+          grantedAt: '2026-08-14T12:00:00.000Z',
+          source: 'creator_invite',
+        },
+      ],
+    });
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    await screen.findByTestId('club-content-blocked');
+    expect(textOf('club-content-blocked')).toContain(
+      'nothing publishes a member',
+    );
+  });
+
   it('shows what the server says is being paid for, and grants nothing for a lapse', async () => {
     const double = createApiDouble({
       ...admittedState(),

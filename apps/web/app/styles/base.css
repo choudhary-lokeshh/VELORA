@@ -136,18 +136,10 @@ a:hover {
   white-space: nowrap;
 }
 
-.v-clamp-2,
 .v-clamp-3 {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-}
-
-.v-clamp-2 {
-  -webkit-line-clamp: 2;
-}
-
-.v-clamp-3 {
   -webkit-line-clamp: 3;
 }
 

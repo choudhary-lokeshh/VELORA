@@ -7,6 +7,7 @@ import type {
   Block,
   BlockList,
   Call,
+  ClubAccessList,
   ConsumerAccount,
   ConsumerProfile,
   ConsumerSubscriptionList,
@@ -26,6 +27,7 @@ import type {
   OnboardingState,
   PolicyDocument,
   ProfileMediaUpload,
+  RedeemClubInviteBody,
   Report,
   ReportList,
   SafetyStanding,
@@ -110,6 +112,18 @@ export interface ConsumerApi {
    * that could not succeed would be a promise in a button.
    */
   subscriptions(): Promise<ApiResult<ConsumerSubscriptionList>>;
+  /** Private clubs this person may currently read. */
+  clubAccess(signal?: AbortSignal): Promise<ApiResult<ClubAccessList>>;
+  /**
+   * Presents an invitation.
+   *
+   * The secret is a bearer credential: it is sent once, settled by the database
+   * rather than by a read, and never returned. Presenting the same one twice
+   * admits its holder exactly once.
+   */
+  redeemClubInvite(
+    body: RedeemClubInviteBody,
+  ): Promise<ApiResult<ClubAccessList>>;
   acknowledgePolicies(
     acknowledgements: readonly PolicyDocument[],
   ): Promise<ApiResult<OnboardingState>>;
@@ -243,6 +257,14 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     subscriptions: async () =>
       attempt(async () =>
         api.GET('/v1/billing/subscriptions', await reading(undefined)),
+      ),
+
+    clubAccess: async (signal) =>
+      attempt(async () => api.GET('/v1/clubs/access', await reading(signal))),
+
+    redeemClubInvite: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/clubs/redemptions', { ...(await writing()), body }),
       ),
 
     acknowledgePolicies: async (acknowledgements) =>

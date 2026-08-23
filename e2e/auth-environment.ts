@@ -53,9 +53,14 @@ const mediaSigningKey = 'velora-browser-suite-media-fixture-key';
  * Which cohort a browser project owns.
  *
  * Fixed order rather than a hash, so a project always gets the same accounts and
- * a failure is reproducible by name.
+ * a failure is reproducible by name. WebKit is deliberately absent: it cannot
+ * hold a `Secure` cookie over plain-HTTP loopback and therefore skips every
+ * product assertion, so seeding a cohort for it would be admitting four accounts
+ * and processing four images that nothing then drives. A project with no cohort
+ * of its own falls back to the first, which is only ever read by a test that is
+ * being skipped.
  */
-export const cohortOrder = ['chromium', 'firefox', 'webkit'] as const;
+export const cohortOrder = ['chromium', 'firefox'] as const;
 
 interface EnvironmentState {
   readonly apiPid: number;

@@ -38,6 +38,21 @@ export interface ApiDoubleState {
     updatedAt: string;
   };
   blocks: { blockedId: string; createdAt: string }[];
+  /** Private clubs the account may currently read, and the invitations it may use. */
+  clubAccess: {
+    clubId: string;
+    clubName: string;
+    creatorHandle: string;
+    grantedAt: string;
+    source: string;
+  }[];
+  /** Invitations the double will honour, each exactly once. */
+  clubInvites: {
+    clubId: string;
+    clubName: string;
+    creatorHandle: string;
+    secret: string;
+  }[];
   candidates: {
     bio?: string;
     displayName: string;
@@ -201,6 +216,8 @@ export function emptyState(): ApiDoubleState {
       updatedAt: iso(),
     },
     blocks: [],
+    clubAccess: [],
+    clubInvites: [],
     candidates: [],
     conversations: [],
     introductions: [],
@@ -523,6 +540,34 @@ export function createApiDouble(
         updatedAt: iso(),
       };
       return json(200, state.availability);
+    }
+
+    // PRIVATE CLUBS.
+    if (path === '/v1/clubs/access' && method === 'GET') {
+      return json(200, { access: state.clubAccess });
+    }
+    if (path === '/v1/clubs/redemptions' && method === 'POST') {
+      const input = body as { secret: string };
+      const invite = state.clubInvites.find(
+        (entry) => entry.secret === input.secret,
+      );
+      // Single-use, and an unknown secret answers exactly as a spent one, so
+      // presenting a guess discloses nothing about whether it ever existed.
+      if (invite === undefined) return error(409, 'ACTION_NOT_PERMITTED');
+      state.clubInvites = state.clubInvites.filter(
+        (entry) => entry.secret !== input.secret,
+      );
+      state.clubAccess = [
+        ...state.clubAccess,
+        {
+          clubId: invite.clubId,
+          clubName: invite.clubName,
+          creatorHandle: invite.creatorHandle,
+          grantedAt: iso(),
+          source: 'creator_invite',
+        },
+      ];
+      return json(200, { access: state.clubAccess });
     }
 
     // DISCOVERY.
