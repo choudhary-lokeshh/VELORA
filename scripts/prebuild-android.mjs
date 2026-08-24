@@ -17,11 +17,18 @@ import { fileURLToPath } from 'node:url';
  * question, not a detail of it.
  *
  * So the template is an ordinary pinned devDependency, governed by the same
- * catalog and the same `minimumReleaseAge` as everything else, and this packs
- * the installed copy into the tar file `--template` accepts. Nothing is
- * fetched: `npm pack` on a directory already in the store touches no network,
- * which also means prebuild works offline and in a CI job with no registry
- * access.
+ * catalog and the same `minimumReleaseAge` as everything else. The version the
+ * lockfile installed is read from the store, and the publisher's own tarball
+ * for exactly that version is fetched once and cached.
+ *
+ * Repacking the installed directory would be tidier and does not work. The
+ * template contains a symlink — `android/app/src/debugOptimized/AndroidManifest.xml`
+ * points at the debug variant's — and whether pnpm's store holds that as a link
+ * or as a real file differs by platform. On macOS it is a file and the repack
+ * is fine; on Linux it is a link, and `npm pack` rewrote its target relative to
+ * the tarball's own prefix, so prebuild died with `ENOENT ... link` in CI while
+ * passing locally. Fetching what Expo published avoids inventing a tarball at
+ * all.
  *
  * Every caller goes through here — `pnpm android:verify`, `pnpm android:build`,
  * and `pnpm --filter @velora/mobile prebuild` — so there is no second path that
@@ -81,6 +88,9 @@ export function packPinnedTemplate() {
         'run `pnpm install`.',
     );
   }
+  // The lockfile decides the version; nothing here chooses one. Reading it from
+  // the installed package is what keeps the catalog and the release-age policy
+  // in charge of which template a prebuild uses.
   const version = JSON.parse(readFileSync(manifestPath, 'utf8')).version;
   const packed = join(packedDirectory, `${templateName}-${version}.tgz`);
   if (existsSync(packed)) return packed;
@@ -88,12 +98,15 @@ export function packPinnedTemplate() {
   mkdirSync(packedDirectory, { recursive: true });
   const result = run(
     'npm',
-    ['pack', dirname(manifestPath), '--pack-destination', packedDirectory],
+    ['pack', `${templateName}@${version}`, '--pack-destination', packedDirectory],
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
   if (result.status !== 0) {
     process.stderr.write(result.output);
-    fail(`Could not pack ${templateName}@${version}.`);
+    fail(
+      `Could not fetch ${templateName}@${version}. The version is pinned by ` +
+        'the lockfile; this only downloads the tarball Expo published for it.',
+    );
   }
   if (!existsSync(packed)) {
     fail(`npm pack did not produce ${packed}`);
