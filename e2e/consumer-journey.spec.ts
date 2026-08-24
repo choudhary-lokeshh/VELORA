@@ -1,6 +1,7 @@
 import { cohortFor, consumerWebOrigin } from './auth-environment.js';
 import {
   cookieSkipReason,
+  fixturePhoto,
   navigateTo,
   signIn,
   signInAdmitted,
@@ -17,11 +18,11 @@ import { expect, test } from './fixtures.js';
  * jsdom. It runs against the same API the integration suite uses, with the
  * development adapters the configuration schema admits in local and test.
  *
- * **A browser still cannot complete a profile in any environment**, and that is
- * asserted below rather than worked around: the media adapter has no HTTP upload
- * transport and no approved storage provider exists. The accounts these tests
- * drive were admitted by a fixture that placed bytes the way the integration
- * suite does, which is what makes the product past that wall reachable at all.
+ * A browser can now complete a profile, photo included, and that is proved
+ * below rather than assumed: the development storage adapter was given a
+ * transport, so the upload address the platform issues is one a browser can
+ * actually PUT to. No approved storage provider exists, so this is evidence
+ * about the product and its pipeline rather than about a deployed provider.
  *
  * Each browser project drives its own cohort of accounts, because nearly every
  * assertion here changes something — a pass suppresses a candidate, an answer
@@ -94,14 +95,18 @@ test.describe('Consumer Web product journey', () => {
     await page.getByTestId('save-profile').click();
 
     // The ladder is the server's, and it has not finished: the profile still
-    // lacks the one image the minimum requires, and no browser can supply one.
+    // lacks the one image the minimum requires. Supplying it is the next test.
     await expect(page.getByTestId('profile-photo')).toBeVisible();
     await expect(page).toHaveURL(/\/welcome$/u);
   });
 
-  test('says honestly that no photo storage exists rather than failing silently', async ({
+  test('uploads a real photo from the browser and finishes onboarding on it', async ({
     page,
   }) => {
+    // The whole ladder, in a browser, ending in the product. Nothing is written
+    // behind the API's back: the photo goes through the same three calls the
+    // surface makes for anybody — ask for a capability, PUT the bytes to the
+    // address it names, confirm — and the worker inspects and processes it.
     await signIn(page, uniqueSubject('media'));
     await page.waitForURL(/\/welcome$/u);
     await page.getByTestId('create-account').click();
@@ -113,18 +118,71 @@ test.describe('Consumer Web product journey', () => {
     await page.getByTestId('language-add').click();
     await page.getByTestId('save-profile').click();
 
+    await expect(page.getByTestId('profile-photo')).toBeVisible();
+    await page.getByTestId('profile-photo').setInputFiles({
+      buffer: await fixturePhoto(),
+      mimeType: 'image/jpeg',
+      name: 'photo.jpg',
+    });
+
+    // Accepted, then checked. `checking` is the honest intermediate state and
+    // the surface shows it rather than claiming the photo is done.
+    const slot = page.locator('[data-testid^="profile-media-"]').first();
+    await expect(slot).toBeVisible({ timeout: 30_000 });
+
+    // Inspection and processing are the worker's, so the surface only learns
+    // the outcome by asking again.
+    await expect(async () => {
+      await page.reload();
+      await expect(
+        page.locator('[data-testid^="profile-media-"][data-state="ready"]'),
+      ).toHaveCount(1);
+    }).toPass({ timeout: 90_000 });
+
+    // The minimum is met, so the server's own ladder lets this account through.
+    await page.goto(`${consumerWebOrigin}/discover`);
+    await expect(page).toHaveURL(/\/discover$/u);
+
+    // Nothing about the storage address reaches the page, in success or
+    // failure: it is provider detail and it names a signed credential.
+    const body = await page.locator('body').innerText();
+    expect(body).not.toContain('signature=');
+    expect(body).not.toContain('uploadUrl');
+  });
+
+  test('refuses bytes that are not an image it admits, and says so plainly', async ({
+    page,
+  }) => {
+    await signIn(page, uniqueSubject('media-refused'));
+    await page.waitForURL(/\/welcome$/u);
+    await page.getByTestId('create-account').click();
+    await page.getByTestId('onboarding-region').fill('ES');
+    await page.getByTestId('declare-adult').click();
+    await page.getByTestId('acknowledge-policies').click();
+    await page.getByTestId('onboarding-display-name').fill('Refusal Tester');
+    await page.getByTestId('language-input').fill('en');
+    await page.getByTestId('language-add').click();
+    await page.getByTestId('save-profile').click();
+
+    // A JPEG magic number and nothing decodable behind it. The upload itself
+    // succeeds — a transport moves bytes — and the platform then decides what
+    // they are from the bytes, which is where this is refused.
     await page.getByTestId('profile-photo').setInputFiles({
       buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
       mimeType: 'image/jpeg',
       name: 'photo.jpg',
     });
 
-    // The upload address the platform issues is deliberately unroutable, so the
-    // write fails and the surface says so without naming a provider or a key.
-    await expect(page.getByTestId('profile-photo-error')).toBeVisible();
-    const body = await page.locator('body').innerText();
-    expect(body).not.toContain('velora.invalid');
-    expect(body).not.toContain('uploadUrl');
+    await expect(async () => {
+      await page.reload();
+      await expect(
+        page.locator('[data-testid^="profile-media-"][data-state="rejected"]'),
+      ).toHaveCount(1);
+    }).toPass({ timeout: 90_000 });
+
+    // Still not through: a rejected photo is not a photo.
+    await page.goto(`${consumerWebOrigin}/discover`);
+    await expect(page).toHaveURL(/\/welcome$/u);
   });
 
   test('answers an introduction and opens the conversation it creates', async ({

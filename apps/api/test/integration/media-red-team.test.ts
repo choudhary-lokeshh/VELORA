@@ -43,6 +43,9 @@ import { silentLogger, testServerConfig } from '../support/harness.js';
  * the finished platform turns up that nothing else asks.
  */
 
+/** Any origin. These suites assert signatures and refusals, never addresses. */
+const localTestBaseUrl = 'http://127.0.0.1:4000';
+
 const databaseUrl = await provisionDatabase('velora_media_red_team');
 const database: TestDatabase = connectDatabase(databaseUrl);
 const directory = await mkdtemp(join(tmpdir(), 'velora-media-red-team-'));
@@ -335,6 +338,7 @@ describe('a delivery credential cannot be extended, moved, or forged', () => {
     // A second deployment, or a rotated key, or an attacker's own HMAC. None of
     // them can mint a credential this adapter honours.
     const impostor = new LocalTestMediaStorage({
+      baseUrl: localTestBaseUrl,
       directory,
       signingKey: 'a-different-development-only-key',
     });

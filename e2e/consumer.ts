@@ -65,3 +65,26 @@ export async function navigateTo(
     .click();
   await page.waitForURL(new RegExp(`/${destination}$`, 'u'));
 }
+
+/**
+ * A real photograph, small enough that a browser suite can afford one.
+ *
+ * Generated rather than committed: a binary fixture in the repository is one
+ * more thing nobody can read in a diff, and the platform decides what an image
+ * is from its bytes, so the bytes have to be a real encode rather than a header
+ * with nothing behind it. Large enough that every derivative the platform makes
+ * is an actual resize.
+ */
+export async function fixturePhoto(): Promise<Buffer> {
+  const sharp = (await import('sharp')).default;
+  return sharp({
+    create: {
+      background: { b: 82, g: 44, r: 60 },
+      channels: 3,
+      height: 600,
+      width: 480,
+    },
+  })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+}

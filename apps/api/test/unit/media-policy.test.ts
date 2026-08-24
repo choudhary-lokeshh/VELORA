@@ -41,6 +41,9 @@ import {
   UnavailableMediaStorage,
 } from '../../src/media/storage.js';
 
+/** Any origin. These suites assert signatures and refusals, never addresses. */
+const localTestBaseUrl = 'http://127.0.0.1:4000';
+
 const assetId = '11111111-2222-4333-8444-555555555555';
 
 /**
@@ -191,6 +194,7 @@ describe('the development storage adapter', () => {
   beforeAll(async () => {
     directory = await mkdtemp(join(tmpdir(), 'velora-media-'));
     storage = new LocalTestMediaStorage({
+      baseUrl: localTestBaseUrl,
       directory,
       signingKey: 'development-only-key',
     });

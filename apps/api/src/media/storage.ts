@@ -2,6 +2,10 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import {
+  localTestObjectPath,
+  localTestPublicObjectPath,
+} from './local-transport.js';
+import {
   maximumMediaObjectBytes,
   mediaVariantKinds,
   type MediaImageFormat,
@@ -229,25 +233,30 @@ export class UnavailableMediaStorage implements MediaStoragePort {
  * in-memory adapter would make two processes disagree about whether an object
  * exists — which is precisely the class of bug this platform exists to prevent.
  *
- * Three things about it are deliberately honest. Its upload capability is not a
- * real transport: a caller places bytes by calling {@link putObject} directly,
- * because inventing an HTTP upload endpoint for a development adapter would put
- * development behaviour on a production route. Its delivery grant is a real
- * HMAC over the object and the expiry, so the shape of a signed credential is
- * exercised rather than mocked. And it performs no malware scanning and no
- * content moderation whatsoever, so nothing it accepts is evidence about real
- * user content. Configuration refuses it outside local and test.
+ * Three things about it are deliberately honest. Its addresses name this API
+ * rather than a provider, because it has no provider: they are served by
+ * {@link LocalTestMediaTransport}, which exists only when this adapter is
+ * selected and sits outside `/v1` so no development behaviour lands on a
+ * product route. Its upload and delivery credentials are real HMACs over the
+ * object and the expiry, so the shape of a signed capability is exercised
+ * rather than mocked. And it performs no malware scanning and no content
+ * moderation whatsoever, so nothing it accepts is evidence about real user
+ * content. Configuration refuses it outside local and test.
  */
 export class LocalTestMediaStorage implements MediaStoragePort {
   readonly name = 'local-test';
 
+  private readonly baseUrl: string;
   private readonly root: string;
   private readonly signingKey: string;
 
   constructor(input: {
+    /** Where this API answers, as a client reaches it. No trailing slash. */
+    readonly baseUrl: string;
     readonly directory: string;
     readonly signingKey: string;
   }) {
+    this.baseUrl = input.baseUrl.replace(/\/+$/u, '');
     this.root = resolve(input.directory);
     this.signingKey = input.signingKey;
   }
@@ -259,11 +268,9 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     const objectKey = requireObjectKey(input.objectKey);
     const expires = Math.floor(input.expiresAt.getTime() / 1000);
     const signature = await this.sign(`${objectKey}:${String(expires)}`);
-    // A deliberately unroutable host. Nothing can come to depend on this
-    // adapter behaving like a real delivery origin.
     return {
       expiresAt: input.expiresAt,
-      url: `https://media.velora.invalid/local-test/${objectKey}?expires=${String(expires)}&signature=${signature}`,
+      url: this.address(localTestObjectPath, objectKey, expires, signature),
     };
   }
 
@@ -298,7 +305,11 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     readonly objectKey: string;
   }): Promise<MediaUploadCapability> {
     const objectKey = requireObjectKey(input.objectKey);
-    return Promise.resolve({
+    const expires = Math.floor(input.expiresAt.getTime() / 1000);
+    // A different payload from the delivery grant, so a capability to write one
+    // object can never be replayed as permission to read it.
+    const signature = await this.sign(`upload:${objectKey}:${String(expires)}`);
+    return {
       expiresAt: input.expiresAt,
       headers: {
         'x-velora-maximum-bytes': String(input.maximumBytes),
@@ -307,8 +318,24 @@ export class LocalTestMediaStorage implements MediaStoragePort {
       maximumBytes: input.maximumBytes,
       method: 'PUT',
       providerReference: `local-test:${objectKey}`,
-      url: `https://media.velora.invalid/local-test/${objectKey}`,
-    });
+      url: this.address(localTestObjectPath, objectKey, expires, signature),
+    };
+  }
+
+  /** Verifies an upload capability this adapter issued. */
+  async verifyUpload(input: {
+    readonly at: Date;
+    readonly expires: number;
+    readonly objectKey: string;
+    readonly signature: string;
+  }): Promise<boolean> {
+    if (!isMediaObjectKey(input.objectKey)) return false;
+    if (!Number.isSafeInteger(input.expires)) return false;
+    if (input.expires * 1000 <= input.at.getTime()) return false;
+    const expected = await this.sign(
+      `upload:${input.objectKey}:${String(input.expires)}`,
+    );
+    return timingSafeEqual(expected, input.signature);
   }
 
   /** Stands in for the client's upload. Test and development use only. */
@@ -326,12 +353,13 @@ export class LocalTestMediaStorage implements MediaStoragePort {
   }
 
   publicAddress(objectKey: string): string | undefined {
-    // Unroutable, like every other address this adapter hands out. What it
-    // exercises is the shape of an immutable public address: the key already
-    // carries the processing version and a random component, so a derivative
-    // that changes is a different address rather than the same one behind a
-    // cache somebody has to be trusted to forget.
-    return `https://media.velora.invalid/local-test/public/${requireObjectKey(objectKey)}`;
+    // Unsigned, like every other public address: the key already carries the
+    // processing version and a random component, so a derivative that changes
+    // is a different address rather than the same one behind a cache somebody
+    // has to be trusted to forget.
+    return `${this.baseUrl}${localTestPublicObjectPath}?key=${encodeURIComponent(
+      requireObjectKey(objectKey),
+    )}`;
   }
 
   // `async` for the reason `createUploadCapability` is.
@@ -399,6 +427,15 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     } catch {
       return undefined;
     }
+  }
+
+  private address(
+    path: string,
+    objectKey: string,
+    expires: number,
+    signature: string,
+  ): string {
+    return `${this.baseUrl}${path}?key=${encodeURIComponent(objectKey)}&expires=${String(expires)}&signature=${signature}`;
   }
 
   private async sign(payload: string): Promise<string> {

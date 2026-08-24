@@ -1,22 +1,23 @@
-import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
-
 /**
  * Admits the accounts the browser suite drives.
  *
  * Everything here goes through the API's own HTTP surface — account creation,
- * the adult declaration, policy acknowledgement, the profile, preferences,
- * availability, introductions, and messages — so nothing is admitted by a route
- * a person could not take.
+ * the adult declaration, policy acknowledgement, the profile, the photo,
+ * preferences, availability, introductions, and messages — so nothing is
+ * admitted by a route a person could not take.
  *
- * There is exactly one exception, and it is a fact about the product rather than
- * a shortcut around it: the development media adapter has no HTTP upload
- * transport, and no approved storage provider exists, so **no browser can
- * complete a profile in any environment**. The bytes are placed the way the
- * integration suite places them, by a small script inside the API workspace that
- * calls the adapter directly, and the platform then inspects and processes them
- * exactly as it would for a real upload. The browser suite asserts the refusal a
- * real person meets separately.
+ * The photo was the exception until the development storage adapter was given a
+ * transport. It had no HTTP upload endpoint at all, so the bytes had to be
+ * placed out of band by a script that called the adapter directly, and the
+ * comment here said so. That is gone: the seed now asks for an upload
+ * capability, PUTs to the address the platform issues, and confirms — the same
+ * three calls a browser makes — and the platform inspects and processes what
+ * arrives exactly as it would for any upload.
+ *
+ * No approved storage provider exists, so this is still development transport
+ * and not evidence about a deployed one. What it is evidence about is the
+ * product: a new account can now reach a finished profile without anything
+ * being written behind the API's back.
  */
 
 export interface SeedPerson {
@@ -75,7 +76,6 @@ const fixtures: readonly Fixture[] = [
 
 interface SeedOptions {
   readonly apiBaseUrl: string;
-  readonly apiWorkspace: string;
   readonly backendEnvironment: Readonly<Record<string, string>>;
   readonly cohorts: number;
   readonly origin: string;
@@ -132,30 +132,53 @@ function caller(options: SeedOptions, device: string) {
   };
 }
 
-function placeBytes(
-  options: SeedOptions,
-  slotId: string,
+/**
+ * Uploads a fixture photo the way a browser does.
+ *
+ * This used to write bytes into the storage directory out of band, by running
+ * a script in the API workspace that called the adapter directly. It had to:
+ * the development adapter issued an unroutable address and had no transport
+ * behind it, so no HTTP client could complete an upload anywhere. Now it does,
+ * so the seed takes the same three steps a person takes — ask for a capability,
+ * PUT to the address it names, confirm — and the suite stops depending on a
+ * path no user has.
+ */
+async function uploadBytes(
+  capability: MediaUploadCapability,
   tone: string,
 ): Promise<void> {
-  return new Promise((settle, fail) => {
-    const child = spawn(
-      'bun',
-      ['run', 'scripts/place-media-bytes.ts', slotId, tone],
-      {
-        cwd: options.apiWorkspace,
-        env: { ...process.env, ...options.backendEnvironment },
-        stdio: 'inherit',
-      },
-    );
-    child.once('error', fail);
-    child.once('exit', (code) => {
-      if (code === 0) {
-        settle();
-        return;
-      }
-      fail(new Error(`placing fixture bytes exited with ${String(code ?? 1)}`));
-    });
+  const [red = 60, green = 44, blue = 52] = tone.split(',').map(Number);
+  // Large enough that every derivative the platform makes is a real resize, and
+  // no larger: a fixture is measured in how much of the pipeline it exercises,
+  // not in megapixels, and a browser suite pays for every one of them.
+  const sharp = (await import('sharp')).default;
+  const bytes = await sharp({
+    create: {
+      background: { b: blue, g: green, r: red },
+      channels: 3,
+      height: 600,
+      width: 480,
+    },
+  })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+
+  const response = await fetch(capability.uploadUrl, {
+    body: new Uint8Array(bytes),
+    headers: capability.uploadHeaders,
+    method: 'PUT',
   });
+  if (!response.ok) {
+    throw new Error(
+      `uploading the fixture photo -> ${String(response.status)}`,
+    );
+  }
+}
+
+interface MediaUploadCapability {
+  readonly mediaId: string;
+  readonly uploadHeaders: Record<string, string>;
+  readonly uploadUrl: string;
 }
 
 /** Waits for the worker to inspect and process what was just uploaded. */
@@ -212,11 +235,11 @@ async function admit(
     languages: [...fixture.languages],
   });
 
-  const slot = await call<{ mediaId: string }>(
+  const slot = await call<MediaUploadCapability>(
     'POST',
     '/v1/users/me/profile/media',
   );
-  await placeBytes(options, slot.mediaId, fixture.tone);
+  await uploadBytes(slot, fixture.tone);
   await call('POST', '/v1/users/me/profile/media/completion', {
     mediaId: slot.mediaId,
   });
@@ -236,12 +259,10 @@ export async function seedCohorts(input: {
   readonly backendEnvironment: Readonly<Record<string, string>>;
   readonly cohorts: number;
   readonly origin: string;
-  readonly repositoryRoot: string;
   readonly runId: string;
 }): Promise<readonly SeedCohort[]> {
   const options: SeedOptions = {
     apiBaseUrl: input.apiBaseUrl,
-    apiWorkspace: resolve(input.repositoryRoot, 'apps/api'),
     backendEnvironment: input.backendEnvironment,
     cohorts: input.cohorts,
     origin: input.origin,

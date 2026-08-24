@@ -198,12 +198,17 @@ const mediaStorageAdapters: Readonly<
     // reaching here without them is a defect rather than a misconfiguration.
     const directory = config.MEDIA_LOCAL_STORAGE_DIRECTORY;
     const signingKey = config.MEDIA_DELIVERY_SIGNING_KEY;
-    if (directory === undefined || signingKey === undefined) {
+    const baseUrl = config.VELORA_API_BASE_URL;
+    if (
+      baseUrl === undefined ||
+      directory === undefined ||
+      signingKey === undefined
+    ) {
       throw new Error(
-        'local-test media storage requires a directory and a delivery signing key',
+        'local-test media storage requires a base URL, a directory, and a delivery signing key',
       );
     }
-    return new LocalTestMediaStorage({ directory, signingKey });
+    return new LocalTestMediaStorage({ baseUrl, directory, signingKey });
   },
   [unavailableMediaStorage]: () => new UnavailableMediaStorage(),
 };

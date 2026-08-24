@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia';
 import {
   loadServerConfig,
+  localTestMediaStorage,
   matureContentEnabled,
   type ServerConfig,
 } from '@velora/config/server';
@@ -41,6 +42,13 @@ import {
   type DiscoveryRuntime,
 } from './discovery/composition.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
+import { maximumMediaObjectBytes } from './media/policy.js';
+import {
+  LocalTestMediaTransport,
+  localTestObjectPath,
+  localTestPublicObjectPath,
+} from './media/local-transport.js';
+import { LocalTestMediaStorage } from './media/storage.js';
 import {
   createIdentityRuntime,
   type IdentityRuntime,
@@ -702,10 +710,37 @@ export function createApplication(
     creatorContext: creators.creatorContext,
   });
 
+  /**
+   * The `local-test` storage adapter's transport, or nothing.
+   *
+   * Constructed from configuration alone, and only for the one adapter that
+   * has no provider origin of its own. Every other value of
+   * `MEDIA_STORAGE_PROVIDER` — including the default `unavailable`, and every
+   * approved provider a future decision selects — leaves this `undefined`, so
+   * the routes below are not registered, the body ceiling stays exactly where
+   * the contract documents it, and the widened CORS allowance does not exist.
+   * Configuration already refuses `local-test` outside `local` and `test`.
+   */
+  const localMediaTransport =
+    config.MEDIA_STORAGE_PROVIDER === localTestMediaStorage &&
+    media.storage instanceof LocalTestMediaStorage
+      ? new LocalTestMediaTransport({
+          now: () => new Date(),
+          store: media.storage,
+        })
+      : undefined;
+
   const app = new Elysia({
     serve: {
       hostname: config.HOST,
-      maxRequestBodySize: maximumRequestBodyBytes,
+      // The transport carries image bytes, which are an order of magnitude
+      // larger than any product request body. Raising the ceiling for it is
+      // scoped to the process that mounted it; the product routes keep their
+      // own limit through the `onRequest` check below.
+      maxRequestBodySize:
+        localMediaTransport === undefined
+          ? maximumRequestBodyBytes
+          : Math.max(maximumRequestBodyBytes, maximumMediaObjectBytes),
       port: config.PORT,
     },
   })
@@ -715,6 +750,9 @@ export function createApplication(
     .onParse(async ({ request }) => {
       const bytes = new Uint8Array(await request.arrayBuffer());
       rawRequestBodies.set(request, bytes);
+      // Image bytes are not text and decoding megabytes of them to build a
+      // string no handler reads is waste the transport does not need.
+      if (localMediaTransport?.handles(request) === true) return '';
       const raw = new TextDecoder().decode(bytes);
       requestBodies.set(request, raw);
       return raw;
@@ -735,14 +773,22 @@ export function createApplication(
       }
 
       if (isPreflight(request)) {
-        return preflightResponse(request, auth.allowedOriginUnion, {
+        const extraHeaders = {
           ...apiSecurityHeaders,
           [correlationHeader]: correlationId,
-        });
+        };
+        return (
+          localMediaTransport?.preflight(
+            request,
+            auth.allowedOriginUnion,
+            extraHeaders,
+          ) ?? preflightResponse(request, auth.allowedOriginUnion, extraHeaders)
+        );
       }
 
       const contentLength = Number(request.headers.get('content-length') ?? 0);
       if (
+        localMediaTransport?.handles(request) !== true &&
         Number.isFinite(contentLength) &&
         contentLength > maximumRequestBodyBytes
       ) {
@@ -1342,6 +1388,23 @@ export function createApplication(
         notifications.providerEventRoutes.receive(input),
       ),
     );
+
+  // Registered last and only when the adapter that needs them is selected.
+  // These are not product routes: they carry no session, no CSRF token, and no
+  // correlation body, because a storage provider's endpoint has none of those
+  // — and they sit outside `/v1` so nothing here is part of the published
+  // contract. See `media/local-transport.ts`.
+  if (localMediaTransport !== undefined) {
+    const transport = localMediaTransport;
+    app
+      .put(localTestObjectPath, async ({ request }) =>
+        transport.put(request, rawBodyFor(request)),
+      )
+      .get(localTestObjectPath, async ({ request }) => transport.get(request))
+      .get(localTestPublicObjectPath, async ({ request }) =>
+        transport.getPublic(request),
+      );
+  }
 
   return {
     app,

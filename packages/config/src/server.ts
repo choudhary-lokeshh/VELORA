@@ -11,6 +11,10 @@ const postgresUrlSchema = serviceUrlSchema('DATABASE_URL', [
   'postgresql:',
 ]);
 const redisUrlSchema = serviceUrlSchema('Redis URL', ['redis:', 'rediss:']);
+const httpUrlSchema = serviceUrlSchema('VELORA_API_BASE_URL', [
+  'http:',
+  'https:',
+]);
 
 /**
  * AUTH adapters currently available. Each name is a development/test
@@ -510,6 +514,17 @@ export const serverConfigSchema = z
      * development, exactly the multi-instance bug this platform must not have.
      */
     MEDIA_DELIVERY_SIGNING_KEY: optionalTextSchema,
+    /**
+     * Where this API answers, as a client reaches it.
+     *
+     * The Next.js surfaces already read it to resolve their API origin at
+     * request time. The server reads the same value for one reason: the
+     * `local-test` storage adapter has no provider origin of its own, so the
+     * absolute upload and delivery addresses it issues have to name this API.
+     * Required when, and only when, that adapter is selected — every approved
+     * provider names itself, and none of them will need this.
+     */
+    VELORA_API_BASE_URL: httpUrlSchema.optional(),
   })
   .superRefine((config, context) => {
     if (config.APP_ENV !== 'staging' && config.APP_ENV !== 'production') return;
@@ -691,6 +706,14 @@ export const serverConfigSchema = z
         message:
           'MEDIA_LOCAL_STORAGE_DIRECTORY is required when MEDIA_STORAGE_PROVIDER is local-test',
         path: ['MEDIA_LOCAL_STORAGE_DIRECTORY'],
+      });
+    }
+    if (config.VELORA_API_BASE_URL === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'VELORA_API_BASE_URL is required when MEDIA_STORAGE_PROVIDER is local-test: the adapter has no origin of its own and must issue addresses that name this API',
+        path: ['VELORA_API_BASE_URL'],
       });
     }
     if (config.MEDIA_DELIVERY_SIGNING_KEY === undefined) {

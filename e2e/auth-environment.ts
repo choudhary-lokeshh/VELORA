@@ -44,9 +44,10 @@ export const platformAdminOrigin = 'http://127.0.0.1:3002';
  * HMAC material for the development media adapter's delivery grants.
  *
  * A fixture, not a secret: the adapter it belongs to is refused outside local
- * and test, its addresses are deliberately unroutable, and nothing it signs is
- * honoured by anything real. It is a constant rather than a generated value
- * because two processes generating their own would reject each other's grants.
+ * and test, the only thing that honours what it signs is that same adapter's
+ * transport on this suite's own API, and nothing it signs is honoured by
+ * anything real. It is a constant rather than a generated value because two
+ * processes generating their own would reject each other's grants.
  */
 const mediaSigningKey = 'velora-browser-suite-media-fixture-key';
 
@@ -158,6 +159,10 @@ export async function startAuthEnvironment(): Promise<void> {
     REALTIME_CALL_ELIGIBILITY: 'composed',
     REALTIME_RTC_PROVIDER: 'local-test',
     SAFETY_APPEAL_POLICY: 'local-test',
+    // The development storage adapter has no origin of its own, so the upload
+    // and delivery addresses it issues have to name this API — which here is
+    // the suite's own port, not the one a developer runs.
+    VELORA_API_BASE_URL: authApiBaseUrl,
   };
 
   const api: ChildProcess = spawn('bun', ['run', 'src/main.ts'], {
@@ -190,7 +195,6 @@ export async function startAuthEnvironment(): Promise<void> {
     backendEnvironment,
     cohorts: cohortOrder.length,
     origin: consumerWebOrigin,
-    repositoryRoot,
     runId: String(Date.now()),
   });
 
