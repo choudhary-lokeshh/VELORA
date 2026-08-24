@@ -127,7 +127,20 @@ jobs:
       # to ship this month; already-present packages are a no-op.
       - name: Install the declared Android SDK components
         run: |
-          sdkmanager --install \
+          # The runner image sets ANDROID_HOME but does not put the SDK's own
+          # tools on PATH, so `sdkmanager` has to be located rather than
+          # called. The versioned directory is tried after `latest` because the
+          # image has shipped both layouts.
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$sdkmanager" ]; then
+            sdkmanager="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)"
+          fi
+          test -x "$sdkmanager" || {
+            echo "No sdkmanager under $ANDROID_HOME/cmdline-tools" >&2
+            exit 1
+          }
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$sdkmanager" --install \
             'platforms;android-36' \
             'build-tools;36.0.0' \
             'ndk;27.1.12297006' \
