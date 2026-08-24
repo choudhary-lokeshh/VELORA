@@ -356,6 +356,34 @@ function processWorkingDirectory(pid) {
 }
 
 /**
+ * The process group a pid belongs to, and whether anything still owns it.
+ *
+ * A previous session that was killed outright — a closed terminal, a `kill -9`,
+ * a crashed editor — never ran its shutdown, so its children are re-parented to
+ * init and keep their ports. Days later they are still listening, and the only
+ * thing distinguishing them from a session a developer is deliberately running
+ * in another terminal is exactly this: an abandoned group's leader has no
+ * parent left.
+ */
+function processGroup(pid) {
+  const result = spawnSync('ps', ['-o', 'pgid=,ppid=', '-p', pid], {
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return undefined;
+  const [group, parent] = result.stdout.trim().split(/\s+/u).map(Number);
+  if (!Number.isInteger(group)) return undefined;
+  const leader =
+    group === Number(pid)
+      ? parent
+      : Number(
+          spawnSync('ps', ['-o', 'ppid=', '-p', String(group)], {
+            encoding: 'utf8',
+          }).stdout.trim(),
+        );
+  return { abandoned: leader === 1, group };
+}
+
+/**
  * Describes who holds a port. `lsof` is best effort on purpose: it is present
  * on macOS and on the Linux images Velora is developed on, and when it is not,
  * an unidentified holder is still reported as a conflict rather than assumed
@@ -376,14 +404,16 @@ function describePortHolder(port) {
 
   const holders = parseListingFields(result.stdout).map((holder) => ({
     ...holder,
+    group: processGroup(holder.pid),
     workingDirectory: processWorkingDirectory(holder.pid),
   }));
-  const ours = holders.some(
+  const mine = holders.filter(
     (holder) =>
       holder.workingDirectory !== undefined &&
       (holder.workingDirectory === repositoryRoot ||
         holder.workingDirectory.startsWith(`${repositoryRoot}/`)),
   );
+  const abandoned = mine.filter((holder) => holder.group?.abandoned === true);
   const described = holders
     .map(
       (holder) =>
@@ -392,7 +422,17 @@ function describePortHolder(port) {
         }`,
     )
     .join(', ');
-  return { detail: `port ${port} is held by ${described}`, ours };
+  return {
+    // The command that ends it, named rather than left to be worked out. The
+    // group, not the pid: `pnpm` starts a shell that starts Next, Expo, or Bun,
+    // and signalling the pnpm process alone is how the thing actually holding
+    // the port survives.
+    abandoned: abandoned.map(
+      (holder) => `kill -TERM -${String(holder.group?.group ?? holder.pid)}`,
+    ),
+    detail: `port ${port} is held by ${described}`,
+    ours: mine.length > 0,
+  };
 }
 
 async function requireFreePorts() {
@@ -405,6 +445,20 @@ async function requireFreePorts() {
     if (!(await probePort(entry.port, 500))) continue;
     const holder = describePortHolder(entry.port);
     conflicts.push(`  ${entry.service}: ${holder.detail}`);
+    if (holder.abandoned !== undefined && holder.abandoned.length > 0) {
+      // Nothing owns it any more: a previous session of this checkout was
+      // killed before it could stop its children, so they were re-parented to
+      // init and kept the port. Still not stopped from here — deciding on a
+      // developer's behalf which of their processes to end is not this
+      // command's to make — but the command that ends it is no longer
+      // something they have to work out from `lsof`.
+      conflicts.push(
+        '    Nothing owns that process: it is left over from a local dev session',
+        '    of this checkout that was killed before it could stop its children.',
+        ...holder.abandoned.map((command) => `      ${command}`),
+      );
+      continue;
+    }
     conflicts.push(
       holder.ours
         ? '    That process belongs to this checkout — another local dev session is probably already running. Stop it and try again.'
