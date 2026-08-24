@@ -236,6 +236,35 @@ with one is a published secret. Expo reads `apps/mobile/.env` rather than the
 repository-root file, so the mobile `dev` script supplies these values to the
 dev server directly and no second environment file is needed.
 
+**A native build makes "embedded in the bundle" literal.** Both values are
+compiled into the APK or AAB at build time, so a released binary carries
+whatever the build environment held and cannot be reconfigured afterwards.
+`apps/mobile/eas.json` therefore sets `EXPO_PUBLIC_APP_ENV` per profile, and
+`pnpm android:verify` fails on any key in that file that is not
+`EXPO_PUBLIC_`-prefixed or that reads like a credential. A build with no usable
+endpoint does not crash: `resolveApiBaseUrl` throws, the providers catch it, and
+the surface renders as unavailable rather than as signed out.
+
+On an emulator or a device, `EXPO_PUBLIC_APP_ENV=local` resolves to
+`http://127.0.0.1:4000`, which is the *device's* own loopback. `adb reverse
+tcp:4000 tcp:4000` is what makes it the host machine's — see
+[Android native build](11-android-native-build.md).
+
+### Native configuration that is not an environment variable
+
+Some values a native build needs are read by the platform before any JavaScript
+runs, so they cannot come from the environment at all. They live in
+`apps/mobile/app.config.ts`: the application id, the SDK levels, the permission
+allow-list, and the two NIGHT CURRENT colours the splash and the adaptive icon
+are painted with. The colours are copies rather than tokens because there is no
+runtime to read a token in yet, so `pnpm android:verify` reads
+`apps/mobile/src/design/tokens.ts` and fails if either has drifted from the
+value it copies.
+
+Release signing values are not here either, and are never environment variables
+in a committed file: see
+[Android release and signing](12-android-release-and-signing.md).
+
 ## Local Docker infrastructure
 
 Owner: `compose.yaml`, which reads them from the repository-root `.env`.
