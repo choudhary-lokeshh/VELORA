@@ -1,5 +1,10 @@
 # Creator Studio product interface freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `c45abde`
+- Freeze date: 2026-08-23
+- Interface authority: [ADR-0028](../decisions/ADR-0028-creator-studio-product-interface.md)
+
 What the Creator Studio product interface froze with, what it deliberately does not do, and what unfreezes the rest. Companion to the [media](13-media-freeze-report.md), [identity](14-identity-freeze-report.md), [RTC](16-rtc-freeze-report.md), [notifications](17-notifications-freeze-report.md), and [Consumer Web](18-consumer-web-freeze-report.md) reports, written to the same rule: architecture that is finished is described as finished, and a capability that cannot run says so in its own words.
 
 ## What this work owns

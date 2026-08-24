@@ -1,5 +1,7 @@
 # Platform Admin console freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `ac16651`
 - Freeze date: 2026-08-23
 - Interface authority: [ADR-0029](../decisions/ADR-0029-platform-admin-product-interface.md)
 

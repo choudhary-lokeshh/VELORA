@@ -1,5 +1,7 @@
 # Consumer Mobile product interface freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `48b6146`
 - Freeze date: 2026-08-24
 - Interface authority: [ADR-0030](../decisions/ADR-0030-consumer-mobile-product-interface.md)
 

@@ -1,5 +1,10 @@
 # Monetization freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `a2c50d7`
+- Freeze date: 2026-08-15
+- Architecture authority: [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md)
+
 ## What this records
 
 The monetization core and the money architecture are frozen: the internal architecture, its invariants, and the code that carries them are complete and green, and no further work on them is planned until something below unfreezes them.

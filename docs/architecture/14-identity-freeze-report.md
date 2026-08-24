@@ -1,5 +1,10 @@
 # Identity assurance freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `f672a1a`
+- Freeze date: 2026-08-20
+- Architecture authority: [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md)
+
 ## What this records
 
 The Identity Assurance core is frozen: the domain, its invariants, and the code that carries them are complete and green, and no further work on them is planned until something below unfreezes them.

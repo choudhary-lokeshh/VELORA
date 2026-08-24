@@ -1,5 +1,10 @@
 # Consumer Web product interface freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `6bca054`
+- Freeze date: 2026-08-23
+- Interface authority: [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md)
+
 What the Consumer Web product interface froze with, what it deliberately does not do, and what unfreezes the rest. Companion to the [media](13-media-freeze-report.md), [identity](14-identity-freeze-report.md), [RTC](16-rtc-freeze-report.md), and [notifications](17-notifications-freeze-report.md) reports, written to the same rule: architecture that is finished is described as finished, and a capability that cannot run says so in its own words.
 
 ## What this work owns

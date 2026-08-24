@@ -1,5 +1,10 @@
 # Trust and safety freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `7d92408`
+- Freeze date: 2026-08-16
+- Architecture authority: [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md)
+
 ## What this records
 
 The trust and safety core and the mature-content compliance architecture are frozen: the internal architecture, its invariants, and the code that carries them are complete and green, and no further work on them is planned until something below unfreezes them.

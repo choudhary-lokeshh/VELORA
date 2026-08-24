@@ -1,5 +1,10 @@
 # Production media freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `9eb5ffd`
+- Freeze date: 2026-08-18
+- Architecture authority: [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md)
+
 ## What this records
 
 The production media platform's core is frozen: the internal architecture, its invariants, and the code that carries them are complete and green, and no further work on them is planned until something below unfreezes them.

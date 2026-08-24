@@ -1,5 +1,10 @@
 # RTC freeze report
 
+- Freeze status: Frozen
+- Freeze SHA: `86c3b1a`
+- Freeze date: 2026-08-22
+- Architecture authority: [ADR-0025](../decisions/ADR-0025-rtc-live-communications-architecture.md)
+
 ## What this records
 
 What the one-to-one voice and video core froze with, what still blocks a real call, and what would unfreeze it. It is written so that somebody arriving later can tell what was built from what was decided, and can find no permission here that nobody granted.

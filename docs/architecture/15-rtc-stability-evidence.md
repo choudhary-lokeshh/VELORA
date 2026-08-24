@@ -1,5 +1,11 @@
 # RTC repeated-run stability evidence
 
+- Freeze status: Frozen
+- Freeze SHA: `86c3b1a`
+- Freeze date: 2026-08-22
+- Architecture authority: [ADR-0025](../decisions/ADR-0025-rtc-live-communications-architecture.md)
+- Companion report: [RTC freeze report](16-rtc-freeze-report.md)
+
 ## Purpose
 
 A gate that passes once has said it can pass once. What a freeze needs is whether it passes *reliably*, and the failures that decide that — ordering, load, clocks — are exactly the ones a single green run hides. This records the repeated-run evidence taken before the RTC core was frozen, the method that produced it, and the environment hazards that had to be closed first.
