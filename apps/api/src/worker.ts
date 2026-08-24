@@ -137,9 +137,34 @@ export const safetyDeadlineSweepIntervalMilliseconds = 60_000;
  * until the next restart. Enumerating by type means a cycle added later cannot
  * be forgotten here, which is the only version of this that stays true.
  */
+/**
+ * How far apart two background cycles are started.
+ *
+ * Sixteen pollers ran on intervals of 5, 15, 30, and 60 seconds — every one of
+ * them a multiple of five — and every one was started in the same synchronous
+ * loop. Their timers therefore aligned permanently: eight cycles began together
+ * every five seconds and all sixteen began together every sixty, against a
+ * database admission bound of eight permits with a 250ms wait. The excess did
+ * not queue and proceed; it waited out the bound and reported
+ * `Database admission capacity is exhausted`, at high severity, on an idle
+ * developer machine. The bound was doing exactly its job. The arrival pattern
+ * was the defect.
+ *
+ * Spacing the starts fixes it at the source. Sixteen phases 250ms apart occupy
+ * four seconds, less than the shortest interval, and because every interval is
+ * a whole multiple of five seconds each poller keeps its phase for the life of
+ * the process — two cycles that start apart stay apart, permanently, rather
+ * than drifting back into alignment. Nothing about how often work is looked for
+ * changes, and no limit is raised.
+ */
+export const backgroundCyclePhaseMilliseconds = 250;
+
 export function startBackgroundCycles(composition: WorkerComposition): void {
+  let phase = 0;
   for (const value of Object.values(composition)) {
-    if (value instanceof Poller) value.start();
+    if (!(value instanceof Poller)) continue;
+    value.start(phase);
+    phase += backgroundCyclePhaseMilliseconds;
   }
 }
 
