@@ -31,6 +31,7 @@ import {
 } from '../design/primitives';
 import { color, radius, space } from '../design/tokens';
 import { languageName, regionName } from './locale';
+import { ProfilePhotos } from './photos';
 import { useSingleFlight } from './resource';
 
 /**
@@ -47,9 +48,12 @@ import { useSingleFlight } from './resource';
  * would gather sensitive data for a rule that does not exist yet. Nothing here
  * calls a declaration a verified check, because it is not one.
  *
- * A photo cannot be supplied at any step. No storage provider is approved, so
- * there is no route by which an image could be uploaded or delivered, and the
- * screen says so rather than offering a camera control that could not work.
+ * A photo can now be supplied here, from the camera or the photo library, and
+ * the same control the profile screen uses is reused so both behave
+ * identically. What still cannot happen is anybody seeing it: consumer media
+ * has no authorized delivery route, and the control says so on the screen. In
+ * an environment with no storage provider the upload refuses cleanly and says
+ * nothing was lost, rather than the step pretending to work.
  */
 
 const ladder: readonly JourneyStage[] = [
@@ -439,17 +443,7 @@ function ProfileStep({
         )}
       </Field>
 
-      {needsPhoto ? (
-        <Notice
-          testID="onboarding-photo-note"
-          title="A photo is still required, and cannot be added yet"
-          tone="caution"
-        >
-          VELORA has no approved way to store or deliver an image, so there is
-          nothing here to upload one with. Your profile is complete in every
-          other way and this is not something you can fix.
-        </Notice>
-      ) : null}
+      {needsPhoto ? <ProfilePhotos /> : null}
 
       <Button
         busy={busy}

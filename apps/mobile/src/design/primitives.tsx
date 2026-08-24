@@ -95,6 +95,7 @@ export function Text({
   align,
   children,
   numberOfLines,
+  scaleCapOverride,
   style,
   testID,
   tone = 'primary',
@@ -108,6 +109,13 @@ export function Text({
   readonly align?: 'left' | 'center' | 'right';
   readonly children: ReactNode;
   readonly numberOfLines?: number | undefined;
+  /**
+   * Overrides the variant's own scaling ceiling, for the few places where a
+   * slot's width is fixed by something other than the text in it. Growth that
+   * a container cannot absorb turns into truncation, which is less readable
+   * than the smaller text it replaced.
+   */
+  readonly scaleCapOverride?: number | undefined;
   readonly style?: StyleProp<TextStyle>;
   readonly testID?: string | undefined;
   readonly tone?: TextTone;
@@ -115,7 +123,7 @@ export function Text({
   readonly weight?: FontWeightName;
 }) {
   const step = text[variant];
-  const cap = scaleCap[variant];
+  const cap = scaleCapOverride ?? scaleCap[variant];
   return (
     <RNText
       style={[

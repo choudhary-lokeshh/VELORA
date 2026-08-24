@@ -8,6 +8,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { useApi, useSession, useToast } from '../frame/providers';
+import { openApplicationSettings } from '../device/permissions';
 import { Screen } from '../frame/shell';
 import {
   Badge,
@@ -26,6 +27,7 @@ import {
   TextField,
 } from '../design/primitives';
 import { languageName } from './locale';
+import { ProfilePhotos } from './photos';
 import {
   useResource,
   useRevalidateOnForeground,
@@ -70,7 +72,7 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
   return (
     <Screen
       onBack={onBack}
-      subtitle="What other people see. There is no photograph, because there is no way to deliver one."
+      subtitle="What other people see. A photograph can be added; none is displayed anywhere yet."
       testID="profile-screen"
       title="Profile"
     >
@@ -163,6 +165,8 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
               </Button>
             </Stack>
           </Card>
+
+          <ProfilePhotos />
 
           {held === undefined ? null : (
             <Card>
@@ -464,23 +468,88 @@ export function NoticePreferencesScreen({
           </Card>
 
           {/*
-            Push is listed because the server publishes it as a category, and it
-            is not offered as something to turn on here because nothing could
-            deliver it: no push provider is approved and this application has no
-            native build to register a device token from.
+            What this says depends on what the build can actually do, because
+            the two halves of push moved independently. The native build now
+            exists, so a device token *can* be issued — but only once a provider
+            is configured, and none is approved. The permission is therefore
+            asked for only when there is something behind it: the control below
+            appears when the registrar reports that a permission is the one
+            thing missing, which cannot happen in a build with no provider. A
+            prompt in any other state would teach somebody to grant a permission
+            for nothing.
           */}
-          <Notice
-            testID="notice-delivery-blocked"
-            title="Nothing is sent outside VELORA yet"
-          >
-            No email, push, or text provider is approved, and this build
-            registers no device token, so no notification permission is ever
-            asked for. These choices are stored and will apply the day a channel
-            exists; until then every notice waits for you under Notices.
-          </Notice>
+          <PushDeliveryNotice />
         </Stack>
       )}
     </Screen>
+  );
+}
+
+/**
+ * What this device can be reached on, said exactly.
+ *
+ * Four different situations used to read as one sentence about push being
+ * unavailable, and only one of them is now true by default. They are separated
+ * because a person can act on two of them and on neither of the others.
+ */
+function PushDeliveryNotice() {
+  const session = useSession();
+  const push = session.push;
+
+  if (push.status === 'permission_required') {
+    const blocked = push.permission === 'blocked';
+    return (
+      <Notice
+        testID="notice-push-permission"
+        title={
+          blocked
+            ? 'Android will not ask about notifications again'
+            : 'Notifications are not switched on for this phone'
+        }
+        tone="caution"
+      >
+        <Stack gap={3}>
+          <Text tone="secondary" variant="small">
+            {blocked
+              ? 'VELORA cannot show the notification dialog once it has been refused, so it has to be turned on in Android Settings.'
+              : 'Android asks once per application. Nothing is sent until a delivery provider exists either way.'}
+          </Text>
+          <Button
+            onPress={() => {
+              if (blocked) void openApplicationSettings();
+              else session.enablePush();
+            }}
+            size="small"
+            testID="notice-push-enable"
+            tone="secondary"
+          >
+            {blocked ? 'Open Settings' : 'Allow notifications'}
+          </Button>
+        </Stack>
+      </Notice>
+    );
+  }
+
+  if (push.status === 'registered') {
+    return (
+      <Notice testID="notice-push-registered" title="This phone is registered">
+        VELORA can address this device. Whether anything arrives depends on a
+        delivery provider, and every notice waits for you under Notices
+        regardless.
+      </Notice>
+    );
+  }
+
+  return (
+    <Notice
+      testID="notice-delivery-blocked"
+      title="Nothing is sent outside VELORA yet"
+    >
+      No email, push, or text provider is approved, and this build has none
+      configured, so no device token is issued and no notification permission is
+      asked for. These choices are stored and will apply the day a channel
+      exists; until then every notice waits for you under Notices.
+    </Notice>
   );
 }
 

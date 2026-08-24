@@ -27,6 +27,8 @@ import type {
   OnboardingState,
   PolicyDocument,
   ProfileMediaUpload,
+  PushDeviceList,
+  RegisterPushDeviceBody,
   RedeemClubInviteBody,
   Report,
   ReportList,
@@ -200,6 +202,28 @@ export interface ConsumerApi {
   notificationPreferences(
     signal?: AbortSignal,
   ): Promise<ApiResult<NotificationPreferenceList>>;
+  /**
+   * Puts this installation's push token on record, or replaces the one it had.
+   *
+   * Registering the same token again is a heartbeat rather than a second
+   * device, so a client may call this on every launch without accumulating
+   * registrations. The token is a bearer credential for reaching a device: it
+   * is sent and never read back, because no response in this contract carries
+   * one.
+   */
+  registerPushDevice(
+    body: RegisterPushDeviceBody,
+  ): Promise<ApiResult<PushDeviceList>>;
+  /**
+   * Takes this installation off the record, by installation rather than by
+   * token.
+   *
+   * Signing out must be able to stop delivery even when the token that was
+   * registered is no longer obtainable — a permission revoked, a keystore that
+   * will not open, a provider that has retired the token. Naming the
+   * installation is the only identifier that survives all three.
+   */
+  revokePushDevice(installationId: string): Promise<ApiResult<PushDeviceList>>;
   saveNotificationPreference(
     body: SaveNotificationPreferenceBody,
   ): Promise<ApiResult<NotificationPreferenceList>>;
@@ -483,6 +507,19 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     profile: async (signal) =>
       attempt(async () =>
         api.GET('/v1/users/me/profile', await reading(signal)),
+      ),
+
+    registerPushDevice: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/notifications/devices', { ...(await writing()), body }),
+      ),
+
+    revokePushDevice: async (installationId) =>
+      attempt(async () =>
+        api.POST('/v1/notifications/devices/revocations', {
+          ...(await writing()),
+          body: { installationId },
+        }),
       ),
 
     removeProfileMedia: async (mediaId) =>

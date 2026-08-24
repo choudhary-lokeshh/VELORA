@@ -14,6 +14,21 @@ import { resolveApiBaseUrl } from '../api';
 import { createPlatformSecureTokenStore } from '../auth/secure-storage';
 import type { SecureTokenStore } from '../auth/secure-storage';
 import {
+  createInstallationIdentity,
+  createPlatformInstallationStore,
+  type InstallationIdentity,
+} from '../device/installation';
+import {
+  createPushRegistrar,
+  initialPushRegistrationState,
+  type PushRegistrar,
+  type PushRegistrationState,
+} from '../push/registration';
+import {
+  createNativeDevicePushTokenSource,
+  type DevicePushTokenSource,
+} from '../push/token';
+import {
   createMobileAuthManager,
   initialMobileAuthState,
   type MobileAuthManager,
@@ -53,6 +68,15 @@ export interface SessionValue {
   readonly api: ConsumerApi;
   readonly auth: MobileAuthManager;
   readonly busy: boolean;
+  /** This installation's identifier, for anything that has to name the device. */
+  readonly installation: InstallationIdentity;
+  /**
+   * What the platform has been told about reaching this device, and what is
+   * stopping it. Never a claim that anything will be delivered.
+   */
+  readonly push: PushRegistrationState;
+  /** Asks for the notification permission and registers. Explained first. */
+  readonly enablePush: () => void;
   readonly restore: () => void;
   readonly signIn: (subject: string) => void;
   readonly signOut: () => void;
@@ -96,18 +120,24 @@ export function useApi(): ConsumerApi {
 interface Wiring {
   readonly api: ConsumerApi;
   readonly auth: MobileAuthManager;
+  readonly installation: InstallationIdentity;
+  readonly push: PushRegistrar;
 }
 
 export function ConsumerProviders({
   apiBaseUrl,
   children,
   fetchImplementation,
+  installation: providedInstallation,
+  pushTokenSource,
   store,
   unavailable,
 }: {
   readonly apiBaseUrl?: string;
   readonly children: ReactNode;
   readonly fetchImplementation?: typeof globalThis.fetch;
+  readonly installation?: InstallationIdentity;
+  readonly pushTokenSource?: DevicePushTokenSource;
   readonly store?: SecureTokenStore;
   /** Rendered instead of the product when this build has no endpoint. */
   readonly unavailable: ReactNode;
@@ -122,20 +152,38 @@ export function ConsumerProviders({
           : { fetch: fetchImplementation }),
         store: store ?? createPlatformSecureTokenStore(),
       });
-      return {
-        api: createMobileConsumerApi({
-          apiBaseUrl: resolved,
-          auth,
-          ...(fetchImplementation === undefined
-            ? {}
-            : { fetch: fetchImplementation }),
-        }),
+      const api = createMobileConsumerApi({
+        apiBaseUrl: resolved,
         auth,
+        ...(fetchImplementation === undefined
+          ? {}
+          : { fetch: fetchImplementation }),
+      });
+      const installation =
+        providedInstallation ??
+        createInstallationIdentity({
+          store: createPlatformInstallationStore(),
+        });
+      return {
+        api,
+        auth,
+        installation,
+        push: createPushRegistrar({
+          api,
+          installation,
+          source: pushTokenSource ?? createNativeDevicePushTokenSource(),
+        }),
       };
     } catch {
       return undefined;
     }
-  }, [apiBaseUrl, fetchImplementation, store]);
+  }, [
+    apiBaseUrl,
+    fetchImplementation,
+    providedInstallation,
+    pushTokenSource,
+    store,
+  ]);
 
   if (wiring === undefined) return <>{unavailable}</>;
   return (
@@ -152,8 +200,11 @@ function SessionProvider({
   readonly children: ReactNode;
   readonly wiring: Wiring;
 }) {
-  const { api, auth } = wiring;
+  const { api, auth, installation, push } = wiring;
   const [state, setState] = useState<MobileAuthState>(initialMobileAuthState);
+  const [pushState, setPushState] = useState<PushRegistrationState>(
+    initialPushRegistrationState,
+  );
   // The shared guard, not a local one. A guard held in component state is not a
   // guard: two taps in the same frame both read it as it was before either
   // committed, so both fire — two sessions created for one press.
@@ -175,6 +226,28 @@ function SessionProvider({
     onSessionEnded: restore,
   });
 
+  /**
+   * The push registration, kept in step with the session and with nothing else.
+   *
+   * It is brought up to date on sign-in and again on every return to the
+   * foreground, because a provider can rotate a token while the application is
+   * suspended and a registration nobody refreshed addresses a device that no
+   * longer answers. `requestPermission` is false here on purpose: a launch
+   * must never produce a system prompt nobody asked for, so the first prompt
+   * only ever comes from a screen that has explained itself.
+   */
+  const syncPush = useCallback(() => {
+    if (!signedIn) return;
+    void push.ensure().then(setPushState);
+  }, [push, signedIn]);
+
+  useEffect(syncPush, [syncPush]);
+  useRevalidateOnForeground(syncPush);
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    return push.watch();
+  }, [push, signedIn]);
+
   const value = useMemo<SessionValue>(() => {
     const perform = (work: () => Promise<MobileAuthState>) => {
       run(async () => {
@@ -187,21 +260,53 @@ function SessionProvider({
       auth,
       busy,
       restore,
+      enablePush: () => {
+        run(async () => {
+          setPushState(await push.ensure({ requestPermission: true }));
+        });
+      },
+      installation,
+      push: pushState,
       signIn: (subject: string) => {
         perform(async () =>
-          auth.signIn({ installationId: 'installation-local-device', subject }),
+          auth.signIn({
+            installationId: await installation.current(),
+            subject,
+          }),
         );
       },
       signOut: () => {
-        perform(async () => auth.signOut());
+        perform(async () => {
+          // Before the session is dropped, not after. Revoking needs the
+          // access token the sign-out is about to throw away, and a device
+          // left registered would keep being addressed for somebody who has
+          // signed out of it.
+          setPushState(await push.revoke());
+          return auth.signOut();
+        });
       },
       signOutEverywhere: () => {
-        perform(async () => auth.signOutEverywhere());
+        perform(async () => {
+          setPushState(await push.revoke());
+          return auth.signOutEverywhere();
+        });
       },
       signedIn,
       state,
     };
-  }, [account, api, auth, busy, restore, run, signedIn, state]);
+  }, [
+    account,
+    api,
+    auth,
+    busy,
+    installation,
+    push,
+    pushState,
+    restore,
+    run,
+    signedIn,
+    state,
+  ]);
 
   return (
     <SessionContext.Provider value={value}>

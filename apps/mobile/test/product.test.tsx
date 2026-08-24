@@ -454,7 +454,7 @@ describe('you', () => {
     ).toBeDefined();
   });
 
-  it('saves a profile without ever offering a photograph', async () => {
+  it('saves a profile, and offers a photograph nobody can be shown', async () => {
     const { double, view } = await mount(<ProfileScreen onBack={nothing} />);
     await waitFor(() => {
       expect(view.getByTestId('profile-name')).toBeTruthy();
@@ -471,7 +471,13 @@ describe('you', () => {
         ),
       ).toBe(true);
     });
-    expect(view.queryByTestId('profile-add-photo')).toBeNull();
+
+    // The native build resolved one of the two blockers on a photograph, so
+    // the control exists. It did not resolve the other: consumer media still
+    // has no authorized delivery route, and the screen has to keep saying so
+    // rather than implying that adding one makes it visible.
+    expect(view.getByTestId('profile-add-photo')).toBeTruthy();
+    expect(view.getByTestId('media-delivery-blocked')).toBeTruthy();
   });
 
   it('lists a block by when it happened, because no name is kept against one', async () => {

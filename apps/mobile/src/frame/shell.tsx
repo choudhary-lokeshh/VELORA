@@ -162,13 +162,24 @@ export function PlainScreen({
 
 /* =============================== Wordmark ============================ */
 
+const wordmarkTracking = letterSpacing(text.caption.size, tracking.wordmark);
+
 export function Wordmark() {
   return (
     <View style={styles.wordmark}>
       <Icon color={color.ember} name="sparkle" size="md" />
       <Text
         style={{
-          letterSpacing: letterSpacing(text.caption.size, tracking.wordmark),
+          letterSpacing: wordmarkTracking,
+          /*
+           * Android puts the letter-space *after* the last glyph and then
+           * measures the view without it, so a centred wordmark loses its
+           * final letter: on a device the launch screen read "VELOR". The
+           * padding gives that trailing advance somewhere to live. It is not
+           * visible spacing — it is exactly the gap the tracking already put
+           * there, now inside the box rather than outside it.
+           */
+          paddingRight: wordmarkTracking,
         }}
         variant="caption"
         weight="semibold"
@@ -180,6 +191,9 @@ export function Wordmark() {
 }
 
 /* =============================== Tab bar ============================= */
+
+/** How far a tab label may grow before five of them stop fitting. */
+const tabLabelScaleCap = 1.3;
 
 export interface TabSignals {
   readonly conversations?: number;
@@ -263,6 +277,17 @@ export function TabBar({
             </View>
             <Text
               numberOfLines={1}
+              /*
+               * Five labels share one screen width, so this slot cannot grow
+               * with the system setting the way body copy does. Uncapped, a
+               * device at 200 % rendered the bar as "Discov..Introd..Messa..",
+               * which is less use to somebody who needs large text than a
+               * slightly smaller word they can actually read. The ceiling is
+               * generous enough to help and low enough to keep five whole
+               * words; the icon above it does not scale at all and carries the
+               * meaning either way.
+               */
+              scaleCapOverride={tabLabelScaleCap}
               tone={active ? 'accent' : 'tertiary'}
               variant="micro"
               weight={active ? 'semibold' : 'regular'}

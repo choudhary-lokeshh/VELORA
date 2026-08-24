@@ -6,10 +6,23 @@ import {
   maximumDisplayNameLength,
   maximumProfileLanguages,
   maximumProfileMedia,
+  maximumProfileMediaBytes,
   minimumDisplayNameLength,
   minimumProfileLanguages,
 } from './profile-bounds.js';
 import { profileRequirementSchema, regionSchema } from './users.js';
+
+/**
+ * Re-exported so `@velora/validation` keeps publishing them under the name
+ * every caller already uses. They live in `./profile-bounds` because Consumer
+ * Mobile has to check a file's size and type before uploading it and must not
+ * pull a schema library into a React Native bundle to do so.
+ */
+export {
+  acceptedProfileMediaTypes,
+  maximumProfileMediaBytes,
+  type ProfileMediaContentType,
+} from './profile-bounds.js';
 
 /**
  * Consumer profile contract and the approved V1 profile policy.
@@ -35,21 +48,6 @@ export {
   minimumDisplayNameLength,
   minimumProfileLanguages,
 } from './profile-bounds.js';
-
-/**
- * Accepted image types. The server decides an object's type from its own bytes;
- * this list is published so a client can refuse an obviously wrong file early,
- * never so the server can trust what a client claims.
- */
-export const acceptedProfileMediaTypes = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-] as const;
-export type ProfileMediaContentType =
-  (typeof acceptedProfileMediaTypes)[number];
-
-export const maximumProfileMediaBytes = 8 * 1024 * 1024;
 
 /**
  * Display names are neither unique nor reserved. Impersonation and offensive

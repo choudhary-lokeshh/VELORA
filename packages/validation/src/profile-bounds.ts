@@ -29,3 +29,18 @@ export const maximumProfileLanguages = 5;
 
 /** Image slots a profile may hold. Positions are zero-based and dense. */
 export const maximumProfileMedia = 6;
+
+/**
+ * Accepted image types. The server decides an object's type from its own bytes;
+ * this list is published so a client can refuse an obviously wrong file early,
+ * never so the server can trust what a client claims.
+ */
+export const acceptedProfileMediaTypes = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+] as const;
+export type ProfileMediaContentType =
+  (typeof acceptedProfileMediaTypes)[number];
+
+export const maximumProfileMediaBytes = 8 * 1024 * 1024;

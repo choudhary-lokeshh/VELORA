@@ -120,6 +120,17 @@ export interface MobileApiState {
     outstandingRequirements: string[];
     version?: number;
   } | null;
+  /**
+   * Every push registration the server currently holds, keyed by installation.
+   * The real endpoint treats a repeat registration of the same token as a
+   * heartbeat rather than a second device, and this does the same.
+   */
+  pushDevices: Map<string, { platform: string; token: string }>;
+  /**
+   * When false, asking for an upload capability refuses the way an environment
+   * with no approved storage provider refuses.
+   */
+  storageAvailable: boolean;
   /** When false the API refuses every credential, as an ended session does. */
   notificationPreferences: {
     category: string;
@@ -282,9 +293,11 @@ export function admittedState(): MobileApiState {
       { category: 'direct_message', channel: 'push', enabled: true },
       { category: 'account_security', channel: 'email', enabled: true },
     ],
+    pushDevices: new Map(),
     reports: [],
     sessionLive: true,
     standing: [],
+    storageAvailable: true,
   };
 }
 
@@ -306,6 +319,19 @@ export function createMobileApiDouble(
     });
   const error = (status: number, code: string) =>
     json(status, { code, correlationId: 'test', message: 'Request failed' });
+
+  /**
+   * Never the token and never the installation. The contract publishes neither,
+   * and echoing a token back would put a bearer credential into a response
+   * body, a log, and a proxy cache.
+   */
+  const pushDeviceList = () =>
+    [...state.pushDevices.values()].map((device, index) => ({
+      deviceId: `7777777${String(index)}-7777-4777-8777-777777777777`,
+      lastSeenAt: iso(),
+      platform: device.platform,
+      registeredAt: iso(),
+    }));
 
   const tokens = () => {
     generation += 1;
@@ -743,6 +769,72 @@ export function createMobileApiDouble(
         state: 'received',
         targetType: input.target.type,
       });
+    }
+
+    if (path === '/v1/users/me/profile/media' && method === 'POST') {
+      if (!state.storageAvailable) {
+        return error(503, 'DEPENDENCY_UNAVAILABLE');
+      }
+      state.profile ??= {
+        complete: false,
+        discoverable: false,
+        languages: [],
+        media: [],
+        outstandingRequirements: [],
+      };
+      const slot = state.profile.media.length;
+      const mediaId = `5555555${String(slot)}-5555-4555-8555-555555555555`;
+      state.profile.media.push({
+        id: mediaId,
+        position: slot,
+        state: 'pending_upload',
+        uploadExpiresAt: iso(600_000),
+      });
+      return json(201, {
+        expiresAt: iso(600_000),
+        maximumBytes: 8_388_608,
+        mediaId,
+        method: 'PUT',
+        // A stand-in address. No test inspects it, which is the point: a
+        // storage address is provider detail and never product state.
+        uploadHeaders: { 'content-type': 'application/octet-stream' },
+        uploadUrl: 'http://storage.test/upload/object',
+      });
+    }
+    if (path === '/v1/users/me/profile/media/completion' && method === 'POST') {
+      const input = body as { readonly mediaId: string };
+      const slot = state.profile?.media.find(
+        (item) => item.id === input.mediaId,
+      );
+      // The platform inspects the object; the client never declares anything.
+      if (slot !== undefined) slot.state = 'checking';
+      return json(200, state.profile);
+    }
+    if (path === '/v1/users/me/profile/media/removal' && method === 'POST') {
+      const input = body as { readonly mediaId: string };
+      const slot = state.profile?.media.find(
+        (item) => item.id === input.mediaId,
+      );
+      if (slot !== undefined) slot.state = 'removed';
+      return json(200, state.profile);
+    }
+
+    if (path === '/v1/notifications/devices' && method === 'POST') {
+      const input = body as {
+        readonly installationId: string;
+        readonly platform: string;
+        readonly token: string;
+      };
+      state.pushDevices.set(input.installationId, {
+        platform: input.platform,
+        token: input.token,
+      });
+      return json(200, { devices: pushDeviceList() });
+    }
+    if (path === '/v1/notifications/devices/revocations' && method === 'POST') {
+      const input = body as { readonly installationId: string };
+      state.pushDevices.delete(input.installationId);
+      return json(200, { devices: pushDeviceList() });
     }
 
     return error(404, 'HTTP_404');

@@ -4,6 +4,8 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConsumerGate, UnavailableScreen } from '../src/frame/gate';
+import { LinkRouter } from '../src/frame/link-router';
+import { NotificationRuntime } from '../src/frame/notification-runtime';
 import { ConsumerProviders } from '../src/frame/providers';
 import { Toaster } from '../src/frame/shell';
 import { color } from '../src/design/tokens';
@@ -33,6 +35,8 @@ export default function RootLayout() {
       <View style={{ backgroundColor: color.canvas, flex: 1 }}>
         <StatusBar style="light" />
         <ConsumerProviders unavailable={<UnavailableScreen />}>
+          <NotificationRuntime />
+          <LinkRouter />
           <ConsumerGate>
             <Stack
               screenOptions={{

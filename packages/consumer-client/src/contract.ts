@@ -78,6 +78,27 @@ export type SaveNotificationPreferenceBody = RequestBody<
   '/v1/notifications/preferences',
   'post'
 >;
+
+/**
+ * The devices this account can currently be reached on.
+ *
+ * Returned by registering and by revoking alike, so a client replaces its idea
+ * of the set rather than merging into it and guessing what a revocation left
+ * behind. No token and no fingerprint appears here: a client already holds its
+ * own token, and echoing one back would put a bearer credential into a
+ * response body, a log, and a proxy cache for nothing.
+ */
+export type PushDeviceList = JsonBody<'/v1/notifications/devices', 'post', 200>;
+export type PushDevice = PushDeviceList['devices'][number];
+export type PushDevicePlatform = PushDevice['platform'];
+export type RegisterPushDeviceBody = RequestBody<
+  '/v1/notifications/devices',
+  'post'
+>;
+export type RevokePushDeviceBody = RequestBody<
+  '/v1/notifications/devices/revocations',
+  'post'
+>;
 /**
  * One call, as the person in it is allowed to see it.
  *
