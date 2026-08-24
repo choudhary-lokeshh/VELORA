@@ -182,6 +182,20 @@ SMS provider is approved.
 | `MEDIA_LOCAL_STORAGE_DIRECTORY` | No | Required when storage is `local-test` | none | Startup fails when `MEDIA_STORAGE_PROVIDER=local-test`. A filesystem path both the API and the worker can write |
 | `MEDIA_DELIVERY_SIGNING_KEY` | Yes, even locally | Required when storage is `local-test` | none | Startup fails when `MEDIA_STORAGE_PROVIDER=local-test`. Any sufficiently random string; it is configured rather than generated per process because two replicas that generated their own would reject each other's delivery grants |
 
+`local-test` is the one adapter with no origin of its own, so the API serves its
+transport: `PUT` and signed `GET` under `/local-test/media-objects/<key>`, and
+unsigned `GET` under `/local-test/media-public/<key>`. Those routes are
+registered only when that adapter is selected, they are outside `/v1` because a
+provider's upload endpoint is not Velora's contract, and configuration refuses
+`local-test` outside local and test — so in staging and production the objects
+that would serve them are never constructed. The addresses they issue name
+`VELORA_API_BASE_URL`, which the server defaults from its own bind address.
+
+An upload capability and a delivery grant sign different payloads, so a
+capability to write one object is never also permission to read it. What the
+transport serves is typed from the bytes themselves through the platform's own
+format allow-list, never from anything the uploader said.
+
 ### Billing and payouts
 
 Every seam that could move money. All default to the adapter that refuses, all
@@ -214,6 +228,13 @@ Platform Admin.
 | `VELORA_APP_ENV` | No | Safe default locally, required when deployed | `local` | The environment name | Falls back to `production` when `NODE_ENV` is `production`, `local` otherwise. Set it explicitly when deployed |
 | `VELORA_API_BASE_URL` | No | Safe default locally, required now when deployed | `http://127.0.0.1:4000` | The environment's API origin | Local and test fall back to the loopback API. Staging and production throw at startup, and a loopback value there is refused outright |
 | `VELORA_BIND_HOST` | No | Safe default | blank | Container/host interface if not `0.0.0.0` (start) or `127.0.0.1` (dev) | The `start` scripts default `0.0.0.0` and `dev` scripts default `127.0.0.1`. Read by `package.json` only, never by application code |
+
+`VELORA_API_BASE_URL` is also a server field, and the only thing that reads it
+there is the `local-test` storage adapter, which has no provider origin of its
+own and has to name this API in the addresses it issues. The server defaults it
+from its own `HOST` and `PORT`, so a developer on loopback sets nothing; a
+deployment where a worker issues addresses for an API on a different origin
+must set it explicitly, because a worker has no port of its own to derive from.
 
 Both are read at request time and neither carries a `NEXT_PUBLIC_` prefix, on
 purpose: a build-inlined value would bake one environment's endpoint into the

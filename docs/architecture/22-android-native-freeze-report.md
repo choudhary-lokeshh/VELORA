@@ -97,6 +97,8 @@ An Android 36 emulator (Pixel 7, 1080×2400, 420 dpi, arm64), with the debug bui
 
 ### Two facts a browser walk could not have found
 
+> **Both were fixed after this freeze, in the whole-platform runtime recovery.** The `local-test` storage adapter was given a transport on the API's own origin, so the upload the two paragraphs below describe as impossible now succeeds. A later emulator walk completed the onboarding ladder with a photo chosen from the device gallery, uploaded over HTTP, inspected and processed by the worker, and reached Discover, Introductions, Messages, and a sent message — with no database fixture anywhere. The paragraphs are kept as written because they are what this vertical actually found; see `docs/engineering/07-configuration-environments.md` for the transport.
+
 **The product surface is unreachable on a device with a real API.** `stepFor` requires `profileComplete`, which requires a photo in `ready` state; a photo reaches `ready` only through a storage provider, and the local-test adapter deliberately issues an unresolvable `media.velora.invalid` address. So a new account stops at the profile step forever. The five destinations above were reached by marking one asset `ready` directly in the local development database — a fixture, stated as one, and not evidence that an upload works anywhere.
 
 **The upload byte-write cannot succeed in any environment today.** The client asked for the capability, received one, failed the write, and reported it without leaking the storage address — which is the correct behaviour and is as far as this can be taken before a provider exists.
