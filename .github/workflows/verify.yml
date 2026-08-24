@@ -89,3 +89,87 @@ jobs:
 
       - name: Verify
         run: pnpm ci:verify
+
+  # Compiling Android is deliberately not part of `pnpm ci:verify`. That gate
+  # runs everywhere and needs no JDK, no Android SDK, and no secret; requiring
+  # six gigabytes of toolchain for it would make the repository's only check
+  # unrunnable for most contributors. So the native build gates `main` from
+  # beside the canonical gate rather than inside it, and a commit that breaks
+  # it still turns this workflow red.
+  #
+  # `pnpm android:verify`, which asserts the *generated project* against what
+  # `app.config.ts` declares, is inside `ci:verify` above and runs on every
+  # machine. This job is the part that needs a compiler.
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Provision pinned toolchain
+        uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      - name: Provision the JDK the Android Gradle Plugin requires
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      # The runner image carries an Android SDK, but not necessarily these
+      # exact components. Naming them means the build compiles against the
+      # levels `app.config.ts` declares rather than whatever the image happens
+      # to ship this month; already-present packages are a no-op.
+      - name: Install the declared Android SDK components
+        run: |
+          sdkmanager --install \
+            'platforms;android-36' \
+            'build-tools;36.0.0' \
+            'ndk;27.1.12297006' \
+            'platform-tools'
+
+      - name: Report the Android toolchain
+        run: pnpm android:doctor
+
+      # Gradle downloads several gigabytes on a cold cache, and the NDK
+      # compiles React Native's C++ from scratch. Both are keyed on the files
+      # that decide their contents, so a dependency bump invalidates them and
+      # nothing else does.
+      - name: Restore the Gradle cache
+        uses: actions/cache@v6
+        with:
+          key: gradle-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/app.config.ts') }}
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # A release build bundles JavaScript through Metro, which resolves the
+      # workspace packages to their built entry points. Only Consumer Mobile's
+      # dependencies are built here; the canonical gate builds everything.
+      - name: Build the packages the bundle resolves
+        run: pnpm exec turbo run build --filter=@velora/mobile^...
+
+      # Builds the debug APK, the release APK, and the release AAB, then opens
+      # each one and asserts its manifest. No signing material is provided, so
+      # the release artifacts come out unsigned — which is the fail-closed
+      # behaviour, and is reported rather than hidden.
+      - name: Build and inspect the Android artifacts
+        run: pnpm android:build
+
+      - name: Keep the artifacts for this commit
+        uses: actions/upload-artifact@v5
+        with:
+          if-no-files-found: error
+          name: android-${{ github.sha }}
+          path: |
+            apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+            apps/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 14

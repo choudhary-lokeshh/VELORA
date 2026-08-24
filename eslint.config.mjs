@@ -146,4 +146,21 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
     languageOptions: { globals: globals.node },
   },
+  {
+    // Consumer Mobile's Expo config and its Android config plugins run in Node
+    // during a prebuild rather than in the React Native bundle, so they are a
+    // second TypeScript project with Node's types rather than the app's. They
+    // stay fully type-checked: they are the only description of the native
+    // build, and turning the rules off for them would be turning them off for
+    // the manifest, the permissions, and the signing configuration.
+    files: ['apps/mobile/app.config.ts', 'apps/mobile/plugins/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        project: ['apps/mobile/tsconfig.node.json'],
+        projectService: false,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
 );

@@ -42,7 +42,17 @@ const templatedNonSchemaKeys = new Map([
  * to try. They must stay out of it.
  */
 const internalKeys = new Map([
+  [
+    'ANDROID_HOME',
+    'where a machine keeps its Android SDK; read by the Android toolchain scripts',
+  ],
+  ['ANDROID_SDK_ROOT', 'the older spelling of ANDROID_HOME'],
   ['CI', 'set by the CI provider; read by playwright.config.ts'],
+  ['EXPO_NO_TELEMETRY', 'set by the Android scripts when they invoke Expo'],
+  [
+    'JAVA_HOME',
+    'where a machine keeps its JDK; read by the Android toolchain scripts',
+  ],
   ['NODE_ENV', 'set by Next.js and the test runners'],
   ['STABILITY_ITERATIONS', 'scripts/rtc-stability-proof.mjs argument'],
   ['STABILITY_OUTPUT_DIRECTORY', 'scripts/rtc-stability-proof.mjs argument'],

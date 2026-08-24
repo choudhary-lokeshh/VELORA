@@ -40,7 +40,11 @@
     "audit:dependencies": "node scripts/check-dependency-security.mjs",
     "auth:policy": "node scripts/check-auth-policy.mjs",
     "design:parity": "node scripts/check-design-parity.mjs",
-    "ci:verify": "pnpm toolchain:check && pnpm install:check && pnpm workspace:check && pnpm env:check && pnpm format:check && pnpm lint && pnpm boundaries && pnpm typecheck && pnpm contracts:check && pnpm auth:policy && pnpm design:parity && pnpm test && pnpm test:integration && pnpm build:uncached && pnpm test:e2e && pnpm mobile:doctor && pnpm infra:config && pnpm secrets:check && pnpm whitespace:check && pnpm audit:dependencies"
+    "ci:verify": "pnpm toolchain:check && pnpm install:check && pnpm workspace:check && pnpm env:check && pnpm format:check && pnpm lint && pnpm boundaries && pnpm typecheck && pnpm contracts:check && pnpm auth:policy && pnpm design:parity && pnpm test && pnpm test:integration && pnpm build:uncached && pnpm test:e2e && pnpm mobile:doctor && pnpm android:verify && pnpm infra:config && pnpm secrets:check && pnpm whitespace:check && pnpm audit:dependencies",
+    "mobile:assets": "node scripts/generate-mobile-android-assets.mjs",
+    "android:verify": "node scripts/check-android-build.mjs",
+    "android:build": "node scripts/build-android.mjs",
+    "android:doctor": "node scripts/check-android-toolchain.mjs"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
@@ -50,6 +54,7 @@
     "eslint": "catalog:",
     "globals": "catalog:",
     "prettier": "catalog:",
+    "sharp": "catalog:",
     "testcontainers": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
