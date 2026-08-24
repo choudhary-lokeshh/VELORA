@@ -233,8 +233,8 @@ Owner: `packages/config/src/client.ts`, read by `apps/mobile/src/api.ts`.
 These two are the only variables permitted to carry a client-public prefix.
 Anything with that prefix is readable by anyone holding the app, so a secret
 with one is a published secret. Expo reads `apps/mobile/.env` rather than the
-repository-root file, so `pnpm dev` supplies these values to the mobile dev
-server directly and no second environment file is needed.
+repository-root file, so the mobile `dev` script supplies these values to the
+dev server directly and no second environment file is needed.
 
 ## Local Docker infrastructure
 
@@ -263,23 +263,40 @@ env:check` fails if one appears there.
 
 ```bash
 mise install
-pnpm install --frozen-lockfile
-pnpm dev:bootstrap
-pnpm dev
+bun run dev
 ```
 
-`pnpm dev:bootstrap` copies `.env.example` to `.env` when `.env` does not exist,
-starts PostgreSQL and Redis, and applies migrations. It never overwrites an
-existing `.env`, never generates a secret, and never resets a database. Run the
-steps individually with `pnpm env:bootstrap`, `pnpm infra:up`, and
-`pnpm db:migrate`.
+`bun run dev` is the normal local development command, and
+`scripts/start-local-development.mjs` is what it runs. It asks
+`pnpm toolchain:check` which toolchain on the machine satisfies the pins — the
+one on `PATH` or the one behind `mise exec` — and spawns everything afterwards
+through that answer, which is why no other command here needs an `mise exec`
+prefix. It then installs the workspace if `node_modules` is absent, copies
+`.env.example` to `.env` when `.env` does not exist, starts PostgreSQL and
+Redis, applies migrations, and runs the API on 4000, the background worker,
+Consumer Web on 3000, Creator Studio on 3001, Platform Admin on 3002, and the
+Expo/Metro dev server on 8081. It prints the addresses once they answer.
 
-`pnpm dev` starts the API on 4000, Consumer Web on 3000, Creator Studio on 3001,
-and Platform Admin on 3002, and the Expo dev server. The worker is separate:
+It decides nothing destructive. It never overwrites an existing `.env`, never
+generates a secret, never resets a database, and reuses a healthy container
+rather than recreating one, so repeated ordinary use is safe. A port it needs
+that is already held is a refusal naming the owning process, never a kill.
+Ctrl+C stops the processes it started; PostgreSQL and Redis are left running,
+because `pnpm infra:down` is the command that owns that.
+
+The steps remain available on their own, which is what operations, CI, and
+single-surface work use: `pnpm env:bootstrap`, `pnpm infra:up`, `pnpm db:migrate`
+individually, `pnpm dev:bootstrap` for the three together, and
 
 ```bash
+pnpm --filter @velora/api dev
 pnpm --filter @velora/api dev:worker
+pnpm --filter @velora/web dev
 ```
+
+The worker stays a separate process from the API in local development for the
+same reason it is separately deployable: a split that local development never
+exercises is a split that breaks in the environment that does.
 
 The API and worker load the repository-root `.env` explicitly, because Bun reads
 environment files from the working directory and theirs is `apps/api`. A real

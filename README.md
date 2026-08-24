@@ -39,9 +39,16 @@ Runtime versions are provisioned by [mise](https://mise.jdx.dev) from `mise.toml
 
 ```bash
 mise install
-pnpm install --frozen-lockfile
-pnpm dev:bootstrap
-pnpm dev
+bun run dev
+```
+
+`bun run dev` is the whole local development command. It verifies the toolchain against the pins, installs the workspace on a first checkout, creates `.env` if there is none, starts PostgreSQL and Redis, applies migrations, and then runs the API, the background worker, Consumer Web, Creator Studio, Platform Admin, and the Expo/Metro dev server together, printing the local addresses once they answer. Ctrl+C stops what it started; PostgreSQL and Redis keep running until `pnpm infra:down`.
+
+It needs Bun on `PATH`, which mise provides once its shell activation is set up. Until then, `mise exec -- bun run dev` does the same thing; everything the command runs internally is resolved through the pinned toolchain either way, so `mise exec` is never needed in front of anything else.
+
+Before pushing:
+
+```bash
 pnpm ci:verify
 ```
 
@@ -55,7 +62,9 @@ Identity Assurance is distinct from authentication. Its `unavailable` adapter is
 
 Browser AUTH end-to-end tests start a real API, PostgreSQL, and Redis before the browsers. The session cookie keeps its production attributes everywhere. WebKit does not store a `Secure` cookie delivered over plain-HTTP loopback, so the specs that need the browser to hold a session run on Chromium and Firefox; WebKit runs the transport, security-header, and surface-isolation specs. Access tokens are signed with Ed25519, so verifying one never requires material that could mint one.
 
-`pnpm dev:bootstrap` copies `.env.example` to `.env` when there is no `.env`, starts PostgreSQL and Redis, and applies migrations. It never overwrites an existing environment file, never generates a secret, and never resets a database; run its steps individually with `pnpm env:bootstrap`, `pnpm infra:up`, and `pnpm db:migrate`, and stop the containers with `pnpm infra:down`. `pnpm dev` then starts the API on 4000, Consumer Web on 3000, Creator Studio on 3001, Platform Admin on 3002, and the Expo dev server; the worker runs separately with `pnpm --filter @velora/api dev:worker`.
+Nothing `bun run dev` does is destructive, so running it again is the ordinary case: it reuses healthy containers rather than recreating them, never overwrites an existing `.env`, never generates a secret, never resets a database, and never deletes media. It also never stops a process it did not start — when 3000, 3001, 3002, 4000, or 8081 is already taken it names the owning process and refuses, because that port may belong to somebody's other project. A worker or API that dies is reported by name and stops the session rather than disappearing quietly.
+
+The lower-level commands remain, for API-only or worker-only work and for operations and CI: `pnpm env:bootstrap`, `pnpm infra:up`, `pnpm infra:down`, `pnpm db:migrate`, and `pnpm dev:bootstrap` for the three bootstrap steps together; `pnpm --filter @velora/api dev`, `pnpm --filter @velora/api dev:worker`, and `pnpm --filter @velora/<surface> dev` for one process at a time. The API and the worker are separate processes here exactly as they deploy separately, and `bun run dev` orchestrates them rather than merging them.
 
 Every environment variable Velora reads is declared once in `.env.example` and documented in [configuration and environments](docs/engineering/07-configuration-environments.md): owner, secret or public, which environment needs it, and what happens when it is absent. `pnpm env:check` fails the gate if that template, `packages/config/src/server.ts`, and that document ever disagree, so a configuration field cannot exist in only one of them. `.env.example` contains safe local placeholders, never production credentials, and `pnpm secrets:check` fails on a tracked environment file at any path.
 

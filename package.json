@@ -12,7 +12,7 @@
   "scripts": {
     "build": "turbo run build",
     "build:uncached": "turbo run build --force",
-    "dev": "turbo run dev --parallel",
+    "dev": "bun run scripts/start-local-development.mjs",
     "lint": "turbo run lint && eslint e2e playwright.config.ts",
     "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
     "test": "turbo run test",
