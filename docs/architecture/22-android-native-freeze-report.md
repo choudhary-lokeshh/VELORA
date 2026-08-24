@@ -1,8 +1,9 @@
 # Android native production freeze report
 
 - Freeze status: Frozen
-- Freeze SHA: `PENDING`
+- Freeze SHA: `a7e6b7082de07d8c379d5f49d6799df6a0bf5774`
 - Freeze date: 2026-08-24
+- Hosted CI: run 32751438543, both jobs green on the freeze SHA
 - Starting SHA: `21a05b4ab76735efbffc38c5bbc32ec56db7de09`
 - Architecture authority: [ADR-0031](../decisions/ADR-0031-android-native-build-pipeline.md)
 
@@ -42,6 +43,8 @@ The native template is a pinned dependency. `expo prebuild` otherwise downloads 
 | ABIs | `armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64` |
 
 Every artifact was opened afterwards and its manifest asserted, because a Gradle invocation exits zero for a debug-signed release, an unexpected permission, and a debuggable release alike.
+
+The hosted job produced the same three artifacts with byte-identical reports — the same sizes, the same version, the same ten and twelve permissions, the same signing states — on a Linux runner from a clean checkout. Two machines, two operating systems, one result, which is what the generated-project strategy was chosen for. They are retained as `android-a7e6b7082de07d8c379d5f49d6799df6a0bf5774` for fourteen days.
 
 ## Permissions, and the gate that could not see them
 
@@ -124,6 +127,10 @@ These are five different things and are not combined.
 | **Live RTC media** | **BLOCKED.** No approved SFU; `REALTIME_RTC_PROVIDER` is refused outside local and test |
 
 Also blocked: **remote media delivery**, on the authorized delivery contract and a storage provider; and **Play Store submission**, which is human-owned and was not performed.
+
+## Commits
+
+Eight, from `21a05b4ab76735efbffc38c5bbc32ec56db7de09`: the pipeline, the native capability bindings, the documentation, and five fixes for things only the hosted runner could show — `sdkmanager` not being on its `PATH`, a native template that could not be repacked portably, a cold Gradle cache that outran its own budget, and two formatting misses.
 
 ## Tests and gates
 
