@@ -320,7 +320,20 @@ describe('the operator contract carries no reporter and no count', () => {
   it('publishes no route that could set an arbitrary field on a record', () => {
     // Every operator command is explicit. A patch or a generic update would be
     // a shape that can rewrite an audit, and this API has none anywhere.
-    for (const route of application.app.routes) {
+    //
+    // Scoped to `/v1`, which is the whole published contract. The one route
+    // outside it is the `local-test` storage adapter's byte transport, which
+    // exists only when that adapter is configured, writes opaque bytes to a
+    // single pre-authorized object key, and reaches no record and no column.
+    // Its `PUT` is the method every object-storage provider uses and the one
+    // the upload capability contract declares, so making it something else to
+    // satisfy this assertion would bend the product's contract around a
+    // development adapter.
+    const published = application.app.routes.filter((route) =>
+      route.path.startsWith('/v1/'),
+    );
+    expect(published.length).toBeGreaterThan(100);
+    for (const route of published) {
       expect(['PATCH', 'PUT', 'DELETE'], route.path).not.toContain(
         route.method.toUpperCase(),
       );
