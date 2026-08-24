@@ -102,7 +102,13 @@ jobs:
   # machine. This job is the part that needs a compiler.
   android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # A cold Gradle cache downloads the Android dependency graph and then
+    # compiles React Native's C++ for four ABIs, twice — once debuggable and
+    # once not. That took 45 minutes on the first hosted run and was killed by
+    # its own budget. Later runs restore the cache and finish in a fraction of
+    # it; this budget is sized for the cold case so a cache miss is slow rather
+    # than red, and no ABI is dropped to buy the time.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
