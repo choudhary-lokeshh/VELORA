@@ -103,6 +103,11 @@ test.describe('Consumer Web product journey', () => {
   test('uploads a real photo from the browser and finishes onboarding on it', async ({
     page,
   }) => {
+    // Longer than the default, because the worker is in this loop. Inspection
+    // and processing are five-second cycles started a fraction of a second
+    // apart, and a decode and three resizes happen between them; the default
+    // thirty seconds is shorter than the work, not shorter than a hang.
+    test.setTimeout(180_000);
     // The whole ladder, in a browser, ending in the product. Nothing is written
     // behind the API's back: the photo goes through the same three calls the
     // surface makes for anybody — ask for a capability, PUT the bytes to the
@@ -125,19 +130,25 @@ test.describe('Consumer Web product journey', () => {
       name: 'photo.jpg',
     });
 
-    // Accepted, then checked. `checking` is the honest intermediate state and
-    // the surface shows it rather than claiming the photo is done.
-    const slot = page.locator('[data-testid^="profile-media-"]').first();
-    await expect(slot).toBeVisible({ timeout: 30_000 });
+    // Accepted, then checked. `checking` is the honest intermediate state, the
+    // surface shows it rather than claiming the photo is done, and waiting for
+    // it is what makes the reload below safe: a reload before the three calls
+    // finish abandons them, and the slot stays waiting for bytes forever.
+    await expect(
+      page.locator('[data-testid^="profile-media-"][data-state="checking"]'),
+    ).toHaveCount(1, { timeout: 60_000 });
 
     // Inspection and processing are the worker's, so the surface only learns
     // the outcome by asking again.
+    // A short inner wait and a long outer one: each attempt is one reload and a
+    // quick look, so the loop asks again often rather than sitting on a stale
+    // page for five seconds at a time.
     await expect(async () => {
       await page.reload();
       await expect(
         page.locator('[data-testid^="profile-media-"][data-state="ready"]'),
-      ).toHaveCount(1);
-    }).toPass({ timeout: 90_000 });
+      ).toHaveCount(1, { timeout: 2_000 });
+    }).toPass({ timeout: 120_000 });
 
     // The minimum is met, so the server's own ladder lets this account through.
     await page.goto(`${consumerWebOrigin}/discover`);
@@ -153,6 +164,9 @@ test.describe('Consumer Web product journey', () => {
   test('refuses bytes that are not an image it admits, and says so plainly', async ({
     page,
   }) => {
+    // The worker decides this one too, so it gets the same budget as the
+    // upload above rather than the default.
+    test.setTimeout(180_000);
     await signIn(page, uniqueSubject('media-refused'));
     await page.waitForURL(/\/welcome$/u);
     await page.getByTestId('create-account').click();
@@ -173,12 +187,18 @@ test.describe('Consumer Web product journey', () => {
       name: 'photo.jpg',
     });
 
+    // The upload has to finish before anything reloads, for the reason the
+    // previous test gives.
+    await expect(
+      page.locator('[data-testid^="profile-media-"][data-state="checking"]'),
+    ).toHaveCount(1, { timeout: 60_000 });
+
     await expect(async () => {
       await page.reload();
       await expect(
         page.locator('[data-testid^="profile-media-"][data-state="rejected"]'),
-      ).toHaveCount(1);
-    }).toPass({ timeout: 90_000 });
+      ).toHaveCount(1, { timeout: 2_000 });
+    }).toPass({ timeout: 120_000 });
 
     // Still not through: a rejected photo is not a photo.
     await page.goto(`${consumerWebOrigin}/discover`);

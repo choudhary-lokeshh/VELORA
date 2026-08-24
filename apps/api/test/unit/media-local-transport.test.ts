@@ -176,6 +176,12 @@ describe('the development media transport', () => {
     expect(allowed?.headers.get('access-control-allow-headers')).toContain(
       'x-velora-maximum-bytes',
     );
+    // The API's own headers too. A browser context that adds a device
+    // identifier to everything it sends this origin adds it to the upload, and
+    // a preflight that refused it would fail a write that did not need it.
+    expect(allowed?.headers.get('access-control-allow-headers')).toContain(
+      'x-velora-device',
+    );
 
     // A product path falls through to the product API's own policy, which does
     // not allow PUT and must not start doing so because of this adapter.

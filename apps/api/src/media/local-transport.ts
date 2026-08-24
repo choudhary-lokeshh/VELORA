@@ -1,3 +1,4 @@
+import { allowedRequestHeaderNames } from '../http/cors.js';
 import { maximumMediaObjectBytes } from './policy.js';
 import { sniffMediaFormat } from './sniff.js';
 import { mediaContentTypes, type MediaObjectRead } from './storage.js';
@@ -71,9 +72,17 @@ export interface LocalTestObjectStore {
  * the capability names and uses `PUT`. The product API allows neither, and it
  * must not start doing so to make a development adapter work — so the transport
  * answers its own preflight, with an allowance that reaches these paths only.
+ *
+ * The allowance is the API's own list plus those two, rather than a short list
+ * of its own. This transport shares the API's origin here, and a browser
+ * context that adds a header to everything it sends that origin — a device
+ * identifier, a correlation id — adds it to the upload too; a preflight that
+ * refused one of them would fail the write for a header the request did not
+ * need. Two headers wider than the product policy, on three paths, in one
+ * configuration.
  */
 const allowedRequestHeaders = [
-  'content-type',
+  ...allowedRequestHeaderNames,
   'x-velora-maximum-bytes',
   'x-velora-upload-expires-at',
 ].join(', ');

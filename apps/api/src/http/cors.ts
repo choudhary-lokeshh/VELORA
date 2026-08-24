@@ -16,14 +16,22 @@ import {
  * permitted only for an origin already on that list.
  */
 
-const allowedRequestHeaders = [
+/**
+ * Exported so the `local-test` storage transport can allow exactly these and
+ * its own two upload headers, rather than inventing a second list that drifts.
+ * It shares this origin in local development, so a browser talking to it sends
+ * whatever it sends the API.
+ */
+export const allowedRequestHeaderNames = [
   'content-type',
   'authorization',
   adminExactActionAuthorizationHeader,
   correlationResponseHeader,
   csrfHeader,
   deviceHeader,
-].join(', ');
+] as const;
+
+const allowedRequestHeaders = allowedRequestHeaderNames.join(', ');
 
 const allowedMethods = 'GET, POST, OPTIONS';
 const preflightMaximumAgeSeconds = '600';
