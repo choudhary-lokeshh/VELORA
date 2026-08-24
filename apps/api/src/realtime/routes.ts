@@ -268,9 +268,18 @@ export class RtcRoutes {
     return requireConsumerAccount(this.dependencies.consumerContext, input);
   }
 
+  /**
+   * A body the contract's own schema refuses.
+   *
+   * 422, like every other domain and like the contract these routes publish.
+   * It was 400 here and nowhere else in the API, and 400 is not among the
+   * statuses any RTC operation declares — so a client generated from the
+   * contract had no branch for the one status seven of its calls could
+   * actually return.
+   */
   private invalid(input: RouteRequest): RouteResult {
     return routeFailure(
-      400,
+      422,
       productErrorCodes.validationFailed,
       input.correlationId,
     );

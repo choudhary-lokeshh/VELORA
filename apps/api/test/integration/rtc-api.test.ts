@@ -433,7 +433,7 @@ describe('a request can never name a participant', () => {
         recipientId: pair.b.id,
       }),
     );
-    expect(attempt.status).toBe(400);
+    expect(attempt.status).toBe(422);
   });
 
   it('refuses an introduction the caller is not part of', async () => {
