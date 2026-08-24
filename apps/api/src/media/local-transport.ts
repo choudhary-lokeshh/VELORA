@@ -28,11 +28,17 @@ import { mediaContentTypes, type MediaObjectRead } from './storage.js';
  * are never constructed, so there is nothing to reach.
  */
 
-/** Signed reads and writes of one object. */
+/**
+ * Signed reads and writes of one object, addressed by its key.
+ *
+ * The key is a path rather than a query parameter, because that is how every
+ * object store addresses an object and because a key carrying slashes reads as
+ * itself in a path and as `%2F` anywhere else.
+ */
 export const localTestObjectPath = '/local-test/media-objects';
 
 /** Unsigned reads of an object whose address is already public by design. */
-export const localTestPublicObjectPath = '/local-test/media-objects/public';
+export const localTestPublicObjectPath = '/local-test/media-public';
 
 /**
  * What the transport needs of the adapter, and nothing else.
@@ -76,8 +82,17 @@ const preflightMaximumAgeSeconds = '600';
 
 function isTransportPath(pathname: string): boolean {
   return (
-    pathname === localTestObjectPath || pathname === localTestPublicObjectPath
+    pathname.startsWith(`${localTestObjectPath}/`) ||
+    pathname.startsWith(`${localTestPublicObjectPath}/`)
   );
+}
+
+/** The object key a transport address names, or `undefined` if it names none. */
+function objectKeyOf(request: Request, prefix: string): string | undefined {
+  const { pathname } = new URL(request.url);
+  if (!pathname.startsWith(`${prefix}/`)) return undefined;
+  const key = decodeURIComponent(pathname.slice(prefix.length + 1));
+  return key.length === 0 ? undefined : key;
 }
 
 export class LocalTestMediaTransport {
@@ -175,8 +190,8 @@ export class LocalTestMediaTransport {
    * that address in a response.
    */
   async getPublic(request: Request): Promise<Response> {
-    const objectKey = new URL(request.url).searchParams.get('key');
-    if (objectKey === null) return refusal(400);
+    const objectKey = objectKeyOf(request, localTestPublicObjectPath);
+    if (objectKey === undefined) return refusal(400);
     return this.serve(objectKey);
   }
 
@@ -215,11 +230,11 @@ interface Grant {
 }
 
 function readGrant(request: Request): Grant | undefined {
+  const objectKey = objectKeyOf(request, localTestObjectPath);
   const parameters = new URL(request.url).searchParams;
-  const objectKey = parameters.get('key');
   const expires = Number(parameters.get('expires'));
   const signature = parameters.get('signature');
-  if (objectKey === null || signature === null) return undefined;
+  if (objectKey === undefined || signature === null) return undefined;
   if (!Number.isSafeInteger(expires)) return undefined;
   return { expires, objectKey, signature };
 }

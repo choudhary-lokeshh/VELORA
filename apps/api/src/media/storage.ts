@@ -357,9 +357,7 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     // processing version and a random component, so a derivative that changes
     // is a different address rather than the same one behind a cache somebody
     // has to be trusted to forget.
-    return `${this.baseUrl}${localTestPublicObjectPath}?key=${encodeURIComponent(
-      requireObjectKey(objectKey),
-    )}`;
+    return `${this.baseUrl}${localTestPublicObjectPath}/${requireObjectKey(objectKey)}`;
   }
 
   // `async` for the reason `createUploadCapability` is.
@@ -435,7 +433,7 @@ export class LocalTestMediaStorage implements MediaStoragePort {
     expires: number,
     signature: string,
   ): string {
-    return `${this.baseUrl}${path}?key=${encodeURIComponent(objectKey)}&expires=${String(expires)}&signature=${signature}`;
+    return `${this.baseUrl}${path}/${objectKey}?expires=${String(expires)}&signature=${signature}`;
   }
 
   private async sign(payload: string): Promise<string> {

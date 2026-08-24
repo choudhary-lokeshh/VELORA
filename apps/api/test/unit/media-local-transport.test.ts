@@ -63,9 +63,13 @@ describe('the development media transport', () => {
       maximumBytes: 8_388_608,
       objectKey,
     });
-    expect(capability.url.startsWith(`${baseUrl}${localTestObjectPath}?`)).toBe(
-      true,
-    );
+    expect(
+      capability.url.startsWith(
+        `${baseUrl}${localTestObjectPath}/${objectKey}?`,
+      ),
+    ).toBe(true);
+    // The key reads as itself: an object store addresses an object by path.
+    expect(capability.url).toContain(objectKey);
 
     const written = await transport.put(
       new Request(capability.url, {
@@ -109,7 +113,7 @@ describe('the development media transport', () => {
     );
     expect((await transport.get(new Request(forged))).status).toBe(403);
 
-    const unsigned = `${baseUrl}${localTestObjectPath}?key=${encodeURIComponent(objectKey)}&expires=99999999999`;
+    const unsigned = `${baseUrl}${localTestObjectPath}/${objectKey}?expires=99999999999`;
     expect((await transport.get(new Request(unsigned))).status).toBe(400);
 
     const expired = await storage.authorizeDelivery({
@@ -164,7 +168,7 @@ describe('the development media transport', () => {
         {},
       );
 
-    const allowed = preflight(`${baseUrl}${localTestObjectPath}`);
+    const allowed = preflight(`${baseUrl}${localTestObjectPath}/${objectKey}`);
     expect(allowed?.status).toBe(204);
     expect(allowed?.headers.get('access-control-allow-methods')).toContain(
       'PUT',
@@ -180,7 +184,7 @@ describe('the development media transport', () => {
 
   it('refuses a preflight from an origin nobody configured', () => {
     const refused = transport.preflight(
-      new Request(`${baseUrl}${localTestObjectPath}`, {
+      new Request(`${baseUrl}${localTestObjectPath}/${objectKey}`, {
         headers: {
           'access-control-request-method': 'PUT',
           origin: 'http://attacker.example',
@@ -196,28 +200,37 @@ describe('the development media transport', () => {
 
   it('serves a public derivative without a signature and nothing else', async () => {
     const address = storage.publicAddress(objectKey);
-    expect(address?.startsWith(`${baseUrl}${localTestPublicObjectPath}?`)).toBe(
-      true,
-    );
+    expect(address).toBe(`${baseUrl}${localTestPublicObjectPath}/${objectKey}`);
     const served = await transport.getPublic(new Request(address ?? ''));
     expect(served.status).toBe(200);
 
-    const absent = `${baseUrl}${localTestPublicObjectPath}?key=${encodeURIComponent(
-      mediaObjectKey({
-        assetId: '5c6d7e8f-1a2b-4c3d-8e4f-5a6b7c8d9e01',
-        role: 'original',
-      }),
-    )}`;
+    const absent = `${baseUrl}${localTestPublicObjectPath}/${mediaObjectKey({
+      assetId: '5c6d7e8f-1a2b-4c3d-8e4f-5a6b7c8d9e01',
+      role: 'original',
+    })}`;
     expect((await transport.getPublic(new Request(absent))).status).toBe(404);
-    // A key that is not a key at all is refused rather than read.
+    // A key that is shaped wrongly is refused before anything is read, and a
+    // rejected key is indistinguishable from an absent object here.
     expect(
       (
         await transport.getPublic(
           new Request(
-            `${baseUrl}${localTestPublicObjectPath}?key=../../etc/passwd`,
+            `${baseUrl}${localTestPublicObjectPath}/not-an-object-key`,
           ),
         )
       ).status,
     ).toBe(404);
+
+    // Traversal never reaches the adapter at all: URL parsing resolves the
+    // segments first, and what comes out is no longer under this prefix.
+    expect(
+      (
+        await transport.getPublic(
+          new Request(
+            `${baseUrl}${localTestPublicObjectPath}/media/../../../etc/passwd`,
+          ),
+        )
+      ).status,
+    ).toBe(400);
   });
 });

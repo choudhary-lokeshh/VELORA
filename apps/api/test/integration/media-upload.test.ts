@@ -131,13 +131,42 @@ describe('MEDIA publishes no upload endpoint of its own', () => {
     // that.
     expect(
       paths
-        .filter((path) => path.includes('media') && !path.includes('profile'))
+        .filter(
+          (path) =>
+            path.startsWith('/v1/') &&
+            path.includes('media') &&
+            !path.includes('profile'),
+        )
         .sort(),
     ).toEqual([
       '/v1/admin/media/asset',
       '/v1/admin/media/purge',
       '/v1/admin/media/state',
     ]);
+
+    // Nothing escapes the published contract except the `local-test` storage
+    // adapter's byte transport, which this configuration selects. It reserves
+    // nothing: it accepts bytes only against a capability an owning domain
+    // already issued for a purpose, and it verifies that capability's signature
+    // before writing. Enumerated rather than pattern-matched, for the same
+    // reason the operator set is.
+    expect(paths.filter((path) => !path.startsWith('/v1/')).sort()).toEqual([
+      '/local-test/media-objects/*',
+      '/local-test/media-objects/*',
+      '/local-test/media-public/*',
+    ]);
+  });
+
+  it('registers no transport at all when the adapter is not selected', () => {
+    // The routes above exist because `MEDIA_STORAGE_PROVIDER` is `local-test`.
+    // On the default — and on every approved provider a later decision selects,
+    // because each brings an origin of its own — there is nothing to reach.
+    const application = createApplication({ config: testServerConfig() });
+    expect(
+      application.app.routes
+        .map((route) => route.path)
+        .filter((path) => !path.startsWith('/v1/')),
+    ).toEqual([]);
   });
 
   it('publishes no operator route that could reserve storage or destroy it', () => {

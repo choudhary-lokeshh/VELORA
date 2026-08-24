@@ -15,6 +15,7 @@ import type {
   MediaAssociationPort,
   MediaSafetyPort,
 } from '../../src/media/publication.js';
+import { localTestObjectPath } from '../../src/media/local-transport.js';
 import type { LocalTestMediaStorage } from '../../src/media/storage.js';
 import * as fixture from '../support/media-fixtures.js';
 import {
@@ -120,7 +121,9 @@ function authorize(
 /** Pulls the signed parts out of a grant so they can be checked and tampered. */
 function grantParts(url: string) {
   const parsed = new URL(url);
-  const objectKey = parsed.pathname.replace('/local-test/', '');
+  // Taken from the exported path rather than a literal, so an address the
+  // adapter changes shape on cannot quietly stop being parsed here.
+  const objectKey = parsed.pathname.replace(`${localTestObjectPath}/`, '');
   return {
     expires: Number(parsed.searchParams.get('expires')),
     objectKey,

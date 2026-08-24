@@ -1397,11 +1397,13 @@ export function createApplication(
   if (localMediaTransport !== undefined) {
     const transport = localMediaTransport;
     app
-      .put(localTestObjectPath, async ({ request }) =>
+      .put(`${localTestObjectPath}/*`, async ({ request }) =>
         transport.put(request, rawBodyFor(request)),
       )
-      .get(localTestObjectPath, async ({ request }) => transport.get(request))
-      .get(localTestPublicObjectPath, async ({ request }) =>
+      .get(`${localTestObjectPath}/*`, async ({ request }) =>
+        transport.get(request),
+      )
+      .get(`${localTestPublicObjectPath}/*`, async ({ request }) =>
         transport.getPublic(request),
       );
   }
