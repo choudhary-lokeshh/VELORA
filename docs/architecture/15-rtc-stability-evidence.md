@@ -1,10 +1,11 @@
 # RTC repeated-run stability evidence
 
 - Freeze status: Frozen
-- Freeze SHA: `86c3b1a`
+- Freeze SHA: `1a995f7`
 - Freeze date: 2026-08-22
 - Architecture authority: [ADR-0025](../decisions/ADR-0025-rtc-live-communications-architecture.md)
 - Companion report: [RTC freeze report](16-rtc-freeze-report.md)
+- Stability proof SHA: `86c3b1a`
 
 ## Purpose
 

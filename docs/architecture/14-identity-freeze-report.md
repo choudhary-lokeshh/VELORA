@@ -1,9 +1,10 @@
 # Identity assurance freeze report
 
 - Freeze status: Frozen
-- Freeze SHA: `f672a1a`
+- Freeze SHA: `c015b11`
 - Freeze date: 2026-08-20
 - Architecture authority: [ADR-0024](../decisions/ADR-0024-identity-assurance-architecture.md)
+- Stability proof SHA: `f672a1a`
 
 ## What this records
 

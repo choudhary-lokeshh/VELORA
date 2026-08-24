@@ -1,9 +1,10 @@
 # Notifications delivery freeze report
 
 - Freeze status: Frozen
-- Freeze SHA: `8977ddc`
+- Freeze SHA: `f27ac2a`
 - Freeze date: 2026-08-23
 - Architecture authority: [ADR-0026](../decisions/ADR-0026-notification-delivery-platform.md)
+- Stability proof SHA: `8977ddc`
 
 What the production notification delivery platform froze with, what still blocks a real send, and what unfreezes it. Companion to the [media](13-media-freeze-report.md), [identity](14-identity-freeze-report.md), and [RTC](16-rtc-freeze-report.md) reports, written to the same rule: architecture that is finished is described as finished, and a capability that cannot run says so in its own words.
 

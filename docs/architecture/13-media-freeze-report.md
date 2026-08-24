@@ -1,9 +1,10 @@
 # Production media freeze report
 
 - Freeze status: Frozen
-- Freeze SHA: `9eb5ffd`
+- Freeze SHA: `99eb8d2`
 - Freeze date: 2026-08-18
 - Architecture authority: [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md)
+- Stability proof SHA: `9eb5ffd`
 
 ## What this records
 
