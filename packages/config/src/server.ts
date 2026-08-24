@@ -521,8 +521,12 @@ export const serverConfigSchema = z
      * request time. The server reads the same value for one reason: the
      * `local-test` storage adapter has no provider origin of its own, so the
      * absolute upload and delivery addresses it issues have to name this API.
-     * Required when, and only when, that adapter is selected — every approved
-     * provider names itself, and none of them will need this.
+     * No approved provider will ever need it — every one of them names itself.
+     *
+     * Optional, and defaulted below from this process's own bind address rather
+     * than demanded. A worker that issues a public address is a second process
+     * with no port of its own, so a deployment where the two disagree must set
+     * this explicitly; a developer on loopback should not have to.
      */
     VELORA_API_BASE_URL: httpUrlSchema.optional(),
   })
@@ -708,14 +712,6 @@ export const serverConfigSchema = z
         path: ['MEDIA_LOCAL_STORAGE_DIRECTORY'],
       });
     }
-    if (config.VELORA_API_BASE_URL === undefined) {
-      context.addIssue({
-        code: 'custom',
-        message:
-          'VELORA_API_BASE_URL is required when MEDIA_STORAGE_PROVIDER is local-test: the adapter has no origin of its own and must issue addresses that name this API',
-        path: ['VELORA_API_BASE_URL'],
-      });
-    }
     if (config.MEDIA_DELIVERY_SIGNING_KEY === undefined) {
       context.addIssue({
         code: 'custom',
@@ -725,14 +721,22 @@ export const serverConfigSchema = z
       });
     }
   })
-  .transform((config) => ({
-    ...config,
-    HOST:
+  .transform((config) => {
+    const host =
       config.HOST ??
       (config.APP_ENV === 'local' || config.APP_ENV === 'test'
         ? '127.0.0.1'
-        : '0.0.0.0'),
-  }))
+        : '0.0.0.0');
+    return {
+      ...config,
+      HOST: host,
+      // The address this process itself answers on, which for a single API on
+      // loopback is exactly the address a client reaches it at. An explicit
+      // value always wins, and outside local and test nothing reads this.
+      VELORA_API_BASE_URL:
+        config.VELORA_API_BASE_URL ?? `http://${host}:${String(config.PORT)}`,
+    };
+  })
   .readonly();
 
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
