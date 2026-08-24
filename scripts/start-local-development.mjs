@@ -196,6 +196,48 @@ function installDependenciesIfMissing(toolchain) {
   }
 }
 
+/**
+ * Builds the workspace libraries the running surfaces import.
+ *
+ * Every package in `packages/` publishes itself through `exports` targets under
+ * `dist/`, and `dist/` is not committed. A gate reaches those files because
+ * turbo declares `^build` for `lint`, `typecheck`, and `test`; nothing declared
+ * it for `dev`, so a fresh clone got as far as `bun run dev` and then died on
+ * `Cannot find module '@velora/validation'` — the API exiting, port 4000 never
+ * appearing, and every surface in front of it reporting that Velora could not
+ * be reached.
+ *
+ * Turbo owns the work and its cache, so this is 5 seconds once and ~50ms on
+ * every later start. It is not a substitute for the entry-point check below: a
+ * build can succeed and still not emit a subpath a package promises.
+ */
+function buildWorkspaceLibraries(toolchain) {
+  const result = runQuietly(toolchain, 'pnpm', [
+    'turbo',
+    'run',
+    'build',
+    '--filter=./packages/*',
+    '--ui=stream',
+  ]);
+  if (result.status !== 0) {
+    fail([
+      'The workspace libraries did not build, so no surface can import them.',
+      describeFailure(result, 'pnpm turbo run build --filter=./packages/*'),
+      '',
+      'A contract check fails here when a schema was edited without regenerating',
+      'the OpenAPI document and the client: run `pnpm contracts:generate`.',
+    ]);
+  }
+  const verified = runQuietly(toolchain, 'pnpm', ['entrypoints:check']);
+  if (verified.status !== 0) {
+    fail([
+      'A workspace package does not expose what its package.json promises.',
+      describeFailure(verified, 'pnpm entrypoints:check'),
+    ]);
+  }
+  note('  packages      workspace libraries built');
+}
+
 function bootstrapEnvironmentFile(toolchain) {
   const existed = existsSync(resolve(repositoryRoot, '.env'));
   const result = runQuietly(toolchain, 'pnpm', ['env:bootstrap']);
@@ -601,6 +643,7 @@ note('Starting VELORA local development.');
 const toolchain = resolveToolchain();
 note(`  toolchain     ${toolchain.report} (via ${toolchain.description})`);
 installDependenciesIfMissing(toolchain);
+buildWorkspaceLibraries(toolchain);
 bootstrapEnvironmentFile(toolchain);
 await requireFreePorts();
 startInfrastructure(toolchain);
