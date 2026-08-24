@@ -98,7 +98,12 @@ export function packPinnedTemplate() {
   mkdirSync(packedDirectory, { recursive: true });
   const result = run(
     'npm',
-    ['pack', `${templateName}@${version}`, '--pack-destination', packedDirectory],
+    [
+      'pack',
+      `${templateName}@${version}`,
+      '--pack-destination',
+      packedDirectory,
+    ],
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
   if (result.status !== 0) {
