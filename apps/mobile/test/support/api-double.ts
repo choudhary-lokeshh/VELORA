@@ -423,6 +423,43 @@ export function createMobileApiDouble(
         },
       );
     }
+    if (path === '/v1/users/me/profile' && method === 'POST') {
+      const input = body as {
+        bio?: string;
+        displayName: string;
+        expectedVersion?: number;
+        languages: string[];
+      };
+      if (
+        state.profile !== null &&
+        (input.expectedVersion === undefined ||
+          input.expectedVersion !== state.profile.version)
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      if (state.profile === null && input.expectedVersion !== undefined) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      state.profile = {
+        complete: true,
+        discoverable: state.profile?.discoverable ?? false,
+        displayName: input.displayName,
+        ...(input.bio === undefined ? {} : { bio: input.bio }),
+        languages: input.languages,
+        media: state.profile?.media ?? [],
+        outstandingRequirements: [],
+        version: (state.profile?.version ?? 0) + 1,
+      };
+      state.account = { ...state.account, status: 'active' };
+      state.onboarding = {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: [],
+        step: 'completed',
+      };
+      return json(200, state.profile);
+    }
     if (path === '/v1/users/me/availability' && method === 'GET') {
       return json(200, state.availability);
     }

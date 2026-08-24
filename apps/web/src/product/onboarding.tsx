@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   maximumBioLength,
@@ -9,7 +9,11 @@ import {
   maximumProfileLanguages,
   minimumDisplayNameLength,
 } from '@velora/validation';
-import type { ApiResult, JourneyStage } from '@velora/consumer-client';
+import type {
+  ApiResult,
+  ConsumerProfile,
+  JourneyStage,
+} from '@velora/consumer-client';
 import { failureMessage, journeyStage } from '@velora/consumer-client';
 
 import { useAccount, useApi, useSession } from '../app/providers';
@@ -157,6 +161,7 @@ export function Welcome() {
               submit(async () => api.saveProfile(input));
             }}
             outstanding={account.onboarding.value?.outstandingProfile ?? []}
+            profile={account.profile.value}
           />
         ) : null}
       </main>
@@ -380,19 +385,35 @@ function ProfileStep({
   busy,
   onSave,
   outstanding,
+  profile,
 }: {
   readonly busy: boolean;
   readonly onSave: (input: {
     readonly bio?: string;
     readonly displayName: string;
+    readonly expectedVersion?: number;
     readonly languages: string[];
   }) => void;
   readonly outstanding: readonly string[];
+  readonly profile?: ConsumerProfile | undefined;
 }) {
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [languages, setLanguages] = useState<readonly string[]>([]);
+  const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
+  const [bio, setBio] = useState(profile?.bio ?? '');
+  const [languages, setLanguages] = useState<readonly string[]>(
+    profile?.languages ?? [],
+  );
   const [touched, setTouched] = useState(false);
+
+  const seededVersion = useRef<number | undefined>(profile?.version);
+
+  useEffect(() => {
+    if (profile === undefined) return;
+    if (seededVersion.current === profile.version) return;
+    seededVersion.current = profile.version;
+    setDisplayName(profile.displayName ?? '');
+    setBio(profile.bio ?? '');
+    setLanguages(profile.languages);
+  }, [profile]);
 
   const nameValid =
     displayName.trim().length >= minimumDisplayNameLength &&
@@ -411,9 +432,13 @@ function ProfileStep({
           event.preventDefault();
           setTouched(true);
           if (!nameValid || !languagesValid) return;
+          seededVersion.current = (profile?.version ?? 0) + 1;
           onSave({
             ...(bio.trim().length === 0 ? {} : { bio: bio.trim() }),
             displayName: displayName.trim(),
+            ...(profile?.version === undefined
+              ? {}
+              : { expectedVersion: profile.version }),
             languages: [...languages],
           });
         }}

@@ -304,6 +304,111 @@ describe('admission', () => {
       ),
     ).toBe(false);
   });
+
+  it('saves an existing profile on reload with expectedVersion and completes onboarding', async () => {
+    const double = createApiDouble({
+      ...emptyState(),
+      account: {
+        createdAt: '2026-08-14T12:00:00.000Z',
+        id: ownAccountId,
+        status: 'pending_profile',
+      },
+      onboarding: {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: ['ready_media'],
+        step: 'profile',
+      },
+      profile: {
+        complete: false,
+        discoverable: false,
+        displayName: 'Alex Initial',
+        languages: ['en'],
+        media: [],
+        outstandingRequirements: ['ready_media'],
+        preferencesVersion: 1,
+        version: 1,
+      },
+      session: admittedState().session,
+    });
+
+    renderProduct(
+      <WelcomeGate>
+        <Welcome />
+      </WelcomeGate>,
+      double,
+      { pathname: '/welcome' },
+    );
+
+    await screen.findByTestId('save-profile');
+    expect(screen.getByTestId('onboarding-display-name')).toHaveProperty(
+      'value',
+      'Alex Initial',
+    );
+
+    await click('save-profile');
+
+    await waitFor(() => {
+      const saveCalls = double.calls.filter(
+        (call) =>
+          call.path === '/v1/users/me/profile' && call.method === 'POST',
+      );
+      expect(saveCalls).toHaveLength(1);
+      expect(
+        (saveCalls[0]?.body as { expectedVersion?: number }).expectedVersion,
+      ).toBe(1);
+    });
+  });
+
+  it('renders conflict error when a stale profile edit is submitted', async () => {
+    const double = createApiDouble({
+      ...emptyState(),
+      account: {
+        createdAt: '2026-08-14T12:00:00.000Z',
+        id: ownAccountId,
+        status: 'pending_profile',
+      },
+      onboarding: {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: ['ready_media'],
+        step: 'profile',
+      },
+      profile: {
+        complete: false,
+        discoverable: false,
+        displayName: 'Alex Initial',
+        languages: ['en'],
+        media: [],
+        outstandingRequirements: ['ready_media'],
+        preferencesVersion: 1,
+        version: 1,
+      },
+      session: admittedState().session,
+    });
+
+    renderProduct(
+      <WelcomeGate>
+        <Welcome />
+      </WelcomeGate>,
+      double,
+      { pathname: '/welcome' },
+    );
+
+    await screen.findByTestId('save-profile');
+    // Stale version conflict: state.profile was bumped elsewhere to version 2
+    if (double.state.profile) {
+      double.state.profile.version = 2;
+    }
+
+    await click('save-profile');
+
+    await screen.findByText(
+      'Something changed while you were editing. Reload and retry.',
+    );
+  });
 });
 
 /* ============================= discovery ============================= */

@@ -477,11 +477,27 @@ export function createApiDouble(
         : json(200, state.profile);
     }
     if (path === '/v1/users/me/profile' && method === 'POST') {
-      const input = body as { displayName: string; languages: string[] };
+      const input = body as {
+        bio?: string;
+        displayName: string;
+        expectedVersion?: number;
+        languages: string[];
+      };
+      if (
+        state.profile !== null &&
+        (input.expectedVersion === undefined ||
+          input.expectedVersion !== state.profile.version)
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      if (state.profile === null && input.expectedVersion !== undefined) {
+        return error(409, 'STATE_CONFLICT');
+      }
       state.profile = {
         complete: true,
         discoverable: state.profile?.discoverable ?? false,
         displayName: input.displayName,
+        ...(input.bio === undefined ? {} : { bio: input.bio }),
         languages: input.languages,
         media: state.profile?.media ?? [],
         outstandingRequirements: [],

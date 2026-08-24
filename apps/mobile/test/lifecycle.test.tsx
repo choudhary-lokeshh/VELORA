@@ -234,6 +234,95 @@ describe('the gate', () => {
     expect(view.queryByTestId('product')).toBeNull();
   });
 
+  it('completes the profile step with expectedVersion for an existing profile and enters the product', async () => {
+    const state = admittedState();
+    state.account = {
+      createdAt: '2026-08-14T12:00:00.000Z',
+      id: '11111111-1111-4111-8111-111111111111',
+      status: 'pending_profile',
+    };
+    state.onboarding = {
+      adultAssurance: 'self_declared',
+      adultAssuranceRefused: false,
+      outstandingPolicies: [],
+      outstandingProfile: ['ready_media'],
+      step: 'profile',
+    };
+    state.profile = {
+      complete: false,
+      discoverable: false,
+      displayName: 'Alex Initial',
+      languages: ['en'],
+      media: [],
+      outstandingRequirements: ['ready_media'],
+      version: 1,
+    };
+    const { double, view } = await launch({ state });
+
+    await waitFor(() => {
+      expect(view.getByTestId('save-profile')).toBeTruthy();
+    });
+    expect(view.getByTestId('onboarding-display-name').props.value).toBe(
+      'Alex Initial',
+    );
+
+    await fireEvent.press(view.getByTestId('save-profile'));
+
+    await waitFor(() => {
+      expect(view.getByTestId('product')).toBeTruthy();
+    });
+    const saveCalls = double.calls.filter(
+      (call) => call.path === '/v1/users/me/profile' && call.method === 'POST',
+    );
+    expect(saveCalls).toHaveLength(1);
+    expect(
+      (saveCalls[0]?.body as { expectedVersion?: number }).expectedVersion,
+    ).toBe(1);
+  });
+
+  it('renders conflict error on profile step when stale version is submitted', async () => {
+    const state = admittedState();
+    state.account = {
+      createdAt: '2026-08-14T12:00:00.000Z',
+      id: '11111111-1111-4111-8111-111111111111',
+      status: 'pending_profile',
+    };
+    state.onboarding = {
+      adultAssurance: 'self_declared',
+      adultAssuranceRefused: false,
+      outstandingPolicies: [],
+      outstandingProfile: ['ready_media'],
+      step: 'profile',
+    };
+    state.profile = {
+      complete: false,
+      discoverable: false,
+      displayName: 'Alex Initial',
+      languages: ['en'],
+      media: [],
+      outstandingRequirements: ['ready_media'],
+      version: 1,
+    };
+    const { double, view } = await launch({ state });
+
+    await waitFor(() => {
+      expect(view.getByTestId('save-profile')).toBeTruthy();
+    });
+    if (double.state.profile) {
+      double.state.profile.version = 2;
+    }
+
+    await fireEvent.press(view.getByTestId('save-profile'));
+
+    await waitFor(() => {
+      expect(
+        view.getByText(
+          'Something changed while you were editing. Reload and retry.',
+        ),
+      ).toBeTruthy();
+    });
+  });
+
   /**
    * The window between a launch and the first answer is real and has a
    * duration. Rendering the product into it would put a signed-in surface in

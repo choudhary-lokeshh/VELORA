@@ -139,6 +139,9 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                         ? {}
                         : { bio: about.trim() }),
                       displayName: name.trim(),
+                      ...(held?.version === undefined
+                        ? {}
+                        : { expectedVersion: held.version }),
                       languages: held?.languages ?? [],
                     });
                     const failure = failureMessage(result);

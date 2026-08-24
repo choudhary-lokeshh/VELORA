@@ -1,4 +1,8 @@
-import type { ApiResult, JourneyStage } from '@velora/consumer-client';
+import type {
+  ApiResult,
+  ConsumerProfile,
+  JourneyStage,
+} from '@velora/consumer-client';
 import { failureMessage, journeyStage } from '@velora/consumer-client';
 import {
   languagePattern,
@@ -7,7 +11,7 @@ import {
   maximumProfileLanguages,
   minimumDisplayNameLength,
 } from '@velora/validation/profile-bounds';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 
 import { useApi, useSession } from '../frame/providers';
@@ -176,6 +180,7 @@ export function OnboardingScreen() {
               submit(async () => api.saveProfile(input));
             }}
             outstanding={onboarding?.outstandingProfile ?? []}
+            profile={session.account.profile.value}
           />
         ) : null}
       </KeyboardAvoidingView>
@@ -342,19 +347,35 @@ function ProfileStep({
   busy,
   onSave,
   outstanding,
+  profile,
 }: {
   readonly busy: boolean;
   readonly onSave: (input: {
     readonly bio?: string;
     readonly displayName: string;
+    readonly expectedVersion?: number;
     readonly languages: string[];
   }) => void;
   readonly outstanding: readonly string[];
+  readonly profile?: ConsumerProfile | undefined;
 }) {
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [languages, setLanguages] = useState<readonly string[]>([]);
+  const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
+  const [bio, setBio] = useState(profile?.bio ?? '');
+  const [languages, setLanguages] = useState<readonly string[]>(
+    profile?.languages ?? [],
+  );
   const [touched, setTouched] = useState(false);
+
+  const seededVersion = useRef<number | undefined>(profile?.version);
+
+  useEffect(() => {
+    if (profile === undefined) return;
+    if (seededVersion.current === profile.version) return;
+    seededVersion.current = profile.version;
+    setDisplayName(profile.displayName ?? '');
+    setBio(profile.bio ?? '');
+    setLanguages(profile.languages);
+  }, [profile]);
 
   const name = displayName.trim();
   const nameValid =
@@ -435,9 +456,13 @@ function ProfileStep({
         onPress={() => {
           setTouched(true);
           if (!nameValid || !languagesValid || bioTooLong) return;
+          seededVersion.current = (profile?.version ?? 0) + 1;
           onSave({
             ...(bio.trim().length === 0 ? {} : { bio: bio.trim() }),
             displayName: name,
+            ...(profile?.version === undefined
+              ? {}
+              : { expectedVersion: profile.version }),
             languages: [...languages],
           });
         }}
