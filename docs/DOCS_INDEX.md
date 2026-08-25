@@ -46,6 +46,7 @@ If a choice is `DEFER UNTIL PROVIDER INTEGRATION`, `DEFER UNTIL SCALE REQUIRES`,
 | [Creator Private Clubs](product/03-creator-private-clubs.md) | Creator/club product boundary and conditional content |
 | [Platform Admin product](product/04-platform-admin.md) | Admin product scope, roles, and privilege constraints |
 | [Monetisation](product/05-monetisation.md) | Commercial product catalogue and user-protection boundary |
+| [Product gap matrix](product/06-product-gap-matrix.md) | What a person can actually reach on each surface today, classified against the running code, and the order the remaining product work falls into |
 
 ## Product surface authority
 
