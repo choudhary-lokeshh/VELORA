@@ -49,6 +49,13 @@ export interface ApiDoubleState {
    * nothing to this viewer without saying why.
    */
   mediaDelivery: 'granted' | 'declined' | 'unavailable';
+  /** Published creator pages, as the public directory lists them. */
+  creatorDirectory: {
+    avatar?: { id: string };
+    bio?: string;
+    displayName: string;
+    handle: string;
+  }[];
   /** Private clubs the account may currently read, and the invitations it may use. */
   clubAccess: {
     clubId: string;
@@ -227,6 +234,7 @@ export function emptyState(): ApiDoubleState {
       updatedAt: iso(),
     },
     blocks: [],
+    creatorDirectory: [],
     mediaDelivery: 'granted',
     clubAccess: [],
     clubInvites: [],
@@ -425,6 +433,14 @@ export function createApiDouble(
     if (path === '/v1/auth/logout' || path === '/v1/auth/logout-all') {
       state.session = null;
       return json(200, { acknowledged: true });
+    }
+
+    // CREATORS. The public listing answers identically for everybody, so it is
+    // reachable without a session exactly as the contract publishes it.
+    if (path === '/v1/creators/directory' && method === 'GET') {
+      return json(200, {
+        creators: state.creatorDirectory.map((one) => ({ ...one })),
+      });
     }
 
     // MEDIA. Reachable without a session, exactly as the contract publishes it.

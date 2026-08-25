@@ -812,6 +812,59 @@
   overflow: hidden;
 }
 
+/*
+ * The creator listing.
+ *
+ * A card is a row rather than a tile, because a creator's page is chosen from a
+ * name and a sentence rather than from a picture, and a grid of large images
+ * would make this look like the people feed it is deliberately not.
+ */
+.v-creator-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+@media (width >= 640px) {
+  .v-creator-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+}
+
+.v-creator-card {
+  align-items: flex-start;
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  color: inherit;
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  text-decoration: none;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.v-creator-card:hover {
+  background: var(--surface-2);
+  border-color: var(--border-soft);
+  transform: translateY(-1px);
+}
+
+.v-creator-card:active {
+  transform: translateY(0);
+}
+
+.v-creator-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 /* ============================ Notifications =========================== */
 
 .v-notification {

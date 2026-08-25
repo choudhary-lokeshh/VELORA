@@ -13,7 +13,6 @@ import {
   EmptyState,
   ErrorMessage,
   Notice,
-  PageHeader,
   Skeleton,
   initialsOf,
   toneOf,
@@ -24,9 +23,11 @@ import { PersonSafetyMenu } from './safety-actions';
 import { useResource, useSingleFlight } from './resource';
 
 /**
- * Discovery.
+ * Social Discovery: the people section of Discover.
  *
- * Two decisions, both the server's to accept. A pass and a signal are sent and
+ * The heading and the section switch belong to the destination above this, so
+ * what is here is the feed itself and the two decisions a person makes about
+ * somebody in it — both the server's to accept. A pass and a signal are sent and
  * the answer is rendered; a candidate leaves the list because the request
  * succeeded, never in anticipation of it succeeding. A refusal — the pair is no
  * longer eligible, the account is not active, the candidate went away — is shown
@@ -202,11 +203,6 @@ export function Discovery() {
 
   return (
     <>
-      <PageHeader
-        lede="People who are available right now, who can see you, and who you have not already decided about."
-        title="Discover"
-      />
-
       {view === 'available' ? null : (
         <div className="v-lede-gap">
           <Notice

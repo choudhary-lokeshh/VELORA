@@ -15,6 +15,7 @@ import {
   ConversationThread,
   MessagesLayout,
 } from '../src/product/conversations';
+import { Discover } from '../src/product/discover';
 import { Discovery } from '../src/product/discovery';
 import { Introductions } from '../src/product/introductions';
 import { Memberships } from '../src/product/memberships';
@@ -473,6 +474,52 @@ describe('discovery', () => {
         { level: 2 },
       ),
     ).toHaveLength(1);
+  });
+
+  it('offers people and creators as sections of one destination', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      creatorDirectory: [
+        {
+          avatar: { id: '77777777-7777-4777-8777-777777777777' },
+          bio: 'Wheel-thrown stoneware in small runs.',
+          displayName: 'Ember Vale Ceramics',
+          handle: 'embervale',
+        },
+      ],
+    });
+    renderProduct(
+      <Discover
+        apiBaseUrl="http://api.test"
+        fetchImplementation={double.fetch}
+      />,
+      double,
+      { pathname: '/discover' },
+    );
+
+    // People first, because Discover is Social Discovery before it is anything
+    // else.
+    await screen.findByTestId(`candidate-${otherPersonId}`);
+    expect(screen.queryByTestId('creator-directory')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('segment-creators'));
+    renderProduct(
+      <Discover
+        apiBaseUrl="http://api.test"
+        fetchImplementation={double.fetch}
+      />,
+      double,
+      { pathname: '/discover', search: '?show=creators' },
+    );
+
+    const listing = await screen.findByTestId('creator-directory');
+    expect(within(listing).getByText('Ember Vale Ceramics')).toBeTruthy();
+    expect(within(listing).getByText('@embervale')).toBeTruthy();
+    // A creator is never a candidate, and the section switch does not turn one
+    // into the other.
+    expect(
+      within(listing).queryByRole('button', { name: /interested/iu }),
+    ).toBeNull();
   });
 
   it('shows a candidate photograph once the platform grants an address', async () => {
@@ -1212,7 +1259,10 @@ describe('accessibility structure', () => {
     const double = createApiDouble(admittedState());
     renderProduct(
       <AppShell title="Discover">
-        <Discovery />
+        <Discover
+          apiBaseUrl="http://api.test"
+          fetchImplementation={double.fetch}
+        />
       </AppShell>,
       double,
       { pathname: '/discover' },
