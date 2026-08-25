@@ -84,6 +84,18 @@ Additive to the client only. No contract, table, or route changed; `packages/con
 | Moving these values into `packages/design-tokens` | REJECTED until Figma approves them |
 | Any surface stating a fact the server did not publish | REJECTED |
 
+## Amendment 2026-08-25: photographs are rendered
+
+One bullet under "Nothing on the surface may state something the server did not" is no longer true, and it is the one the rest of that section was written around.
+
+**"No photograph is rendered anywhere" is superseded.** It was accurate: consumer media had no durable address and no authorized delivery route existed, so a monogram was the only honest thing to draw. Both halves have since been built — `POST /v1/media/deliveries` exchanges the references every projection already carried for short-lived addresses, and DISCOVERY publishes the peer-visibility rule USERS was missing — so discovery cards, introduction cards, the conversation list, a thread header, somebody's own photo grid, and a creator's public page all render photographs.
+
+**Nothing else in that section changes, and the rule itself is unchanged.** A person with no photograph to show still gets the monogram, on the same tone, in the same box; the two are the same size so a list does not move as addresses arrive. Why somebody has no photograph is still never explained — an image still being decided, one its owner removed, and one this viewer may not be shown are deliberately indistinguishable, because the reason is somebody else's business and the API withholds it on purpose.
+
+**The provider decisions above it are untouched.** `MEDIA_STORAGE_PROVIDER` and `MEDIA_DELIVERY_PROVIDER` still default to `unavailable` and staging and production still reject any other value, so a deployed Consumer Web still renders no photograph and says so. What closed was the platform's own gap, not the vendor question, and this surface reports the difference: it says photographs are not shown *here* only when the platform has actually answered that it cannot deliver one.
+
+The five-destination information architecture, the navigation model, the palette, and every other locked decision above are unchanged by this.
+
 ## Cross-references
 
 [Design principles](../design/01-design-principles.md), [design-system contract](../design/02-design-system-contract.md), [Figma source of truth](../design/03-figma-source-of-truth.md), [responsive rules](../design/04-responsive-platform-rules.md), [accessibility and motion](../design/05-accessibility-motion.md), [screen states](../design/06-screen-state-requirements.md), [Consumer Web surface](../surfaces/01-consumer-web.md), [ADR-0004](ADR-0004-client-frameworks.md), [ADR-0015](ADR-0015-shared-design-token-boundary.md), and the [Consumer Web freeze report](../architecture/18-consumer-web-freeze-report.md).

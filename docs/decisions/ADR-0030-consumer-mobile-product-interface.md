@@ -77,6 +77,16 @@ Bottom sheets rather than centred dialogs, so a confirming control lands under t
 - The design-parity check is now part of `pnpm ci:verify`, between the contract check and the tests.
 - Visual verification was done against a react-native-web render in a real browser, which proves layout, state, and reachability — and does not prove native chrome. That limitation is recorded in the freeze report rather than smoothed over.
 
+## Amendment 2026-08-25: photographs are rendered
+
+The bullet reading "No photograph anywhere, and no control that would add one" is superseded, in both halves and for different reasons.
+
+The control arrived with the native build: this application has a camera and a photo picker, and a photograph can be uploaded, inspected, and marked ready from a phone. What it could not do was show one, because consumer media had no authorized delivery route. That is now built — `POST /v1/media/deliveries` exchanges the references every projection already carried for short-lived addresses — so discovery cards, introduction cards, the conversation list, and somebody's own photo grid all render photographs.
+
+The rule is unchanged and so is the fallback. A person with no photograph to show gets the identity mark, on the same tone, in the same box, and why they have none is never explained. `pnpm design:parity` still passes: the gradient, the radius, and the box are what they were, and the photograph sits inside the box the mark already occupied.
+
+The provider decisions are untouched. A deployed environment still has no approved storage or delivery provider, still serves nothing, and the photo screen still says so — but only when the platform has actually answered that it cannot deliver, rather than as a permanent claim.
+
 ## Authority and scope
 
 This ADR authorises the Consumer Mobile interface only. It changes no approved value, adds nothing to the shared token package, and authorises no interim filling for any other surface. `DESIGN REQUIRED` still stands for the full design-system handoff.

@@ -104,6 +104,16 @@ Reverting is deleting one surface's stylesheet and screens, not unwinding a plat
 | Moving these values into `packages/design-tokens` | REJECTED until Figma approves them |
 | Any surface stating a fact the server did not publish | REJECTED |
 
+## Amendment 2026-08-25: creator imagery exists
+
+One consequence recorded above is no longer true: "a creator can see that no image can be attached to anything". Both ends of that are now built — CREATORS publishes three routes for a page's avatar and cover, PRIVATE CLUBS publishes three for the images on a catalog item, and the adapters that decide who may be served them have existed since the media architecture run.
+
+Two screens change and nothing else does. The page editor offers a portrait and a cover; the item editor offers up to six pictures. Each shows what is there with the state the platform reports, every stage of an upload says what it is doing, and each refusal is its own sentence rather than one covering three problems a creator would act on differently.
+
+The preview is the screen this matters most on, and it is unchanged in principle: it renders what a visitor is actually served, obtained the same way a visitor obtains it. A draft page's imagery does not come back there either, because it would not come back for anybody.
+
+Every other honest gap listed in that consequence stands. Nothing can be sold, no payout can be sent, mature content is refused for four reasons none of which are the creator's, and a members-only item with no club is still reachable by nobody. The storage and delivery **provider** decisions are untouched, so a deployed Studio still cannot store or serve an image.
+
 ## Cross-references
 
 [Design principles](../design/01-design-principles.md), [design-system contract](../design/02-design-system-contract.md), [Figma source of truth](../design/03-figma-source-of-truth.md), [responsive rules](../design/04-responsive-platform-rules.md), [accessibility and motion](../design/05-accessibility-motion.md), [screen states](../design/06-screen-state-requirements.md), [Creator Studio surface](../surfaces/03-creator-studio.md), [ADR-0004](ADR-0004-client-frameworks.md), [ADR-0015](ADR-0015-shared-design-token-boundary.md), [ADR-0020](ADR-0020-creator-capability-activation.md), [ADR-0027](ADR-0027-consumer-web-product-interface.md), and the [Creator Studio freeze report](../architecture/19-creator-studio-freeze-report.md).
