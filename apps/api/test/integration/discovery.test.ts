@@ -302,7 +302,7 @@ async function discoverableConsumer(input: {
   await readyProfileImage({
     database,
     media: mediaRuntime,
-    slotId: media.mediaId,
+    assetId: media.mediaId,
     users,
   });
 
@@ -444,7 +444,8 @@ describe('discovery eligibility', () => {
     expect((await feed(viewer)).body.candidates).toHaveLength(1);
 
     const media = await rowsOf<{ id: string }>(
-      database.sql`select id from users_profile_media where user_id = ${other.id} and state = 'attached'`,
+      database.sql`select media_asset_id as id from users_profile_media
+                   where user_id = ${other.id} and state = 'attached'`,
     );
     await handle(
       post('/v1/users/me/profile/media/removal', other, {
@@ -459,7 +460,8 @@ describe('discovery eligibility', () => {
       subject: 'browse-incomplete@velora.test',
     });
     const media = await rowsOf<{ id: string }>(
-      database.sql`select id from users_profile_media where user_id = ${incomplete.id} and state = 'attached'`,
+      database.sql`select media_asset_id as id from users_profile_media
+                   where user_id = ${incomplete.id} and state = 'attached'`,
     );
     await handle(
       post('/v1/users/me/profile/media/removal', incomplete, {

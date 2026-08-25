@@ -299,7 +299,7 @@ async function consumer(subject: string): Promise<Credentials> {
   await readyProfileImage({
     database,
     media: mediaRuntime,
-    slotId: media.mediaId,
+    assetId: media.mediaId,
     users,
   });
   await handle(

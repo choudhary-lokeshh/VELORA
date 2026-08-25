@@ -64,6 +64,15 @@ export function createUsersRuntime(input: {
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
   readonly database: UsersDatabase;
+  /**
+   * This domain's published consumer directory.
+   *
+   * Normally built here. It is accepted as an input because MEDIA composes
+   * before USERS and one of MEDIA's association adapters needs the same
+   * directory to answer a relationship question — passing the instance in keeps
+   * that a single object rather than two readers of the same tables.
+   */
+  readonly directory?: ConsumerDirectory;
   readonly logger: SafeLogger;
   /** Identity's published current-evidence reader; never its repository. */
   readonly identityAdultAssurance?: IdentityAdultAssuranceReaderPort;
@@ -125,7 +134,9 @@ export function createUsersRuntime(input: {
       consumerContext,
     }),
     consumerContext,
-    directory: new ConsumerDirectory(input.database, identityAdultAssurance),
+    directory:
+      input.directory ??
+      new ConsumerDirectory(input.database, identityAdultAssurance),
     enforcement: new ConsumerEnforcement(repository),
     onboarding,
     profileRepository,

@@ -50,6 +50,22 @@ export type ConsumerResolution =
   | { readonly kind: 'denied'; readonly result: RouteResult };
 
 /**
+ * The same resolution for a route that serves callers who are not acting as a
+ * consumer at all.
+ *
+ * Two outcomes are added rather than folded into `denied`, because a consumer
+ * product route and a route open to everybody owe them different answers: the
+ * first refuses both, the second serves both with whatever an absent consumer
+ * identity entitles them to, which is usually only genuinely public material.
+ */
+export type OptionalConsumerResolution =
+  | ConsumerResolution
+  /** No credential was presented at all. */
+  | { readonly kind: 'anonymous' }
+  /** A valid session that is not a consumer one, so it acts as no consumer. */
+  | { readonly kind: 'other-audience'; readonly auth: AuthContext };
+
+/**
  * Resolves the acting consumer for a product request, or the exact refusal.
  *
  * The order matters. Transport credential first, then audience, then the
@@ -69,6 +85,46 @@ export class ConsumerContextResolver {
     request: Request,
     correlationId: string,
   ): Promise<ConsumerResolution> {
+    const resolution = await this.resolveOptional(request, correlationId);
+    switch (resolution.kind) {
+      case 'anonymous': {
+        return {
+          kind: 'denied',
+          result: routeFailure(401, authErrorCodes.required, correlationId),
+        };
+      }
+      case 'other-audience': {
+        return {
+          kind: 'denied',
+          result: routeFailure(
+            403,
+            productErrorCodes.consumerSurfaceRequired,
+            correlationId,
+          ),
+        };
+      }
+      default: {
+        return resolution;
+      }
+    }
+  }
+
+  /**
+   * The same resolution, for a route that legitimately serves a caller with no
+   * credential at all.
+   *
+   * Only the genuinely credential-free case becomes `anonymous`, and a valid
+   * session belonging to another surface becomes `other-audience` rather than
+   * acquiring consumer authority. A rejected origin, a failed CSRF echo, and a
+   * cookie that is no longer usable stay refusals: each of those is a browser
+   * doing something wrong, and quietly downgrading it to "no session" would
+   * answer a misconfigured or hostile request as though it had been made
+   * correctly, and would leave a stale cookie in place instead of clearing it.
+   */
+  async resolveOptional(
+    request: Request,
+    correlationId: string,
+  ): Promise<OptionalConsumerResolution> {
     const caller = await this.dependencies.caller.resolve(request);
     switch (caller.kind) {
       case 'csrf-rejected':
@@ -90,10 +146,7 @@ export class ConsumerContextResolver {
         };
       }
       case 'anonymous': {
-        return {
-          kind: 'denied',
-          result: routeFailure(401, authErrorCodes.required, correlationId),
-        };
+        return { kind: 'anonymous' };
       }
       default: {
         break;
@@ -102,14 +155,7 @@ export class ConsumerContextResolver {
 
     const auth = caller.context;
     if (!(consumerAudiences as readonly string[]).includes(auth.audience)) {
-      return {
-        kind: 'denied',
-        result: routeFailure(
-          403,
-          productErrorCodes.consumerSurfaceRequired,
-          correlationId,
-        ),
-      };
+      return { auth, kind: 'other-audience' };
     }
 
     const account = await this.dependencies.users.findAccount(auth.accountId);

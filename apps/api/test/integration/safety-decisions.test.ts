@@ -194,7 +194,7 @@ async function consumer(subject: string): Promise<Session> {
   await readyProfileImage({
     database,
     media: mediaRuntime,
-    slotId: mediaId,
+    assetId: mediaId,
     users,
   });
   return { ...session, id };

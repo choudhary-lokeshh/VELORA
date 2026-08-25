@@ -107,6 +107,10 @@ import {
   sendMessageRequestSchema,
 } from './messaging.js';
 import {
+  mediaDeliveryListResponseSchema,
+  mediaDeliveryRequestSchema,
+} from './media.js';
+import {
   callActionRequestSchema,
   callSchema,
   createCallRequestSchema,
@@ -179,6 +183,7 @@ export * from './billing.js';
 export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
+export * from './media.js';
 export * from './messaging.js';
 export * from './realtime.js';
 export * from './money.js';
@@ -300,6 +305,7 @@ export const apiRoutePaths = {
   consumerProfileMediaCompletion: '/v1/users/me/profile/media/completion',
   consumerProfileMediaRemoval: '/v1/users/me/profile/media/removal',
   liveness: '/v1/health/live',
+  mediaDeliveries: '/v1/media/deliveries',
   localMobileSession: '/v1/auth/local/mobile-sessions',
   localWebSession: '/v1/auth/local/web-sessions',
   messagingConversationRead: '/v1/messaging/conversations/read',
@@ -469,6 +475,8 @@ export const apiSchemas = {
   Message: messageSchema,
   MessageListResponse: messageListResponseSchema,
   SendMessageRequest: sendMessageRequestSchema,
+  MediaDeliveryListResponse: mediaDeliveryListResponseSchema,
+  MediaDeliveryRequest: mediaDeliveryRequestSchema,
   MarkNotificationsReadRequest: markNotificationsReadRequestSchema,
   NotificationListResponse: notificationListResponseSchema,
   NotificationPreferencesResponse: notificationPreferencesResponseSchema,
@@ -714,6 +722,12 @@ const commerceUnavailableResponse = {
 
 const mediaStorageUnavailableResponse = {
   description: `No approved media storage provider is configured for this environment, so the object could not be stored or inspected. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
+  headers: { [retryAfterResponseHeader]: retryAfterHeader },
+  schemaName: 'ApiError',
+} as const;
+
+const mediaDeliveryUnavailableResponse = {
+  description: `No approved media delivery provider is configured for this environment, so no address can be produced for anything. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. It is a statement about the platform rather than about any asset named in the request, which is why it is one answer for the whole call rather than a per-asset omission. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
   headers: { [retryAfterResponseHeader]: retryAfterHeader },
   schemaName: 'ApiError',
 } as const;
@@ -1117,6 +1131,30 @@ export const apiOperations = [
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'createMediaDeliveries',
+    path: apiRoutePaths.mediaDeliveries,
+    requestSchemaName: 'MediaDeliveryRequest',
+    responses: {
+      '200': {
+        description:
+          'Addresses for the named assets this caller may currently be served, in the requested variant. An asset that does not exist, is not technically ready, is not published by its owning domain, is not this caller’s to see, or is restricted by Trust and Safety is absent from the response rather than refused, so the operation cannot be used to test whether somebody’s image exists. An address carrying an expiry is a bearer credential valid until that instant and must not outlive it in a cache, a link, or a page.',
+        schemaName: 'MediaDeliveryListResponse',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': mediaDeliveryUnavailableResponse,
+    },
+    // Deliberately not a consumer-only operation. A published creator page is
+    // answered without a session and its imagery is public, so a caller with no
+    // credential may ask; a caller with one is shown whatever that credential
+    // additionally entitles them to. Authorization is per asset, taken from the
+    // owning domain at the moment of issuance, and never from the audience.
+    security: apiSecurityRequirements.public,
+    summary:
+      'Turns opaque asset references a caller already holds into addresses it can fetch. Every reference is re-authorized here rather than when it was published, so an image stops being addressable the moment its owning domain, its safety state, or the relationship behind it changes.',
   },
   {
     method: 'get',

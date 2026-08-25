@@ -62,6 +62,10 @@ import {
   createMediaRuntime,
   type MediaRuntime,
 } from '../../src/media/composition.js';
+import type {
+  MediaAssociationPort,
+  MediaSafetyPort,
+} from '../../src/media/publication.js';
 import {
   createIdentityRuntime,
   type IdentityRuntime,
@@ -489,10 +493,21 @@ export function testPayoutsRuntime(input: {
 }
 
 export function testMediaRuntime(input: {
+  /**
+   * The owning-domain answer, when a suite is exercising a real one.
+   *
+   * Absent by default, which composes `UnattachedMediaAssociation` and denies
+   * everything — the same default the application would have if a domain had no
+   * adapter. A suite that wants real delivery supplies the real adapters, so no
+   * test can accidentally be served media the application would refuse.
+   */
+  readonly association?: MediaAssociationPort;
   readonly config: ServerConfig;
   readonly database?: UsersDatabase;
   readonly logger?: SafeLogger;
   readonly now?: () => Date;
+  /** Trust and Safety's answer, on the same rule as the association above. */
+  readonly safety?: MediaSafetyPort;
   /**
    * Defaults to true, unlike the API.
    *
@@ -505,11 +520,15 @@ export function testMediaRuntime(input: {
   readonly performsByteWork?: boolean;
 }): MediaRuntime {
   return createMediaRuntime({
+    ...(input.association === undefined
+      ? {}
+      : { association: input.association }),
     config: input.config,
     database: input.database ?? drizzle.mock(),
     logger: input.logger ?? silentLogger(),
     performsByteWork: input.performsByteWork ?? true,
     ...(input.now === undefined ? {} : { now: input.now }),
+    ...(input.safety === undefined ? {} : { safety: input.safety }),
   });
 }
 

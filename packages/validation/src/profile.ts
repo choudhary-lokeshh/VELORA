@@ -113,6 +113,12 @@ export const profileMediaRejectionReasonSchema = z.enum([
 /**
  * A profile image as its owner sees it.
  *
+ * The identifier is the media asset reference, which is what every other
+ * operation on this image takes: the completion, the removal, and the delivery
+ * exchange. It is deliberately not this domain's internal slot key — a client
+ * holding one of those could name an image the media platform has never heard
+ * of.
+ *
  * There is no URL. Consumer media has no durable public address: delivery is
  * authorized and signed per request, so a link that outlives the authorization
  * decision cannot exist.

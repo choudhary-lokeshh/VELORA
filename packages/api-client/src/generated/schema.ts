@@ -326,6 +326,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/media/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turns opaque asset references a caller already holds into addresses it can fetch. Every reference is re-authorized here rather than when it was published, so an image stops being addressable the moment its owning domain, its safety state, or the relationship behind it changes. */
+        post: operations["createMediaDeliveries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users/me/availability": {
         parameters: {
             query?: never;
@@ -3253,6 +3270,21 @@ export interface components {
             /** Format: uuid */
             conversationId: string;
         };
+        MediaDeliveryListResponse: {
+            deliveries: {
+                /** Format: uuid */
+                assetId: string;
+                /** Format: date-time */
+                expiresAt?: string;
+                /** Format: uri */
+                url: string;
+            }[];
+        };
+        MediaDeliveryRequest: {
+            assetIds: string[];
+            /** @enum {string} */
+            variant: "avatar_small" | "avatar_large" | "card" | "display";
+        };
         MarkNotificationsReadRequest: {
             notificationIds: string[];
         };
@@ -5832,6 +5864,92 @@ export interface operations {
                 };
             };
             /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createMediaDeliveries: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaDeliveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Addresses for the named assets this caller may currently be served, in the requested variant. An asset that does not exist, is not technically ready, is not published by its owning domain, is not this caller’s to see, or is restricted by Trust and Safety is absent from the response rather than refused, so the operation cannot be used to test whether somebody’s image exists. An address carrying an expiry is a bearer credential valid until that instant and must not outlive it in a cache, a link, or a page. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaDeliveryListResponse"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No approved media delivery provider is configured for this environment, so no address can be produced for anything. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a statement about the platform rather than about any asset named in the request, which is why it is one answer for the whole call rather than a per-asset omission. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

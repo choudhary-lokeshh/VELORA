@@ -28,9 +28,13 @@ export const discoveryCandidateSchema = z
     displayName: z.string(),
     id: z.uuid(),
     /**
-     * Opaque references to the candidate's ready images. Authorized delivery
-     * requires an approved storage provider and is not implemented, so these
-     * are addressable only once one exists.
+     * References to the candidate's ready images, newest slot order first.
+     *
+     * Each one is a media asset reference and nothing else: it carries no
+     * address, and it is worth nothing on its own. A surface exchanges it at
+     * `/v1/media/deliveries` for a short-lived address, and that exchange
+     * re-decides the whole question — so holding one of these after the pair
+     * stops being eligible buys nothing.
      */
     media: z
       .array(

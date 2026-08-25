@@ -285,7 +285,7 @@ export class ProfileService {
     }
     return {
       kind: 'upload_created',
-      mediaId: slot.id,
+      mediaId: slot.mediaAssetId,
       upload: asset.capability,
     };
   }
@@ -305,7 +305,7 @@ export class ProfileService {
     const { media, repository } = this.dependencies;
 
     const slot = await repository.findMedia(repository.transactionless, {
-      mediaId,
+      assetId: mediaId,
       userId: account.id,
     });
     if (slot === undefined || slot.state === 'removed') {
@@ -346,7 +346,7 @@ export class ProfileService {
     if (isDeletionState(account.status)) return { kind: 'not_eligible' };
     const { media, repository } = this.dependencies;
     const slot = await repository.findMedia(repository.transactionless, {
-      mediaId,
+      assetId: mediaId,
       userId: account.id,
     });
     if (slot === undefined || slot.state === 'removed') {
@@ -471,7 +471,7 @@ export class ProfileService {
         });
       }
       views.push({
-        id: slot.id,
+        id: slot.mediaAssetId,
         position: slot.position,
         rejectionReason: answer?.rejection,
         state: answer?.state ?? 'removed',

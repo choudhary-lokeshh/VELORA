@@ -23,6 +23,10 @@ import { idempotencyKeySchema } from './product.js';
  * Deliberately smaller than a discovery candidate: a conversation list needs a
  * name and a picture. It does not need a bio, a region, a language overlap, or
  * anything else that describes why the two people were introduced.
+ *
+ * `media` carries asset references exchanged at `/v1/media/deliveries` for a
+ * short-lived address, on the same terms as everywhere else: the exchange
+ * re-decides visibility, so a reference held after a block stops resolving.
  */
 export const conversationCounterpartSchema = z
   .object({

@@ -273,13 +273,10 @@ async function attachImage(
 }
 
 /** Writes bytes to wherever the media platform issued a capability for. */
-async function placeBytes(slotId: string, bytes: Uint8Array): Promise<void> {
-  const [slot] = await rowsOf<{ media_asset_id: string }>(
-    database.sql`select media_asset_id from users_profile_media where id = ${slotId}`,
-  );
+async function placeBytes(assetId: string, bytes: Uint8Array): Promise<void> {
   const [session] = await rowsOf<{ object_key: string }>(
     database.sql`select object_key from media_upload_sessions
-                 where asset_id = ${slot?.media_asset_id ?? ''} and state = 'issued'`,
+                 where asset_id = ${assetId} and state = 'issued'`,
   );
   const storage = api.media.storage as LocalTestMediaStorage;
   await storage.putObject(session?.object_key ?? '', bytes);
@@ -606,7 +603,8 @@ describe('profile media lifecycle', () => {
     expect(repeated.status).toBe(404);
 
     const rows = await rowsOf<{ state: string }>(
-      database.sql`select state from users_profile_media where id = ${attached.mediaId}`,
+      database.sql`select state from users_profile_media
+                   where media_asset_id = ${attached.mediaId}`,
     );
     expect(rows[0]?.state).toBe('removed');
 
@@ -700,7 +698,8 @@ describe('media ownership', () => {
     // bytes are usable is the media platform's, and the profile read below is
     // what asks it.
     const rows = await rowsOf<{ state: string }>(
-      database.sql`select state from users_profile_media where id = ${attached.mediaId}`,
+      database.sql`select state from users_profile_media
+                   where media_asset_id = ${attached.mediaId}`,
     );
     expect(rows[0]?.state).toBe('attached');
     expect((await readProfile(owner)).media[0]?.state).toBe('ready');

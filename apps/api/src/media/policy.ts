@@ -1,3 +1,5 @@
+import { mediaVariants, type MediaVariant } from '@velora/validation';
+
 /**
  * MEDIA's vocabulary and its technical limits.
  *
@@ -151,14 +153,15 @@ export type MediaImageFormat = (typeof mediaImageFormats)[number];
  * size. Geometry belongs to the processing version and is recorded per object,
  * so changing what `card` measures is a new processing version rather than a
  * new vocabulary.
+ *
+ * The list itself is the published contract's, re-exported under this domain's
+ * name rather than restated. A role a client cannot request is a derivative
+ * nothing fetches, and a role the pipeline does not produce is an address that
+ * cannot be issued; keeping one definition makes both impossible rather than
+ * merely unlikely.
  */
-export const mediaVariantKinds = [
-  'avatar_small',
-  'avatar_large',
-  'card',
-  'display',
-] as const;
-export type MediaVariantKind = (typeof mediaVariantKinds)[number];
+export const mediaVariantKinds = mediaVariants;
+export type MediaVariantKind = MediaVariant;
 
 /**
  * The derivative set each class owes before it may be `ready`.

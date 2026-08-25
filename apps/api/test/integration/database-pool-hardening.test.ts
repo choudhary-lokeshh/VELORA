@@ -355,7 +355,7 @@ async function consumer(
   await readyProfileImage({
     database,
     media: instance.media,
-    slotId: media.mediaId,
+    assetId: media.mediaId,
     users: instance.users,
   });
   await instance.handle(

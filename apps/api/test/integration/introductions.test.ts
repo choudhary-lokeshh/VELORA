@@ -281,7 +281,7 @@ async function consumer(subject: string): Promise<Credentials> {
   await readyProfileImage({
     database,
     media: mediaRuntime,
-    slotId: media.mediaId,
+    assetId: media.mediaId,
     users,
   });
   await handle(
@@ -476,7 +476,8 @@ describe('introductions and discovery interact correctly', () => {
     const alice = await consumer('elig-alice@velora.test');
     const bob = await consumer('elig-bob@velora.test');
     const media = await rowsOf<{ id: string }>(
-      database.sql`select id from users_profile_media where user_id = ${alice.id} and state = 'attached'`,
+      database.sql`select media_asset_id as id from users_profile_media
+                   where user_id = ${alice.id} and state = 'attached'`,
     );
     await handle(
       post('/v1/users/me/profile/media/removal', alice, {

@@ -353,16 +353,26 @@ export class ProfileRepository implements ProfileCompletenessReader {
       .orderBy(asc(userProfileMedia.position));
   }
 
+  /**
+   * One slot, addressed by the MEDIA asset it points at.
+   *
+   * The asset reference rather than this table's own key, because that is the
+   * identifier the contract publishes and therefore the only one a client can
+   * name. A slot identifier is this domain's internal row key: it means nothing
+   * to MEDIA, so a client holding one could ask for a photograph and never be
+   * able to fetch it. The asset column is unique, so one asset still resolves to
+   * one slot.
+   */
   async findMedia(
     executor: AnyExecutor,
-    input: { readonly mediaId: string; readonly userId: string },
+    input: { readonly assetId: string; readonly userId: string },
   ): Promise<UserProfileMediaRow | undefined> {
     const rows = await executor
       .select()
       .from(userProfileMedia)
       .where(
         and(
-          eq(userProfileMedia.id, input.mediaId),
+          eq(userProfileMedia.mediaAssetId, input.assetId),
           // Ownership is part of the predicate, not a check after the read, so
           // there is no window in which another account's row is in hand.
           eq(userProfileMedia.userId, input.userId),

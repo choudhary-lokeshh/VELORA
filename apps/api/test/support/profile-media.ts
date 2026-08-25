@@ -70,16 +70,16 @@ export async function readyProfileImage(input: {
   readonly bytes?: Uint8Array;
   readonly database: TestDatabase;
   readonly media: MediaRuntime;
-  /** The USERS slot identifier the upload route returned. */
-  readonly slotId: string;
+  /** The media asset reference the upload route returned. */
+  readonly assetId: string;
   readonly users: UsersRuntime;
 }): Promise<void> {
-  const [slot] = await rowsOf<{ readonly media_asset_id: string }>(
+  const assetId = input.assetId;
+  const [slot] = await rowsOf<{ readonly id: string }>(
     input.database
-      .sql`select media_asset_id from users_profile_media where id = ${input.slotId}`,
+      .sql`select id from users_profile_media where media_asset_id = ${assetId}`,
   );
-  const assetId = slot?.media_asset_id;
-  if (assetId === undefined) throw new Error('profile media slot not found');
+  if (slot === undefined) throw new Error('profile media slot not found');
 
   const [session] = await rowsOf<{ readonly object_key: string }>(
     input.database.sql`select object_key from media_upload_sessions
@@ -94,7 +94,7 @@ export async function readyProfileImage(input: {
   await input.media.service.recordUpload({
     assetId,
     ownerDomain: 'users',
-    ownerReference: await ownerOf(input.database, input.slotId),
+    ownerReference: await ownerOf(input.database, assetId),
   });
   // Run the cycles until *this* asset is ready, rather than assuming one pass
   // suffices. Obligations are claimed from a queue shared by every caller, so
@@ -120,7 +120,7 @@ export async function readyProfileImage(input: {
   // an unready image turns its own failure into somebody else's mystery.
   if (settled !== 'ready') {
     throw new Error(
-      `profile media never became ready for slot ${input.slotId}: ${settled ?? 'unknown'}`,
+      `profile media never became ready for asset ${assetId}: ${settled ?? 'unknown'}`,
     );
   }
 
@@ -132,10 +132,11 @@ export async function readyProfileImage(input: {
 
 async function ownerOf(
   database: TestDatabase,
-  slotId: string,
+  assetId: string,
 ): Promise<string> {
   const [row] = await rowsOf<{ readonly user_id: string }>(
-    database.sql`select user_id from users_profile_media where id = ${slotId}`,
+    database.sql`select user_id from users_profile_media
+                 where media_asset_id = ${assetId}`,
   );
   if (row === undefined) throw new Error('profile media slot not found');
   return row.user_id;

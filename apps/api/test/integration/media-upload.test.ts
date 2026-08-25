@@ -114,14 +114,22 @@ afterAll(async () => {
 });
 
 describe('MEDIA publishes no upload endpoint of its own', () => {
-  it('registers no media route, because an upload needs a purpose first', () => {
+  it('registers one media route, and it reserves nothing', () => {
     const application = createApplication({ config });
     const paths = application.app.routes.map((route) => route.path);
 
-    // Nothing under a media namespace. The owning domain authorizes the purpose
-    // and calls the service; a route here would let somebody reserve storage
-    // with no product reason at all.
-    expect(paths.filter((path) => path.startsWith('/v1/media'))).toEqual([]);
+    // Exactly one route under the media namespace, and it is a read. The
+    // owning domain authorizes the purpose and calls the service to reserve
+    // storage; a reservation route here would let somebody take space with no
+    // product reason at all. Delivery is the opposite direction: it names
+    // assets that already exist and asks whether this caller may be served
+    // them, and the answer is re-derived from the owning domain, Trust and
+    // Safety, and the asset's own state at the moment it is asked. Enumerated
+    // rather than pattern-matched, so a second media route cannot appear here
+    // silently.
+    expect(paths.filter((path) => path.startsWith('/v1/media')).sort()).toEqual(
+      ['/v1/media/deliveries'],
+    );
 
     // Every other route that names media is an owning domain's — a profile
     // slot — or an operator's. The operator set is enumerated rather than
@@ -135,7 +143,8 @@ describe('MEDIA publishes no upload endpoint of its own', () => {
           (path) =>
             path.startsWith('/v1/') &&
             path.includes('media') &&
-            !path.includes('profile'),
+            !path.includes('profile') &&
+            path !== '/v1/media/deliveries',
         )
         .sort(),
     ).toEqual([

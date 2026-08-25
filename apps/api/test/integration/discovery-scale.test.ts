@@ -309,7 +309,7 @@ async function discoverableConsumer(input: {
   await readyProfileImage({
     database,
     media: mediaRuntime,
-    slotId: media.mediaId,
+    assetId: media.mediaId,
     users,
   });
   await handle(

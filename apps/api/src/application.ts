@@ -42,6 +42,7 @@ import {
   type DiscoveryRuntime,
 } from './discovery/composition.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
+import { MediaDeliveryRoutes } from './media/delivery-routes.js';
 import { maximumMediaObjectBytes } from './media/policy.js';
 import {
   LocalTestMediaTransport,
@@ -61,7 +62,11 @@ import {
 } from './media/safety-bridge.js';
 import { CreatorContentMediaAssociation } from './clubs/content-media-association.js';
 import { CreatorProfileMediaAssociation } from './creators/profile-media-association.js';
+import { ConsumerDirectory } from './users/directory.js';
 import { ConsumerProfileMediaAssociation } from './users/profile-media-association.js';
+import { DiscoveryPeerVisibility } from './discovery/peer-visibility.js';
+import { IntroductionRepository } from './discovery/introductions.js';
+import { SafetyDirectory } from './safety/directory.js';
 import { ContentSafetyGate } from './safety/content-safety.js';
 import {
   DepictedPersonConsentService,
@@ -263,7 +268,33 @@ export function createApplication(
     // Each adapter is that domain's own code reading its own tables, handed to
     // MEDIA as a port; a domain with no entry answers nothing, and nothing
     // denies.
-    const profileMediaAssociation = new ConsumerProfileMediaAssociation();
+    const safetyRepositoryForMedia = new SafetyRepository(
+      ownedDatabase.database,
+    );
+    const safetyEligibilityForMedia = new SafetyEligibility(
+      safetyRepositoryForMedia,
+    );
+    // USERS' published directory, built here rather than inside its own runtime
+    // and handed to both. The association adapter below needs it before USERS
+    // composes, and two readers of the same tables would be two answers waiting
+    // to disagree.
+    const consumerDirectory = new ConsumerDirectory(
+      ownedDatabase.database,
+      identity.adultAssurance,
+    );
+    // Whether one consumer may see another's photograph is a question about the
+    // relationship between two accounts, which DISCOVERY owns and USERS cannot
+    // answer. Its rule is built from the database handle, USERS' directory, and
+    // SAFETY's published pair answer — all of which exist at this point — and
+    // handed to USERS' adapter, which is handed to MEDIA as a port. No setter,
+    // no cycle, and each domain still answers only for itself.
+    const profileMediaAssociation = new ConsumerProfileMediaAssociation(
+      new DiscoveryPeerVisibility({
+        directory: consumerDirectory,
+        introductions: new IntroductionRepository(ownedDatabase.database),
+        safety: new SafetyDirectory(safetyRepositoryForMedia),
+      }),
+    );
     const creatorMediaAssociation = new CreatorProfileMediaAssociation();
     const contentMediaAssociation = new CreatorContentMediaAssociation();
     const mediaAssociationRoutes = {
@@ -271,12 +302,6 @@ export function createApplication(
       creators: creatorMediaAssociation,
       users: profileMediaAssociation,
     };
-    const safetyRepositoryForMedia = new SafetyRepository(
-      ownedDatabase.database,
-    );
-    const safetyEligibilityForMedia = new SafetyEligibility(
-      safetyRepositoryForMedia,
-    );
     media =
       injectedMedia ??
       createMediaRuntime({
@@ -314,6 +339,7 @@ export function createApplication(
         caller: auth.caller,
         config,
         database: ownedDatabase.database,
+        directory: consumerDirectory,
         identityAdultAssurance: identity.adultAssurance,
         logger,
         media: media.service,
@@ -708,6 +734,21 @@ export function createApplication(
       matureContent: config.SAFETY_MATURE_CONTENT,
     },
     creatorContext: creators.creatorContext,
+  });
+
+  /**
+   * The door onto the media platform's delivery decision.
+   *
+   * Composed here rather than inside the MEDIA runtime because it needs USERS'
+   * consumer resolver, and MEDIA composes before USERS. It holds no policy: the
+   * decision it exposes is `MediaDeliveryService`'s, which is the owning
+   * domain's answer, Trust and Safety's answer, and MEDIA's own technical state,
+   * all re-derived at the moment an address is issued.
+   */
+  const mediaDeliveryRoutes = new MediaDeliveryRoutes({
+    consumerContext: users.consumerContext,
+    delivery: media.delivery,
+    repository: media.repository,
   });
 
   /**
@@ -1351,6 +1392,10 @@ export function createApplication(
     .get(
       apiRoutePaths.creatorMatureReadiness,
       admitted(async (input) => creatorSafetyRoutes.getMatureReadiness(input)),
+    )
+    .post(
+      apiRoutePaths.mediaDeliveries,
+      admitted(async (input) => mediaDeliveryRoutes.createDeliveries(input)),
     )
     .get(
       apiRoutePaths.notifications,

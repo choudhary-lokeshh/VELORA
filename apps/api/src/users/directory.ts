@@ -399,14 +399,21 @@ export class ConsumerDirectory {
       .where(inArray(userAccounts.id, [...ids]));
   }
 
-  /** Ready images for a page of candidates, in one query rather than per row. */
+  /**
+   * Ready images for a page of candidates, in one query rather than per row.
+   *
+   * The identifier published is the MEDIA asset reference rather than this
+   * table's own key, because a peer's only use for it is to ask the media
+   * platform for an address, and the media platform has never heard of a USERS
+   * slot.
+   */
   async mediaFor(
     candidateIds: readonly string[],
   ): Promise<DirectoryCandidateMedia[]> {
     if (candidateIds.length === 0) return [];
     return this.database
       .select({
-        id: userProfileMedia.id,
+        id: userProfileMedia.mediaAssetId,
         position: userProfileMedia.position,
         userId: userProfileMedia.userId,
       })
