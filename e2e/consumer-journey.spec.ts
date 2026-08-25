@@ -130,13 +130,29 @@ test.describe('Consumer Web product journey', () => {
       name: 'photo.jpg',
     });
 
-    // Accepted, then checked. `checking` is the honest intermediate state, the
-    // surface shows it rather than claiming the photo is done, and waiting for
-    // it is what makes the reload below safe: a reload before the three calls
-    // finish abandons them, and the slot stays waiting for bytes forever.
-    await expect(
-      page.locator('[data-testid^="profile-media-"][data-state="checking"]'),
-    ).toHaveCount(1, { timeout: 60_000 });
+    // The three calls have to finish before anything reloads: a reload part-way
+    // through abandons them and the slot waits for bytes forever. What proves
+    // they finished is a slot on the screen — **in any state**. Waiting for
+    // `checking` specifically was a race with the worker, because a runner fast
+    // enough to inspect the object before the surface re-reads leaves that
+    // selector matching nothing, and 60 seconds of nothing looks exactly like a
+    // broken upload.
+    //
+    // The error is read first so a genuine failure reports its own sentence
+    // rather than timing out on an absence.
+    await expect(async () => {
+      // `count()` rather than a locator assertion, because an absent error is
+      // the ordinary case and waiting for one would spend the whole budget
+      // proving it is not there.
+      const failures = await page.getByTestId('profile-photo-error').count();
+      expect(failures, 'the upload reported a failure').toBe(0);
+      // `[data-state]` rather than the bare prefix: the tile carries the
+      // state, and its own remove control and thumbnail share the prefix, so
+      // the bare selector counts three things and means one.
+      await expect(
+        page.locator('[data-testid^="profile-media-"][data-state]'),
+      ).toHaveCount(1, { timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
 
     // Inspection and processing are the worker's, so the surface only learns
     // the outcome by asking again. What it waits for is **admission**, not a
@@ -211,9 +227,9 @@ test.describe('Consumer Web product journey', () => {
     });
 
     // The upload has to finish before anything reloads, for the reason the
-    // previous test gives.
+    // previous test gives — and a slot in any state is what proves it did.
     await expect(
-      page.locator('[data-testid^="profile-media-"][data-state="checking"]'),
+      page.locator('[data-testid^="profile-media-"][data-state]'),
     ).toHaveCount(1, { timeout: 60_000 });
 
     await expect(async () => {
