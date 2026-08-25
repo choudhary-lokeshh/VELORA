@@ -142,13 +142,26 @@ export interface BrowserSecurityHeaderOptions {
   readonly robots?: string | undefined;
 }
 
-function connectSources(apiBaseUrl: string | undefined): string {
-  if (apiBaseUrl === undefined || apiBaseUrl.length === 0) return "'self'";
+/**
+ * The one extra origin a surface is allowed to reach, when it has one.
+ *
+ * Used for both `connect-src` and `img-src`, and it is the same origin in both
+ * because it is the same platform: media delivery issues addresses on whichever
+ * origin serves the bytes, and today the only such origin is the API's own —
+ * the development storage adapter has no origin of its own and answers on the
+ * API's. An approved storage or delivery provider brings a third origin, and
+ * that is a separate value this function will need rather than a wildcard.
+ */
+function withApiOrigin(
+  apiBaseUrl: string | undefined,
+  baseline: string,
+): string {
+  if (apiBaseUrl === undefined || apiBaseUrl.length === 0) return baseline;
   try {
     const { origin } = new URL(apiBaseUrl);
-    return `'self' ${origin}`;
+    return `${baseline} ${origin}`;
   } catch {
-    return "'self'";
+    return baseline;
   }
 }
 
@@ -191,8 +204,14 @@ export function browserSecurityHeaders(
       "object-src 'none'",
       "frame-ancestors 'none'",
       "form-action 'self'",
-      `connect-src ${connectSources(options.apiBaseUrl)}`,
-      "img-src 'self' data:",
+      `connect-src ${withApiOrigin(options.apiBaseUrl, "'self'")}`,
+      // The API origin is named here as well as in `connect-src`, because a
+      // consumer photograph is fetched from it: delivery issues a signed,
+      // short-lived address on the origin that serves the bytes, and a policy
+      // that allowed the surface to *ask* for one but not to *render* it would
+      // leave every person on the platform as an identity mark for a reason no
+      // developer tool would explain.
+      `img-src ${withApiOrigin(options.apiBaseUrl, "'self' data:")}`,
       "font-src 'self'",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self' 'unsafe-inline'",

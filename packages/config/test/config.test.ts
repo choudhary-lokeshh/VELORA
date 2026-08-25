@@ -677,6 +677,20 @@ describe('browser security headers', () => {
     );
   });
 
+  it('lets a page render an image from the origin it may call', () => {
+    // Media delivery issues a signed address on whichever origin serves the
+    // bytes, and today that is the API's own. A policy permitting the surface
+    // to ask for one but not to render it would leave every person on the
+    // platform drawn as an identity mark for a reason nothing surfaces.
+    expect(policy({ apiBaseUrl: 'https://api.velora.test' })).toContain(
+      "img-src 'self' data: https://api.velora.test",
+    );
+  });
+
+  it('permits no image origin at all when there is no endpoint', () => {
+    expect(policy()).toContain("img-src 'self' data:;");
+  });
+
   it.each([
     ['production with an https API', 'production', 'https://api.velora.test'],
     ['staging with an https API', 'staging', 'https://api.velora.test'],
