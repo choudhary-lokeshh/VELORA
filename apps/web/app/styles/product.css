@@ -340,6 +340,19 @@
   position: absolute;
 }
 
+/*
+ * The photograph fills the portrait and sits under the gradient, so the name
+ * and chips laid over it stay legible against a bright image. It is the same
+ * box the monogram occupies, so a card does not resize when an address arrives.
+ */
+.v-person__portrait-image {
+  block-size: 100%;
+  inline-size: 100%;
+  inset: 0;
+  object-fit: cover;
+  position: absolute;
+}
+
 .v-person__portrait-mark {
   color: rgb(246 241 243 / 76%);
   font-size: clamp(3rem, 12vw, 4.5rem);
@@ -731,6 +744,31 @@
   padding: var(--space-3);
   position: relative;
   text-align: center;
+}
+
+/*
+ * The photograph fills the tile behind its state badge. A tile that resized
+ * when a thumbnail arrived would make the whole grid jump, so the image is
+ * absolute inside a box the aspect ratio already fixed, and the badge sits over
+ * a scrim so it stays readable on a bright picture.
+ */
+.v-media-item__thumb {
+  block-size: 100%;
+  border-radius: inherit;
+  inline-size: 100%;
+  inset: 0;
+  object-fit: cover;
+  position: absolute;
+}
+
+.v-media-item:has(.v-media-item__thumb) .v-badge {
+  backdrop-filter: blur(8px);
+  background: var(--surface-overlay);
+  position: relative;
+}
+
+.v-media-item:has(.v-media-item__thumb) .v-btn {
+  position: relative;
 }
 
 /* ============================ Notifications =========================== */

@@ -18,6 +18,7 @@ import {
   Segmented,
 } from '../design/primitives';
 import { CallControls } from './calls';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { PersonSafetyMenu } from './safety-actions';
 import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
@@ -119,6 +120,10 @@ export function Introductions() {
       : group === 'you-reached-out'
         ? outgoing
         : incoming;
+  const portraits = useMediaAddresses(
+    portraitReferences(shown.map((row) => row.counterpart)),
+    'avatar_large',
+  );
   const busy = action.busy || pending !== undefined;
 
   return (
@@ -183,6 +188,7 @@ export function Introductions() {
               <IntroductionCard
                 busy={busy}
                 introduction={row}
+                portrait={portraits.get(row.counterpart.media[0]?.id ?? '')}
                 onAccept={() => {
                   act(
                     row.id,
@@ -242,6 +248,7 @@ function IntroductionCard({
   onDecline,
   onOpen,
   onWithdraw,
+  portrait,
 }: {
   readonly busy: boolean;
   readonly introduction: Introduction;
@@ -250,6 +257,8 @@ function IntroductionCard({
   readonly onDecline: () => void;
   readonly onOpen: () => void;
   readonly onWithdraw: () => void;
+  /** A short-lived address, or nothing to show. */
+  readonly portrait: string | undefined;
 }) {
   const { counterpart } = introduction;
   const region = regionName(counterpart.region);
@@ -265,6 +274,7 @@ function IntroductionCard({
           displayName={counterpart.displayName}
           seed={counterpart.id}
           size="md"
+          src={portrait}
         />
         <div className="v-row__body">
           <h2 className="v-subheading v-wrap">{counterpart.displayName}</h2>

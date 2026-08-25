@@ -18,6 +18,7 @@ import {
   initialsOf,
   toneOf,
 } from '../design/primitives';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { PersonSafetyMenu } from './safety-actions';
 import { useResource, useSingleFlight } from './resource';
@@ -192,6 +193,12 @@ export function Discovery() {
 
   const busy = decision.busy || pending !== undefined;
   const empty = !loading && error === undefined && feed.candidates.length === 0;
+  // One exchange for the whole page. Each card draws its identity mark first
+  // and takes the photograph when it arrives, so nothing waits on this.
+  const portraits = useMediaAddresses(
+    portraitReferences(feed.candidates),
+    'display',
+  );
 
   return (
     <>
@@ -293,6 +300,7 @@ export function Discovery() {
               <CandidateCard
                 busy={busy}
                 candidate={candidate}
+                portrait={portraits.get(candidate.media[0]?.id ?? '')}
                 onBlocked={() => {
                   drop(candidate.id);
                 }}
@@ -339,12 +347,15 @@ function CandidateCard({
   onBlocked,
   onPass,
   onSignal,
+  portrait,
 }: {
   readonly busy: boolean;
   readonly candidate: DiscoveryCandidate;
   readonly onBlocked: () => void;
   readonly onPass: () => void;
   readonly onSignal: () => void;
+  /** A short-lived address, or nothing to show. Never explained either way. */
+  readonly portrait: string | undefined;
 }) {
   const region = regionName(candidate.region);
   return (
@@ -354,9 +365,21 @@ function CandidateCard({
           toneOf(candidate.id),
         )}`}
       >
-        <span aria-hidden="true" className="v-person__portrait-mark">
-          {initialsOf(candidate.displayName)}
-        </span>
+        {portrait === undefined ? (
+          <span aria-hidden="true" className="v-person__portrait-mark">
+            {initialsOf(candidate.displayName)}
+          </span>
+        ) : (
+          /* A plain element rather than the framework's optimised one: a
+             per-request signed address is viewer-scoped and short-lived, so
+             nothing upstream can fetch or cache it. */
+          <img
+            alt=""
+            className="v-person__portrait-image"
+            data-testid={`candidate-portrait-${candidate.id}`}
+            src={portrait}
+          />
+        )}
         <div className="v-person__identity">
           <h2 className="v-heading v-wrap">{candidate.displayName}</h2>
           <div className="v-inline v-inline--tight">

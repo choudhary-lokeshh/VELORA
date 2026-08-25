@@ -422,13 +422,13 @@ select.v-control {
 /* ============================ Identity ================================ */
 
 /*
- * An identity mark, and never a photograph.
+ * A person, at the size of a list row.
  *
- * Consumer media has no durable address and no delivery route exists, so this
- * surface has no image to render for anybody. What it renders instead is a
+ * A photograph when one is currently servable to this viewer, and otherwise a
  * monogram on a deterministic tone derived from the person's identifier — the
- * same person is always the same colour, which makes a list scannable — and it
- * is deliberately never captioned as a photo.
+ * same person is always the same colour, which makes a list scannable. The two
+ * occupy exactly the same box, so a list does not move as short-lived addresses
+ * arrive, and the fallback is never captioned as a photo.
  */
 .v-avatar {
   align-items: center;
@@ -474,6 +474,23 @@ select.v-control {
   font-size: var(--text-title-size);
   height: 88px;
   width: 88px;
+}
+
+/*
+ * The tone stays underneath the photograph rather than being replaced by it.
+ * A transparent PNG, a slow load, and a decode failure all fall back to the
+ * monogram's own surface instead of to the page behind it.
+ */
+.v-avatar__image {
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  position: relative;
+  z-index: 0;
+}
+
+.v-avatar--image {
+  color: transparent;
 }
 
 .v-avatar--tone-1 {

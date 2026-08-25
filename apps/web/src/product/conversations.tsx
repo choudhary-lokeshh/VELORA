@@ -27,6 +27,7 @@ import {
   StatusMessage,
 } from '../design/primitives';
 import { formatDay, formatRelative, formatTime } from './locale';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { PersonSafetyMenu } from './safety-actions';
 import { useSingleFlight } from './resource';
 
@@ -79,6 +80,10 @@ export function ConversationsList({
   const rows = [...(conversations.value?.conversations ?? [])].sort(
     (left, right) =>
       Date.parse(right.lastActivityAt) - Date.parse(left.lastActivityAt),
+  );
+  const portraits = useMediaAddresses(
+    portraitReferences(rows.map((row) => row.counterpart)),
+    'avatar_small',
   );
 
   if (conversations.loading && conversations.value === undefined) {
@@ -151,6 +156,7 @@ export function ConversationsList({
                 displayName={row.counterpart.displayName}
                 seed={row.counterpart.id}
                 size="sm"
+                src={portraits.get(row.counterpart.media[0]?.id ?? '')}
               />
               <span className="v-row__body">
                 <span className="v-row__title">
@@ -320,6 +326,10 @@ function Thread({
   readonly onChanged: () => void;
   readonly selfId: string | undefined;
 }) {
+  const portraits = useMediaAddresses(
+    portraitReferences([conversation.counterpart]),
+    'avatar_small',
+  );
   const [messages, setMessages] = useState<readonly Message[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -466,6 +476,7 @@ function Thread({
           displayName={conversation.counterpart.displayName}
           seed={conversation.counterpart.id}
           size="sm"
+          src={portraits.get(conversation.counterpart.media[0]?.id ?? '')}
         />
         <div className="v-row__body">
           <p className="v-subheading v-truncate">

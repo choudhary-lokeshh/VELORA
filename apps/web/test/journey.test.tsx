@@ -475,6 +475,34 @@ describe('discovery', () => {
     ).toHaveLength(1);
   });
 
+  it('shows a candidate photograph once the platform grants an address', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<Discovery />, double, { pathname: '/discover' });
+
+    const portrait = await screen.findByTestId(
+      `candidate-portrait-${otherPersonId}`,
+    );
+    expect(portrait.getAttribute('src')).toContain('https://media.test/');
+  });
+
+  it('draws an identity mark, not a broken frame, when nothing may be served', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      mediaDelivery: 'declined',
+    });
+    renderProduct(<Discovery />, double, { pathname: '/discover' });
+    await screen.findByTestId(`candidate-${otherPersonId}`);
+
+    expect(
+      screen.queryByTestId(`candidate-portrait-${otherPersonId}`),
+    ).toBeNull();
+    expect(document.querySelectorAll('img')).toHaveLength(0);
+    // And it never says why, because the reason is somebody else's business.
+    for (const leak of ['blocked', 'not allowed', 'processing']) {
+      expect(document.body.textContent.toLowerCase()).not.toContain(leak);
+    }
+  });
+
   it('invents no distance, score, or presence', async () => {
     const double = createApiDouble(admittedState());
     renderProduct(<Discovery />, double, { pathname: '/discover' });
@@ -925,8 +953,25 @@ describe('profile', () => {
     });
   });
 
-  it('says no photo can be shown rather than showing a broken frame', async () => {
+  it('shows a ready photo once the platform grants an address for it', async () => {
     const double = createApiDouble(admittedState());
+    renderProduct(<You />, double, { pathname: '/you' });
+
+    const thumbnail = await screen.findByTestId(
+      `profile-media-thumb-${admittedState().profile?.media[0]?.id ?? ''}`,
+    );
+    expect(thumbnail.getAttribute('src')).toContain('https://media.test/');
+    // Decorative: the person's own name and the slot's state are already text
+    // beside it, so announcing the picture as well would repeat them.
+    expect(thumbnail.getAttribute('alt')).toBe('');
+    expect(screen.queryByTestId('media-delivery-blocked')).toBeNull();
+  });
+
+  it('says no photo can be shown rather than showing a broken frame', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      mediaDelivery: 'unavailable',
+    });
     renderProduct(<You />, double, { pathname: '/you' });
 
     await screen.findByTestId('media-delivery-blocked');

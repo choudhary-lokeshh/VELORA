@@ -38,6 +38,17 @@ export interface ApiDoubleState {
     updatedAt: string;
   };
   blocks: { blockedId: string; createdAt: string }[];
+  /**
+   * What the media platform answers when a reference is exchanged for an
+   * address.
+   *
+   * `granted` is the default because it is what a configured environment does,
+   * and because a double that never served an image would leave every surface's
+   * photograph path untested. `unavailable` is the deployed-environment answer —
+   * no approved delivery provider — and `declined` is a platform that serves
+   * nothing to this viewer without saying why.
+   */
+  mediaDelivery: 'granted' | 'declined' | 'unavailable';
   /** Private clubs the account may currently read, and the invitations it may use. */
   clubAccess: {
     clubId: string;
@@ -216,6 +227,7 @@ export function emptyState(): ApiDoubleState {
       updatedAt: iso(),
     },
     blocks: [],
+    mediaDelivery: 'granted',
     clubAccess: [],
     clubInvites: [],
     candidates: [],
@@ -413,6 +425,28 @@ export function createApiDouble(
     if (path === '/v1/auth/logout' || path === '/v1/auth/logout-all') {
       state.session = null;
       return json(200, { acknowledged: true });
+    }
+
+    // MEDIA. Reachable without a session, exactly as the contract publishes it.
+    if (path === '/v1/media/deliveries' && method === 'POST') {
+      if (state.mediaDelivery === 'unavailable') {
+        return error(503, 'DEPENDENCY_UNAVAILABLE');
+      }
+      const asked = (body as { assetIds?: string[] } | undefined)?.assetIds;
+      return json(200, {
+        deliveries:
+          state.mediaDelivery === 'declined'
+            ? []
+            : (asked ?? []).map((assetId) => ({
+                assetId,
+                // Real time rather than the fixture clock. Every other value
+                // a double produces is content a test asserts against; this
+                // one is a deadline the client compares to its own clock, so a
+                // fixed instant would arrive already expired.
+                expiresAt: new Date(Date.now() + 300_000).toISOString(),
+                url: `https://media.test/${assetId}`,
+              })),
+      });
     }
 
     if (state.session === null) return error(401, 'AUTH_REQUIRED');

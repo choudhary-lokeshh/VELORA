@@ -12,10 +12,12 @@ import {
   type ReactNode,
 } from 'react';
 
-import type {
-  ConsumerApi,
-  ConversationList,
-  NotificationList,
+import {
+  createMediaAddressBook,
+  type ConsumerApi,
+  type ConversationList,
+  type MediaAddressBook,
+  type NotificationList,
 } from '@velora/consumer-client';
 
 import {
@@ -53,6 +55,14 @@ import {
 interface ApiValue {
   readonly api: ConsumerApi;
   readonly authClient: ConsumerWebAuthClient;
+  /**
+   * Where image references become addresses.
+   *
+   * Above the routes because two screens rendering the same person must not
+   * hold two grants for the same photograph, and because signing out has to be
+   * able to drop every address at once.
+   */
+  readonly media: MediaAddressBook;
 }
 
 const ApiContext = createContext<ApiValue | undefined>(undefined);
@@ -63,6 +73,14 @@ export function useApi(): ConsumerApi {
     throw new Error('useApi used outside VeloraProviders');
   }
   return value.api;
+}
+
+export function useMediaAddressBook(): MediaAddressBook {
+  const value = useContext(ApiContext);
+  if (value === undefined) {
+    throw new Error('useMediaAddressBook used outside VeloraProviders');
+  }
+  return value.media;
 }
 
 export interface SessionValue {
@@ -128,23 +146,24 @@ export function VeloraProviders({
   /** Injected by tests so the whole journey runs without a network. */
   readonly fetchImplementation?: typeof globalThis.fetch;
 }) {
-  const clients = useMemo<ApiValue>(
-    () => ({
-      api: createWebConsumerApi({
-        apiBaseUrl,
-        ...(fetchImplementation === undefined
-          ? {}
-          : { fetch: fetchImplementation }),
-      }),
+  const clients = useMemo<ApiValue>(() => {
+    const api = createWebConsumerApi({
+      apiBaseUrl,
+      ...(fetchImplementation === undefined
+        ? {}
+        : { fetch: fetchImplementation }),
+    });
+    return {
+      api,
       authClient: createConsumerWebAuthClient({
         apiBaseUrl,
         ...(fetchImplementation === undefined
           ? {}
           : { fetch: fetchImplementation }),
       }),
-    }),
-    [apiBaseUrl, fetchImplementation],
-  );
+      media: createMediaAddressBook({ api }),
+    };
+  }, [apiBaseUrl, fetchImplementation]);
 
   return (
     <ApiContext.Provider value={clients}>
@@ -200,6 +219,10 @@ function SessionProvider({
       },
       signOut: () => {
         run(async () => {
+          // Dropped before the request rather than after it. Every held
+          // address is a bearer credential for one of these photographs, and
+          // the point of signing out is that this browser stops holding them.
+          clients.media.clear();
           dispatch({
             outcome: await authClient.logout(),
             type: 'logout-result',
@@ -208,6 +231,7 @@ function SessionProvider({
       },
       signOutEverywhere: () => {
         run(async () => {
+          clients.media.clear();
           dispatch({
             outcome: await authClient.logoutEverywhere(),
             type: 'logout-everywhere-result',
@@ -215,7 +239,7 @@ function SessionProvider({
         });
       },
     }),
-    [auth, authClient, busy, refresh, run, signedIn],
+    [auth, authClient, busy, clients, refresh, run, signedIn],
   );
 
   return (

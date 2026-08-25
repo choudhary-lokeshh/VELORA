@@ -397,33 +397,49 @@ export function toneOf(seed: string): number {
 }
 
 /**
- * An identity mark.
+ * A person, as small as a list row.
  *
- * Deliberately not a photograph and never described as one. Consumer media has
- * no delivery route on this platform — `packages/validation` publishes image
- * references with no address, because authorized delivery needs an approved
- * storage provider and there is none — so there is no image for any surface to
- * render. A monogram on a stable tone is what a person actually gets, and
- * pretending otherwise with a broken image frame would be worse.
+ * A photograph when there is one to show and a monogram on a stable tone when
+ * there is not, and the two are the same shape so a list does not reflow as
+ * addresses arrive. Which one a person gets is never explained: an image that
+ * is still processing, one its owner removed, and one this viewer may not be
+ * shown all render identically, because saying which would disclose something
+ * about somebody else.
+ *
+ * The image is decorative in the accessibility tree. The person's name is
+ * always rendered as text beside it by every caller, so announcing the picture
+ * as well would read the same name twice.
  */
 export function Avatar({
   displayName,
   seed,
   size = 'sm',
+  src,
 }: {
   readonly displayName: string;
   /** Usually the person's identifier, so the tone survives a name change. */
   readonly seed?: string;
   readonly size?: 'xs' | 'sm' | 'md' | 'lg';
+  /** A short-lived address. Absent whenever there is nothing to show. */
+  readonly src?: string | undefined;
 }) {
+  const className = `v-avatar v-avatar--${size} v-avatar--tone-${String(
+    toneOf(seed ?? displayName),
+  )}`;
+  if (src === undefined) {
+    return (
+      <span aria-hidden="true" className={className}>
+        {initialsOf(displayName)}
+      </span>
+    );
+  }
   return (
-    <span
-      aria-hidden="true"
-      className={`v-avatar v-avatar--${size} v-avatar--tone-${String(
-        toneOf(seed ?? displayName),
-      )}`}
-    >
-      {initialsOf(displayName)}
+    <span aria-hidden="true" className={`${className} v-avatar--image`}>
+      {/* A plain element rather than the framework's optimised one. The
+          address is short-lived, viewer-scoped, and issued per request, so
+          there is nothing a build-time or origin-side pipeline could fetch,
+          cache, or resize without holding a credential of its own. */}
+      <img alt="" className="v-avatar__image" src={src} />
     </span>
   );
 }

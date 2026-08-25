@@ -10,7 +10,12 @@ import {
 import type { ConsumerProfile } from '@velora/consumer-client';
 import { failureMessage } from '@velora/consumer-client';
 
-import { useAccount, useApi, useToast } from '../app/providers';
+import {
+  useAccount,
+  useApi,
+  useMediaAddressBook,
+  useToast,
+} from '../app/providers';
 import { ConfirmDialog } from '../design/dialog';
 import { Icon, type IconName } from '../design/icons';
 import {
@@ -21,6 +26,7 @@ import {
   StatusMessage,
   type Tone,
 } from '../design/primitives';
+import { useMediaAddresses } from './imagery';
 
 /**
  * A profile's photos: asked for, uploaded, then inspected by the platform.
@@ -36,11 +42,11 @@ import {
  * usable image. None of the three is allowed to look like success, and none of
  * them exposes a storage address, bucket, or key.
  *
- * **A ready photo is still not rendered anywhere, and that is not a bug on this
- * screen.** Consumer media has no durable address and no authorized delivery
- * route exists — `packages/validation` publishes image references with no URL
- * for exactly that reason — so no surface on this platform can show one yet.
- * Saying so is better than an image frame that never fills.
+ * A ready photo is shown here as a thumbnail, obtained the same way every other
+ * surface obtains one: the reference is exchanged for a short-lived address that
+ * is re-decided on every request. Where the platform has no approved delivery
+ * provider the exchange refuses, and the screen says so plainly instead of
+ * leaving an image frame that never fills.
  */
 
 type SlotState =
@@ -102,6 +108,15 @@ export function ProfilePhotos({
   );
   const full = slots.length >= maximumProfileMedia;
   const working = progress !== 'idle';
+  const book = useMediaAddressBook();
+  const thumbnails = useMediaAddresses(
+    slots.filter((item) => item.state === 'ready').map((item) => item.id),
+    'avatar_large',
+  );
+  // Only once an exchange has actually happened. Before that the honest state
+  // is "nothing to say yet" rather than either claim.
+  const undeliverable =
+    slots.some((item) => item.state === 'ready') && book.deliveryUnavailable();
 
   const upload = async (file: File) => {
     setError(undefined);
@@ -182,7 +197,19 @@ export function ProfilePhotos({
                 data-testid={`profile-media-${item.id}`}
                 key={item.id}
               >
-                <Icon name={presentation.icon} size="lg" />
+                {thumbnails.get(item.id) === undefined ? (
+                  <Icon name={presentation.icon} size="lg" />
+                ) : (
+                  /* A plain element rather than the framework's optimised
+                     one: a per-request signed address is viewer-scoped and
+                     short-lived, so nothing upstream can fetch or cache it. */
+                  <img
+                    alt=""
+                    className="v-media-item__thumb"
+                    data-testid={`profile-media-thumb-${item.id}`}
+                    src={thumbnails.get(item.id)}
+                  />
+                )}
                 <Badge tone={presentation.tone}>{presentation.label}</Badge>
                 {item.state === 'rejected' ? (
                   <p className="v-caption v-quiet">
@@ -242,17 +269,17 @@ export function ProfilePhotos({
         )}
       </div>
 
-      {compact ? null : (
+      {compact || !undeliverable ? null : (
         <Notice
           icon="lock"
           testId="media-delivery-blocked"
-          title="Photos are stored, not shown"
+          title="Photos are stored, not shown here"
           tone="quiet"
         >
-          VELORA has no approved way to deliver an image yet, so no photo is
-          displayed anywhere on this site — not yours and not anybody
-          else&apos;s. What you upload is kept and checked, and it appears the
-          day authorized delivery exists.
+          This environment has no approved way to deliver an image, so no photo
+          is displayed anywhere on it — not yours and not anybody else&apos;s.
+          What you upload is kept and checked, and it appears wherever delivery
+          is available.
         </Notice>
       )}
 
