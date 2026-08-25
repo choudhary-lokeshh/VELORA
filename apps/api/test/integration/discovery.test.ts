@@ -350,6 +350,120 @@ async function feed(
   };
 }
 
+describe('opening one person', () => {
+  it('gives a viewer somebody they may currently be shown', async () => {
+    const viewer = await discoverableConsumer({
+      subject: 'person-page-viewer@velora.test',
+    });
+    const other = await discoverableConsumer({
+      subject: 'person-page-target@velora.test',
+    });
+
+    const response = await handle(
+      get(`/v1/discovery/people?personId=${other.id}`, viewer),
+    );
+    const body = (await response.json()) as {
+      readonly displayName: string;
+      readonly id: string;
+      readonly media: unknown[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.id).toBe(other.id);
+    expect(body.media.length).toBeGreaterThan(0);
+    // Exactly the card projection and nothing more. The seeded person in this
+    // suite has no bio, and an absent optional field is absent rather than
+    // null, so the required set is what this asserts.
+    expect(Object.keys(body).toSorted()).toEqual([
+      'displayName',
+      'id',
+      'media',
+      'region',
+      'sharedLanguages',
+    ]);
+  });
+
+  it('keeps giving a counterpart whose availability window has closed', async () => {
+    const viewer = await discoverableConsumer({
+      subject: 'person-page-first@velora.test',
+    });
+    const other = await discoverableConsumer({
+      subject: 'person-page-second@velora.test',
+    });
+    await handle(
+      post('/v1/discovery/introductions', viewer, { candidateId: other.id }),
+    );
+    await handle(
+      post('/v1/discovery/introductions', other, { candidateId: viewer.id }),
+    );
+    await handle(
+      post('/v1/users/me/availability', other, { state: 'unavailable' }),
+    );
+
+    const response = await handle(
+      get(`/v1/discovery/people?personId=${other.id}`, viewer),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it('answers somebody nobody may see exactly as somebody who is not there', async () => {
+    const viewer = await discoverableConsumer({
+      subject: 'person-page-prober@velora.test',
+    });
+    const hidden = await discoverableConsumer({
+      discoverable: false,
+      subject: 'person-page-hidden@velora.test',
+    });
+
+    const forbidden = await handle(
+      get(`/v1/discovery/people?personId=${hidden.id}`, viewer),
+    );
+    const absent = await handle(
+      get(
+        '/v1/discovery/people?personId=99999999-9999-4999-8999-999999999999',
+        viewer,
+      ),
+    );
+    const malformed = await handle(
+      get('/v1/discovery/people?personId=not-a-uuid', viewer),
+    );
+
+    expect(forbidden.status).toBe(404);
+    expect(absent.status).toBe(404);
+    expect(malformed.status).toBe(404);
+    // Same code and same shape; the correlation identifier differs per request
+    // by design, so it is the one field a comparison must not include.
+    const shapeOf = (body: Record<string, unknown>) => ({
+      code: body.code,
+      keys: Object.keys(body).toSorted(),
+    });
+    expect(
+      shapeOf((await forbidden.json()) as Record<string, unknown>),
+    ).toEqual(shapeOf((await absent.json()) as Record<string, unknown>));
+  });
+
+  it('stops giving somebody the viewer has blocked', async () => {
+    const viewer = await discoverableConsumer({
+      subject: 'person-page-blocker@velora.test',
+    });
+    const other = await discoverableConsumer({
+      subject: 'person-page-blocked@velora.test',
+    });
+    expect(
+      (await handle(get(`/v1/discovery/people?personId=${other.id}`, viewer)))
+        .status,
+    ).toBe(200);
+
+    await handle(post('/v1/safety/blocks', viewer, { targetId: other.id }));
+
+    expect(
+      (await handle(get(`/v1/discovery/people?personId=${other.id}`, viewer)))
+        .status,
+    ).toBe(404);
+  });
+});
+
 describe('discovery eligibility', () => {
   it('shows a fully eligible candidate and nobody else', async () => {
     const viewer = await discoverableConsumer({
@@ -674,6 +788,45 @@ describe('presentations and passes', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.show_count).toBe(3);
     expect(rows[0]?.ranking_version).toBe(rankingVersion);
+  });
+
+  it('keeps a pair honest when two pages record it out of order', async () => {
+    const viewer = await discoverableConsumer({
+      subject: 'record-viewer@velora.test',
+    });
+    const other = await discoverableConsumer({
+      subject: 'record-other@velora.test',
+    });
+
+    await feed(viewer);
+    const shown = now();
+
+    // The second page carries an earlier moment than the first, which is what a
+    // request that started earlier and committed later looks like to this
+    // statement. Recording it must not fail, and must not claim the pair was
+    // last shown before it was first shown.
+    clockOffsetMilliseconds = -5 * 60 * 1000;
+    const page = await feed(viewer);
+    expect(page.status).toBe(200);
+    expect(page.body.candidates.map((candidate) => candidate.id)).toEqual([
+      other.id,
+    ]);
+
+    const rows = await rowsOf<{
+      first_shown_at: Date;
+      last_shown_at: Date;
+      show_count: number;
+    }>(
+      database.sql`select first_shown_at, last_shown_at, show_count from discovery_presentations`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.show_count).toBe(2);
+    // Earliest known first, latest known last, whichever order they arrived in.
+    const first = rows[0]?.first_shown_at.getTime() ?? 0;
+    const last = rows[0]?.last_shown_at.getTime() ?? 0;
+    expect(last).toBeGreaterThanOrEqual(first);
+    expect(last - first).toBeGreaterThan(4 * 60 * 1000);
+    expect(Math.abs(last - shown.getTime())).toBeLessThan(60_000);
   });
 
   it('suppresses a passed pair for the policy window and then restores it', async () => {

@@ -67,6 +67,17 @@ export class DiscoveryRepository {
    * One statement per page, not one per candidate, and one row per pair rather
    * than one per impression, so a feed page costs a bounded amount of write no
    * matter how often it is refreshed.
+   *
+   * First and last are taken as the earliest and the latest of what is known
+   * rather than as "whatever this request carried". Two pages for one viewer
+   * can be in flight at once, and the one that reaches this statement second
+   * is not necessarily the one with the later clock: a request that started
+   * earlier can commit later. Assigning `last_shown_at` unconditionally then
+   * writes a moment before the row's own `first_shown_at`, which the table
+   * refuses — correctly, because that pair of values would be a lie — and the
+   * refusal fails a feed page that had already been computed and authorised.
+   * `least` and `greatest` make the row order-independent, so it says what it
+   * claims to say however the two writes interleave.
    */
   async recordPresentations(
     executor: AnyExecutor,
@@ -92,7 +103,8 @@ export class DiscoveryRepository {
       )
       .onConflictDoUpdate({
         set: {
-          lastShownAt: input.now,
+          firstShownAt: sql`least(${discoveryPresentations.firstShownAt}, excluded.first_shown_at)`,
+          lastShownAt: sql`greatest(${discoveryPresentations.lastShownAt}, excluded.last_shown_at)`,
           rankingVersion: input.rankingVersion,
           showCount: sql`${discoveryPresentations.showCount} + 1`,
         },

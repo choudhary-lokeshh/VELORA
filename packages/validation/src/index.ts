@@ -93,6 +93,7 @@ import {
 } from './clubs.js';
 import {
   createIntroductionRequestSchema,
+  discoveryCandidateSchema,
   discoveryFeedResponseSchema,
   discoveryPassRequestSchema,
   discoveryPassResponseSchema,
@@ -307,6 +308,7 @@ export const apiRoutePaths = {
   publicCreatorCatalog: '/v1/creators/catalog',
   publicCreatorClubs: '/v1/creators/clubs',
   discoveryCandidates: '/v1/discovery/candidates',
+  discoveryPerson: '/v1/discovery/people',
   discoveryIntroductionDecline: '/v1/discovery/introductions/decline',
   discoveryIntroductionWithdrawal: '/v1/discovery/introductions/withdrawal',
   discoveryIntroductions: '/v1/discovery/introductions',
@@ -470,6 +472,7 @@ export const apiSchemas = {
   PolicyAcknowledgementRequest: policyAcknowledgementRequestSchema,
   AvailabilityResponse: availabilityResponseSchema,
   DiscoveryFeedResponse: discoveryFeedResponseSchema,
+  DiscoveryPersonResponse: discoveryCandidateSchema,
   DiscoveryPassRequest: discoveryPassRequestSchema,
   DiscoveryPassResponse: discoveryPassResponseSchema,
   CreateIntroductionRequest: createIntroductionRequestSchema,
@@ -552,6 +555,7 @@ export const apiQueryParameters = {
   ownerDomain: adminIdentityOwnerDomainSchema,
   ownerReference: z.uuid(),
   clubId: clubIdSchema,
+  personId: z.uuid(),
   contentId: contentIdSchema,
   currency: currencyCodeSchema,
   handle: creatorHandleSchema,
@@ -2693,6 +2697,25 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'Eligibility is a fixed conjunction of account, adult, profile, discoverability, availability, pair, and language conditions. Ordering is deterministic and explainable, and nothing purchasable affects either.',
+  },
+  {
+    method: 'get',
+    operationId: 'getDiscoveryPerson',
+    path: apiRoutePaths.discoveryPerson,
+    requestQuery: [{ description: 'The person to read', name: 'personId' }],
+    responses: {
+      '200': {
+        description:
+          'The same minimized projection a card carries, for somebody the caller currently holds a reason to see.',
+        schemaName: 'DiscoveryPersonResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': introductionNotEligibleResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Opens one person, on exactly the rule that decides whether their photograph may be shown: a live introduction in either direction, or somebody the caller may currently be shown, both conditioned on current safety eligibility. It publishes nothing a discovery card does not already publish — a page about somebody else is not a licence to say more about them — and an account nobody may see answers exactly as one that does not exist.',
   },
   {
     method: 'post',

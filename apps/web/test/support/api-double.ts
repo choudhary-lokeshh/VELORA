@@ -637,6 +637,13 @@ export function createApiDouble(
     }
 
     // DISCOVERY.
+    if (path === '/v1/discovery/people' && method === 'GET') {
+      const wanted = url.searchParams.get('personId');
+      const found = state.candidates.find((one) => one.id === wanted);
+      return found === undefined
+        ? error(404, 'RESOURCE_NOT_FOUND')
+        : json(200, { ...found });
+    }
     if (path === '/v1/discovery/candidates') {
       return json(200, {
         candidates: state.candidates,

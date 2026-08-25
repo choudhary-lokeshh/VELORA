@@ -38,6 +38,7 @@ import {
   rankingVersion,
   tieBreakRotationMilliseconds,
 } from './policy.js';
+import { DiscoveryPeerVisibility } from './peer-visibility.js';
 import type { DiscoveryRepository } from './repository.js';
 
 export interface DiscoveryCandidate {
@@ -67,6 +68,13 @@ export interface IntroductionView {
   readonly role: 'initiator' | 'recipient';
   readonly state: 'pending' | 'mutual' | 'closed';
 }
+
+export type PersonOutcome =
+  | { readonly kind: 'person'; readonly person: DiscoveryCandidate }
+  /** The caller may not browse at all. */
+  | { readonly kind: 'not_eligible' }
+  /** Absent, or nobody this viewer holds a reason to see. Never told apart. */
+  | { readonly kind: 'not_found' };
 
 export type IntroductionOutcome =
   | { readonly kind: 'introduction'; readonly view: IntroductionView }
@@ -122,7 +130,22 @@ export interface DiscoveryServiceDependencies {
  * which window the tie-break is rotating in.
  */
 export class DiscoveryService {
-  constructor(private readonly dependencies: DiscoveryServiceDependencies) {}
+  /**
+   * The relationship rule this domain publishes, held rather than restated.
+   *
+   * It is built from this service's own dependencies, so the answer a person
+   * page gives about who may look and the answer a photograph gives are the
+   * same answer from the same code rather than two readings that could drift.
+   */
+  private readonly visibility: DiscoveryPeerVisibility;
+
+  constructor(private readonly dependencies: DiscoveryServiceDependencies) {
+    this.visibility = new DiscoveryPeerVisibility({
+      directory: dependencies.directory,
+      introductions: dependencies.introductions,
+      safety: dependencies.safety,
+    });
+  }
 
   async feed(
     viewer: UserAccountRow,
@@ -289,6 +312,51 @@ export class DiscoveryService {
       );
     }
     return { accepted, examinedTo, exhausted };
+  }
+
+  /**
+   * One person, for somebody who holds a reason to look at them.
+   *
+   * The same minimized projection a card carries, because a page about somebody
+   * else is not a licence to publish more about them — what changes is that the
+   * whole set of their images is rendered rather than the first, and that is a
+   * client decision about references the projection already carried.
+   *
+   * Who may look is the rule DISCOVERY already publishes for imagery: a live
+   * introduction in either direction, or somebody the viewer may currently be
+   * shown, both conditioned on Trust and Safety permitting the pair. Reusing it
+   * rather than restating it is what keeps a photograph and the page it sits on
+   * from ever disagreeing about who may see whom.
+   *
+   * Absent and not-permitted are one answer, so this cannot be used to learn
+   * that an account exists.
+   */
+  async person(
+    viewer: UserAccountRow,
+    personId: string,
+  ): Promise<PersonOutcome> {
+    if (!(await this.mayBrowse(viewer))) return { kind: 'not_eligible' };
+    if (personId === viewer.id) return { kind: 'not_found' };
+
+    const permitted = await this.visibility.mayViewProfileMedia({
+      executor: this.dependencies.repository.transactionless,
+      now: this.dependencies.now(),
+      subjectId: personId,
+      viewerId: viewer.id,
+    });
+    if (!permitted) return { kind: 'not_found' };
+
+    const languages = await this.dependencies.directory.languagesOf(viewer.id);
+    const profiles = await this.dependencies.directory.profilesFor({
+      ids: [personId],
+      viewerLanguages: languages,
+    });
+    const profile = profiles[0];
+    if (profile === undefined) return { kind: 'not_found' };
+    const [person] = await this.attachMedia([{ ...profile, sortKey: '' }]);
+    return person === undefined
+      ? { kind: 'not_found' }
+      : { kind: 'person', person };
   }
 
   /**

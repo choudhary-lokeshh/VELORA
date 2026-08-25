@@ -1,8 +1,10 @@
 import {
+  apiQueryParameters,
   createIntroductionRequestSchema,
   cursorSchema,
   defaultPageSize,
   discoveryFeedResponseSchema,
+  discoveryCandidateSchema,
   discoveryPassRequestSchema,
   discoveryPassResponseSchema,
   introductionListResponseSchema,
@@ -81,6 +83,48 @@ export class DiscoveryRoutes {
           : { nextCursor: outcome.nextCursor }),
         rankingVersion,
       }),
+      status: 200,
+    };
+  }
+
+  /**
+   * One person, for a caller who holds a reason to look at them.
+   *
+   * A malformed identifier is answered as not-found rather than as invalid
+   * input, because the two are the same fact to somebody standing here: this
+   * endpoint is reached by following a link, and telling a caller their
+   * identifier was well-formed but nobody's would say more than the answer
+   * itself.
+   */
+  async getPerson(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+
+    // Validated against the published parameter before it reaches the domain.
+    // Anything else is not an identifier this platform ever issued, and handing
+    // one to a query would turn a mistyped address into a server error.
+    const raw = new URL(input.request.url).searchParams.get('personId');
+    const personId =
+      raw === null ? undefined : apiQueryParameters.personId.safeParse(raw);
+    const outcome =
+      personId?.success !== true
+        ? ({ kind: 'not_found' } as const)
+        : await this.dependencies.discovery.person(
+            resolved.context.account,
+            personId.data,
+          );
+    if (outcome.kind === 'not_eligible') {
+      return routeFailure(
+        409,
+        productErrorCodes.accountNotEligible,
+        input.correlationId,
+      );
+    }
+    if (outcome.kind !== 'person') {
+      return routeFailure(404, productErrorCodes.notFound, input.correlationId);
+    }
+    return {
+      body: discoveryCandidateSchema.parse(candidateBody(outcome.person)),
       status: 200,
     };
   }

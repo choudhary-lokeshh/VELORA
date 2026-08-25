@@ -16,6 +16,7 @@ import {
   MessagesLayout,
 } from '../src/product/conversations';
 import { Discover } from '../src/product/discover';
+import { PersonPage } from '../src/product/person';
 import { Discovery } from '../src/product/discovery';
 import { Introductions } from '../src/product/introductions';
 import { Memberships } from '../src/product/memberships';
@@ -547,6 +548,56 @@ describe('discovery', () => {
     // And it never says why, because the reason is somebody else's business.
     for (const leak of ['blocked', 'not allowed', 'processing']) {
       expect(document.body.textContent.toLowerCase()).not.toContain(leak);
+    }
+  });
+
+  it('opens one person and shows every photograph they added', async () => {
+    const state = admittedState();
+    const candidate = state.candidates[0];
+    if (candidate === undefined) throw new Error('the state needs a candidate');
+    state.candidates = [
+      {
+        ...candidate,
+        media: [
+          { id: '81111111-1111-4111-8111-111111111111', position: 0 },
+          { id: '82222222-2222-4222-8222-222222222222', position: 1 },
+        ],
+      },
+    ];
+    const double = createApiDouble(state);
+    renderProduct(<PersonPage personId={otherPersonId} />, double, {
+      pathname: `/people/${otherPersonId}`,
+    });
+
+    await screen.findByTestId(`person-${otherPersonId}`);
+    // Awaited rather than read: the identity mark is on screen first and the
+    // photographs replace it when their addresses arrive, which is the whole
+    // point of not blocking the paint on them.
+    await screen.findByTestId('person-portrait');
+    // The first photograph is the hero and the rest are the gallery, so a
+    // person with one image gets no empty shelf under them.
+    await waitFor(() => {
+      expect(document.querySelectorAll('img')).toHaveLength(2);
+    });
+    expect(screen.getByTestId('person-gallery')).toBeTruthy();
+  });
+
+  it('says there is nothing to show without saying which nothing it is', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(
+      <PersonPage personId="99999999-9999-4999-8999-999999999999" />,
+      double,
+      { pathname: '/people/99999999-9999-4999-8999-999999999999' },
+    );
+
+    const empty = await screen.findByTestId('person-missing');
+    for (const leak of [
+      'blocked',
+      'not allowed',
+      'does not exist',
+      'deleted',
+    ]) {
+      expect(empty.textContent.toLowerCase()).not.toContain(leak);
     }
   });
 

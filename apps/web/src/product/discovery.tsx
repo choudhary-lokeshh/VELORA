@@ -356,10 +356,13 @@ function CandidateCard({
   const region = regionName(candidate.region);
   return (
     <article className="v-person" data-testid={`candidate-${candidate.id}`}>
-      <div
+      <Link
+        aria-label={`Open ${candidate.displayName}`}
         className={`v-person__portrait v-avatar--tone-${String(
           toneOf(candidate.id),
         )}`}
+        data-testid={`candidate-open-${candidate.id}`}
+        href={`/people/${candidate.id}`}
       >
         {portrait === undefined ? (
           <span aria-hidden="true" className="v-person__portrait-mark">
@@ -385,7 +388,7 @@ function CandidateCard({
             )}
           </div>
         </div>
-      </div>
+      </Link>
 
       <div className="v-person__body">
         {candidate.bio === undefined ? (

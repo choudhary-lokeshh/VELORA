@@ -41,6 +41,7 @@ export type ProfileMediaUpload = JsonBody<
 export type Availability = JsonBody<'/v1/users/me/availability', 'get', 200>;
 export type DiscoveryFeed = JsonBody<'/v1/discovery/candidates', 'get', 200>;
 export type DiscoveryCandidate = DiscoveryFeed['candidates'][number];
+export type DiscoveryPerson = JsonBody<'/v1/discovery/people', 'get', 200>;
 export type IntroductionList = JsonBody<
   '/v1/discovery/introductions',
   'get',

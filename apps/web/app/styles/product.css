@@ -320,12 +320,19 @@
  * identity mark rather than an image that failed to load. Its aspect ratio is
  * fixed so nothing reflows when the surrounding data arrives.
  */
+/*
+ * The portrait is the way into a person's page, so it is a link rather than a
+ * decorated box. The name and chips laid over it come with it, which is what a
+ * person taps for.
+ */
 .v-person__portrait {
   align-items: center;
   aspect-ratio: 4 / 5;
+  color: inherit;
   display: flex;
   justify-content: center;
   position: relative;
+  text-decoration: none;
 }
 
 .v-person__portrait::after {
@@ -863,6 +870,51 @@
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
+}
+
+/*
+ * A person, at their own address.
+ *
+ * The hero is the card's portrait at page scale, with the same gradient over it
+ * so the name laid on top stays legible against a bright image. The gallery
+ * below it is every other photograph they added, and it is absent rather than
+ * empty when there is only one.
+ */
+.v-person-hero {
+  align-items: center;
+  aspect-ratio: 4 / 5;
+  border-radius: var(--radius-lg);
+  display: flex;
+  justify-content: center;
+  max-height: 60vh;
+  overflow: hidden;
+  position: relative;
+}
+
+.v-person-hero::after {
+  background: linear-gradient(
+    to top,
+    var(--canvas) 0%,
+    rgb(12 10 12 / 55%) 34%,
+    transparent 72%
+  );
+  content: '';
+  inset: 0;
+  position: absolute;
+}
+
+.v-person-gallery {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.v-person-gallery__image {
+  aspect-ratio: 4 / 5;
+  block-size: 100%;
+  border-radius: var(--radius-md);
+  inline-size: 100%;
+  object-fit: cover;
 }
 
 /* ============================ Notifications =========================== */

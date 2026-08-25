@@ -48,6 +48,12 @@ Adult eligibility is read from the assurance evidence rather than inferred from 
 
 Nothing purchasable participates. There is no spend, subscription, popularity, follower, or boost column in the predicate, in the ordering, or in the schema behind either, so no future change can quietly buy visibility without adding one.
 
+### Opening one person
+
+`GET /v1/discovery/people` answers with the same minimized projection a card carries, for one identifier, and publishes nothing more: a page about somebody else is not a licence to say more about them, so there is no last-seen, no view count, and no mutual-connection count in it.
+
+Who may open it is the rule below, unchanged and unrestated — a person page and the photographs on it can never disagree about who may see whom, because they ask the same question of the same code. Nobody the caller may see and nobody who exists are one answer, so the route cannot be used to learn that an account is there, and an identifier that is not one this platform ever issued is that same answer rather than a server error.
+
 ### Who may see somebody's photograph
 
 USERS owns a consumer's profile images and cannot answer this, because it is a question about a relationship. DISCOVERY publishes the answer as a port, and there are exactly two ways to hold a reason.
@@ -94,6 +100,8 @@ The cursor carries a position and the rotation window, and nothing else. It cont
 ### Presentation and passes
 
 A presentation is recorded once per pair with a first-seen, last-seen, and count, not once per impression. An impression log would grow without bound in the hot path of every feed page; what the flow actually requires is that presentation is recorded with the ranking version behind it, which this carries at bounded cost.
+
+First-seen and last-seen are kept as the earliest and the latest of what is known, not as whatever the most recent write carried. Two pages for one viewer can be in flight at once and the one that commits second is not necessarily the one with the later clock, so an unconditional assignment eventually writes a last-seen that precedes the row's own first-seen. The table refuses that pair of values, which turned a bookkeeping race into a refused feed page until the write was made order-independent.
 
 A pass is private, one-directional, and expiring. Nobody is notified, no score is derived from it, and the pair returns to ordinary discovery after the single suppression window defined in the discovery policy module. Repeating a pass renews the window rather than failing, so a client that lost a response gets the same outcome instead of an error about a decision the person already made. A block is the stronger, indefinite suppression and belongs to Trust & Safety.
 

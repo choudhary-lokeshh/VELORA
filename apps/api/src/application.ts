@@ -1305,6 +1305,10 @@ export function createApplication(
       apiRoutePaths.discoveryCandidates,
       admitted(async (input) => discovery.routes.getCandidates(input)),
     )
+    .get(
+      apiRoutePaths.discoveryPerson,
+      admitted(async (input) => discovery.routes.getPerson(input)),
+    )
     .post(
       apiRoutePaths.discoveryPasses,
       admitted(async (input) => discovery.routes.passCandidate(input)),

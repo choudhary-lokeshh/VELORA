@@ -17,6 +17,7 @@ import type {
   CreateCallBody,
   CreateReportBody,
   DiscoveryFeed,
+  DiscoveryPerson,
   Introduction,
   IntroductionList,
   JoinAuthorization,
@@ -164,6 +165,17 @@ export interface ConsumerApi {
     query: PageQuery,
     signal?: AbortSignal,
   ): Promise<ApiResult<DiscoveryFeed>>;
+  /**
+   * One person, for somebody who holds a reason to look at them.
+   *
+   * The same projection a card carries. Nobody the caller may see is answered
+   * exactly as an account that does not exist, so a surface built on this can
+   * never distinguish the two and must not try.
+   */
+  person(
+    personId: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<DiscoveryPerson>>;
   completeProfileMediaUpload(
     mediaId: string,
   ): Promise<ApiResult<ConsumerProfile>>;
@@ -347,6 +359,14 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         api.GET('/v1/discovery/candidates', {
           ...(await reading(signal)),
           params: { query: pageParameters(query) },
+        }),
+      ),
+
+    person: async (personId, signal) =>
+      attempt(async () =>
+        api.GET('/v1/discovery/people', {
+          ...(await reading(signal)),
+          params: { query: { personId } },
         }),
       ),
 
