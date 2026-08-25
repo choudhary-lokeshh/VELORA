@@ -55,8 +55,18 @@ export interface MobileApiState {
     createdAt: string;
     id: string;
     lastActivityAt: string;
+    lastMessage?: {
+      bodyPreview: string;
+      createdAt: string;
+      sender: 'caller' | 'counterpart';
+      sequence: number;
+    };
     lastMessageSequence: number;
     lastReadSequence: number;
+    relationship: {
+      introductionId: string;
+      kind: 'mutual_introduction';
+    };
     state: 'active' | 'closed';
   }[];
   messages: {
@@ -270,6 +280,10 @@ export function admittedState(): MobileApiState {
         lastActivityAt: iso(),
         lastMessageSequence: 0,
         lastReadSequence: 0,
+        relationship: {
+          introductionId,
+          kind: 'mutual_introduction',
+        },
         state: 'active',
       },
     ],
@@ -691,6 +705,17 @@ export function createMobileApiDouble(
     }
     if (path === '/v1/messaging/conversations/read') {
       const input = body as { conversationId: string; sequence: number };
+      state.conversations = state.conversations.map((conversation) =>
+        conversation.id === input.conversationId
+          ? {
+              ...conversation,
+              lastReadSequence: Math.max(
+                conversation.lastReadSequence,
+                input.sequence,
+              ),
+            }
+          : conversation,
+      );
       return json(200, {
         conversationId: input.conversationId,
         lastReadSequence: input.sequence,
@@ -723,6 +748,24 @@ export function createMobileApiDouble(
         sequence,
       };
       state.messages = [...state.messages, message];
+      state.conversations = state.conversations.map((conversation) =>
+        conversation.id === input.conversationId
+          ? {
+              ...conversation,
+              lastActivityAt: message.createdAt,
+              lastMessage: {
+                bodyPreview: input.body
+                  .replace(/\s+/gu, ' ')
+                  .trim()
+                  .slice(0, 160),
+                createdAt: message.createdAt,
+                sender: 'caller' as const,
+                sequence: message.sequence,
+              },
+              lastMessageSequence: message.sequence,
+            }
+          : conversation,
+      );
       return json(200, message);
     }
     if (path === '/v1/notifications' && method === 'GET') {

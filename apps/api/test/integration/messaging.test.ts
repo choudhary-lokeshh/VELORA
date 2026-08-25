@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import type { Conversation, Introduction, Message } from '@velora/validation';
 
 import { createApplication } from '../../src/application.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
@@ -300,44 +301,15 @@ async function consumer(subject: string): Promise<Credentials> {
   return caller;
 }
 
-interface IntroductionBody {
-  readonly id: string;
-  readonly state: string;
-}
-
-interface ConversationBody {
-  readonly counterpart: {
-    readonly displayName: string;
-    readonly id: string;
-    readonly media: readonly { readonly id: string }[];
-  };
-  readonly createdAt: string;
-  readonly id: string;
-  readonly lastActivityAt: string;
-  readonly lastMessageSequence: number;
-  readonly lastReadSequence: number;
-  readonly state: string;
-}
-
-interface MessageBody {
-  readonly body: string;
-  readonly clientMessageId: string;
-  readonly conversationId: string;
-  readonly createdAt: string;
-  readonly id: string;
-  readonly senderId: string;
-  readonly sequence: number;
-}
-
 async function signal(
   actor: Credentials,
   target: Credentials,
-): Promise<IntroductionBody> {
+): Promise<Introduction> {
   const response = await handle(
     post('/v1/discovery/introductions', actor, { candidateId: target.id }),
   );
   expect(response.status).toBe(200);
-  return (await response.json()) as IntroductionBody;
+  return (await response.json()) as Introduction;
 }
 
 /** A real block through the real consumer route, not a stubbed port. */
@@ -363,12 +335,12 @@ async function mutualIntroduction(
 async function openConversation(
   actor: Credentials,
   introductionId: string,
-): Promise<{ body: ConversationBody; status: number }> {
+): Promise<{ body: Conversation; status: number }> {
   const response = await handle(
     post('/v1/messaging/conversations', actor, { introductionId }),
   );
   return {
-    body: (await response.json()) as ConversationBody,
+    body: (await response.json()) as Conversation,
     status: response.status,
   };
 }
@@ -380,10 +352,10 @@ async function send(
     readonly clientMessageId: string;
     readonly conversationId: string;
   },
-): Promise<{ body: MessageBody & { code?: string }; status: number }> {
+): Promise<{ body: Message & { code?: string }; status: number }> {
   const response = await handle(post('/v1/messaging/messages', actor, input));
   return {
-    body: (await response.json()) as MessageBody & { code?: string },
+    body: (await response.json()) as Message & { code?: string },
     status: response.status,
   };
 }
@@ -395,7 +367,7 @@ async function readMessages(
 ): Promise<{
   body: {
     readonly conversationId: string;
-    readonly messages: readonly MessageBody[];
+    readonly messages: readonly Message[];
     readonly nextCursor?: string;
   };
   status: number;
@@ -409,7 +381,7 @@ async function readMessages(
   return {
     body: (await response.json()) as {
       conversationId: string;
-      messages: readonly MessageBody[];
+      messages: readonly Message[];
       nextCursor?: string;
     },
     status: response.status,
@@ -420,7 +392,7 @@ async function listConversations(
   actor: Credentials,
   query = '',
 ): Promise<{
-  conversations: readonly ConversationBody[];
+  conversations: readonly Conversation[];
   nextCursor?: string;
 }> {
   const response = await handle(
@@ -428,7 +400,7 @@ async function listConversations(
   );
   expect(response.status).toBe(200);
   return (await response.json()) as {
-    conversations: readonly ConversationBody[];
+    conversations: readonly Conversation[];
     nextCursor?: string;
   };
 }
@@ -481,6 +453,11 @@ describe('a conversation exists only because two people opted in', () => {
     expect(opened.body.counterpart.id).toBe(second.id);
     expect(opened.body.lastMessageSequence).toBe(0);
     expect(opened.body.lastReadSequence).toBe(0);
+    expect(opened.body.lastMessage).toBeUndefined();
+    expect(opened.body.relationship).toEqual({
+      introductionId,
+      kind: 'mutual_introduction',
+    });
 
     // Repeating is the same conversation, not a second one.
     const again = await openConversation(first, introductionId);
@@ -635,6 +612,163 @@ describe('the server decides message order', () => {
     expect(
       new Date(after.conversations[0]?.lastActivityAt ?? 0).getTime(),
     ).toBeGreaterThan(new Date(before).getTime());
+  });
+
+  it('publishes a bounded truthful preview relative to each caller', async () => {
+    const pair = await connectedPair('preview');
+    const body = `First line\n${'x'.repeat(200)}`;
+    await send(pair.first, {
+      body,
+      clientMessageId: 'preview-0001',
+      conversationId: pair.conversationId,
+    });
+
+    const mine = (await listConversations(pair.first)).conversations[0];
+    const theirs = (await listConversations(pair.second)).conversations[0];
+    if (mine === undefined || theirs === undefined) {
+      throw new Error('both participants must see the conversation');
+    }
+    expect(mine.lastMessage).toEqual({
+      bodyPreview: `First line ${'x'.repeat(149)}`,
+      createdAt: mine.lastActivityAt,
+      sender: 'caller',
+      sequence: 1,
+    });
+    expect(theirs.lastMessage?.bodyPreview).toBe(mine.lastMessage?.bodyPreview);
+    expect(theirs.lastMessage?.sender).toBe('counterpart');
+    expect(JSON.stringify(mine)).not.toContain(body);
+  });
+});
+
+describe('the complete two-person social loop works through real HTTP', () => {
+  it('discovers, introduces, talks, reads, reports, blocks, and refuses later interaction', async () => {
+    const first = await consumer('journey-first@velora.test');
+    const second = await consumer('journey-second@velora.test');
+
+    const discovered = await handle(get('/v1/discovery/candidates', first));
+    expect(discovered.status).toBe(200);
+    expect(
+      (
+        (await discovered.json()) as {
+          candidates: readonly { id: string }[];
+        }
+      ).candidates.map((candidate) => candidate.id),
+    ).toContain(second.id);
+
+    const pending = await signal(first, second);
+    expect(pending.state).toBe('pending');
+    const waiting = await handle(
+      get('/v1/discovery/introductions?pageSize=20', second),
+    );
+    expect(waiting.status).toBe(200);
+    const waitingBody = (await waiting.json()) as {
+      readonly introductions: readonly Introduction[];
+    };
+    const receivedIntroduction = waitingBody.introductions.find(
+      (introduction) => introduction.counterpart.id === first.id,
+    );
+    expect(receivedIntroduction).toBeDefined();
+    expect(receivedIntroduction?.counterpart.id).toBe(first.id);
+    expect(receivedIntroduction?.role).toBe('recipient');
+    expect(receivedIntroduction?.state).toBe('pending');
+
+    const mutual = await signal(second, first);
+    expect(mutual.state).toBe('mutual');
+    const opened = await openConversation(first, mutual.id);
+    expect(opened.status).toBe(200);
+    expect(opened.body.relationship.introductionId).toBe(mutual.id);
+
+    const hello = await send(first, {
+      body: 'Hello from the complete journey',
+      clientMessageId: 'journey-message-0001',
+      conversationId: opened.body.id,
+    });
+    expect(hello.status).toBe(200);
+    const received = await readMessages(second, opened.body.id);
+    expect(received.status).toBe(200);
+    expect(received.body.messages.map((message) => message.body)).toEqual([
+      'Hello from the complete journey',
+    ]);
+
+    const read = await handle(
+      post('/v1/messaging/conversations/read', second, {
+        conversationId: opened.body.id,
+        sequence: hello.body.sequence,
+      }),
+    );
+    expect(read.status).toBe(200);
+    expect(
+      ((await read.json()) as { lastReadSequence: number }).lastReadSequence,
+    ).toBe(1);
+
+    const reply = await send(second, {
+      body: 'Reply from the other real account',
+      clientMessageId: 'journey-message-0002',
+      conversationId: opened.body.id,
+    });
+    expect(reply.status).toBe(200);
+    const replyPreview = (await listConversations(first)).conversations[0]
+      ?.lastMessage;
+    expect(replyPreview).toBeDefined();
+    expect(replyPreview?.bodyPreview).toBe('Reply from the other real account');
+    expect(replyPreview?.sender).toBe('counterpart');
+    expect(replyPreview?.sequence).toBe(2);
+
+    // A social counterpart is not a published creator profile. No gift target
+    // is inferred from the relationship, so the ordinary conversation contract
+    // carries no commercial address or gift action.
+    expect(JSON.stringify(opened.body)).not.toContain('creatorHandle');
+    expect(JSON.stringify(opened.body)).not.toContain('gift');
+
+    const report = await handle(
+      post('/v1/safety/reports', second, {
+        clientReportId: 'journey-report-0001',
+        conversationId: opened.body.id,
+        reasonCode: 'harassment',
+        target: {
+          conversationId: opened.body.id,
+          type: 'conversation',
+        },
+      }),
+    );
+    expect(report.status).toBe(200);
+    expect(((await report.json()) as { state: string }).state).toBe('received');
+
+    await blockConsumer(second, first.id);
+    expect((await listConversations(first)).conversations).toEqual([]);
+    expect((await listConversations(second)).conversations).toEqual([]);
+    expect(
+      (
+        (await (
+          await handle(get('/v1/discovery/candidates', first))
+        ).json()) as {
+          candidates: readonly { id: string }[];
+        }
+      ).candidates.map((candidate) => candidate.id),
+    ).not.toContain(second.id);
+
+    for (const [actor, key] of [
+      [first, 'journey-blocked-0001'],
+      [second, 'journey-blocked-0002'],
+    ] as const) {
+      const refusedAfterBlock = await send(actor, {
+        body: 'This must not be accepted',
+        clientMessageId: key,
+        conversationId: opened.body.id,
+      });
+      expect(refusedAfterBlock.status).toBe(409);
+      expect(refusedAfterBlock.body.code).toBe('ACTION_NOT_PERMITTED');
+    }
+    expect(await messageCount(opened.body.id)).toBe(2);
+
+    const reporterView = await handle(get('/v1/safety/reports', second));
+    const subjectView = await handle(get('/v1/safety/reports', first));
+    expect(
+      ((await reporterView.json()) as { reports: unknown[] }).reports,
+    ).toHaveLength(1);
+    expect(
+      ((await subjectView.json()) as { reports: unknown[] }).reports,
+    ).toHaveLength(0);
   });
 });
 

@@ -40,11 +40,10 @@ The design is therefore retention-neutral:
 
 ### What blocks production
 
-Three things, and they are enforced rather than merely noted:
+Two things, and they are enforced rather than merely noted:
 
 1. **Retention duration is undecided.** Above.
-2. **TRUST & SAFETY owns no block store.** MESSAGING asks a safety port whether two people may still interact. The adapter that answers "no block exists" is truthful only while no block store exists; the moment one does, it would be granting safety authority it never checked. Configuration therefore refuses it outside development and test, and a deployed environment gets the adapter that denies every pair — so staging and production carry no message at all rather than carrying one with nothing behind it.
-3. **Post-block history visibility is undecided.** The flow document allows either read-only or hidden. V1 takes the fail-closed reading: while safety denies a pair, the conversation is absent from the list and its history is refused. Nothing is deleted to achieve that, so the other reading remains available the moment it is decided.
+2. **Post-block history visibility is undecided.** TRUST & SAFETY now owns the durable block store and every MESSAGING transition asks its published pair-eligibility contract. V1 takes the fail-closed reading: while safety denies a pair, the conversation is absent from the list and its history is refused. Nothing is deleted to achieve that, so the other reading remains available the moment it is decided.
 
 The pre-existing blocks on adult assurance and media storage still apply; a consumer cannot become discoverable in a deployed environment at all, so this is consistent rather than additional.
 
@@ -86,6 +85,8 @@ History pages backwards, keyset on the sequence. The sequence is immutable and u
 
 The conversation list is ordered by last activity, which does move. The consistency model is the same shape as [discovery's](discovery.md): a conversation that receives a message mid-read jumps to the front, which a forward-only reader has already passed, so it can be missed on that pass and never duplicated into it. Clients deduplicate by identifier.
 
+Each row publishes the mutual introduction that authorized the conversation as a typed relationship and a bounded projection of the newest durable message. The projection normalizes whitespace, carries at most 160 UTF-16 code units, identifies the sender only relative to the caller, and is absent before the first message. It is derived by joining the conversation's authoritative newest sequence to that exact persisted message; no draft, optimistic send, delivery assertion, counterpart read position, typing state, or presence enters the list. The relationship identifier lets an authorized client place a call from the thread through REALTIME's existing mutual-introduction contract without inventing a second identity or privilege path.
+
 ### Read state
 
 `lastReadSequence` is per participant and monotonic. An acknowledgement below the recorded position is accepted and changes nothing, so a retry or an out-of-order client can never un-read a conversation. An acknowledgement beyond what exists is clamped to the newest message rather than believed.
@@ -98,7 +99,7 @@ Message bodies never appear in a log, in an error, or in an event. A regression 
 
 ### Not in V1
 
-No attachment, no voice note, no editing, no deletion by a participant, no disappearing message, no typing indicator, no delivery receipt beyond read state, no real-time transport. None of them is approved for V1, and a contract is the easiest place for an unapproved capability to appear by accident, so none has a schema.
+No attachment, no voice note, no editing, no deletion by a participant, no disappearing message, no typing indicator, no delivery receipt beyond the caller's own read state, no real-time message transport. None of them is approved for V1, and a contract is the easiest place for an unapproved capability to appear by accident, so none has a schema. Consumer composers state the text-only and no-attachment boundary explicitly rather than presenting a dead attachment control.
 
 ## Cross-references
 

@@ -22,10 +22,9 @@ import { useResource, useRevalidateOnForeground } from './resource';
 /**
  * Every conversation somebody holds.
  *
- * A row carries who it is with, when it last moved, and whether anything in it
- * is unread — and nothing else. It does not carry the last message: a preview
- * on a list screen puts somebody's words on a phone that may be face-up on a
- * table, and this product has no read receipt to trade for it either.
+ * A row carries who it is with, a bounded server projection of the newest
+ * durable message, when it last moved, and whether anything in it is unread.
+ * It never promotes a local draft or an unconfirmed send into the preview.
  *
  * Unread is derived from the two sequences the server publishes rather than
  * from anything held here, so a conversation read on another device is read
@@ -123,10 +122,16 @@ export function MessagesScreen({
                     >
                       {item.counterpart.displayName}
                     </Text>
+                    <Text numberOfLines={1} tone="secondary" variant="small">
+                      {item.lastMessage === undefined
+                        ? 'No messages yet — say hello.'
+                        : `${
+                            item.lastMessage.sender === 'caller' ? 'You: ' : ''
+                          }${item.lastMessage.bodyPreview}`}
+                    </Text>
                     <Text numberOfLines={1} tone="tertiary" variant="caption">
-                      {item.state === 'closed'
-                        ? 'Closed'
-                        : `Last active ${formatWhen(item.lastActivityAt)}`}
+                      {item.state === 'closed' ? 'Closed · ' : ''}Mutual
+                      introduction · {formatWhen(item.lastActivityAt)}
                     </Text>
                   </ListRow>
                 );

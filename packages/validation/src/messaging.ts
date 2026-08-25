@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 import { idempotencyKeySchema } from './product.js';
+import { maximumMessageBodyCharacters } from './messaging-bounds.js';
+
+export { maximumMessageBodyCharacters } from './messaging-bounds.js';
 
 /**
  * Messaging contract.
@@ -47,6 +50,30 @@ export const conversationCounterpartSchema = z
  */
 export const conversationStateSchema = z.enum(['active', 'closed']);
 
+/**
+ * The newest durable message, reduced to what a conversation row needs.
+ *
+ * `bodyPreview` is whitespace-normalized and bounded by MESSAGING. It is not a
+ * client cache of a draft or a delivery claim. The relative sender avoids
+ * publishing another identifier and lets a surface truthfully say "You".
+ */
+export const conversationLastMessageSchema = z
+  .object({
+    bodyPreview: z.string().min(1).max(160),
+    createdAt: z.iso.datetime(),
+    sender: z.enum(['caller', 'counterpart']),
+    sequence: z.number().int().min(1),
+  })
+  .strict();
+
+/** Why this thread exists, and the relationship operation it authorizes. */
+export const conversationRelationshipSchema = z
+  .object({
+    introductionId: z.uuid(),
+    kind: z.literal('mutual_introduction'),
+  })
+  .strict();
+
 export const conversationSchema = z
   .object({
     counterpart: conversationCounterpartSchema,
@@ -58,10 +85,13 @@ export const conversationSchema = z
      * conversation to sort a list.
      */
     lastActivityAt: z.iso.datetime(),
+    /** Absent only while the conversation has no messages. */
+    lastMessage: conversationLastMessageSchema.optional(),
     /** Ordering position of the newest message, or 0 when there is none. */
     lastMessageSequence: z.number().int().min(0),
     /** Highest position the calling participant has acknowledged reading. */
     lastReadSequence: z.number().int().min(0),
+    relationship: conversationRelationshipSchema,
     state: conversationStateSchema,
   })
   .strict();
@@ -72,9 +102,6 @@ export const conversationListResponseSchema = z
     nextCursor: z.string().optional(),
   })
   .strict();
-
-/** Largest message body accepted, in characters rather than bytes. */
-export const maximumMessageBodyCharacters = 4_000;
 
 /**
  * C0 and C1 controls other than tab, newline, and carriage return. Named as

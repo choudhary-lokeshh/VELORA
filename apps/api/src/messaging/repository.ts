@@ -18,6 +18,8 @@ export type MessageRow = typeof messagingMessages.$inferSelect;
 /** A conversation together with the calling participant's own state in it. */
 export interface ConversationMembership {
   readonly conversation: ConversationRow;
+  /** The message at `messageSequence`, or null before the first send. */
+  readonly latestMessage: MessageRow | null;
   readonly participant: ParticipantRow;
 }
 
@@ -135,12 +137,23 @@ export class MessagingRepository {
     const rows = await executor
       .select({
         conversation: messagingConversations,
+        latestMessage: messagingMessages,
         participant: messagingParticipants,
       })
       .from(messagingParticipants)
       .innerJoin(
         messagingConversations,
         eq(messagingConversations.id, messagingParticipants.conversationId),
+      )
+      .leftJoin(
+        messagingMessages,
+        and(
+          eq(messagingMessages.conversationId, messagingConversations.id),
+          eq(
+            messagingMessages.sequence,
+            messagingConversations.messageSequence,
+          ),
+        ),
       )
       .where(
         and(
@@ -309,12 +322,23 @@ export class MessagingRepository {
     return executor
       .select({
         conversation: messagingConversations,
+        latestMessage: messagingMessages,
         participant: messagingParticipants,
       })
       .from(messagingParticipants)
       .innerJoin(
         messagingConversations,
         eq(messagingConversations.id, messagingParticipants.conversationId),
+      )
+      .leftJoin(
+        messagingMessages,
+        and(
+          eq(messagingMessages.conversationId, messagingConversations.id),
+          eq(
+            messagingMessages.sequence,
+            messagingConversations.messageSequence,
+          ),
+        ),
       )
       .where(and(eq(messagingParticipants.userId, input.userId), position))
       .orderBy(

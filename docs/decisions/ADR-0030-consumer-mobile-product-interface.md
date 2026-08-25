@@ -90,3 +90,9 @@ The provider decisions are untouched. A deployed environment still has no approv
 ## Authority and scope
 
 This ADR authorises the Consumer Mobile interface only. It changes no approved value, adds nothing to the shared token package, and authorises no interim filling for any other surface. `DESIGN REQUIRED` still stands for the full design-system handoff.
+
+## Amendment 2026-08-25: conversation context is published
+
+The bullet **"No message preview on the conversation list" is superseded.** MESSAGING now publishes a bounded, whitespace-normalized projection of the exact newest persisted message, relative to the caller and with no delivery, counterpart-read, typing, or presence claim. The Phase 5 product authority requires the preview on both Consumer surfaces, so the phone renders that server fact alongside the counterpart, activity time, relationship context, and sequence-derived unread state. It still invents no count and holds no local message truth.
+
+Calling remains attached to a mutual introduction and remains absent from primary navigation. The conversation contract now publishes the introduction that authorized it, so the same call entry also appears inside that thread; this is another placement beside the same relationship, not a new destination or a second authorization path. The no-media rule is unchanged and is stated before either call control.

@@ -263,7 +263,17 @@ describe('messages', () => {
     const conversation = state.conversations[0];
     if (conversation !== undefined) {
       state.conversations = [
-        { ...conversation, lastMessageSequence: 5, lastReadSequence: 3 },
+        {
+          ...conversation,
+          lastMessage: {
+            bodyPreview: 'Perfect. See you then',
+            createdAt: '2026-08-14T12:00:00.000Z',
+            sender: 'counterpart',
+            sequence: 5,
+          },
+          lastMessageSequence: 5,
+          lastReadSequence: 3,
+        },
       ];
     }
     const { view } = await mount(<MessagesScreen onOpen={nothing} />, state);
@@ -273,9 +283,75 @@ describe('messages', () => {
         view.getByTestId(`conversation-${conversationId}-unread`),
       ).toBeTruthy();
     });
-    // No preview of what was said. A list screen is read on a phone that may be
-    // face-up on a table.
-    expect(view.queryByText(/Perfect\. See you then/u)).toBeNull();
+    expect(view.getByText('Perfect. See you then')).toBeTruthy();
+    expect(view.getByText(/Mutual introduction/u)).toBeTruthy();
+  });
+
+  it('advances read state and exposes call entry from the published relationship', async () => {
+    const state = admittedState();
+    const conversation = state.conversations[0];
+    if (conversation === undefined) throw new Error('fixture needs one');
+    state.conversations = [
+      {
+        ...conversation,
+        lastMessage: {
+          bodyPreview: 'Read this durable message',
+          createdAt: '2026-08-14T12:00:00.000Z',
+          sender: 'counterpart',
+          sequence: 1,
+        },
+        lastMessageSequence: 1,
+      },
+    ];
+    state.messages = [
+      {
+        body: 'Read this durable message',
+        clientMessageId: 'read-mobile-0001',
+        conversationId,
+        createdAt: '2026-08-14T12:00:00.000Z',
+        id: '77777777-7777-4777-8777-777777777777',
+        senderId: otherPersonId,
+        sequence: 1,
+      },
+    ];
+    const { double, view } = await mount(
+      <ConversationScreen conversationId={conversationId} onBack={nothing} />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(
+        double.calls.some(
+          (call) => call.path === '/v1/messaging/conversations/read',
+        ),
+      ).toBe(true);
+    });
+    expect(double.state.conversations[0]?.lastReadSequence).toBe(1);
+    expect(view.getByTestId(`call-voice-${introductionId}`)).toBeTruthy();
+    expect(view.getByText(/Attachments unavailable/u)).toBeTruthy();
+  });
+
+  it('keeps an oversized draft visible and refuses to send it', async () => {
+    const { double, view } = await mount(
+      <ConversationScreen conversationId={conversationId} onBack={nothing} />,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('message-input')).toBeTruthy();
+    });
+    await fireEvent.changeText(
+      view.getByTestId('message-input'),
+      'x'.repeat(4_001),
+    );
+
+    expect(view.getByTestId('message-too-long')).toBeTruthy();
+    expect(view.getByTestId('message-count')).toBeTruthy();
+    await fireEvent.press(view.getByTestId('message-send'));
+    expect(
+      double.calls.some(
+        (call) =>
+          call.path === '/v1/messaging/messages' && call.method === 'POST',
+      ),
+    ).toBe(false);
   });
 
   it('sends a message and shows it once the server has it', async () => {

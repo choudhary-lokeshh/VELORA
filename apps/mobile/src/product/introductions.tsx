@@ -459,7 +459,7 @@ function IntroductionCard({
  * would refuse is not rendered disabled — it is not rendered, so a stale screen
  * cannot offer an action that would fail.
  */
-function CurrentCall({
+export function CurrentCall({
   call,
   onAccept,
   onCancel,

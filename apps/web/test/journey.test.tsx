@@ -686,6 +686,10 @@ describe('introductions', () => {
           lastActivityAt: '2026-08-14T12:00:00.000Z',
           lastMessageSequence: 0,
           lastReadSequence: 0,
+          relationship: {
+            introductionId: introduction.id,
+            kind: 'mutual_introduction',
+          },
           state: 'active',
         },
       ],
@@ -735,6 +739,10 @@ function withConversation(): ApiDoubleState {
         lastActivityAt: '2026-08-14T12:00:00.000Z',
         lastMessageSequence: 0,
         lastReadSequence: 0,
+        relationship: {
+          introductionId: '55555555-5555-4555-8555-555555555555',
+          kind: 'mutual_introduction',
+        },
         state: 'active',
       },
     ],
@@ -757,6 +765,41 @@ async function openConversation(
 }
 
 describe('messaging', () => {
+  it('shows the server preview and relationship call entry without inventing presence', async () => {
+    const state = withConversation();
+    const conversation = state.conversations[0];
+    if (conversation === undefined) throw new Error('fixture needs one');
+    state.conversations = [
+      {
+        ...conversation,
+        lastMessage: {
+          bodyPreview: 'The durable newest message',
+          createdAt: conversation.lastActivityAt,
+          sender: 'counterpart',
+          sequence: 1,
+        },
+        lastMessageSequence: 1,
+      },
+    ];
+    const double = createApiDouble(state);
+    renderProduct(
+      <MessagesLayout>
+        <div />
+      </MessagesLayout>,
+      double,
+      { pathname: '/messages' },
+    );
+
+    await screen.findByText('The durable newest message');
+    expect(document.body.textContent).not.toContain('online');
+
+    await openConversation(state);
+    expect(
+      screen.getByTestId('call-voice-55555555-5555-4555-8555-555555555555'),
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain('Attachments unavailable');
+  });
+
   it('shows messages in the order the server assigned', async () => {
     const double = await openConversation();
 

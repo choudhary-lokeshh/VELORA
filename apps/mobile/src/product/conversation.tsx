@@ -1,5 +1,11 @@
-import type { Conversation, Message } from '@velora/consumer-client';
-import { failureMessage, isRetryable } from '@velora/consumer-client';
+import type {
+  Call,
+  CallMedium,
+  Conversation,
+  Message,
+} from '@velora/consumer-client';
+import { failureMessage, isOk, isRetryable } from '@velora/consumer-client';
+import { maximumMessageBodyCharacters } from '@velora/validation/messaging-bounds';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
@@ -9,7 +15,7 @@ import {
   View,
 } from 'react-native';
 
-import { useApi, useSession } from '../frame/providers';
+import { useApi, useSession, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
   Button,
@@ -18,6 +24,7 @@ import {
   ErrorMessage,
   ErrorState,
   IconButton,
+  Inline,
   Notice,
   RowSkeleton,
   Stack,
@@ -26,8 +33,13 @@ import {
 } from '../design/primitives';
 import { color, layout, radius, space } from '../design/tokens';
 import { formatWhen } from './locale';
-import { useResource, useRevalidateOnForeground } from './resource';
+import {
+  useResource,
+  useRevalidateOnForeground,
+  useSingleFlight,
+} from './resource';
 import { PersonSafetyMenu } from './safety-actions';
+import { CurrentCall } from './introductions';
 
 /**
  * One conversation.
@@ -45,9 +57,6 @@ import { PersonSafetyMenu } from './safety-actions';
  */
 
 const pageSize = 20;
-
-/** The body bound the contract publishes for a message. */
-const maximumMessageLength = 4000;
 
 interface PendingMessage {
   readonly body: string;
@@ -149,6 +158,7 @@ function Thread({
   readonly onChanged: () => void;
 }) {
   const api = useApi();
+  const toast = useToast();
   const ownAccountId = useSession().account.account.value?.id;
   const [messages, setMessages] = useState<readonly Message[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -157,7 +167,10 @@ function Thread({
   const [error, setError] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState<PendingMessage | undefined>(undefined);
   const [draft, setDraft] = useState('');
+  const [call, setCall] = useState<Call | undefined>(undefined);
   const inFlight = useRef<AbortController | undefined>(undefined);
+  const callFlight = useSingleFlight();
+  const sending = useSingleFlight();
   const conversationId = conversation.id;
   const closed = conversation.state === 'closed';
 
@@ -201,36 +214,79 @@ function Thread({
     };
   }, [readPage]);
 
+  const applyCurrentCall = useCallback(
+    (current: Awaited<ReturnType<typeof api.readCall>>) => {
+      if (isOk(current)) setCall(current.value);
+      else if (current.kind === 'not-found') setCall(undefined);
+    },
+    [],
+  );
+
   useRevalidateOnForeground(
     useCallback(() => {
       void readPage(undefined, true);
-    }, [readPage]),
+      if (call !== undefined) void api.readCall(call.id).then(applyCurrentCall);
+    }, [api, applyCurrentCall, call, readPage]),
   );
 
-  const send = (attempt: PendingMessage) => {
-    setPending({ ...attempt, message: undefined, state: 'sending' });
+  // Opening a thread is a read. The server clamps this to what exists and the
+  // write is monotonic, so a stale device can never move the position back.
+  useEffect(() => {
+    const newest = messages.reduce(
+      (sequence, message) => Math.max(sequence, message.sequence),
+      0,
+    );
+    if (newest <= conversation.lastReadSequence) return;
     void api
-      .sendMessage({
+      .markConversationRead({ conversationId, sequence: newest })
+      .then((result) => {
+        if (isOk(result)) onChanged();
+      });
+  }, [api, conversation.lastReadSequence, conversationId, messages, onChanged]);
+
+  const actOnCall = (work: () => ReturnType<typeof api.readCall>) => {
+    callFlight.run(async () => {
+      const result = await work();
+      const failure = failureMessage(result);
+      if (failure !== undefined) toast.show(failure, 'critical');
+      if (isOk(result)) setCall(result.value);
+      else if (call !== undefined)
+        applyCurrentCall(await api.readCall(call.id));
+    });
+  };
+
+  const placeCall = (medium: CallMedium) => {
+    actOnCall(async () =>
+      api.call({
+        introductionId: conversation.relationship.introductionId,
+        medium,
+      }),
+    );
+  };
+
+  const send = (attempt: PendingMessage) => {
+    sending.run(async () => {
+      setPending({ ...attempt, message: undefined, state: 'sending' });
+      const result = await api.sendMessage({
         body: attempt.body,
         clientMessageId: attempt.clientMessageId,
         conversationId,
-      })
-      .then((result) => {
-        if (result.kind === 'ok') {
-          setPending(undefined);
-          setDraft('');
-          setMessages((current) => merge(current, [result.value]));
-          onChanged();
-          return;
-        }
-        setPending({
-          ...attempt,
-          message: failureMessage(result),
-          // A retryable failure is a condition; a refusal is a decision.
-          state: isRetryable(result) ? 'failed' : 'refused',
-        });
-        if (!isRetryable(result)) onChanged();
       });
+      if (result.kind === 'ok') {
+        setPending(undefined);
+        setDraft('');
+        setMessages((current) => merge(current, [result.value]));
+        onChanged();
+        return;
+      }
+      setPending({
+        ...attempt,
+        message: failureMessage(result),
+        // A retryable failure is a condition; a refusal is a decision.
+        state: isRetryable(result) ? 'failed' : 'refused',
+      });
+      if (!isRetryable(result)) onChanged();
+    });
   };
 
   // Server-assigned position, never a device clock. Newest last, so the list is
@@ -242,7 +298,7 @@ function Thread({
   );
 
   const body = draft.trim();
-  const tooLong = body.length > maximumMessageLength;
+  const tooLong = draft.length > maximumMessageBodyCharacters;
 
   return (
     <Screen
@@ -266,6 +322,74 @@ function Thread({
         keyboardVerticalOffset={space[10]}
         style={styles.fill}
       >
+        {call === undefined ? (
+          <Card testID="conversation-call-entry" tone="surface2">
+            <Stack gap={3}>
+              <Text tone="secondary" variant="small">
+                Connected through a mutual introduction. Calls carry lifecycle
+                only here—no microphone, camera, or media stream.
+              </Text>
+              <Inline gap={2}>
+                <View style={styles.half}>
+                  <Button
+                    disabled={closed || callFlight.busy}
+                    icon="phone"
+                    onPress={() => {
+                      placeCall('voice');
+                    }}
+                    testID={`call-voice-${conversation.relationship.introductionId}`}
+                    wide
+                  >
+                    Voice
+                  </Button>
+                </View>
+                <View style={styles.half}>
+                  <Button
+                    disabled={closed || callFlight.busy}
+                    icon="video"
+                    onPress={() => {
+                      placeCall('video');
+                    }}
+                    testID={`call-video-${conversation.relationship.introductionId}`}
+                    wide
+                  >
+                    Video
+                  </Button>
+                </View>
+              </Inline>
+            </Stack>
+          </Card>
+        ) : (
+          <CurrentCall
+            call={call}
+            onAccept={() => {
+              actOnCall(async () => api.acceptCall(call.id));
+            }}
+            onCancel={() => {
+              actOnCall(async () => api.cancelCall(call.id));
+            }}
+            onDismiss={() => {
+              setCall(undefined);
+            }}
+            onEnd={() => {
+              actOnCall(async () => api.endCall(call.id));
+            }}
+            onJoin={() => {
+              callFlight.run(async () => {
+                const failure = failureMessage(
+                  await api.joinAuthorization(call.id),
+                );
+                if (failure !== undefined) toast.show(failure, 'critical');
+                applyCurrentCall(await api.readCall(call.id));
+              });
+            }}
+            onReject={() => {
+              actOnCall(async () => api.rejectCall(call.id));
+            }}
+            pending={callFlight.busy}
+          />
+        )}
+
         {!answered ? (
           <Card>
             <RowSkeleton rows={4} />
@@ -370,7 +494,6 @@ function Thread({
                 accessibilityLabel="Message"
                 editable={pending?.state !== 'sending'}
                 invalid={tooLong}
-                maxLength={maximumMessageLength}
                 multiline
                 onChangeText={setDraft}
                 placeholder="Write a message"
@@ -399,6 +522,25 @@ function Thread({
                 tone={body.length === 0 || tooLong ? 'tertiary' : 'accent'}
               />
             </View>
+            <View style={styles.composerMeta}>
+              <Text tone="tertiary" variant="micro">
+                Text only · Attachments unavailable · Not end-to-end encrypted.
+              </Text>
+              {draft.length > maximumMessageBodyCharacters * 0.8 ? (
+                <Text
+                  testID="message-count"
+                  tone={tooLong ? 'critical' : 'caution'}
+                  variant="micro"
+                >
+                  {draft.length}/{maximumMessageBodyCharacters}
+                </Text>
+              ) : null}
+            </View>
+            {tooLong ? (
+              <ErrorMessage testID="message-too-long">
+                That is longer than a message can be. Trim it and send again.
+              </ErrorMessage>
+            ) : null}
           </View>
         )}
       </KeyboardAvoidingView>
@@ -487,6 +629,12 @@ const styles = StyleSheet.create({
      screen before anybody has typed anything.
   */
   composerInput: { flex: 1, maxHeight: 120, minHeight: layout.controlHeight },
+  composerMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: space[2],
+    justifyContent: 'space-between',
+  },
   composerRow: {
     alignItems: 'flex-end',
     flexDirection: 'row',
@@ -494,6 +642,7 @@ const styles = StyleSheet.create({
     minHeight: layout.minimumTouchTarget,
   },
   fill: { flex: 1 },
+  half: { flex: 1 },
   pending: { alignItems: 'flex-start' },
   stampOwn: { opacity: 0.72 },
   thread: { gap: space[2], paddingVertical: space[4] },

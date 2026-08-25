@@ -30,6 +30,7 @@ import { formatDay, formatRelative, formatTime } from './locale';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { PersonSafetyMenu } from './safety-actions';
 import { useSingleFlight } from './resource';
+import { CallControls } from './calls';
 
 /**
  * Conversations, and the messages in them.
@@ -47,9 +48,8 @@ import { useSingleFlight } from './resource';
  * produces no second message. And nothing is optimistic about permission: a
  * message appears in the transcript when the server says it exists.
  *
- * The list shows no message preview, because the contract publishes none. A
- * conversation list needs a name and a time; a preview would mean the server
- * putting message content into a list response, and it deliberately does not.
+ * The list preview is a bounded server projection of the newest durable
+ * message. It never renders a local draft or turns acceptance into delivery.
  */
 
 /** How many messages one page asks for. */
@@ -170,11 +170,11 @@ export function ConversationsList({
                 <span className="v-row__preview v-truncate">
                   {row.state === 'closed'
                     ? 'This conversation is closed.'
-                    : row.lastMessageSequence === 0
+                    : row.lastMessage === undefined
                       ? 'No messages yet — say hello.'
-                      : unread
-                        ? 'New message'
-                        : 'Opened from a mutual introduction'}
+                      : `${
+                          row.lastMessage.sender === 'caller' ? 'You: ' : ''
+                        }${row.lastMessage.bodyPreview}`}
                 </span>
               </span>
             </ListRow>
@@ -496,6 +496,21 @@ function Thread({
         </div>
       </header>
 
+      <div className="v-thread__relationship">
+        <p className="v-caption v-quiet">
+          Connected through a mutual introduction. Calls carry lifecycle only
+          here—no microphone, camera, or media stream.
+        </p>
+        <div className="v-inline v-inline--tight v-inline--nowrap">
+          <CallControls
+            counterpart={conversation.counterpart}
+            disabled={closed}
+            introductionId={conversation.relationship.introductionId}
+            size="sm"
+          />
+        </div>
+      </div>
+
       <div
         className="v-thread__scroll"
         onScroll={(event) => {
@@ -658,7 +673,9 @@ function Thread({
             </Button>
           </div>
           <div className="v-composer__foot">
-            <span>Not end-to-end encrypted.</span>
+            <span>
+              Text only · Attachments unavailable · Not end-to-end encrypted.
+            </span>
             {draft.length > maximumMessageBodyCharacters * 0.8 ? (
               <span
                 className={`v-composer__count${

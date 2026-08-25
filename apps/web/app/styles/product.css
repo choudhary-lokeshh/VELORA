@@ -480,6 +480,21 @@
   padding: var(--space-3) var(--space-4);
 }
 
+.v-thread__relationship {
+  align-items: center;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+}
+
+.v-thread__relationship > p {
+  flex: 1 1 240px;
+}
+
 /*
  * The transcript scrolls inside itself rather than making the page taller.
  *

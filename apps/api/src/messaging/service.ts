@@ -41,8 +41,20 @@ export interface ConversationView {
   readonly createdAt: Date;
   readonly id: string;
   readonly lastActivityAt: Date;
+  readonly lastMessage:
+    | {
+        readonly bodyPreview: string;
+        readonly createdAt: Date;
+        readonly sender: 'caller' | 'counterpart';
+        readonly sequence: number;
+      }
+    | undefined;
   readonly lastMessageSequence: number;
   readonly lastReadSequence: number;
+  readonly relationship: {
+    readonly introductionId: string;
+    readonly kind: 'mutual_introduction';
+  };
   readonly state: 'active' | 'closed';
 }
 
@@ -590,13 +602,39 @@ export class MessagingService {
           createdAt: row.conversation.createdAt,
           id: row.conversation.id,
           lastActivityAt: row.conversation.lastActivityAt,
+          lastMessage:
+            row.latestMessage === null
+              ? undefined
+              : {
+                  bodyPreview: messagePreview(row.latestMessage.body),
+                  createdAt: row.latestMessage.createdAt,
+                  sender:
+                    row.latestMessage.senderId === actor.id
+                      ? 'caller'
+                      : 'counterpart',
+                  sequence: row.latestMessage.sequence,
+                },
           lastMessageSequence: row.conversation.messageSequence,
           lastReadSequence: row.participant.lastReadSequence,
+          relationship: {
+            introductionId: row.conversation.originIntroductionId,
+            kind: 'mutual_introduction',
+          },
           state: row.conversation.state,
         },
       ];
     });
   }
+}
+
+/** A compact, single-line projection; never a draft or a delivery assertion. */
+function messagePreview(body: string): string {
+  const normalized = body.replace(/\s+/gu, ' ').trim();
+  const candidate = normalized.slice(0, 160);
+  // Never publish half of a UTF-16 surrogate pair at the boundary.
+  return /[\uD800-\uDBFF]$/u.test(candidate)
+    ? candidate.slice(0, -1)
+    : candidate;
 }
 
 function counterpartOf(conversation: ConversationRow, actorId: string): string {

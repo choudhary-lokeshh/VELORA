@@ -3560,8 +3560,22 @@ export interface components {
             id: string;
             /** Format: date-time */
             lastActivityAt: string;
+            lastMessage?: {
+                bodyPreview: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                sender: "caller" | "counterpart";
+                sequence: number;
+            };
             lastMessageSequence: number;
             lastReadSequence: number;
+            relationship: {
+                /** Format: uuid */
+                introductionId: string;
+                /** @constant */
+                kind: "mutual_introduction";
+            };
             /** @enum {string} */
             state: "active" | "closed";
         };
@@ -3598,8 +3612,22 @@ export interface components {
                 id: string;
                 /** Format: date-time */
                 lastActivityAt: string;
+                lastMessage?: {
+                    bodyPreview: string;
+                    /** Format: date-time */
+                    createdAt: string;
+                    /** @enum {string} */
+                    sender: "caller" | "counterpart";
+                    sequence: number;
+                };
                 lastMessageSequence: number;
                 lastReadSequence: number;
+                relationship: {
+                    /** Format: uuid */
+                    introductionId: string;
+                    /** @constant */
+                    kind: "mutual_introduction";
+                };
                 /** @enum {string} */
                 state: "active" | "closed";
             }[];

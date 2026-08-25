@@ -88,8 +88,18 @@ export interface ApiDoubleState {
     createdAt: string;
     id: string;
     lastActivityAt: string;
+    lastMessage?: {
+      bodyPreview: string;
+      createdAt: string;
+      sender: 'caller' | 'counterpart';
+      sequence: number;
+    };
     lastMessageSequence: number;
     lastReadSequence: number;
+    relationship: {
+      introductionId: string;
+      kind: 'mutual_introduction';
+    };
     state: 'active' | 'closed';
   }[];
   introductions: {
@@ -856,6 +866,24 @@ export function createApiDouble(
         sequence,
       };
       state.messages = [...state.messages, message];
+      state.conversations = state.conversations.map((conversation) =>
+        conversation.id === input.conversationId
+          ? {
+              ...conversation,
+              lastActivityAt: message.createdAt,
+              lastMessage: {
+                bodyPreview: input.body
+                  .replace(/\s+/gu, ' ')
+                  .trim()
+                  .slice(0, 160),
+                createdAt: message.createdAt,
+                sender: 'caller' as const,
+                sequence: message.sequence,
+              },
+              lastMessageSequence: message.sequence,
+            }
+          : conversation,
+      );
       return json(200, message);
     }
 

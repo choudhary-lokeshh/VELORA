@@ -314,8 +314,19 @@ function conversationBody(view: ConversationView) {
     createdAt: view.createdAt.toISOString(),
     id: view.id,
     lastActivityAt: view.lastActivityAt.toISOString(),
+    ...(view.lastMessage === undefined
+      ? {}
+      : {
+          lastMessage: {
+            bodyPreview: view.lastMessage.bodyPreview,
+            createdAt: view.lastMessage.createdAt.toISOString(),
+            sender: view.lastMessage.sender,
+            sequence: view.lastMessage.sequence,
+          },
+        }),
     lastMessageSequence: view.lastMessageSequence,
     lastReadSequence: view.lastReadSequence,
+    relationship: view.relationship,
     state: view.state,
   };
 }
