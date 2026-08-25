@@ -117,6 +117,18 @@ function readTemplateKeys() {
   return keys;
 }
 
+function readTemplateValues() {
+  const values = new Map();
+  for (const line of readFileSync(templatePath, 'utf8').split('\n')) {
+    const separator = line.indexOf('=');
+    if (separator === -1) continue;
+    const key = line.slice(0, separator);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)) continue;
+    values.set(key, line.slice(separator + 1));
+  }
+  return values;
+}
+
 function* sourceFiles(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
@@ -149,8 +161,30 @@ function readEnvironmentReads() {
 
 const schemaKeys = readServerConfigKeys();
 const templateKeys = readTemplateKeys();
+const templateValues = readTemplateValues();
 const documentText = readFileSync(documentPath, 'utf8');
 const environmentReads = readEnvironmentReads();
+
+/**
+ * Local-environment value requirements.
+ *
+ * These are the specific template values that must be set for local product
+ * flows to work. Coverage checks above ensure the key exists; this ensures it
+ * holds the value the local flow requires.
+ *
+ * ADR-0032 (virtual gifting) requires local-test billing adapters. The four
+ * values here must stay local-test or `bun run dev:seed` returns 503 on every
+ * gift catalog provision call — the exact regression this guard prevents.
+ * Staging and production already reject these values unconditionally in
+ * packages/config/src/server.ts, so this guard does not weaken the production
+ * fail-closed invariant.
+ */
+const requiredTemplateValues = new Map([
+  ['BILLING_COMMERCE_ELIGIBILITY', 'local-test'],
+  ['BILLING_COMMERCE_POLICY', 'local-test'],
+  ['BILLING_PAYMENT_PROVIDER', 'local-test'],
+  ['BILLING_TAX_AUTHORITY', 'local-test'],
+]);
 
 const expectedTemplateKeys = new Set([
   ...schemaKeys,
@@ -202,6 +236,16 @@ for (const [key, file] of environmentReads) {
 // whole object at once, so absence from this scan proves nothing. Only the
 // non-schema keys can be checked that way, and every one of them is a field a
 // human sets for code that does read it, so they are checked above instead.
+
+for (const [key, required] of requiredTemplateValues) {
+  const actual = templateValues.get(key);
+  if (actual !== required) {
+    failures.push(
+      `${templatePath}: ${key} must be '${required}' in the local template (found '${actual ?? '(missing)'}'); ` +
+        `see ADR-0032 — local gifting requires this adapter, and staging/production already refuse it unconditionally`,
+    );
+  }
+}
 
 if (failures.length > 0) {
   for (const failure of failures) console.error(failure);

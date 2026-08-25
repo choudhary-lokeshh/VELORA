@@ -964,6 +964,56 @@ describe('checkout with no approved payment provider', () => {
     // through a provider that does not exist.
     expect(await paymentCount()).toBe('0');
   });
+
+  /**
+   * Regression guard for the LOCAL SEED GIFTING 503.
+   *
+   * `bun run dev:seed` calls `POST /v1/creator/gifts/catalog/provision` for
+   * every seeded creator. `GiftService.provisionLocalCatalog` immediately
+   * returns `undefined` when `available()` is false, and `available()` is
+   * false whenever `BILLING_PAYMENT_PROVIDER` is not `local-test`. The route
+   * converts `undefined` to 503 DEPENDENCY_UNAVAILABLE, which is the exact
+   * failure the seed script experienced.
+   *
+   * The canonical fix is `.env.example` holding `local-test` for the four
+   * billing adapter keys (enforced by `pnpm env:check`). This test proves the
+   * API contract: provision must refuse with 503 when the payment provider is
+   * unavailable, confirming the boundary that `.env.example` must not cross.
+   */
+  it('refuses gift catalog provisioning when the payment provider is unavailable', async () => {
+    const subject = 'provision-refused@velora.test';
+    await consumer(withoutProvider.runtime, subject);
+    const studio = await session(
+      withoutProvider.runtime,
+      subject,
+      'creator_studio',
+    );
+    const postAs = (path: string, body: unknown = {}) =>
+      withoutProvider.runtime.app.handle(
+        signed(path, studio, testCreatorOrigin, { body, method: 'POST' }),
+      );
+    await postAs('/v1/creator');
+    await postAs('/v1/creator/onboarding/acknowledgements', {
+      acknowledgements,
+    });
+    const profile = (await (
+      await postAs('/v1/creator/profile', {
+        displayName: 'Refused Gifting Creator',
+        handle: 'provisionrefused',
+      })
+    ).json()) as { version: number };
+    await postAs('/v1/creator/profile/publication', {
+      publication: 'published',
+      version: profile.version,
+    });
+    // This is the route seed-local-world.mjs calls for every creator. With
+    // BILLING_PAYMENT_PROVIDER=unavailable it must return 503.
+    const response = await postAs('/v1/creator/gifts/catalog/provision');
+    expect(response.status).toBe(503);
+    expect((await response.json()) as { code: string }).toMatchObject({
+      code: 'DEPENDENCY_UNAVAILABLE',
+    });
+  });
 });
 
 /**
