@@ -166,65 +166,64 @@ function CreatorProfileView({
   );
   const cover = coverRef === undefined ? undefined : covers.get(coverRef);
   return (
-    <article
-      aria-labelledby="creator-name"
-      className="v-profile-hero"
-      data-testid="creator-page"
-    >
+    <article aria-labelledby="creator-name" data-testid="creator-page">
       {cover === undefined ? null : (
-        /* A band behind the identity rather than a picture beside it: a cover
-           is the page's first impression, and it is drawn only when there is
-           genuinely one to draw. */
+        /* A band above the identity rather than a picture beside it, and its
+           own element rather than a child of the hero: the hero is a row on a
+           wide viewport, so a cover inside it would sit next to the avatar. It
+           is drawn only when there is genuinely one to draw. */
         <div className="v-creator-cover" data-testid="creator-page-cover">
           {/* A plain element rather than the framework's optimised one: the
               address is issued per request and cannot be fetched upstream. */}
           <img alt="" className="v-creator-cover__image" src={cover} />
         </div>
       )}
-      <Avatar
-        displayName={creator.displayName}
-        seed={creator.handle}
-        size="lg"
-        src={avatarRef === undefined ? undefined : avatars.get(avatarRef)}
-      />
-      <div className="v-profile-hero__body">
-        <h1 className="v-title v-wrap" id="creator-name">
-          {creator.displayName}
-        </h1>
-        <p className="v-small v-quiet" data-testid="creator-page-handle">
-          @{creator.handle}
-        </p>
-        {creator.bio === undefined ? null : (
-          <p className="v-muted v-wrap" data-testid="creator-page-bio">
-            {creator.bio}
+      <div className="v-profile-hero">
+        <Avatar
+          displayName={creator.displayName}
+          seed={creator.handle}
+          size="lg"
+          src={avatarRef === undefined ? undefined : avatars.get(avatarRef)}
+        />
+        <div className="v-profile-hero__body">
+          <h1 className="v-title v-wrap" id="creator-name">
+            {creator.displayName}
+          </h1>
+          <p className="v-small v-quiet" data-testid="creator-page-handle">
+            @{creator.handle}
           </p>
-        )}
+          {creator.bio === undefined ? null : (
+            <p className="v-muted v-wrap" data-testid="creator-page-bio">
+              {creator.bio}
+            </p>
+          )}
 
-        {creator.links.length === 0 ? null : (
-          <nav aria-label="Links this creator chose to show">
-            <ul className="v-chip-set" data-testid="creator-page-links">
-              {creator.links.map((link) => (
-                <li key={link.url}>
-                  {/*
+          {creator.links.length === 0 ? null : (
+            <nav aria-label="Links this creator chose to show">
+              <ul className="v-chip-set" data-testid="creator-page-links">
+                {creator.links.map((link) => (
+                  <li key={link.url}>
+                    {/*
                     A link somebody else supplied. `noopener` and `noreferrer`
                     keep the new document away from this one and stop this page's
                     address travelling with the click; `nofollow` keeps the
                     platform from lending its standing to a destination nobody
                     reviewed. The server never fetches any of these.
                   */}
-                  <a
-                    className="v-chip"
-                    href={link.url}
-                    rel="nofollow noopener noreferrer"
-                  >
-                    {link.label ?? link.url}
-                    <Icon name="link" size="sm" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        )}
+                    <a
+                      className="v-chip"
+                      href={link.url}
+                      rel="nofollow noopener noreferrer"
+                    >
+                      {link.label ?? link.url}
+                      <Icon name="link" size="sm" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+        </div>
       </div>
     </article>
   );

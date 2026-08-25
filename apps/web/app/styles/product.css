@@ -781,7 +781,6 @@
 .v-creator-cover {
   aspect-ratio: 3 / 1;
   border-radius: var(--radius-lg);
-  margin-bottom: calc(var(--space-6) * -1);
   overflow: hidden;
   position: relative;
   width: 100%;
@@ -791,7 +790,7 @@
   background: linear-gradient(
     to top,
     var(--canvas) 0%,
-    rgb(12 10 12 / 55%) 45%,
+    rgb(12 10 12 / 45%) 55%,
     transparent 100%
   );
   content: '';
