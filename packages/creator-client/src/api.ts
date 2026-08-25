@@ -33,6 +33,7 @@ import type {
   PublicClubList,
   PublicCreator,
   PublicCreatorCatalog,
+  PublicCreatorDirectory,
   SaveCreatorClubBody,
   SaveCreatorContentBody,
   SaveCreatorProfileBody,
@@ -130,6 +131,17 @@ export interface CreatorApi {
   setClubLifecycle(
     body: ClubLifecycleBody,
   ): Promise<ApiResult<CreatorClubList>>;
+  /**
+   * Published creator pages, newest first. Carries no credential.
+   *
+   * The listing somebody browses instead of having to know a handle. It answers
+   * identically for everybody, so sending a session with it would attach an
+   * identity to a request that has no use for one.
+   */
+  publicCreatorDirectory(query?: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<PublicCreatorDirectory>>;
   /** The catalog half of a creator's public page. Carries no credential. */
   publicCatalog(query: {
     readonly cursor?: string | undefined;
@@ -219,6 +231,15 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
   });
 
   return {
+    async publicCreatorDirectory(query) {
+      return attempt(async () =>
+        api.GET('/v1/creators/directory', {
+          ...(await read()),
+          params: { query: pageQuery(query) },
+        }),
+      );
+    },
+
     async startProfileMediaUpload(slot) {
       return attempt(async () =>
         api.POST('/v1/creator/profile/media', {

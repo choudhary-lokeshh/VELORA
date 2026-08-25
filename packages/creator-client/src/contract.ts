@@ -145,3 +145,10 @@ export type MediaVariant = RequestBody<
   '/v1/media/deliveries',
   'post'
 >['variant'];
+
+export type PublicCreatorDirectory = JsonBody<
+  '/v1/creators/directory',
+  'get',
+  200
+>;
+export type PublicCreatorSummary = PublicCreatorDirectory['creators'][number];
