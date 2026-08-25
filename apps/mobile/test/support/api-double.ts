@@ -27,6 +27,17 @@ export interface MobileApiState {
     submittedAt: string;
   }[];
   blocks: { blockedId: string; createdAt: string }[];
+  /**
+   * What the media platform answers when a reference is exchanged for an
+   * address.
+   *
+   * `granted` is the default because it is what a configured environment does,
+   * and because a double that never served an image would leave the photograph
+   * path on every screen untested. `unavailable` is the deployed-environment
+   * answer — no approved delivery provider — and `declined` is a platform that
+   * serves this device nothing without saying why.
+   */
+  mediaDelivery: 'granted' | 'declined' | 'unavailable';
   candidates: {
     bio?: string;
     displayName: string;
@@ -242,6 +253,7 @@ export function admittedState(): MobileApiState {
     },
     appeals: [],
     blocks: [],
+    mediaDelivery: 'granted',
     candidates: [
       {
         displayName: 'Robin',
@@ -385,6 +397,30 @@ export function createMobileApiDouble(
     if (path === '/v1/auth/logout' || path === '/v1/auth/logout-all') {
       state.sessionLive = false;
       return json(200, { acknowledged: true });
+    }
+
+    // MEDIA. Reachable without a credential, exactly as the contract publishes
+    // it; what an absent one changes is which assets come back, not whether the
+    // call is answered.
+    if (path === '/v1/media/deliveries' && method === 'POST') {
+      if (state.mediaDelivery === 'unavailable') {
+        return error(503, 'DEPENDENCY_UNAVAILABLE');
+      }
+      const asked = (body as { assetIds?: string[] } | undefined)?.assetIds;
+      return json(200, {
+        deliveries:
+          state.mediaDelivery === 'declined'
+            ? []
+            : (asked ?? []).map((assetId) => ({
+                assetId,
+                // Real time rather than the fixture clock. Every other value a
+                // double produces is content a test asserts against; this one
+                // is a deadline the client compares to its own clock, so a
+                // fixed instant would arrive already expired.
+                expiresAt: new Date(Date.now() + 300_000).toISOString(),
+                url: `https://media.test/${assetId}`,
+              })),
+      });
     }
 
     // Every product route is bearer-authenticated. A request with no token, or

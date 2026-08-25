@@ -1,4 +1,8 @@
-import type { ConsumerApi } from '@velora/consumer-client';
+import {
+  createMediaAddressBook,
+  type ConsumerApi,
+  type MediaAddressBook,
+} from '@velora/consumer-client';
 import {
   createContext,
   useCallback,
@@ -70,6 +74,8 @@ export interface SessionValue {
   readonly busy: boolean;
   /** This installation's identifier, for anything that has to name the device. */
   readonly installation: InstallationIdentity;
+  /** Where image references become addresses, shared by every screen. */
+  readonly media: MediaAddressBook;
   /**
    * What the platform has been told about reaching this device, and what is
    * stopping it. Never a claim that anything will be delivered.
@@ -109,6 +115,10 @@ export function useApi(): ConsumerApi {
   return useSession().api;
 }
 
+export function useMediaAddressBook(): MediaAddressBook {
+  return useSession().media;
+}
+
 /**
  * The one thing a build can get wrong before any screen renders.
  *
@@ -121,6 +131,14 @@ interface Wiring {
   readonly api: ConsumerApi;
   readonly auth: MobileAuthManager;
   readonly installation: InstallationIdentity;
+  /**
+   * Where image references become addresses.
+   *
+   * Above the screens because two of them rendering the same person must not
+   * hold two grants for the same photograph, and because signing out has to be
+   * able to drop every address at once.
+   */
+  readonly media: MediaAddressBook;
   readonly push: PushRegistrar;
 }
 
@@ -168,6 +186,7 @@ export function ConsumerProviders({
         api,
         auth,
         installation,
+        media: createMediaAddressBook({ api }),
         push: createPushRegistrar({
           api,
           installation,
@@ -200,7 +219,7 @@ function SessionProvider({
   readonly children: ReactNode;
   readonly wiring: Wiring;
 }) {
-  const { api, auth, installation, push } = wiring;
+  const { api, auth, installation, media, push } = wiring;
   const [state, setState] = useState<MobileAuthState>(initialMobileAuthState);
   const [pushState, setPushState] = useState<PushRegistrationState>(
     initialPushRegistrationState,
@@ -259,6 +278,7 @@ function SessionProvider({
       api,
       auth,
       busy,
+      media,
       restore,
       enablePush: () => {
         run(async () => {
@@ -282,12 +302,17 @@ function SessionProvider({
           // left registered would keep being addressed for somebody who has
           // signed out of it.
           setPushState(await push.revoke());
+          // Every held address is a bearer credential for one of these
+          // photographs, and the point of signing out is that this device
+          // stops holding them.
+          media.clear();
           return auth.signOut();
         });
       },
       signOutEverywhere: () => {
         perform(async () => {
           setPushState(await push.revoke());
+          media.clear();
           return auth.signOutEverywhere();
         });
       },
@@ -300,6 +325,7 @@ function SessionProvider({
     auth,
     busy,
     installation,
+    media,
     push,
     pushState,
     restore,

@@ -29,6 +29,7 @@ import {
   useRevalidateOnForeground,
   useSingleFlight,
 } from './resource';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { PersonSafetyMenu } from './safety-actions';
 
 /**
@@ -188,6 +189,10 @@ export function IntroductionsScreen() {
   };
 
   const rows = introductions.value?.introductions ?? [];
+  const portraits = useMediaAddresses(
+    portraitReferences(rows.map((row) => row.counterpart)),
+    'avatar_large',
+  );
   const answered = !introductions.loading || introductions.value !== undefined;
 
   return (
@@ -272,6 +277,7 @@ export function IntroductionsScreen() {
             <IntroductionCard
               busy={busy}
               introduction={item}
+              portrait={portraits.get(item.counterpart.media[0]?.id ?? '')}
               onAccept={() => {
                 act(
                   async () => api.signalIntroduction(item.counterpart.id),
@@ -316,6 +322,7 @@ function IntroductionCard({
   onOpen,
   onWithdraw,
   placing,
+  portrait,
 }: {
   readonly busy: boolean;
   readonly introduction: Introduction;
@@ -325,6 +332,8 @@ function IntroductionCard({
   readonly onOpen: () => void;
   readonly onWithdraw: () => void;
   readonly placing: boolean;
+  /** A short-lived address, or nothing to show. */
+  readonly portrait: string | undefined;
 }) {
   const mutual = introduction.state === 'mutual';
   const person = {
@@ -336,7 +345,11 @@ function IntroductionCard({
     <Card testID={`introduction-${introduction.id}`}>
       <Stack gap={4}>
         <View style={styles.identity}>
-          <Avatar displayName={person.displayName} seed={person.id} />
+          <Avatar
+            displayName={person.displayName}
+            seed={person.id}
+            source={portrait}
+          />
           <View style={styles.identityText}>
             <Text
               accessibilityRole="header"

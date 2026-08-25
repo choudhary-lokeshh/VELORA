@@ -18,6 +18,7 @@ import {
   Text,
 } from '../design/primitives';
 import { color, space } from '../design/tokens';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
@@ -167,6 +168,10 @@ export function DiscoverScreen() {
 
   const showEmpty =
     answered && error === undefined && feed.candidates.length === 0;
+  const portraits = useMediaAddresses(
+    portraitReferences(feed.candidates),
+    'display',
+  );
 
   return (
     <Screen
@@ -233,6 +238,7 @@ export function DiscoverScreen() {
             <CandidateCard
               busy={decision.busy}
               candidate={item}
+              portrait={portraits.get(item.media[0]?.id ?? '')}
               onBlocked={() => {
                 drop(item.id);
               }}
@@ -266,12 +272,15 @@ function CandidateCard({
   onBlocked,
   onPass,
   onSignal,
+  portrait,
 }: {
   readonly busy: boolean;
   readonly candidate: DiscoveryCandidate;
   readonly onBlocked: () => void;
   readonly onPass: () => void;
   readonly onSignal: () => void;
+  /** A short-lived address, or nothing to show. Never explained either way. */
+  readonly portrait: string | undefined;
 }) {
   const region = regionName(candidate.region);
   return (
@@ -282,6 +291,8 @@ function CandidateCard({
             displayName={candidate.displayName}
             seed={candidate.id}
             size="large"
+            source={portrait}
+            testID={`candidate-portrait-${candidate.id}`}
           />
           <View style={styles.identityText}>
             <Text

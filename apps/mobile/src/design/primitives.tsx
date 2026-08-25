@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text as RNText,
@@ -611,24 +612,33 @@ const avatarGradients: readonly (readonly [string, string])[] = [
 ];
 
 /**
- * An identity mark, and deliberately not a photograph.
+ * A person, at the size of a list row.
  *
- * Consumer media has no delivery route on this platform: `packages/validation`
- * publishes image references with no address, because authorized delivery needs
- * an approved storage provider and there is none. So there is no image for any
- * surface to render, and a monogram on a stable tone is what a person actually
- * gets. A broken image frame would be worse, and a camera control would be a
- * promise this build cannot keep.
+ * A photograph when the platform currently serves one to this device, and a
+ * monogram on a stable tone when it does not. The two occupy the same box, so a
+ * list never moves as short-lived addresses arrive, and which one somebody gets
+ * is never explained: an image still processing, one its owner removed, and one
+ * this viewer may not be shown all look identical here on purpose.
+ *
+ * The gradient stays underneath the photograph rather than being replaced by
+ * it, so a transparent image, a slow load, and a decode failure each fall back
+ * to the monogram's own surface instead of to the screen behind it.
  */
 export function Avatar({
   displayName,
   seed,
   size = 'medium',
+  source,
+  testID,
 }: {
   readonly displayName: string;
   /** Usually the person's identifier, so the tone survives a name change. */
   readonly seed?: string;
   readonly size?: 'small' | 'medium' | 'large';
+  /** A short-lived address. Absent whenever there is nothing to show. */
+  readonly source?: string | undefined;
+  /** Names the photograph only. There is nothing to name when there is none. */
+  readonly testID?: string;
 }) {
   const points =
     size === 'small'
@@ -666,16 +676,28 @@ export function Avatar({
           width={points}
         />
       </Svg>
-      <View style={styles.avatarInitials}>
-        <Text
-          style={{ fontSize: Math.round(points * 0.36) }}
-          tone="primary"
-          variant="small"
-          weight="semibold"
-        >
-          {initials}
-        </Text>
-      </View>
+      {source === undefined ? (
+        <View style={styles.avatarInitials}>
+          <Text
+            style={{ fontSize: Math.round(points * 0.36) }}
+            tone="primary"
+            variant="small"
+            weight="semibold"
+          >
+            {initials}
+          </Text>
+        </View>
+      ) : (
+        <Image
+          accessibilityIgnoresInvertColors
+          source={{ uri: source }}
+          testID={testID}
+          style={[
+            StyleSheet.absoluteFill,
+            { borderRadius: points / 2, height: points, width: points },
+          ]}
+        />
+      )}
     </View>
   );
 }

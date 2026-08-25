@@ -15,6 +15,7 @@ import {
   Text,
 } from '../design/primitives';
 import { space } from '../design/tokens';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { formatWhen } from './locale';
 import { useResource, useRevalidateOnForeground } from './resource';
 
@@ -47,6 +48,10 @@ export function MessagesScreen({
   useRevalidateOnForeground(conversations.reload);
 
   const rows = conversations.value?.conversations ?? [];
+  const portraits = useMediaAddresses(
+    portraitReferences(rows.map((row) => row.counterpart)),
+    'avatar_small',
+  );
   const answered = !conversations.loading || conversations.value !== undefined;
 
   return (
@@ -92,6 +97,9 @@ export function MessagesScreen({
                       <Avatar
                         displayName={item.counterpart.displayName}
                         seed={item.counterpart.id}
+                        source={portraits.get(
+                          item.counterpart.media[0]?.id ?? '',
+                        )}
                       />
                     }
                     onPress={() => {

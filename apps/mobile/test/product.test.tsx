@@ -66,6 +66,9 @@ async function mount(
 }
 
 /** The double seeds one candidate; these give the feed something to page. */
+/** The one image reference the candidate below publishes. */
+const candidateImageId = '55555555-5555-4555-8555-555555555555';
+
 function withCandidates(): MobileApiState {
   const state = admittedState();
   state.candidates = [
@@ -73,7 +76,7 @@ function withCandidates(): MobileApiState {
       bio: 'Ceramicist.',
       displayName: 'Robin',
       id: otherPersonId,
-      media: [],
+      media: [{ id: candidateImageId, position: 0 }],
       region: 'ES',
       sharedLanguages: ['es'],
     },
@@ -82,7 +85,7 @@ function withCandidates(): MobileApiState {
 }
 
 describe('discover', () => {
-  it('shows a person with what the contract publishes and no photograph', async () => {
+  it('shows a person with what the contract publishes, photograph included', async () => {
     const { view } = await mount(<DiscoverScreen />, withCandidates());
 
     await waitFor(() => {
@@ -90,8 +93,36 @@ describe('discover', () => {
     });
     expect(view.getByText('Robin')).toBeTruthy();
     expect(view.getByText('Spain')).toBeTruthy();
-    // No image, no upload control, and nothing that implies either exists.
-    expect(view.queryByTestId('candidate-photo')).toBeNull();
+    // Hidden elements included deliberately: the photograph is removed from the
+    // accessibility tree because the person's name is already text beside it,
+    // so a default query would never see it however well it renders.
+    await waitFor(() => {
+      expect(
+        view.getByTestId(`candidate-portrait-${otherPersonId}`, {
+          includeHiddenElements: true,
+        }),
+      ).toBeTruthy();
+    });
+  });
+
+  it('draws an identity mark, and says nothing, when no address is granted', async () => {
+    const { view } = await mount(<DiscoverScreen />, {
+      ...withCandidates(),
+      mediaDelivery: 'declined',
+    });
+
+    await waitFor(() => {
+      expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
+    });
+    expect(
+      view.queryByTestId(`candidate-portrait-${otherPersonId}`, {
+        includeHiddenElements: true,
+      }),
+    ).toBeNull();
+    // And it never says why: the reason is somebody else's business.
+    for (const leak of ['blocked', 'not allowed', 'processing']) {
+      expect(view.queryByText(new RegExp(leak, 'iu'))).toBeNull();
+    }
   });
 
   it('takes a person off the feed once interest is sent', async () => {
@@ -454,7 +485,7 @@ describe('you', () => {
     ).toBeDefined();
   });
 
-  it('saves a profile, and offers a photograph nobody can be shown', async () => {
+  it('saves a profile, and offers a photograph the platform can now show', async () => {
     const { double, view } = await mount(<ProfileScreen onBack={nothing} />);
     await waitFor(() => {
       expect(view.getByTestId('profile-name')).toBeTruthy();
@@ -472,12 +503,21 @@ describe('you', () => {
       ).toBe(true);
     });
 
-    // The native build resolved one of the two blockers on a photograph, so
-    // the control exists. It did not resolve the other: consumer media still
-    // has no authorized delivery route, and the screen has to keep saying so
-    // rather than implying that adding one makes it visible.
+    // Both blockers on a photograph are resolved: the native build gave this
+    // application a camera, and authorized delivery gives it something to
+    // render. Nothing claims otherwise on the screen.
     expect(view.getByTestId('profile-add-photo')).toBeTruthy();
-    expect(view.getByTestId('media-delivery-blocked')).toBeTruthy();
+    expect(view.queryByTestId('media-delivery-blocked')).toBeNull();
+  });
+
+  it('says photographs cannot be shown where the platform cannot deliver one', async () => {
+    const state = admittedState();
+    state.mediaDelivery = 'unavailable';
+    const { view } = await mount(<ProfileScreen onBack={nothing} />, state);
+
+    await waitFor(() => {
+      expect(view.getByTestId('media-delivery-blocked')).toBeTruthy();
+    });
   });
 
   it('lists a block by when it happened, because no name is kept against one', async () => {

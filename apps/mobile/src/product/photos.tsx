@@ -1,9 +1,14 @@
 import type { ConsumerProfile } from '@velora/consumer-client';
 import { maximumProfileMedia } from '@velora/validation/profile-bounds';
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
-import { useApi, useSession, useToast } from '../frame/providers';
+import {
+  useApi,
+  useMediaAddressBook,
+  useSession,
+  useToast,
+} from '../frame/providers';
 import {
   openApplicationSettings,
   permissionExplanation,
@@ -33,20 +38,20 @@ import {
 } from '../design/primitives';
 import { Icon } from '../design/icons';
 import { color, space } from '../design/tokens';
+import { useMediaAddresses } from './imagery';
 
 /**
  * Adding a photograph, on a phone that has a camera.
  *
  * The frozen interface had no control that would add one, and the reason given
  * was correct at the time: this application had no native build, so there was
- * no camera and no picker to offer. That half is now resolved. The other half
- * is not — consumer media still has no authorized delivery route, so a
- * photograph that reaches `ready` is stored, checked, and shown to nobody.
+ * no camera and no picker to offer. Both halves are now resolved — a ready
+ * photograph is shown here as a thumbnail, obtained the way every other surface
+ * obtains one, by exchanging its reference for a short-lived address that is
+ * re-decided on every request.
  *
- * Both facts are on the screen. Somebody can complete the profile requirement
- * that needs a ready image, and the notice says plainly that no photograph is
- * displayed anywhere on VELORA yet, for them or anybody else. Offering the
- * control while hiding the limitation would be the worse half of each.
+ * Where an environment has no approved delivery provider the exchange refuses,
+ * and the screen says so instead of leaving a frame that never fills.
  *
  * Every refusal is its own state with its own sentence: a cancelled picker is
  * silent, a denied camera explains itself and offers to ask again, a
@@ -96,6 +101,15 @@ export function ProfilePhotos({
   );
   const full = slots.length >= maximumProfileMedia;
   const working = stage !== 'idle';
+  const book = useMediaAddressBook();
+  const thumbnails = useMediaAddresses(
+    slots.filter((item) => item.state === 'ready').map((item) => item.id),
+    'avatar_large',
+  );
+  // Only once an exchange has actually happened. Before that the honest state
+  // is "nothing to say yet" rather than either claim.
+  const undeliverable =
+    slots.some((item) => item.state === 'ready') && book.deliveryUnavailable();
 
   const accept = useCallback(
     async (outcome: PickOutcome) => {
@@ -191,7 +205,16 @@ export function ProfilePhotos({
               <View key={item.id}>
                 {index === 0 ? null : <Divider />}
                 <View style={styles.slot} testID={`profile-media-${item.id}`}>
-                  <Icon color={color.textSecondary} name="camera" size="md" />
+                  {thumbnails.get(item.id) === undefined ? (
+                    <Icon color={color.textSecondary} name="camera" size="md" />
+                  ) : (
+                    <Image
+                      accessibilityIgnoresInvertColors
+                      source={{ uri: thumbnails.get(item.id) ?? '' }}
+                      style={styles.thumbnail}
+                      testID={`profile-media-thumb-${item.id}`}
+                    />
+                  )}
                   <View style={styles.slotBody}>
                     <Badge tone={badgeTone[item.state] ?? 'neutral'}>
                       {mediaStateLabels[item.state] ?? item.state}
@@ -260,16 +283,18 @@ export function ProfilePhotos({
           </Stack>
         )}
 
-        <Notice
-          testID="media-delivery-blocked"
-          title="Photos are stored, not shown"
-          tone="neutral"
-        >
-          VELORA has no approved way to deliver an image yet, so no photograph
-          is displayed anywhere — not yours and not anybody else&apos;s. What
-          you add is kept and checked, and it appears the day authorized
-          delivery exists.
-        </Notice>
+        {!undeliverable ? null : (
+          <Notice
+            testID="media-delivery-blocked"
+            title="Photos are stored, not shown here"
+            tone="neutral"
+          >
+            This environment has no approved way to deliver an image, so no
+            photograph is displayed on it — not yours and not anybody
+            else&apos;s. What you add is kept and checked, and it appears
+            wherever delivery is available.
+          </Notice>
+        )}
       </Stack>
 
       {choosing ? (
@@ -351,5 +376,14 @@ const styles = StyleSheet.create({
   slotBody: {
     flex: 1,
     gap: space[1],
+  },
+  /*
+   * The same box the icon occupies, so a row does not resize when a short-lived
+   * address arrives and the list never jumps under somebody's finger.
+   */
+  thumbnail: {
+    borderRadius: space[2],
+    height: 40,
+    width: 40,
   },
 });
