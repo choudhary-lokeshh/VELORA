@@ -3,4 +3,12 @@
  * reads the same transport answers the same way. Consumer surfaces keep
  * importing it from here; there is one implementation behind both names.
  */
-export { attempt, classify, isOk, type ApiResult } from '@velora/api-client';
+export {
+  attempt,
+  classify,
+  createMediaAddressBook,
+  isOk,
+  type ApiResult,
+  type MediaAddressBook,
+  type MediaDeliveryExchange,
+} from '@velora/api-client';

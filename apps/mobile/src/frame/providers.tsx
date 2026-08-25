@@ -2,6 +2,7 @@ import {
   createMediaAddressBook,
   type ConsumerApi,
   type MediaAddressBook,
+  type MediaVariant,
 } from '@velora/consumer-client';
 import {
   createContext,
@@ -75,7 +76,7 @@ export interface SessionValue {
   /** This installation's identifier, for anything that has to name the device. */
   readonly installation: InstallationIdentity;
   /** Where image references become addresses, shared by every screen. */
-  readonly media: MediaAddressBook;
+  readonly media: MediaAddressBook<MediaVariant>;
   /**
    * What the platform has been told about reaching this device, and what is
    * stopping it. Never a claim that anything will be delivered.
@@ -115,7 +116,7 @@ export function useApi(): ConsumerApi {
   return useSession().api;
 }
 
-export function useMediaAddressBook(): MediaAddressBook {
+export function useMediaAddressBook(): MediaAddressBook<MediaVariant> {
   return useSession().media;
 }
 
@@ -138,7 +139,7 @@ interface Wiring {
    * hold two grants for the same photograph, and because signing out has to be
    * able to drop every address at once.
    */
-  readonly media: MediaAddressBook;
+  readonly media: MediaAddressBook<MediaVariant>;
   readonly push: PushRegistrar;
 }
 
@@ -186,7 +187,9 @@ export function ConsumerProviders({
         api,
         auth,
         installation,
-        media: createMediaAddressBook({ api }),
+        media: createMediaAddressBook<MediaVariant>({
+          exchange: async (request) => api.mediaDeliveries(request),
+        }),
         push: createPushRegistrar({
           api,
           installation,

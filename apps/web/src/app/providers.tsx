@@ -17,6 +17,7 @@ import {
   type ConsumerApi,
   type ConversationList,
   type MediaAddressBook,
+  type MediaVariant,
   type NotificationList,
 } from '@velora/consumer-client';
 
@@ -62,7 +63,7 @@ interface ApiValue {
    * hold two grants for the same photograph, and because signing out has to be
    * able to drop every address at once.
    */
-  readonly media: MediaAddressBook;
+  readonly media: MediaAddressBook<MediaVariant>;
 }
 
 const ApiContext = createContext<ApiValue | undefined>(undefined);
@@ -75,7 +76,7 @@ export function useApi(): ConsumerApi {
   return value.api;
 }
 
-export function useMediaAddressBook(): MediaAddressBook {
+export function useMediaAddressBook(): MediaAddressBook<MediaVariant> {
   const value = useContext(ApiContext);
   if (value === undefined) {
     throw new Error('useMediaAddressBook used outside VeloraProviders');
@@ -161,7 +162,9 @@ export function VeloraProviders({
           ? {}
           : { fetch: fetchImplementation }),
       }),
-      media: createMediaAddressBook({ api }),
+      media: createMediaAddressBook<MediaVariant>({
+        exchange: async (request) => api.mediaDeliveries(request),
+      }),
     };
   }, [apiBaseUrl, fetchImplementation]);
 

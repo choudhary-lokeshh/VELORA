@@ -130,3 +130,18 @@ export type RequestPayoutBody = RequestBody<'/v1/creator/payouts', 'post'>;
 export type CommercialOfferList = JsonBody<'/v1/creator/offers', 'get', 200>;
 export type CommercialOffer = CommercialOfferList['offers'][number];
 export type MonetisationReadiness = CommercialOfferList['readiness'];
+
+export type CreatorMediaUploadCapability = JsonBody<
+  '/v1/creator/profile/media',
+  'post',
+  201
+>;
+export type CreatorProfileMediaSlot = RequestBody<
+  '/v1/creator/profile/media',
+  'post'
+>['slot'];
+export type MediaDeliveryList = JsonBody<'/v1/media/deliveries', 'post', 200>;
+export type MediaVariant = RequestBody<
+  '/v1/media/deliveries',
+  'post'
+>['variant'];

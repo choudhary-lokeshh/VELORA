@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import type { MediaDeliveryList } from '../src/contract.js';
 import { createMediaAddressBook } from '../src/media.js';
 import type { ApiResult } from '../src/result.js';
+
+interface DeliveryList {
+  readonly deliveries: readonly {
+    readonly assetId: string;
+    readonly expiresAt?: string | undefined;
+    readonly url: string;
+  }[];
+}
 
 /**
  * The address book, tested where the interesting failures actually are.
@@ -20,38 +27,34 @@ interface Recorded {
 }
 
 function book(input: {
-  readonly answer?: (
-    assetIds: readonly string[],
-  ) => ApiResult<MediaDeliveryList>;
+  readonly answer?: (assetIds: readonly string[]) => ApiResult<DeliveryList>;
   readonly now?: () => number;
 }) {
   const requests: Recorded[] = [];
-  const api = {
-    mediaDeliveries: (query: {
-      readonly assetIds: readonly string[];
-      readonly variant: string;
-    }): Promise<ApiResult<MediaDeliveryList>> => {
-      requests.push({ assetIds: [...query.assetIds], variant: query.variant });
-      return Promise.resolve(
-        input.answer?.(query.assetIds) ?? {
-          kind: 'ok',
-          value: {
-            deliveries: query.assetIds.map((assetId) => ({
-              assetId,
-              expiresAt: new Date(
-                (input.now?.() ?? Date.now()) + 300_000,
-              ).toISOString(),
-              url: `https://media.test/${assetId}`,
-            })),
-          },
+  const exchange = (query: {
+    readonly assetIds: readonly string[];
+    readonly variant: string;
+  }): Promise<ApiResult<DeliveryList>> => {
+    requests.push({ assetIds: [...query.assetIds], variant: query.variant });
+    return Promise.resolve(
+      input.answer?.(query.assetIds) ?? {
+        kind: 'ok',
+        value: {
+          deliveries: query.assetIds.map((assetId) => ({
+            assetId,
+            expiresAt: new Date(
+              (input.now?.() ?? Date.now()) + 300_000,
+            ).toISOString(),
+            url: `https://media.test/${assetId}`,
+          })),
         },
-      );
-    },
+      },
+    );
   };
   return {
     requests,
     subject: createMediaAddressBook({
-      api,
+      exchange,
       ...(input.now === undefined ? {} : { now: input.now }),
     }),
   };

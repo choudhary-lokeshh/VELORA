@@ -17,6 +17,7 @@ import type {
   CreatorCurrencyEarnings,
   CreatorEarnings,
   CreatorEarningsHistory,
+  CreatorMediaUploadCapability,
   CreatorOnboardingState,
   CreatorPayoutHistory,
   CreatorMatureReadiness,
@@ -25,7 +26,10 @@ import type {
   RequestPayoutBody,
   CreatorPolicyDocument,
   CreatorProfile,
+  CreatorProfileMediaSlot,
   CreatorPublicationBody,
+  MediaDeliveryList,
+  MediaVariant,
   PublicClubList,
   PublicCreator,
   PublicCreatorCatalog,
@@ -144,6 +148,42 @@ export interface CreatorApi {
     body: SaveCreatorContentBody,
   ): Promise<ApiResult<CreatorContentList>>;
   saveProfile(body: SaveCreatorProfileBody): Promise<ApiResult<CreatorProfile>>;
+  /**
+   * Reserves one page image, and the two calls that finish it.
+   *
+   * The client never declares what it uploaded: it asks for a capability,
+   * writes the bytes to the address the platform names, and then asks the
+   * platform to look at the object. What the bytes turned out to be is the
+   * platform's answer, and it arrives as the image's state on the profile.
+   */
+  startProfileMediaUpload(
+    slot: CreatorProfileMediaSlot,
+  ): Promise<ApiResult<CreatorMediaUploadCapability>>;
+  completeProfileMediaUpload(
+    mediaId: string,
+  ): Promise<ApiResult<CreatorProfile>>;
+  removeProfileMedia(mediaId: string): Promise<ApiResult<CreatorProfile>>;
+  /** The same three steps for an image attached to a catalog item. */
+  startContentMediaUpload(
+    contentId: string,
+  ): Promise<ApiResult<CreatorMediaUploadCapability>>;
+  completeContentMediaUpload(
+    mediaId: string,
+  ): Promise<ApiResult<CreatorContentList>>;
+  removeContentMedia(mediaId: string): Promise<ApiResult<CreatorContentList>>;
+  /**
+   * Exchanges image references for addresses this surface may fetch.
+   *
+   * Sent with the Studio credential, and the platform decides per asset what
+   * that credential is worth: a published page's imagery is public and comes
+   * back for anybody, while a draft page's does not come back at all — which is
+   * the same answer a visitor would get, and is why the preview screen says so
+   * rather than showing a creator something nobody else can see.
+   */
+  mediaDeliveries(input: {
+    readonly assetIds: readonly string[];
+    readonly variant: MediaVariant;
+  }): Promise<ApiResult<MediaDeliveryList>>;
   setContentLifecycle(
     body: CreatorContentLifecycleBody,
   ): Promise<ApiResult<CreatorContentList>>;
@@ -179,6 +219,69 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
   });
 
   return {
+    async startProfileMediaUpload(slot) {
+      return attempt(async () =>
+        api.POST('/v1/creator/profile/media', {
+          ...(await write()),
+          body: { slot },
+        }),
+      );
+    },
+
+    async completeProfileMediaUpload(mediaId) {
+      return attempt(async () =>
+        api.POST('/v1/creator/profile/media/completion', {
+          ...(await write()),
+          body: { mediaId },
+        }),
+      );
+    },
+
+    async removeProfileMedia(mediaId) {
+      return attempt(async () =>
+        api.POST('/v1/creator/profile/media/removal', {
+          ...(await write()),
+          body: { mediaId },
+        }),
+      );
+    },
+
+    async startContentMediaUpload(contentId) {
+      return attempt(async () =>
+        api.POST('/v1/creator/content/media', {
+          ...(await write()),
+          body: { contentId },
+        }),
+      );
+    },
+
+    async completeContentMediaUpload(mediaId) {
+      return attempt(async () =>
+        api.POST('/v1/creator/content/media/completion', {
+          ...(await write()),
+          body: { mediaId },
+        }),
+      );
+    },
+
+    async removeContentMedia(mediaId) {
+      return attempt(async () =>
+        api.POST('/v1/creator/content/media/removal', {
+          ...(await write()),
+          body: { mediaId },
+        }),
+      );
+    },
+
+    async mediaDeliveries(input) {
+      return attempt(async () =>
+        api.POST('/v1/media/deliveries', {
+          ...(await write()),
+          body: { assetIds: [...input.assetIds], variant: input.variant },
+        }),
+      );
+    },
+
     async acknowledgePolicies(documents) {
       return attempt(async () =>
         api.POST('/v1/creator/onboarding/acknowledgements', {

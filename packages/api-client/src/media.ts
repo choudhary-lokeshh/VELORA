@@ -1,5 +1,4 @@
-import type { ConsumerApi } from './api.js';
-import type { MediaVariant } from './contract.js';
+import type { ApiResult } from './result.js';
 
 /**
  * The book of addresses a surface has been granted, and how it keeps them
@@ -12,10 +11,13 @@ import type { MediaVariant } from './contract.js';
  * subtly different is how one surface ends up showing a photograph the other
  * has already stopped showing.
  *
- * It is deliberately framework-free. `packages/design-tokens` may not hold
- * components and there is no approved shared component package, so what is
- * shared is the part that is genuinely not visual: the batching, the cache, and
- * the expiry rule. Each surface binds it to its own rendering.
+ * It is deliberately framework-free, and it lives beside the generated client
+ * rather than inside one product client because every surface that renders an
+ * image needs it — a consumer looking at a person, and a browser looking at a
+ * creator's public page through the creator client. `packages/design-tokens`
+ * may not hold components and there is no approved shared component package, so
+ * what is shared is the part that is genuinely not visual: the batching, the
+ * cache, and the expiry rule. Each surface binds it to its own rendering.
  *
  * ## What it does not do
  *
@@ -81,7 +83,27 @@ interface CacheEntry {
   readonly until: number;
 }
 
-export interface MediaAddressBook {
+/**
+ * The one call this needs, supplied by whichever product client holds it.
+ *
+ * A function rather than a client, so this module names no product API and
+ * neither product client has to know about the other. The variant is the
+ * caller's own literal type; nothing here interprets it.
+ */
+export type MediaDeliveryExchange<TVariant extends string> = (input: {
+  readonly assetIds: readonly string[];
+  readonly variant: TVariant;
+}) => Promise<
+  ApiResult<{
+    readonly deliveries: readonly {
+      readonly assetId: string;
+      readonly expiresAt?: string | undefined;
+      readonly url: string;
+    }[];
+  }>
+>;
+
+export interface MediaAddressBook<TVariant extends string = string> {
   /**
    * Addresses for whichever of these references are currently servable.
    *
@@ -91,7 +113,7 @@ export interface MediaAddressBook {
    */
   resolve(
     references: readonly string[],
-    variant: MediaVariant,
+    variant: TVariant,
   ): Promise<ReadonlyMap<string, string>>;
   /**
    * Whether the platform itself said it cannot deliver anything here.
@@ -111,17 +133,17 @@ export interface MediaAddressBook {
 /** The code the API answers with when no delivery provider is configured. */
 const dependencyUnavailable = 'DEPENDENCY_UNAVAILABLE';
 
-export function createMediaAddressBook(input: {
-  readonly api: Pick<ConsumerApi, 'mediaDeliveries'>;
+export function createMediaAddressBook<TVariant extends string>(input: {
+  readonly exchange: MediaDeliveryExchange<TVariant>;
   /** Injectable so a test does not depend on the wall clock. */
   readonly now?: () => number;
-}): MediaAddressBook {
+}): MediaAddressBook<TVariant> {
   const now = input.now ?? (() => Date.now());
   const entries = new Map<string, CacheEntry>();
   const inFlight = new Map<string, Promise<void>>();
   let unavailable = false;
 
-  const keyOf = (reference: string, variant: MediaVariant) =>
+  const keyOf = (reference: string, variant: TVariant) =>
     `${variant}:${reference}`;
 
   const live = (key: string): CacheEntry | undefined => {
@@ -143,12 +165,9 @@ export function createMediaAddressBook(input: {
    */
   const fetchBatch = async (
     references: readonly string[],
-    variant: MediaVariant,
+    variant: TVariant,
   ): Promise<void> => {
-    const result = await input.api.mediaDeliveries({
-      assetIds: references,
-      variant,
-    });
+    const result = await input.exchange({ assetIds: references, variant });
     if (result.kind !== 'ok') {
       unavailable =
         result.kind === 'refused' && result.code === dependencyUnavailable;
