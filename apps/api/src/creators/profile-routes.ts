@@ -1,4 +1,7 @@
 import {
+  defaultPageSize,
+  pageSizeSchema,
+  publicCreatorDirectoryResponseSchema,
   creatorMediaReferenceRequestSchema,
   creatorProfileMediaRequestSchema,
   creatorProfilePublicationRequestSchema,
@@ -17,6 +20,7 @@ import {
   type RouteResult,
 } from '../http/route-kit.js';
 import { requireCreator, type CreatorContextResolver } from './context.js';
+import { decodeDirectoryCursor, encodeDirectoryCursor } from './cursor.js';
 import type {
   CreatorProfileMediaService,
   CreatorProfileMediaView,
@@ -205,6 +209,55 @@ export class CreatorProfileRoutes {
         record,
         await this.dependencies.media.describe(record),
       ),
+      status: 200,
+    };
+  }
+
+  /**
+   * The listing a person browses instead of having to know a handle.
+   *
+   * It resolves no caller, because the answer is identical for everybody, and
+   * it applies the same conditions the page itself does — so a draft page, a
+   * suspended creator, and a handle nobody holds are absent rather than listed
+   * and then refused. A malformed cursor or page size is refused as malformed
+   * input rather than quietly treated as the first page: a caller that mangled
+   * a cursor is better told so than silently sent back to the top of a listing
+   * it thought it was part-way through.
+   */
+  async getPublicDirectory(input: RouteRequest): Promise<RouteResult> {
+    const query = new URL(input.request.url).searchParams;
+    const rawPageSize = query.get('pageSize');
+    const parsedPageSize =
+      rawPageSize === null ? undefined : pageSizeSchema.safeParse(rawPageSize);
+    if (parsedPageSize !== undefined && !parsedPageSize.success) {
+      return this.invalid(input);
+    }
+    const size = parsedPageSize?.data ?? defaultPageSize;
+    const rawCursor = query.get('cursor');
+    const cursor =
+      rawCursor === null ? undefined : decodeDirectoryCursor(rawCursor);
+    if (rawCursor !== null && cursor === undefined) return this.invalid(input);
+
+    const page = await this.dependencies.profiles.listPublished({
+      cursor,
+      pageSize: size,
+    });
+    const media = await this.dependencies.media.describeMany(page.rows);
+    return {
+      body: publicCreatorDirectoryResponseSchema.parse({
+        creators: page.rows.map((profile) => {
+          const avatar = media.get(profile.creatorId);
+          return {
+            ...(avatar === undefined ? {} : { avatar: { id: avatar } }),
+            ...(profile.bio === null ? {} : { bio: profile.bio }),
+            displayName: profile.displayName,
+            handle: profile.handle,
+          };
+        }),
+        ...(page.next === undefined
+          ? {}
+          : { nextCursor: encodeDirectoryCursor(page.next) }),
+      }),
       status: 200,
     };
   }

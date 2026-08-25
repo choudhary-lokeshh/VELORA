@@ -219,17 +219,26 @@ describe('the running application answers its whole published contract', () => {
   });
 
   it('refuses every product operation to a caller with no session', async () => {
-    // Four paths may answer a caller holding nothing, and each is deliberate.
+    // Five paths may answer a caller holding nothing, and each is deliberate.
     // The health checks are the platform's liveness surface. Logging out
     // without a session is a success rather than a refusal, because the state
-    // the caller asked for is the state they are in. Everything else is either
-    // a session audience or a provider callback with its own authentication,
-    // and none of it may answer a bare browser request.
+    // the caller asked for is the state they are in. The creator directory is
+    // the public listing of pages their authors chose to publish: it answers
+    // identically for everybody, so requiring a credential would collect an
+    // identity for no purpose. Everything else is either a session audience or
+    // a provider callback with its own authentication, and none of it may
+    // answer a bare browser request.
+    //
+    // The other public creator routes are absent from this list on purpose:
+    // they need a handle, and a bare probe carries none, so they refuse. So
+    // does `/v1/media/deliveries`, which is open to a caller with no credential
+    // and still requires a body naming what to serve.
     const open = [
       '/v1/health/live',
       '/v1/health/ready',
       '/v1/auth/logout',
       '/v1/auth/logout-all',
+      '/v1/creators/directory',
     ];
     const admitted: string[] = [];
     for (const operation of operations) {

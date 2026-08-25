@@ -9,6 +9,7 @@ import type {
   CreatorAccountRow,
   CreatorProfileRecord,
   CreatorProfileRepository,
+  CreatorProfileRow,
 } from './repository.js';
 
 /**
@@ -70,6 +71,35 @@ export class CreatorProfileService {
       this.dependencies.profiles.transactionless,
       canonical,
     );
+  }
+
+  /**
+   * One page of published creator pages, and where the next one starts.
+   *
+   * Over-fetches by one to decide whether there is more, rather than counting:
+   * a count is a second query against the same conditions and would be wrong
+   * the moment somebody publishes between the two.
+   */
+  async listPublished(input: {
+    readonly cursor: { readonly id: string; readonly moment: Date } | undefined;
+    readonly pageSize: number;
+  }): Promise<{
+    readonly next: { readonly id: string; readonly moment: Date } | undefined;
+    readonly rows: readonly CreatorProfileRow[];
+  }> {
+    const found = await this.dependencies.profiles.listPublished(
+      this.dependencies.profiles.transactionless,
+      { after: input.cursor, limit: input.pageSize + 1 },
+    );
+    const rows = found.slice(0, input.pageSize);
+    const last = rows.at(-1);
+    return {
+      next:
+        found.length > input.pageSize && last?.publishedAt != null
+          ? { id: last.creatorId, moment: last.publishedAt }
+          : undefined,
+      rows,
+    };
   }
 
   /**

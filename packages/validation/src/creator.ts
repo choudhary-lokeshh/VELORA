@@ -483,6 +483,42 @@ export type CreatorProfilePublicationRequest = z.infer<
  * no AUTH subject, no consumer identifier, no lifecycle state, no moderation
  * state, no counts, and nothing purchasable.
  */
+/**
+ * One creator, as a directory row.
+ *
+ * Smaller than the page projection deliberately: a row needs a name, a handle, a
+ * portrait, and enough words to decide whether to open it. Links, the exact
+ * publication instant, and everything else belong on the page itself, and
+ * publishing them per row would make a listing a way to read a hundred pages
+ * without opening one.
+ */
+export const publicCreatorSummarySchema = z
+  .object({
+    avatar: z.object({ id: z.uuid() }).strict().optional(),
+    bio: z.string().max(maximumCreatorBioLength).optional(),
+    displayName: z
+      .string()
+      .min(minimumCreatorDisplayNameLength)
+      .max(maximumCreatorDisplayNameLength),
+    handle: creatorHandleSchema,
+  })
+  .strict();
+
+/**
+ * A page of published creator pages, newest first.
+ *
+ * The ordering is publication order and says so. There is no ranking claim
+ * here, no popularity, no follower count, and nothing purchasable: a listing
+ * that could be bought into would be the first place on this platform where
+ * money moved attention, and there is no field for it.
+ */
+export const publicCreatorDirectoryResponseSchema = z
+  .object({
+    creators: z.array(publicCreatorSummarySchema).max(50),
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+
 export const publicCreatorResponseSchema = z
   .object({
     /**

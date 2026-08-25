@@ -1027,6 +1027,12 @@ export function createApplication(
       apiRoutePaths.creatorProfile,
       admitted(async (input) => creators.profileRoutes.saveProfile(input)),
     )
+    .get(
+      apiRoutePaths.publicCreatorDirectory,
+      admitted(async (input) =>
+        creators.profileRoutes.getPublicDirectory(input),
+      ),
+    )
     .post(
       apiRoutePaths.creatorProfileMedia,
       admitted(async (input) => creators.profileRoutes.startMediaUpload(input)),

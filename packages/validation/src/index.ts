@@ -10,6 +10,7 @@ import {
   creatorProfileMediaRequestSchema,
   creatorProfilePublicationRequestSchema,
   creatorProfileResponseSchema,
+  publicCreatorDirectoryResponseSchema,
   publicCreatorResponseSchema,
   saveCreatorProfileRequestSchema,
 } from './creator.js';
@@ -302,6 +303,7 @@ export const apiRoutePaths = {
   creatorProfileMediaRemoval: '/v1/creator/profile/media/removal',
   creatorProfilePublication: '/v1/creator/profile/publication',
   publicCreator: '/v1/creators',
+  publicCreatorDirectory: '/v1/creators/directory',
   publicCreatorCatalog: '/v1/creators/catalog',
   publicCreatorClubs: '/v1/creators/clubs',
   discoveryCandidates: '/v1/discovery/candidates',
@@ -461,6 +463,7 @@ export const apiSchemas = {
   PublicCreatorCatalogResponse: publicCreatorCatalogResponseSchema,
   SaveCreatorContentRequest: saveCreatorContentRequestSchema,
   CreatorProfileResponse: creatorProfileResponseSchema,
+  PublicCreatorDirectoryResponse: publicCreatorDirectoryResponseSchema,
   PublicCreatorResponse: publicCreatorResponseSchema,
   SaveCreatorProfileRequest: saveCreatorProfileRequestSchema,
   OnboardingStateResponse: onboardingStateResponseSchema,
@@ -1553,6 +1556,29 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Publishing is a decision about who may see something, so it is never a side effect of saving. Only an active creator may publish; archiving withdraws an item without destroying the record, and a concurrent transition is refused rather than applied twice.',
+  },
+  {
+    method: 'get',
+    operationId: 'getPublicCreatorDirectory',
+    path: apiRoutePaths.publicCreatorDirectory,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this listing',
+        name: 'cursor',
+      },
+      { description: 'Maximum creators to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Published pages of active creators, most recently published first.',
+        schemaName: 'PublicCreatorDirectoryResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The listing a person browses instead of having to know a handle. It carries exactly what a row needs — a name, a handle, a portrait reference, and a bio — and applies the same conditions the page itself does, so a draft page, a suspended creator, and a handle nobody holds are all simply absent rather than listed and then refused. Ordering is publication order and nothing else: no popularity, no follower count, and nothing purchasable participates, in the response or in the schema behind it.',
   },
   {
     method: 'get',

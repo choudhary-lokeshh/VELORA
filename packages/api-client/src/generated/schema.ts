@@ -614,6 +614,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/creators/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The listing a person browses instead of having to know a handle. It carries exactly what a row needs — a name, a handle, a portrait reference, and a bio — and applies the same conditions the page itself does, so a draft page, a suspended creator, and a handle nobody holds are all simply absent rather than listed and then refused. Ordering is publication order and nothing else: no popularity, no follower count, and nothing purchasable participates, in the response or in the schema behind it. */
+        get: operations["getPublicCreatorDirectory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/creators/catalog": {
         parameters: {
             query?: never;
@@ -3106,6 +3123,18 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             version: number;
+        };
+        PublicCreatorDirectoryResponse: {
+            creators: {
+                avatar?: {
+                    /** Format: uuid */
+                    id: string;
+                };
+                bio?: string;
+                displayName: string;
+                handle: string;
+            }[];
+            nextCursor?: string;
         };
         PublicCreatorResponse: {
             avatar?: {
@@ -8228,6 +8257,82 @@ export interface operations {
             };
             /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
             422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getPublicCreatorDirectory: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this listing */
+                cursor?: string;
+                /** @description Maximum creators to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published pages of active creators, most recently published first. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicCreatorDirectoryResponse"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
                 headers: {
                     /** @description Request correlation identifier */
                     "x-correlation-id"?: string;

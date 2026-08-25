@@ -1,4 +1,14 @@
-import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import type { CreatorProfileMediaSlot } from '@velora/validation';
@@ -319,6 +329,61 @@ export class CreatorProfileRepository {
       links: await this.linksFor(executor, profile.creatorId),
       profile,
     };
+  }
+
+  /**
+   * One page of published creator pages, newest first.
+   *
+   * The same conditions `findPublishedByHandle` applies, evaluated once for a
+   * page rather than once per handle: an active capability and a published
+   * profile, and nothing else. There is no popularity, no follower count, no
+   * spend, and no boost in the ordering or in the schema behind it, so no future
+   * change can quietly buy a position here without adding one.
+   *
+   * Keyset on the publication instant with the identifier breaking a tie.
+   * Without the tie-break two pages published in the same millisecond would sit
+   * either side of a boundary and one of them would be delivered twice or not
+   * at all.
+   */
+  async listPublished(
+    executor: AnyExecutor,
+    input: {
+      readonly after:
+        { readonly id: string; readonly moment: Date } | undefined;
+      readonly limit: number;
+    },
+  ): Promise<CreatorProfileRow[]> {
+    const rows = await executor
+      .select({ profile: creatorProfiles })
+      .from(creatorProfiles)
+      .innerJoin(
+        creatorAccounts,
+        and(
+          eq(creatorAccounts.id, creatorProfiles.creatorId),
+          eq(creatorAccounts.status, 'active'),
+        ),
+      )
+      .where(
+        and(
+          eq(creatorProfiles.publication, 'published'),
+          isNotNull(creatorProfiles.publishedAt),
+          input.after === undefined
+            ? undefined
+            : or(
+                lt(creatorProfiles.publishedAt, input.after.moment),
+                and(
+                  eq(creatorProfiles.publishedAt, input.after.moment),
+                  lt(creatorProfiles.creatorId, input.after.id),
+                ),
+              ),
+        ),
+      )
+      .orderBy(
+        desc(creatorProfiles.publishedAt),
+        desc(creatorProfiles.creatorId),
+      )
+      .limit(input.limit);
+    return rows.map((row) => row.profile);
   }
 
   private async linksFor(

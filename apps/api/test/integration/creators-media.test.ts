@@ -457,6 +457,102 @@ describe('what a visitor is shown', () => {
   });
 });
 
+describe('the creator directory', () => {
+  it('lists published pages with their ready avatars, newest first', async () => {
+    // Order matters: the second one published is the first one listed.
+    await publishedCreator('dir-one@velora.test', 'dir-one');
+    const second = await publishedCreator('dir-two@velora.test', 'dir-two');
+    const avatar = await addPageImage(second, 'avatar');
+
+    const listing = await jsonOf<{
+      creators: { avatar?: { id: string }; handle: string }[];
+    }>(
+      await handle(
+        new Request('http://api.test/v1/creators/directory?pageSize=10', {
+          headers: { origin: testConsumerOrigin },
+        }),
+      ),
+    );
+
+    expect(listing.creators.map((one) => one.handle)).toEqual([
+      'dir-two',
+      'dir-one',
+    ]);
+    expect(listing.creators[0]?.avatar).toEqual({ id: avatar });
+    expect(listing.creators[1]?.avatar).toBeUndefined();
+  });
+
+  it('omits a page its creator has not published', async () => {
+    const studio = await publishedCreator('dir-draft@velora.test', 'dir-draft');
+    const profile = await jsonOf<{ version: number }>(
+      await handle(get(studio, '/v1/creator/profile')),
+    );
+    await handle(
+      post(studio, '/v1/creator/profile/publication', {
+        publication: 'draft',
+        version: profile.version,
+      }),
+    );
+
+    const listing = await jsonOf<{ creators: { handle: string }[] }>(
+      await handle(
+        new Request('http://api.test/v1/creators/directory', {
+          headers: { origin: testConsumerOrigin },
+        }),
+      ),
+    );
+
+    expect(listing.creators.map((one) => one.handle)).not.toContain(
+      'dir-draft',
+    );
+  });
+
+  it('pages without repeating or losing a creator', async () => {
+    for (let index = 0; index < 5; index += 1) {
+      await publishedCreator(
+        `page-${String(index)}@velora.test`,
+        `page-${String(index)}`,
+      );
+    }
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let request = 0; request < 5; request += 1) {
+      const page = await jsonOf<{
+        creators: { handle: string }[];
+        nextCursor?: string;
+      }>(
+        await handle(
+          new Request(
+            `http://api.test/v1/creators/directory?pageSize=2${
+              cursor === undefined
+                ? ''
+                : `&cursor=${encodeURIComponent(cursor)}`
+            }`,
+            { headers: { origin: testConsumerOrigin } },
+          ),
+        ),
+      );
+      seen.push(...page.creators.map((one) => one.handle));
+      cursor = page.nextCursor;
+      if (cursor === undefined) break;
+    }
+
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+  });
+
+  it('refuses a cursor that was tampered with rather than restarting', async () => {
+    const refused = await handle(
+      new Request('http://api.test/v1/creators/directory?cursor=not-a-cursor', {
+        headers: { origin: testConsumerOrigin },
+      }),
+    );
+
+    expect(refused.status).toBe(422);
+  });
+});
+
 describe('a catalog item carries the images its creator attached', () => {
   async function draftItem(studio: Studio, title: string): Promise<string> {
     const created = await handle(

@@ -258,6 +258,39 @@ export class CreatorProfileMediaService {
   }
 
   /**
+   * The ready avatar for each of a page of creators, or nothing for one that
+   * has none.
+   *
+   * One batched readiness question for the whole listing rather than one per
+   * row, and ready only: a directory row shows a portrait or a monogram, and an
+   * image still being decided has nothing to render either way.
+   */
+  async describeMany(
+    profiles: readonly {
+      readonly avatarMediaAssetId: string | null;
+      readonly creatorId: string;
+    }[],
+  ): Promise<ReadonlyMap<string, string>> {
+    const wanted = profiles.filter((one) => one.avatarMediaAssetId !== null);
+    const found = new Map<string, string>();
+    if (wanted.length === 0) return found;
+
+    const readiness = await this.dependencies.media.describeReadiness({
+      assetIds: wanted.map((one) => one.avatarMediaAssetId ?? ''),
+    });
+    const ready = new Set(
+      readiness
+        .filter((one) => one.state === 'ready')
+        .map((one) => one.assetId),
+    );
+    for (const profile of wanted) {
+      const assetId = profile.avatarMediaAssetId ?? '';
+      if (ready.has(assetId)) found.set(profile.creatorId, assetId);
+    }
+    return found;
+  }
+
+  /**
    * What the creator's own page images currently are.
    *
    * One batched question to the media platform rather than a cached projection:
