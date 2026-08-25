@@ -8,6 +8,21 @@
 
 What the Creator Studio product interface froze with, what it deliberately does not do, and what unfreezes the rest. Companion to the [media](13-media-freeze-report.md), [identity](14-identity-freeze-report.md), [RTC](16-rtc-freeze-report.md), [notifications](17-notifications-freeze-report.md), and [Consumer Web](18-consumer-web-freeze-report.md) reports, written to the same rule: architecture that is finished is described as finished, and a capability that cannot run says so in its own words.
 
+## Superseded since the freeze
+
+One claim in this report is no longer true. **Creator imagery exists.** A creator
+can add an avatar and a cover to their page and up to six images to a catalog
+item, and every surface that renders a creator — the public page, the catalog,
+and this workspace's own preview — shows them. Every sentence below saying no
+creator image can be added or shown describes what was true at this freeze; the
+decision that closed it is recorded in
+[DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), and
+[CREATORS](../domains/creators.md) and
+[PRIVATE CLUBS](../domains/private-clubs.md) carry the rules.
+
+Nothing else here changed. The storage and delivery **provider** decisions are
+untouched and still open, so a deployed environment still serves nothing.
+
 ## What this work owns
 
 The Creator Studio client. Two things behind it changed, both because the client found them and neither because the client was inconvenient: `packages/creator-client` bound the paging parameters the contract already published for clubs, memberships, and offers, and one API response mapper now emits a field the contract already published and the row already held. No route, table, migration, or authorization rule changed, and no dependency was added anywhere.

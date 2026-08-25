@@ -42,4 +42,24 @@ Creator manages only own club/content/pricing within policy; subscriber sees own
 
 ## Phase/events/open questions
 
+## Item images
+
+A catalog item holds up to six images in dense zero-based positions, and PRIVATE
+CLUBS owns the attachment — which asset sits at which position on which item —
+and nothing else. `POST /v1/creator/content/media` reserves one against an item,
+`.../completion` confirms the bytes, and `.../removal` detaches one and frees its
+position without renumbering the others.
+
+The attachment is what makes an item's images follow the item's own rules, and it
+is asked at the moment an address is issued rather than remembered: a draft's
+images are deliverable to nobody, a public published item's are public, a
+members-only item's are deliverable to whoever currently holds a live membership
+of that club, and an archived item's stop being deliverable the moment it is
+withdrawn. None of that is a second rule about images; it is the same rule the
+item already has.
+
+A visitor's catalog carries references to ready images only. The creator's own
+listing carries every attachment with its state, because that is the person who
+can do something about one that was refused.
+
 Phase 2 pilot: club/subscription/locked content/PPV only after decisions. Events: club/content/membership/entitlement lifecycle. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: subscription grace/cancellation/refund linkage, tiering, audience limits, content taxonomy and country rules. See [creator lifecycle](../flows/creator-lifecycle-content.md), [creator entitlement](../flows/creator-entitlement.md), [creator/content gates](../compliance/03-creator-content-gates.md), [BILLING](billing.md), [media security](../security/04-media-upload-delivery.md).

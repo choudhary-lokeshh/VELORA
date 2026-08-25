@@ -18,6 +18,38 @@ CREATORS owns the creator public profile and the canonical handle that addresses
 
 Active creator may manage own approved business profile and request club capability. Revocation/suspension publishes event for PRIVATE CLUBS, PAYOUTS, and Admin to restrict affected operations. Creator suspension does not by itself suspend the person's consumer capability; a global restriction is a separate TRUST & SAFETY decision.
 
+## Page images
+
+A creator page has two image slots — an avatar and a cover — and CREATORS owns
+which asset plays which part and nothing else. What the bytes are, whether they
+decoded, which derivatives exist, and whether anybody may be served them all
+belong to [MEDIA](media.md) and to the association adapter this domain publishes
+to it.
+
+Three routes, and each takes the same three steps every image on this platform
+takes: `POST /v1/creator/profile/media` reserves one image for one slot,
+`.../completion` tells the platform the bytes are there, and `.../removal`
+detaches one. The client never declares what it uploaded; the platform decides
+that from the stored object.
+
+**Reserving replaces.** A slot that already holds an image points at the new
+asset immediately and the old bytes are owed a deletion, so the slot is empty on
+the page until the new image is ready. Keeping the old image visible until its
+replacement is decided would need a second column per slot and a rule for what
+happens when the replacement is refused, and it would leave a creator looking at
+an avatar they have already replaced.
+
+**A visitor gets references to ready images and nothing else.** A slot holding an
+image that is still being decided is absent from the public projection rather
+than reported as pending: a page is owed to a visitor, its author's pipeline is
+not. The creator's own projection carries every slot with its state, because
+that is the person who has to be able to act on it.
+
+The version on a profile is not part of an image write and is not bumped by one.
+It guards the text a creator wrote against a second tab overwriting work it never
+saw; an image is a different axis, and refusing an upload because another tab had
+saved a bio would be a conflict about nothing.
+
 ## Security and compliance
 
 Creator role, identity verification, age verification, payout readiness, and content eligibility are separate predicates. Creator authority is carried by the Creator Studio audience alone; a Consumer Web, Consumer Mobile, or Platform Admin credential is refused before any creator lookup happens on its behalf. Least-privilege Studio authorization limits actor to own creator entity, and no creator endpoint accepts a creator identifier from a caller — the acting capability is always the one the presented credential resolves to. Creator status is never trusted from client input. Exactly one capability exists per principal under concurrency, enforced by a database uniqueness constraint rather than a lock. Sensitive evidence has restricted access, purpose limitation, retention, audit, and no consumer exposure. Duplicate verification callbacks are deduped; competing review actions require version/approval guard.
