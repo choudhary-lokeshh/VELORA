@@ -537,6 +537,85 @@ describe('a catalog item carries the images its creator attached', () => {
     ]);
   });
 
+  it('serves a published public item’s image to a visitor with no session', async () => {
+    const studio = await publishedCreator('served@velora.test', 'served-page');
+    const contentId = await draftItem(studio, 'An item somebody can see');
+    const reserved = await jsonOf<Capability>(
+      await handle(post(studio, '/v1/creator/content/media', { contentId })),
+    );
+    await putBytes(reserved);
+    await handle(
+      post(studio, '/v1/creator/content/media/completion', {
+        mediaId: reserved.mediaId,
+      }),
+    );
+    await settle();
+    const own = await jsonOf<{ content: { version: number }[] }>(
+      await handle(get(studio, '/v1/creator/content')),
+    );
+    await handle(
+      post(studio, '/v1/creator/content/lifecycle', {
+        contentId,
+        lifecycle: 'published',
+        version: own.content[0]?.version ?? 1,
+      }),
+    );
+
+    const delivered = await handle(
+      new Request('http://api.test/v1/media/deliveries', {
+        body: JSON.stringify({ assetIds: [reserved.mediaId], variant: 'card' }),
+        headers: {
+          'content-type': 'application/json',
+          origin: testConsumerOrigin,
+        },
+        method: 'POST',
+      }),
+    );
+
+    // The assertion the catalog projection cannot make. A reference published
+    // beside an item proves the attachment exists; only an address proves the
+    // asset was reserved under the domain whose adapter decides it, which is
+    // the one thing about this that fails silently.
+    expect(
+      (
+        await jsonOf<{ deliveries: { assetId: string }[] }>(delivered)
+      ).deliveries.map((one) => one.assetId),
+    ).toEqual([reserved.mediaId]);
+  });
+
+  it('serves nothing from an item its creator has not published', async () => {
+    const studio = await publishedCreator(
+      'unpublished@velora.test',
+      'unpub-page',
+    );
+    const contentId = await draftItem(studio, 'Still a draft');
+    const reserved = await jsonOf<Capability>(
+      await handle(post(studio, '/v1/creator/content/media', { contentId })),
+    );
+    await putBytes(reserved);
+    await handle(
+      post(studio, '/v1/creator/content/media/completion', {
+        mediaId: reserved.mediaId,
+      }),
+    );
+    await settle();
+
+    const delivered = await handle(
+      new Request('http://api.test/v1/media/deliveries', {
+        body: JSON.stringify({ assetIds: [reserved.mediaId], variant: 'card' }),
+        headers: {
+          'content-type': 'application/json',
+          origin: testConsumerOrigin,
+        },
+        method: 'POST',
+      }),
+    );
+
+    expect(
+      (await jsonOf<{ deliveries: unknown[] }>(delivered)).deliveries,
+    ).toEqual([]);
+  });
+
   it('refuses to attach an image to another creator’s item', async () => {
     const owner = await publishedCreator('owns@velora.test', 'owns-page');
     const other = await publishedCreator('nope@velora.test', 'nope-page');

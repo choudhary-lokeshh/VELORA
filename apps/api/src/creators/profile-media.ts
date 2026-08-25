@@ -38,7 +38,14 @@ export interface CreatorMediaPort {
     readonly assetClass:
       'creator_avatar_image' | 'creator_content_image' | 'creator_cover_image';
     readonly idempotencyKey: string;
-    readonly ownerDomain: 'creators';
+    /**
+     * Which domain reserved the asset, and therefore which adapter MEDIA routes
+     * a delivery decision to. A page image is CREATORS'; an item attachment is
+     * PRIVATE CLUBS'. Getting this wrong does not fail loudly — it produces an
+     * asset the routed association has never heard of, which denies every
+     * delivery as though it were attached to nothing.
+     */
+    readonly ownerDomain: 'clubs' | 'creators';
     readonly ownerReference: string;
   }): Promise<
     | { readonly asset: { readonly id: string }; readonly kind: 'asset' }
@@ -58,7 +65,7 @@ export interface CreatorMediaPort {
   }): Promise<readonly CreatorMediaReadiness[]>;
   recordUpload(input: {
     readonly assetId: string;
-    readonly ownerDomain: 'creators';
+    readonly ownerDomain: 'clubs' | 'creators';
     readonly ownerReference: string;
   }): Promise<{ readonly kind: string }>;
   requestDeletion(input: { readonly assetId: string }): Promise<unknown>;

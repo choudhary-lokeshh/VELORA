@@ -82,7 +82,10 @@ export class ContentMediaService {
       // request that reaches the media platform twice resolve to one asset
       // rather than reserving storage twice.
       idempotencyKey: `clubs-content-${crypto.randomUUID()}`,
-      ownerDomain: 'creators',
+      // This domain, not CREATORS. MEDIA routes a delivery decision by the
+      // domain that reserved the asset, and an item attachment is decided by
+      // this domain's adapter — a page image is the one CREATORS answers for.
+      ownerDomain: 'clubs',
       ownerReference: input.creatorId,
     });
     if (reserved.kind === 'storage_unavailable') {
@@ -121,7 +124,7 @@ export class ContentMediaService {
 
     const recorded = await media.recordUpload({
       assetId: input.mediaId,
-      ownerDomain: 'creators',
+      ownerDomain: 'clubs',
       ownerReference: input.creatorId,
     });
     return recorded.kind === 'storage_unavailable'
