@@ -6,6 +6,8 @@ import {
   creatorHandleSchema,
   creatorOnboardingStateResponseSchema,
   creatorPolicyAcknowledgementRequestSchema,
+  creatorMediaReferenceRequestSchema,
+  creatorProfileMediaRequestSchema,
   creatorProfilePublicationRequestSchema,
   creatorProfileResponseSchema,
   publicCreatorResponseSchema,
@@ -78,6 +80,7 @@ import {
   creatorClubListResponseSchema,
   creatorContentLifecycleRequestSchema,
   creatorContentListResponseSchema,
+  creatorContentMediaRequestSchema,
   issueClubInviteRequestSchema,
   publicClubListResponseSchema,
   publicCreatorCatalogResponseSchema,
@@ -109,6 +112,7 @@ import {
 import {
   mediaDeliveryListResponseSchema,
   mediaDeliveryRequestSchema,
+  mediaUploadCapabilitySchema,
 } from './media.js';
 import {
   callActionRequestSchema,
@@ -289,7 +293,13 @@ export const apiRoutePaths = {
   creatorClubs: '/v1/creator/clubs',
   creatorContent: '/v1/creator/content',
   creatorContentLifecycle: '/v1/creator/content/lifecycle',
+  creatorContentMedia: '/v1/creator/content/media',
+  creatorContentMediaCompletion: '/v1/creator/content/media/completion',
+  creatorContentMediaRemoval: '/v1/creator/content/media/removal',
   creatorProfile: '/v1/creator/profile',
+  creatorProfileMedia: '/v1/creator/profile/media',
+  creatorProfileMediaCompletion: '/v1/creator/profile/media/completion',
+  creatorProfileMediaRemoval: '/v1/creator/profile/media/removal',
   creatorProfilePublication: '/v1/creator/profile/publication',
   publicCreator: '/v1/creators',
   publicCreatorCatalog: '/v1/creators/catalog',
@@ -475,8 +485,12 @@ export const apiSchemas = {
   Message: messageSchema,
   MessageListResponse: messageListResponseSchema,
   SendMessageRequest: sendMessageRequestSchema,
+  CreatorContentMediaRequest: creatorContentMediaRequestSchema,
+  CreatorMediaReferenceRequest: creatorMediaReferenceRequestSchema,
+  CreatorProfileMediaRequest: creatorProfileMediaRequestSchema,
   MediaDeliveryListResponse: mediaDeliveryListResponseSchema,
   MediaDeliveryRequest: mediaDeliveryRequestSchema,
+  MediaUploadCapability: mediaUploadCapabilitySchema,
   MarkNotificationsReadRequest: markNotificationsReadRequestSchema,
   NotificationListResponse: notificationListResponseSchema,
   NotificationPreferencesResponse: notificationPreferencesResponseSchema,
@@ -1395,6 +1409,130 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'Everything starts as a draft and nothing a creator writes becomes visible by being written. An edit carries the version it was read at, so a second tab cannot overwrite work it never saw, and an item identifier that belongs to another creator is answered exactly as one that does not exist.',
+  },
+  {
+    method: 'post',
+    operationId: 'startCreatorProfileMediaUpload',
+    path: apiRoutePaths.creatorProfileMedia,
+    requestSchemaName: 'CreatorProfileMediaRequest',
+    responses: {
+      '201': {
+        description:
+          'A short-lived capability to write one object, and the reference the image will be known by.',
+        schemaName: 'MediaUploadCapability',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': mediaStorageUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Reserves one image for one page slot. A slot that already holds an image is replaced immediately and the bytes it held are owed a deletion, so the slot is empty on the page until the new image is ready — which is the honest state rather than showing the old one while its replacement is still being decided.',
+  },
+  {
+    method: 'post',
+    operationId: 'completeCreatorProfileMediaUpload',
+    path: apiRoutePaths.creatorProfileMediaCompletion,
+    requestSchemaName: 'CreatorMediaReferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'The bytes were accepted for inspection. The profile is returned.',
+        schemaName: 'CreatorProfileResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': mediaStorageUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      "The platform decides the object's type, size, and acceptability from the stored bytes. A client never declares what it uploaded.",
+  },
+  {
+    method: 'post',
+    operationId: 'removeCreatorProfileMedia',
+    path: apiRoutePaths.creatorProfileMediaRemoval,
+    requestSchemaName: 'CreatorMediaReferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'The image no longer belongs to the page. The profile is returned.',
+        schemaName: 'CreatorProfileResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Detaching is immediate and the bytes are owed a deletion the media platform records durably. A published page loses the image at the next delivery decision rather than at the next cache expiry, because there is no durable address to expire.',
+  },
+  {
+    method: 'post',
+    operationId: 'startCreatorContentMediaUpload',
+    path: apiRoutePaths.creatorContentMedia,
+    requestSchemaName: 'CreatorContentMediaRequest',
+    responses: {
+      '201': {
+        description:
+          'A short-lived capability to write one object, and the reference the image will be known by.',
+        schemaName: 'MediaUploadCapability',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': mediaStorageUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Reserves one image against one item, in the next free position. An item identifier belonging to another creator is answered exactly as one that does not exist, and an item already holding the maximum is refused rather than silently reordered.',
+  },
+  {
+    method: 'post',
+    operationId: 'completeCreatorContentMediaUpload',
+    path: apiRoutePaths.creatorContentMediaCompletion,
+    requestSchemaName: 'CreatorMediaReferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'The bytes were accepted for inspection. The item is returned.',
+        schemaName: 'CreatorContentListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': mediaStorageUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      "The platform decides the object's type, size, and acceptability from the stored bytes. A client never declares what it uploaded.",
+  },
+  {
+    method: 'post',
+    operationId: 'removeCreatorContentMedia',
+    path: apiRoutePaths.creatorContentMediaRemoval,
+    requestSchemaName: 'CreatorMediaReferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'The image no longer belongs to the item. The item is returned.',
+        schemaName: 'CreatorContentListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      '409': creatorProfileConflictResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Detaching frees the position it held without renumbering the others, and the bytes are owed a deletion the media platform records durably.',
   },
   {
     method: 'post',

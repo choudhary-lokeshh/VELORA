@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { mediaOwnerStateSchema, mediaRejectionReasonSchema } from './media.js';
+import { maximumContentMedia } from './profile-bounds.js';
+
 import { creatorHandleSchema } from './creator.js';
 
 /**
@@ -31,7 +34,7 @@ export const maximumCreatorContentBodyLength = 20_000;
  * consumer profile already has, and neither number is a product ceiling
  * anybody has asked to raise.
  */
-export const maximumContentMedia = 6;
+export { maximumContentMedia };
 
 /**
  * Content lifecycle.
@@ -76,6 +79,21 @@ export type CreatorContentVisibilityValue = z.infer<
 >;
 
 /** The creator's own view of one item, including a draft nobody else can see. */
+/** One image attached to a content item, as its creator sees it. */
+export const creatorContentMediaSchema = z
+  .object({
+    id: z.uuid(),
+    position: z
+      .number()
+      .int()
+      .min(0)
+      .max(maximumContentMedia - 1),
+    rejectionReason: mediaRejectionReasonSchema.optional(),
+    state: mediaOwnerStateSchema,
+    uploadExpiresAt: z.iso.datetime().optional(),
+  })
+  .strict();
+
 export const creatorContentSchema = z
   .object({
     archivedAt: z.iso.datetime().optional(),
@@ -83,6 +101,8 @@ export const creatorContentSchema = z
     clubId: z.uuid().optional(),
     createdAt: z.iso.datetime(),
     id: z.uuid(),
+    /** Attached images in position order, including ones not yet ready. */
+    media: z.array(creatorContentMediaSchema).max(maximumContentMedia),
     lifecycle: creatorContentLifecycleSchema,
     publishedAt: z.iso.datetime().optional(),
     summary: z.string().max(maximumCreatorContentSummaryLength).optional(),
@@ -169,6 +189,16 @@ export const publicCreatorContentSchema = z
   .object({
     body: z.string().max(maximumCreatorContentBodyLength).optional(),
     id: z.uuid(),
+    /**
+     * References to the item's ready images, in position order. Ones that are
+     * not ready are absent rather than reported: a reader is owed the item, not
+     * its author's pipeline.
+     */
+    media: z
+      .array(
+        z.object({ id: z.uuid(), position: z.number().int().min(0) }).strict(),
+      )
+      .max(maximumContentMedia),
     publishedAt: z.iso.datetime(),
     summary: z.string().max(maximumCreatorContentSummaryLength).optional(),
     title: z
@@ -452,3 +482,8 @@ export type PublicClubListResponse = z.infer<
 export const clubIdSchema = z.uuid();
 /** Which item a protected read addresses. */
 export const contentIdSchema = z.uuid();
+
+/** Which content item an upload is being reserved against. */
+export const creatorContentMediaRequestSchema = z
+  .object({ contentId: contentIdSchema })
+  .strict();

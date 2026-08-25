@@ -357,6 +357,7 @@ export function createApplication(
         caller: auth.caller,
         database: ownedDatabase.database,
         eligibility: users.adultStanding,
+        media: media.service,
       });
     // PRIVATE CLUBS depends on CREATORS' published directory and on nothing
     // else, so it is composed immediately after it.
@@ -368,6 +369,7 @@ export function createApplication(
         creatorContext: creators.creatorContext,
         creators: creators.directory,
         database: ownedDatabase.database,
+        media: media.service,
         standing: users.adultStanding,
       });
     // TRUST & SAFETY publishes the eligibility answer DISCOVERY and MESSAGING
@@ -1026,6 +1028,20 @@ export function createApplication(
       admitted(async (input) => creators.profileRoutes.saveProfile(input)),
     )
     .post(
+      apiRoutePaths.creatorProfileMedia,
+      admitted(async (input) => creators.profileRoutes.startMediaUpload(input)),
+    )
+    .post(
+      apiRoutePaths.creatorProfileMediaCompletion,
+      admitted(async (input) =>
+        creators.profileRoutes.completeMediaUpload(input),
+      ),
+    )
+    .post(
+      apiRoutePaths.creatorProfileMediaRemoval,
+      admitted(async (input) => creators.profileRoutes.removeMedia(input)),
+    )
+    .post(
       apiRoutePaths.creatorProfilePublication,
       admitted(async (input) => creators.profileRoutes.setPublication(input)),
     )
@@ -1040,6 +1056,18 @@ export function createApplication(
     .post(
       apiRoutePaths.creatorContent,
       admitted(async (input) => clubs.routes.saveContent(input)),
+    )
+    .post(
+      apiRoutePaths.creatorContentMedia,
+      admitted(async (input) => clubs.routes.startMediaUpload(input)),
+    )
+    .post(
+      apiRoutePaths.creatorContentMediaCompletion,
+      admitted(async (input) => clubs.routes.completeMediaUpload(input)),
+    )
+    .post(
+      apiRoutePaths.creatorContentMediaRemoval,
+      admitted(async (input) => clubs.routes.removeMedia(input)),
     )
     .post(
       apiRoutePaths.creatorContentLifecycle,

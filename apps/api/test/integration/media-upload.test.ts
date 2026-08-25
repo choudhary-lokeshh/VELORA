@@ -131,12 +131,12 @@ describe('MEDIA publishes no upload endpoint of its own', () => {
       ['/v1/media/deliveries'],
     );
 
-    // Every other route that names media is an owning domain's — a profile
-    // slot — or an operator's. The operator set is enumerated rather than
-    // pattern-matched, so a fourth one cannot appear here silently: this
-    // assertion exists to catch a media route arriving without a purpose, and
-    // a filter that let any `/v1/admin/media/...` through would stop doing
-    // that.
+    // Every other route that names media is an owning domain's — a consumer
+    // profile slot, a creator page slot, an item attachment — or an operator's.
+    // Each set is enumerated rather than pattern-matched, so a new one cannot
+    // appear here silently: this assertion exists to catch a media route
+    // arriving without a purpose, and a filter that let any
+    // `/v1/creator/.../media` through would stop doing that.
     expect(
       paths
         .filter(
@@ -151,6 +151,9 @@ describe('MEDIA publishes no upload endpoint of its own', () => {
       '/v1/admin/media/asset',
       '/v1/admin/media/purge',
       '/v1/admin/media/state',
+      '/v1/creator/content/media',
+      '/v1/creator/content/media/completion',
+      '/v1/creator/content/media/removal',
     ]);
 
     // Nothing escapes the published contract except the `local-test` storage

@@ -1,10 +1,22 @@
-import { and, asc, desc, eq, exists, isNull, lt, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import type { CatalogCursor } from './cursor.js';
-import type {
-  CreatorContentLifecycle,
-  CreatorContentVisibility,
+import {
+  maximumContentMedia,
+  type CreatorContentLifecycle,
+  type CreatorContentVisibility,
 } from './policy.js';
 import { clubs, creatorContent, creatorContentMedia } from './schema.js';
 
@@ -263,6 +275,123 @@ export class ClubsRepository {
       .where(eq(creatorContentMedia.contentId, contentId))
       .orderBy(asc(creatorContentMedia.position));
     return rows.map((row) => row.mediaAssetId);
+  }
+
+  /** Attached images for a page of items, in one query rather than per row. */
+  async listContentMedia(
+    executor: AnyExecutor,
+    contentIds: readonly string[],
+  ): Promise<
+    readonly {
+      readonly contentId: string;
+      readonly mediaAssetId: string;
+      readonly position: number;
+    }[]
+  > {
+    if (contentIds.length === 0) return [];
+    return executor
+      .select({
+        contentId: creatorContentMedia.contentId,
+        mediaAssetId: creatorContentMedia.mediaAssetId,
+        position: creatorContentMedia.position,
+      })
+      .from(creatorContentMedia)
+      .where(inArray(creatorContentMedia.contentId, [...contentIds]))
+      .orderBy(
+        asc(creatorContentMedia.contentId),
+        asc(creatorContentMedia.position),
+      );
+  }
+
+  /**
+   * The item an asset is attached to, and who owns that item.
+   *
+   * Used to answer "is this image yours" without a caller naming an item it
+   * might not own. The asset column is uniquely indexed, so one asset resolves
+   * to one attachment.
+   */
+  async findContentMediaByAsset(
+    executor: AnyExecutor,
+    assetId: string,
+  ): Promise<
+    | {
+        readonly contentId: string;
+        readonly creatorId: string;
+      }
+    | undefined
+  > {
+    const rows = await executor
+      .select({
+        contentId: creatorContentMedia.contentId,
+        creatorId: creatorContent.creatorId,
+      })
+      .from(creatorContentMedia)
+      .innerJoin(
+        creatorContent,
+        eq(creatorContent.id, creatorContentMedia.contentId),
+      )
+      .where(eq(creatorContentMedia.mediaAssetId, assetId))
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Claims the lowest free position on an item for a new asset.
+   *
+   * The partial unique index is the authority rather than this loop: two
+   * concurrent attachments cannot take the same position, and the loser retries
+   * against the positions it can now see. Attempts are bounded by how many
+   * positions there are, so a genuinely full item is reported as full rather
+   * than retried forever.
+   */
+  async attachContentMedia(
+    executor: AnyExecutor,
+    input: {
+      readonly assetId: string;
+      readonly contentId: string;
+      readonly now: Date;
+    },
+  ): Promise<{ readonly position: number } | undefined> {
+    for (let attempt = 0; attempt < maximumContentMedia; attempt += 1) {
+      const taken = await executor
+        .select({ position: creatorContentMedia.position })
+        .from(creatorContentMedia)
+        .where(eq(creatorContentMedia.contentId, input.contentId));
+      const used = new Set(taken.map((row) => row.position));
+      const free = Array.from(
+        { length: maximumContentMedia },
+        (_, index) => index,
+      ).find((position) => !used.has(position));
+      if (free === undefined) return undefined;
+      try {
+        const inserted = await executor
+          .insert(creatorContentMedia)
+          .values({
+            contentId: input.contentId,
+            createdAt: input.now,
+            id: crypto.randomUUID(),
+            mediaAssetId: input.assetId,
+            position: free,
+            updatedAt: input.now,
+          })
+          .returning({ position: creatorContentMedia.position });
+        const row = inserted[0];
+        if (row !== undefined) return row;
+      } catch {
+        // The position was taken between the read and the insert. Look again.
+      }
+    }
+    return undefined;
+  }
+
+  /** Detaches one asset, freeing its position without renumbering the rest. */
+  async detachContentMedia(
+    executor: AnyExecutor,
+    assetId: string,
+  ): Promise<void> {
+    await executor
+      .delete(creatorContentMedia)
+      .where(eq(creatorContentMedia.mediaAssetId, assetId));
   }
 }
 

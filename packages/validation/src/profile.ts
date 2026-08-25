@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { mediaOwnerStateSchema, mediaRejectionReasonSchema } from './media.js';
 import {
   languagePattern,
   maximumBioLength,
@@ -85,30 +86,14 @@ export const profileLanguagesSchema = z
 /**
  * How far an image has got, as its owner sees it.
  *
- * Richer than it was, because the platform now genuinely does more than accept
- * bytes: it works out what they are and then makes the sizes it needs, and a
- * surface that showed "pending" throughout would be telling somebody nothing
- * for the whole time anything is happening.
- *
- * Coarser than the media platform's own lifecycle, deliberately. Whether a
- * worker is decoding or encoding is not a product fact, and publishing it would
- * make every pipeline change a breaking contract change.
+ * The platform's own vocabulary, aliased rather than restated: a creator's cover
+ * and a consumer's photograph go through the same pipeline, so two copies of
+ * this list would be two things to keep in step. The names stay because they are
+ * what the published contract already calls them.
  */
-export const profileMediaStateSchema = z.enum([
-  'pending_upload',
-  'checking',
-  'preparing',
-  'ready',
-  'rejected',
-  'removed',
-]);
+export const profileMediaStateSchema = mediaOwnerStateSchema;
 
-export const profileMediaRejectionReasonSchema = z.enum([
-  'unsupported_type',
-  'too_large',
-  'not_uploaded',
-  'content_rejected',
-]);
+export const profileMediaRejectionReasonSchema = mediaRejectionReasonSchema;
 
 /**
  * A profile image as its owner sees it.

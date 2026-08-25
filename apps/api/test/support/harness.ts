@@ -21,6 +21,25 @@ import {
   type ClubsRuntime,
 } from '../../src/clubs/composition.js';
 import { ClubSafetyDirectory } from '../../src/clubs/safety-directory.js';
+import { CreatorContentMediaAssociation } from '../../src/clubs/content-media-association.js';
+import { CreatorProfileMediaAssociation } from '../../src/creators/profile-media-association.js';
+import { DiscoveryPeerVisibility } from '../../src/discovery/peer-visibility.js';
+import { IntroductionRepository } from '../../src/discovery/introductions.js';
+import { RoutedMediaAssociation } from '../../src/media/publication.js';
+import {
+  RoutedMediaSafetySubjects,
+  SafetyBackedMediaContentSafety,
+  SafetyBackedMediaSafety,
+} from '../../src/media/safety-bridge.js';
+import { ContentSafetyGate } from '../../src/safety/content-safety.js';
+import {
+  DepictedPersonConsentService,
+  UnpublishedConsentPolicy,
+} from '../../src/safety/consent.js';
+import { SafetyDirectory } from '../../src/safety/directory.js';
+import { SafetyEligibility } from '../../src/safety/eligibility.js';
+import { SafetyRepository } from '../../src/safety/repository.js';
+import { ConsumerProfileMediaAssociation } from '../../src/users/profile-media-association.js';
 import {
   createCreatorsRuntime,
   type CreatorsRuntime,
@@ -302,6 +321,14 @@ export function testNotificationsApiRuntime(input: {
 export function testCreatorsRuntime(input: {
   readonly caller: CallerResolver;
   readonly database?: UsersDatabase;
+  /**
+   * The media platform, when a suite is exercising creator imagery.
+   *
+   * Absent means unavailable rather than absent means allowed, the same rule the
+   * application composes under: a suite that has not supplied one gets a
+   * creator surface that refuses every upload.
+   */
+  readonly media?: MediaRuntime;
   readonly now?: () => Date;
   readonly users: UsersRuntime;
 }): CreatorsRuntime {
@@ -309,6 +336,7 @@ export function testCreatorsRuntime(input: {
     caller: input.caller,
     database: input.database ?? drizzle.mock(),
     eligibility: input.users.adultStanding,
+    ...(input.media === undefined ? {} : { media: input.media.service }),
     ...(input.now === undefined ? {} : { now: input.now }),
   });
 }
@@ -323,6 +351,8 @@ export function testClubsRuntime(input: {
   readonly config: ServerConfig;
   readonly creators: CreatorsRuntime;
   readonly database?: UsersDatabase;
+  /** The media platform, on the same rule as the creator runtime above. */
+  readonly media?: MediaRuntime;
   readonly now?: () => Date;
   readonly users: UsersRuntime;
 }): ClubsRuntime {
@@ -332,6 +362,7 @@ export function testClubsRuntime(input: {
     creatorContext: input.creators.creatorContext,
     creators: input.creators.directory,
     database: input.database ?? drizzle.mock(),
+    ...(input.media === undefined ? {} : { media: input.media.service }),
     ...(input.now === undefined ? {} : { now: input.now }),
     standing: input.users.adultStanding,
   });
@@ -601,22 +632,65 @@ export function testProductRuntimes(input: {
   readonly payouts: PayoutsRuntime;
   readonly safety: SafetyRuntime;
 } {
-  // CREATORS and PRIVATE CLUBS first: TRUST & SAFETY consumes two narrow
+  // MEDIA first, exactly as the application composes it: CREATORS and PRIVATE
+  // CLUBS both hold page and item imagery and reach it through MEDIA's
+  // contracts, and MEDIA asks nothing of either in return.
+  //
+  // The three association adapters are the real ones, and the relationship rule
+  // behind the consumer one is DISCOVERY's real rule, because a harness that
+  // denied every delivery would let a suite prove a boundary the application
+  // decides differently. Each is that domain's own code reading its own tables,
+  // and all of them are constructible from the database handle, so the order
+  // here is the application's order rather than a convenience.
+  const mediaDatabase = input.database ?? drizzle.mock();
+  const safetyRepositoryForMedia = new SafetyRepository(mediaDatabase);
+  const safetyEligibilityForMedia = new SafetyEligibility(
+    safetyRepositoryForMedia,
+  );
+  const mediaAssociationRoutes = {
+    clubs: new CreatorContentMediaAssociation(),
+    creators: new CreatorProfileMediaAssociation(),
+    users: new ConsumerProfileMediaAssociation(
+      new DiscoveryPeerVisibility({
+        directory: input.users.directory,
+        introductions: new IntroductionRepository(mediaDatabase),
+        safety: new SafetyDirectory(safetyRepositoryForMedia),
+      }),
+    ),
+  };
+  const media = testMediaRuntime({
+    ...input,
+    association: new RoutedMediaAssociation(mediaAssociationRoutes),
+    safety: new SafetyBackedMediaSafety({
+      content: new SafetyBackedMediaContentSafety(
+        new ContentSafetyGate({
+          consent: new DepictedPersonConsentService({
+            copy: new UnpublishedConsentPolicy(),
+            identityEvidence: new EmptyIdentityDepictedPersonEvidenceReader(),
+            now: input.now ?? (() => new Date()),
+            repository: safetyRepositoryForMedia,
+          }),
+          eligibility: safetyEligibilityForMedia,
+          matureContentEnabled: false,
+          now: input.now ?? (() => new Date()),
+          repository: safetyRepositoryForMedia,
+        }),
+      ),
+      eligibility: safetyEligibilityForMedia,
+      subjects: new RoutedMediaSafetySubjects(mediaAssociationRoutes),
+    }),
+  });
+  // CREATORS and PRIVATE CLUBS next: TRUST & SAFETY consumes two narrow
   // answers from them about what a report may name, and neither consumes
   // anything of SAFETY's, so the order is the contract direction.
-  const creators = testCreatorsRuntime(input);
-  const clubs = testClubsRuntime({ ...input, creators });
+  const creators = testCreatorsRuntime({ ...input, media });
+  const clubs = testClubsRuntime({ ...input, creators, media });
   const safety = testSafetyRuntime({ ...input, creators });
   const discovery = testDiscoveryRuntime({ ...input, safety });
   // BILLING before ADMIN, exactly as the application composes them: an operator
   // reversal is BILLING's decision taken with an operator's authority, so ADMIN
   // receives the service rather than a database of its own.
   const billing = testBillingRuntime({ ...input, clubs, creators });
-  // MEDIA before ADMIN, exactly as the application composes them. An operator
-  // taking an object out of public view owes the cache the news, so ADMIN
-  // receives MEDIA's purge seam and its operational read rather than a media
-  // database of its own.
-  const media = testMediaRuntime(input);
   const identity = testIdentityRuntime(input);
   return {
     admin: testAdminRuntime({

@@ -523,9 +523,14 @@ describe('the public catalog', () => {
     expect(Object.keys(body).toSorted()).toEqual(['content', 'handle']);
     expect(Object.keys(entry ?? {}).toSorted()).toEqual([
       'id',
+      // References, never addresses. An item with no ready image still carries
+      // the field, empty, so a surface never has to distinguish "no images"
+      // from "an older server".
+      'media',
       'publishedAt',
       'title',
     ]);
+    expect(entry?.media).toEqual([]);
     const serialized = JSON.stringify(body);
     for (const absent of [
       'creatorId',

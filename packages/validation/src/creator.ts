@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { mediaOwnerStateSchema, mediaRejectionReasonSchema } from './media.js';
+
 /**
  * CREATORS wire vocabulary.
  *
@@ -366,9 +368,52 @@ export type CreatorProfilePublicationValue = z.infer<
 >;
 
 /** The creator's own view of their profile, including what is not public yet. */
+/**
+ * The two images a creator page has, and what each is for.
+ *
+ * A slot rather than a list, because a page has one avatar and one cover and
+ * they are laid out differently. Adding a third is a design decision with a
+ * layout behind it, not a bound to raise.
+ */
+export const creatorProfileMediaSlotSchema = z.enum(['avatar', 'cover']);
+export type CreatorProfileMediaSlot = z.infer<
+  typeof creatorProfileMediaSlotSchema
+>;
+
+/**
+ * One of a creator's own page images, as the creator sees it.
+ *
+ * There is no URL, for the same reason a consumer's photograph has none:
+ * delivery is authorized and signed per request. A published creator page is
+ * public, so the address its avatar gets is a public one — but it is still
+ * obtained by exchanging this reference rather than published here, because
+ * whether the page is published is a fact that changes.
+ */
+export const creatorProfileMediaSchema = z
+  .object({
+    id: z.uuid(),
+    rejectionReason: mediaRejectionReasonSchema.optional(),
+    slot: creatorProfileMediaSlotSchema,
+    state: mediaOwnerStateSchema,
+    uploadExpiresAt: z.iso.datetime().optional(),
+  })
+  .strict();
+
+/** Which slot an upload is being reserved for. */
+export const creatorProfileMediaRequestSchema = z
+  .object({ slot: creatorProfileMediaSlotSchema })
+  .strict();
+
+/** The image an operation names, by the reference the platform published. */
+export const creatorMediaReferenceRequestSchema = z
+  .object({ mediaId: z.uuid() })
+  .strict();
+
 export const creatorProfileResponseSchema = z
   .object({
     bio: z.string().max(maximumCreatorBioLength).optional(),
+    /** Both page images, in slot order, omitting a slot that holds nothing. */
+    media: z.array(creatorProfileMediaSchema).max(2),
     displayName: z
       .string()
       .min(minimumCreatorDisplayNameLength)
@@ -440,7 +485,14 @@ export type CreatorProfilePublicationRequest = z.infer<
  */
 export const publicCreatorResponseSchema = z
   .object({
+    /**
+     * References to the page's ready images, by slot. A slot whose image is not
+     * ready is absent rather than reported as pending: a visitor with no session
+     * is owed a page, not a status.
+     */
+    avatar: z.object({ id: z.uuid() }).strict().optional(),
     bio: z.string().max(maximumCreatorBioLength).optional(),
+    cover: z.object({ id: z.uuid() }).strict().optional(),
     displayName: z
       .string()
       .min(minimumCreatorDisplayNameLength)

@@ -84,6 +84,58 @@ export const mediaDeliveryListResponseSchema = z
   })
   .strict();
 
+/**
+ * How far an image has got, as the person who added it sees it.
+ *
+ * Coarser than the media platform's own lifecycle, deliberately. Whether a
+ * worker is decoding or encoding is not a product fact, and publishing it would
+ * make every pipeline change a breaking contract change. It is the same
+ * vocabulary for a consumer's profile photograph and a creator's cover, because
+ * it describes what happened to some bytes rather than what they are for.
+ */
+export const mediaOwnerStateSchema = z.enum([
+  'pending_upload',
+  'checking',
+  'preparing',
+  'ready',
+  'rejected',
+  'removed',
+]);
+export type MediaOwnerState = z.infer<typeof mediaOwnerStateSchema>;
+
+/** Why an image was refused, in terms its owner can act on. */
+export const mediaRejectionReasonSchema = z.enum([
+  'unsupported_type',
+  'too_large',
+  'not_uploaded',
+  'content_rejected',
+]);
+export type MediaRejectionReason = z.infer<typeof mediaRejectionReasonSchema>;
+
+/**
+ * A short-lived capability to write exactly one object.
+ *
+ * The client uploads the bytes and then asks the platform to inspect them; it
+ * never declares what it uploaded. Nothing here names an object key, a provider,
+ * or a digest — what leaves the platform is an address, the method, the
+ * ceiling, and the instant it stops working.
+ *
+ * `maximumBytes` is a number rather than a fixed value because the ceiling is a
+ * product decision per kind of image, and a contract that pinned one would be
+ * wrong for the next one.
+ */
+export const mediaUploadCapabilitySchema = z
+  .object({
+    expiresAt: z.iso.datetime(),
+    maximumBytes: z.number().int().positive(),
+    mediaId: z.uuid(),
+    method: z.literal('PUT'),
+    uploadHeaders: z.record(z.string(), z.string()),
+    uploadUrl: z.url(),
+  })
+  .strict();
+export type MediaUploadCapability = z.infer<typeof mediaUploadCapabilitySchema>;
+
 export type MediaDelivery = z.infer<typeof mediaDeliverySchema>;
 export type MediaDeliveryListResponse = z.infer<
   typeof mediaDeliveryListResponseSchema

@@ -1,7 +1,10 @@
 import {
+  creatorMediaReferenceRequestSchema,
+  creatorProfileMediaRequestSchema,
   creatorProfilePublicationRequestSchema,
   creatorProfileResponseSchema,
   creatorPublicPath,
+  mediaUploadCapabilitySchema,
   productErrorCodes,
   publicCreatorResponseSchema,
   saveCreatorProfileRequestSchema,
@@ -14,8 +17,12 @@ import {
   type RouteResult,
 } from '../http/route-kit.js';
 import { requireCreator, type CreatorContextResolver } from './context.js';
+import type {
+  CreatorProfileMediaService,
+  CreatorProfileMediaView,
+} from './profile-media.js';
 import type { CreatorProfileService } from './profile-service.js';
-import type { CreatorProfileRecord } from './repository.js';
+import type { CreatorAccountRow, CreatorProfileRecord } from './repository.js';
 
 /**
  * The creator's own view of their profile. It includes the draft nobody else
@@ -24,11 +31,23 @@ import type { CreatorProfileRecord } from './repository.js';
  */
 function ownProfileBody(
   record: CreatorProfileRecord,
+  media: readonly CreatorProfileMediaView[],
 ): ReturnType<typeof creatorProfileResponseSchema.parse> {
   return creatorProfileResponseSchema.parse({
     ...(record.profile.bio === null ? {} : { bio: record.profile.bio }),
     displayName: record.profile.displayName,
     handle: record.profile.handle,
+    media: media.map((item) => ({
+      id: item.id,
+      ...(item.rejectionReason === undefined
+        ? {}
+        : { rejectionReason: item.rejectionReason }),
+      slot: item.slot,
+      state: item.state,
+      ...(item.uploadExpiresAt === undefined
+        ? {}
+        : { uploadExpiresAt: item.uploadExpiresAt.toISOString() }),
+    })),
     links: record.links.map((link) => ({
       ...(link.label === null ? {} : { label: link.label }),
       url: link.url,
@@ -53,8 +72,20 @@ function ownProfileBody(
  */
 function publicProfileBody(
   record: CreatorProfileRecord,
+  media: readonly CreatorProfileMediaView[],
 ): ReturnType<typeof publicCreatorResponseSchema.parse> {
+  // Ready only. A visitor is owed a page, not its author's pipeline, and an
+  // image that is still being decided has nothing to render.
+  const ready = new Map(
+    media
+      .filter((item) => item.state === 'ready')
+      .map((item) => [item.slot, item]),
+  );
+  const avatar = ready.get('avatar');
+  const cover = ready.get('cover');
   return publicCreatorResponseSchema.parse({
+    ...(avatar === undefined ? {} : { avatar: { id: avatar.id } }),
+    ...(cover === undefined ? {} : { cover: { id: cover.id } }),
     ...(record.profile.bio === null ? {} : { bio: record.profile.bio }),
     displayName: record.profile.displayName,
     handle: record.profile.handle,
@@ -70,6 +101,7 @@ function publicProfileBody(
 
 export interface CreatorProfileRoutesDependencies {
   readonly creatorContext: CreatorContextResolver;
+  readonly media: CreatorProfileMediaService;
   readonly profiles: CreatorProfileService;
 }
 
@@ -90,7 +122,7 @@ export class CreatorProfileRoutes {
     if (record === undefined) {
       return routeFailure(404, productErrorCodes.notFound, input.correlationId);
     }
-    return { body: ownProfileBody(record), status: 200 };
+    return { body: await this.ownBody(record), status: 200 };
   }
 
   async saveProfile(input: RouteRequest): Promise<RouteResult> {
@@ -116,7 +148,7 @@ export class CreatorProfileRoutes {
       return routeFailure(409, productErrorCodes.conflict, input.correlationId);
     }
     return {
-      body: ownProfileBody(outcome.record),
+      body: await this.ownBody(outcome.record),
       status: outcome.created ? 201 : 200,
     };
   }
@@ -147,7 +179,7 @@ export class CreatorProfileRoutes {
     if (outcome.kind === 'conflict') {
       return routeFailure(409, productErrorCodes.conflict, input.correlationId);
     }
-    return { body: ownProfileBody(outcome.record), status: 200 };
+    return { body: await this.ownBody(outcome.record), status: 200 };
   }
 
   /**
@@ -168,6 +200,124 @@ export class CreatorProfileRoutes {
     if (record === undefined) {
       return routeFailure(404, productErrorCodes.notFound, input.correlationId);
     }
-    return { body: publicProfileBody(record), status: 200 };
+    return {
+      body: publicProfileBody(
+        record,
+        await this.dependencies.media.describe(record),
+      ),
+      status: 200,
+    };
+  }
+
+  /**
+   * Reserves one page image.
+   *
+   * Refusals collapse deliberately: a capability that may not edit, a profile
+   * that does not exist yet, and a reservation the media platform refused are
+   * one answer, because the only one a creator can act on is the last and the
+   * surface already knows the first two from state it holds.
+   */
+  async startMediaUpload(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await requireCreator(
+      this.dependencies.creatorContext,
+      input,
+    );
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(creatorProfileMediaRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+
+    const outcome = await this.dependencies.media.startUpload({
+      account: resolved.context.account,
+      slot: parsed.value.slot,
+    });
+    if (outcome.kind === 'storage_unavailable') {
+      return routeFailure(
+        503,
+        productErrorCodes.dependencyUnavailable,
+        input.correlationId,
+      );
+    }
+    if (outcome.kind !== 'upload_created') {
+      return routeFailure(409, productErrorCodes.conflict, input.correlationId);
+    }
+    return {
+      body: mediaUploadCapabilitySchema.parse({
+        expiresAt: outcome.capability.expiresAt.toISOString(),
+        maximumBytes: outcome.capability.maximumBytes,
+        mediaId: outcome.capability.assetId,
+        method: outcome.capability.method,
+        uploadHeaders: outcome.capability.headers,
+        uploadUrl: outcome.capability.url,
+      }),
+      status: 201,
+    };
+  }
+
+  async completeMediaUpload(input: RouteRequest): Promise<RouteResult> {
+    return this.mediaAction(input, async (account, mediaId) =>
+      this.dependencies.media.completeUpload({ account, mediaId }),
+    );
+  }
+
+  async removeMedia(input: RouteRequest): Promise<RouteResult> {
+    return this.mediaAction(input, async (account, mediaId) =>
+      this.dependencies.media.remove({ account, mediaId }),
+    );
+  }
+
+  /** Both image actions name one image and answer with the whole profile. */
+  private async mediaAction(
+    input: RouteRequest,
+    work: (
+      account: CreatorAccountRow,
+      mediaId: string,
+    ) => Promise<{ readonly kind: string }>,
+  ): Promise<RouteResult> {
+    const resolved = await requireCreator(
+      this.dependencies.creatorContext,
+      input,
+    );
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(
+      creatorMediaReferenceRequestSchema,
+      input.body,
+    );
+    if (!parsed.ok) return this.invalid(input);
+
+    const outcome = await work(resolved.context.account, parsed.value.mediaId);
+    if (outcome.kind === 'storage_unavailable') {
+      return routeFailure(
+        503,
+        productErrorCodes.dependencyUnavailable,
+        input.correlationId,
+      );
+    }
+    if (outcome.kind !== 'accepted') {
+      return routeFailure(409, productErrorCodes.conflict, input.correlationId);
+    }
+    const record = await this.dependencies.profiles.findOwn(
+      resolved.context.creatorId,
+    );
+    if (record === undefined) {
+      return routeFailure(404, productErrorCodes.notFound, input.correlationId);
+    }
+    return { body: await this.ownBody(record), status: 200 };
+  }
+
+  private async ownBody(
+    record: CreatorProfileRecord,
+  ): Promise<ReturnType<typeof creatorProfileResponseSchema.parse>> {
+    return ownProfileBody(
+      record,
+      await this.dependencies.media.describe(record),
+    );
+  }
+
+  private invalid(input: RouteRequest): RouteResult {
+    return routeFailure(
+      422,
+      productErrorCodes.validationFailed,
+      input.correlationId,
+    );
   }
 }

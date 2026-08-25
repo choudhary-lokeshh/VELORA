@@ -5,6 +5,10 @@ import {
 } from '@velora/config/server';
 
 import type { CreatorContextResolver } from '../creators/context.js';
+import {
+  UnavailableCreatorMedia,
+  type CreatorMediaPort,
+} from '../creators/profile-media.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import {
   LocalTestBillingEntitlement,
@@ -15,6 +19,7 @@ import { ClubCommercialDirectory } from './commercial.js';
 import { ClubRepository } from './club-repository.js';
 import { ClubRoutes } from './club-routes.js';
 import { ClubService, type ClubMemberStandingPort } from './club-service.js';
+import { ContentMediaService } from './content-media.js';
 import type { ContentCreatorPort } from './creators.js';
 import { ClubsRepository, type ClubsDatabase } from './repository.js';
 import { ClubsRoutes } from './routes.js';
@@ -23,6 +28,8 @@ import { ClubsService } from './service.js';
 export interface ClubsRuntime {
   /** The future commercial-entitlement seam. Refuses in every environment. */
   readonly billing: BillingEntitlementPort;
+  /** Images attached to catalog items, reached only through MEDIA's contracts. */
+  readonly contentMedia: ContentMediaService;
   readonly clubRepository: ClubRepository;
   readonly clubRoutes: ClubRoutes;
   readonly clubs: ClubService;
@@ -61,6 +68,14 @@ export function createClubsRuntime(input: {
   readonly creatorContext: CreatorContextResolver;
   /** The published CREATORS directory contract. */
   readonly creators: ContentCreatorPort;
+  /**
+   * The media platform, reached only through its published contracts.
+   *
+   * Optional, and absent means unavailable rather than absent means allowed: a
+   * composition with no media platform refuses every upload instead of failing
+   * on the first one somebody attempts.
+   */
+  readonly media?: CreatorMediaPort;
   readonly database: ClubsDatabase;
   readonly now?: () => Date;
   /** The published USERS standing contract, for admitting a member. */
@@ -88,8 +103,15 @@ export function createClubsRuntime(input: {
       `Unknown billing entitlement adapter: ${input.config.CLUBS_BILLING_ENTITLEMENT}`,
     );
   }
+  const contentMedia = new ContentMediaService({
+    creators: input.creators,
+    media: input.media ?? new UnavailableCreatorMedia(),
+    now,
+    repository,
+  });
   return {
     billing: buildBilling(),
+    contentMedia,
     clubRepository,
     clubRoutes: new ClubRoutes({
       consumerContext: input.consumerContext,
@@ -101,6 +123,7 @@ export function createClubsRuntime(input: {
     repository,
     routes: new ClubsRoutes({
       creatorContext: input.creatorContext,
+      media: contentMedia,
       service,
     }),
     service,

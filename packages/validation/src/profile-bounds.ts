@@ -1,5 +1,5 @@
 /**
- * The consumer profile bounds, with no schema library behind them.
+ * Bounds a client may import, with no schema library behind them.
  *
  * They live in their own module so a client can import a length limit without
  * importing a validator. `packages/validation` publishes zod schemas built from
@@ -16,6 +16,15 @@
  * gender, and orientation are not part of it, so nobody is asked to hand over
  * sensitive data as the price of being seen.
  */
+
+/**
+ * How many images one creator catalog item holds.
+ *
+ * Here rather than beside the club schemas for the same reason every other
+ * bound in this module is: Creator Studio has to be able to label its own
+ * control without importing a validator to find the number out.
+ */
+export const maximumContentMedia = 6;
 
 export const minimumDisplayNameLength = 2;
 export const maximumDisplayNameLength = 32;

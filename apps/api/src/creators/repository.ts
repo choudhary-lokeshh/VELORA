@@ -1,5 +1,7 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
+
+import type { CreatorProfileMediaSlot } from '@velora/validation';
 
 import type { CreatorProfilePublication } from './handle-policy.js';
 import {
@@ -401,6 +403,91 @@ export class CreatorProfileRepository {
       await this.replaceLinks(executor, input.creatorId, input.profile.links);
       return { links: await this.linksFor(executor, input.creatorId), profile };
     });
+  }
+
+  /**
+   * The profile an asset reference belongs to, and which part it plays.
+   *
+   * Used to answer "is this image one of yours" without a caller naming a slot
+   * it might not own. Both columns are uniquely indexed, so an asset resolves to
+   * at most one profile and at most one slot.
+   */
+  async findByMediaAsset(
+    executor: AnyExecutor,
+    assetId: string,
+  ): Promise<
+    | {
+        readonly creatorId: string;
+        readonly slot: CreatorProfileMediaSlot;
+      }
+    | undefined
+  > {
+    const rows = await executor
+      .select({
+        avatar: creatorProfiles.avatarMediaAssetId,
+        creatorId: creatorProfiles.creatorId,
+      })
+      .from(creatorProfiles)
+      .where(
+        or(
+          eq(creatorProfiles.avatarMediaAssetId, assetId),
+          eq(creatorProfiles.coverMediaAssetId, assetId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined) return undefined;
+    return {
+      creatorId: row.creatorId,
+      slot: row.avatar === assetId ? 'avatar' : 'cover',
+    };
+  }
+
+  /**
+   * Points one slot at an asset, or at nothing, and says what it held before.
+   *
+   * The version is deliberately not part of the predicate and is deliberately
+   * not bumped. It guards the text a creator wrote — the display name, the bio,
+   * the links — against a second tab overwriting work it never saw. An image is
+   * a different axis: adding one does not overwrite a word, and refusing an
+   * upload because another tab had saved a bio would be a conflict about
+   * nothing. The previous reference comes back so its bytes can be owed a
+   * deletion, which is the one thing this write must not lose.
+   */
+  async setMediaAsset(
+    executor: AnyExecutor,
+    input: {
+      readonly assetId: string | null;
+      readonly creatorId: string;
+      readonly now: Date;
+      readonly slot: CreatorProfileMediaSlot;
+    },
+  ): Promise<{ readonly previousAssetId: string | null } | undefined> {
+    const before = await executor
+      .select({
+        avatar: creatorProfiles.avatarMediaAssetId,
+        cover: creatorProfiles.coverMediaAssetId,
+      })
+      .from(creatorProfiles)
+      .where(eq(creatorProfiles.creatorId, input.creatorId))
+      .limit(1);
+    const current = before[0];
+    if (current === undefined) return undefined;
+
+    const updated = await executor
+      .update(creatorProfiles)
+      .set({
+        ...(input.slot === 'avatar'
+          ? { avatarMediaAssetId: input.assetId }
+          : { coverMediaAssetId: input.assetId }),
+        updatedAt: input.now,
+      })
+      .where(eq(creatorProfiles.creatorId, input.creatorId))
+      .returning({ creatorId: creatorProfiles.creatorId });
+    if (updated[0] === undefined) return undefined;
+    return {
+      previousAssetId: input.slot === 'avatar' ? current.avatar : current.cover,
+    };
   }
 
   /**

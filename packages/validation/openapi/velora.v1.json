@@ -6411,6 +6411,1284 @@
         "summary": "Everything starts as a draft and nothing a creator writes becomes visible by being written. An edit carries the version it was read at, so a second tab cannot overwrite work it never saw, and an item identifier that belongs to another creator is answered exactly as one that does not exist."
       }
     },
+    "/v1/creator/profile/media": {
+      "post": {
+        "operationId": "startCreatorProfileMediaUpload",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorProfileMediaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUploadCapability"
+                }
+              }
+            },
+            "description": "A short-lived capability to write one object, and the reference the image will be known by.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No approved media storage provider is configured for this environment, so the object could not be stored or inspected. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "Reserves one image for one page slot. A slot that already holds an image is replaced immediately and the bytes it held are owed a deletion, so the slot is empty on the page until the new image is ready — which is the honest state rather than showing the old one while its replacement is still being decided."
+      }
+    },
+    "/v1/creator/profile/media/completion": {
+      "post": {
+        "operationId": "completeCreatorProfileMediaUpload",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorMediaReferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorProfileResponse"
+                }
+              }
+            },
+            "description": "The bytes were accepted for inspection. The profile is returned.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No approved media storage provider is configured for this environment, so the object could not be stored or inspected. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "The platform decides the object's type, size, and acceptability from the stored bytes. A client never declares what it uploaded."
+      }
+    },
+    "/v1/creator/profile/media/removal": {
+      "post": {
+        "operationId": "removeCreatorProfileMedia",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorMediaReferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorProfileResponse"
+                }
+              }
+            },
+            "description": "The image no longer belongs to the page. The profile is returned.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "Detaching is immediate and the bytes are owed a deletion the media platform records durably. A published page loses the image at the next delivery decision rather than at the next cache expiry, because there is no durable address to expire."
+      }
+    },
+    "/v1/creator/content/media": {
+      "post": {
+        "operationId": "startCreatorContentMediaUpload",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorContentMediaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaUploadCapability"
+                }
+              }
+            },
+            "description": "A short-lived capability to write one object, and the reference the image will be known by.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No approved media storage provider is configured for this environment, so the object could not be stored or inspected. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "Reserves one image against one item, in the next free position. An item identifier belonging to another creator is answered exactly as one that does not exist, and an item already holding the maximum is refused rather than silently reordered."
+      }
+    },
+    "/v1/creator/content/media/completion": {
+      "post": {
+        "operationId": "completeCreatorContentMediaUpload",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorMediaReferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorContentListResponse"
+                }
+              }
+            },
+            "description": "The bytes were accepted for inspection. The item is returned.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No approved media storage provider is configured for this environment, so the object could not be stored or inspected. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "The platform decides the object's type, size, and acceptability from the stored bytes. A client never declares what it uploaded."
+      }
+    },
+    "/v1/creator/content/media/removal": {
+      "post": {
+        "operationId": "removeCreatorContentMedia",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorMediaReferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorContentListResponse"
+                }
+              }
+            },
+            "description": "The image no longer belongs to the item. The item is returned.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Creator Studio audience. The body is an ApiError, with code CREATOR_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "A concurrent edit won, the capability is not in a state that allows this, the handle is already taken, or a save named a handle other than the one already claimed. The body is an ApiError with code STATE_CONFLICT. The caller should re-read and decide again. The four are deliberately one code: which of them applied would tell a caller whether somebody else holds a handle they cannot see.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "summary": "Detaching frees the position it held without renumbering the others, and the bytes are owed a deletion the media platform records durably."
+      }
+    },
     "/v1/creator/content/lifecycle": {
       "post": {
         "operationId": "setCreatorContentLifecycle",
@@ -29879,6 +31157,56 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
+                "media": {
+                  "maxItems": 6,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "position": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 5
+                      },
+                      "rejectionReason": {
+                        "type": "string",
+                        "enum": [
+                          "unsupported_type",
+                          "too_large",
+                          "not_uploaded",
+                          "content_rejected"
+                        ]
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "pending_upload",
+                          "checking",
+                          "preparing",
+                          "ready",
+                          "rejected",
+                          "removed"
+                        ]
+                      },
+                      "uploadExpiresAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "position",
+                      "state"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "lifecycle": {
                   "type": "string",
                   "enum": [
@@ -29922,6 +31250,7 @@
               "required": [
                 "createdAt",
                 "id",
+                "media",
                 "lifecycle",
                 "title",
                 "updatedAt",
@@ -29982,6 +31311,30 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
+                "media": {
+                  "maxItems": 6,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "position": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "position"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "publishedAt": {
                   "type": "string",
                   "format": "date-time",
@@ -29999,6 +31352,7 @@
               },
               "required": [
                 "id",
+                "media",
                 "publishedAt",
                 "title"
               ],
@@ -30075,6 +31429,58 @@
             "type": "string",
             "maxLength": 600
           },
+          "media": {
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "rejectionReason": {
+                  "type": "string",
+                  "enum": [
+                    "unsupported_type",
+                    "too_large",
+                    "not_uploaded",
+                    "content_rejected"
+                  ]
+                },
+                "slot": {
+                  "type": "string",
+                  "enum": [
+                    "avatar",
+                    "cover"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "pending_upload",
+                    "checking",
+                    "preparing",
+                    "ready",
+                    "rejected",
+                    "removed"
+                  ]
+                },
+                "uploadExpiresAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                }
+              },
+              "required": [
+                "id",
+                "slot",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
           "displayName": {
             "type": "string",
             "minLength": 2,
@@ -30136,6 +31542,7 @@
           }
         },
         "required": [
+          "media",
           "displayName",
           "handle",
           "links",
@@ -30149,9 +31556,37 @@
       "PublicCreatorResponse": {
         "type": "object",
         "properties": {
+          "avatar": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "bio": {
             "type": "string",
             "maxLength": 600
+          },
+          "cover": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
           },
           "displayName": {
             "type": "string",
@@ -31367,6 +32802,50 @@
         ],
         "additionalProperties": false
       },
+      "CreatorContentMediaRequest": {
+        "type": "object",
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "contentId"
+        ],
+        "additionalProperties": false
+      },
+      "CreatorMediaReferenceRequest": {
+        "type": "object",
+        "properties": {
+          "mediaId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "mediaId"
+        ],
+        "additionalProperties": false
+      },
+      "CreatorProfileMediaRequest": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "enum": [
+              "avatar",
+              "cover"
+            ]
+          }
+        },
+        "required": [
+          "slot"
+        ],
+        "additionalProperties": false
+      },
       "MediaDeliveryListResponse": {
         "type": "object",
         "properties": {
@@ -31430,6 +32909,52 @@
         "required": [
           "assetIds",
           "variant"
+        ],
+        "additionalProperties": false
+      },
+      "MediaUploadCapability": {
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "maximumBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "mediaId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "method": {
+            "type": "string",
+            "const": "PUT"
+          },
+          "uploadHeaders": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "uploadUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "maximumBytes",
+          "mediaId",
+          "method",
+          "uploadHeaders",
+          "uploadUrl"
         ],
         "additionalProperties": false
       },

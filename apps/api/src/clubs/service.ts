@@ -75,6 +75,18 @@ const allowedTransitions: Readonly<
 export class ClubsService {
   constructor(private readonly dependencies: ClubsServiceDependencies) {}
 
+  /** One item belonging to this creator, or nothing. */
+  findOwn(input: {
+    readonly contentId: string;
+    readonly creatorId: string;
+  }): Promise<CreatorContentRow | undefined> {
+    const { repository } = this.dependencies;
+    return repository.findOwn(repository.transactionless, {
+      contentId: input.contentId,
+      creatorId: input.creatorId,
+    });
+  }
+
   /** One page of the creator's own catalog, drafts included. */
   async listOwn(input: {
     readonly creatorId: string;
