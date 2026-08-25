@@ -5,7 +5,10 @@ import { useCallback, useMemo } from 'react';
 
 import {
   createCreatorApi,
+  createMediaAddressBook,
   type CreatorApi,
+  type MediaAddressBook,
+  type MediaVariant,
   type PublicClubList,
   type PublicCreator,
   type PublicCreatorCatalog,
@@ -20,6 +23,7 @@ import {
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
+import { useAddressesFrom } from './imagery';
 import { useResource } from './resource';
 
 /**
@@ -70,6 +74,17 @@ export function CreatorPublicPage({
     [api, handle],
   );
   const creator = useResource<PublicCreator>(load);
+  // This page has no provider above it — it is the one surface somebody with no
+  // account reaches — so it holds its own book. The exchange is the same one
+  // every other surface makes, and it is sent without a credential because the
+  // imagery on a published page is public.
+  const media = useMemo(
+    () =>
+      createMediaAddressBook<MediaVariant>({
+        exchange: async (request) => api.mediaDeliveries(request),
+      }),
+    [api],
+  );
 
   return (
     <div className="v-landing">
@@ -120,8 +135,8 @@ export function CreatorPublicPage({
 
         {creator.value === undefined ? null : (
           <div className="v-stack v-stack--8">
-            <CreatorProfileView creator={creator.value} />
-            <CreatorCatalogView api={api} handle={handle} />
+            <CreatorProfileView creator={creator.value} media={media} />
+            <CreatorCatalogView api={api} handle={handle} media={media} />
             <CreatorClubsView api={api} handle={handle} />
           </div>
         )}
@@ -130,17 +145,47 @@ export function CreatorPublicPage({
   );
 }
 
-function CreatorProfileView({ creator }: { readonly creator: PublicCreator }) {
+function CreatorProfileView({
+  creator,
+  media,
+}: {
+  readonly creator: PublicCreator;
+  readonly media: MediaAddressBook<MediaVariant>;
+}) {
+  const avatarRef = creator.avatar?.id;
+  const coverRef = creator.cover?.id;
+  const avatars = useAddressesFrom(
+    avatarRef === undefined ? [] : [avatarRef],
+    'avatar_large',
+    media,
+  );
+  const covers = useAddressesFrom(
+    coverRef === undefined ? [] : [coverRef],
+    'display',
+    media,
+  );
+  const cover = coverRef === undefined ? undefined : covers.get(coverRef);
   return (
     <article
       aria-labelledby="creator-name"
       className="v-profile-hero"
       data-testid="creator-page"
     >
+      {cover === undefined ? null : (
+        /* A band behind the identity rather than a picture beside it: a cover
+           is the page's first impression, and it is drawn only when there is
+           genuinely one to draw. */
+        <div className="v-creator-cover" data-testid="creator-page-cover">
+          {/* A plain element rather than the framework's optimised one: the
+              address is issued per request and cannot be fetched upstream. */}
+          <img alt="" className="v-creator-cover__image" src={cover} />
+        </div>
+      )}
       <Avatar
         displayName={creator.displayName}
         seed={creator.handle}
         size="lg"
+        src={avatarRef === undefined ? undefined : avatars.get(avatarRef)}
       />
       <div className="v-profile-hero__body">
         <h1 className="v-title v-wrap" id="creator-name">
@@ -196,15 +241,25 @@ function CreatorProfileView({ creator }: { readonly creator: PublicCreator }) {
 function CreatorCatalogView({
   api,
   handle,
+  media,
 }: {
   readonly api: CreatorApi;
   readonly handle: string;
+  readonly media: MediaAddressBook<MediaVariant>;
 }) {
   const load = useCallback(
     async () => api.publicCatalog({ handle }),
     [api, handle],
   );
   const catalog = useResource<PublicCreatorCatalog>(load);
+  // One exchange for the page. An item shows the image its creator put first,
+  // and an item with none shows its words, which is an ordinary state rather
+  // than a gap to apologise for.
+  const covers = (catalog.value?.content ?? []).flatMap((item) => {
+    const first = item.media[0]?.id;
+    return first === undefined ? [] : [first];
+  });
+  const addresses = useAddressesFrom(covers, 'card', media);
 
   if (catalog.value === undefined) return null;
   return (
@@ -221,21 +276,34 @@ function CreatorCatalogView({
         </p>
       ) : (
         <ul className="v-stack v-stack--3" data-testid="creator-catalog">
-          {catalog.value.content.map((item) => (
-            <li key={item.id}>
-              <Card>
-                <div className="v-stack v-stack--2">
-                  <h3 className="v-subheading v-wrap">{item.title}</h3>
-                  {item.summary === undefined ? null : (
-                    <p className="v-small v-muted v-wrap">{item.summary}</p>
+          {catalog.value.content.map((item) => {
+            const cover = addresses.get(item.media[0]?.id ?? '');
+            return (
+              <li key={item.id}>
+                <Card>
+                  {cover === undefined ? null : (
+                    <div
+                      className="v-item-cover"
+                      data-testid={`creator-item-cover-${item.id}`}
+                    >
+                      {/* A plain element rather than the framework's optimised
+                        one: the address is issued per request. */}
+                      <img alt="" className="v-item-cover__image" src={cover} />
+                    </div>
                   )}
-                  {item.body === undefined ? null : (
-                    <p className="v-small v-wrap">{item.body}</p>
-                  )}
-                </div>
-              </Card>
-            </li>
-          ))}
+                  <div className="v-stack v-stack--2">
+                    <h3 className="v-subheading v-wrap">{item.title}</h3>
+                    {item.summary === undefined ? null : (
+                      <p className="v-small v-muted v-wrap">{item.summary}</p>
+                    )}
+                    {item.body === undefined ? null : (
+                      <p className="v-small v-wrap">{item.body}</p>
+                    )}
+                  </div>
+                </Card>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

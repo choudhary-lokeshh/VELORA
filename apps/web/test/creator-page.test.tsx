@@ -67,6 +67,10 @@ function doubleFor(
           new Response(
             JSON.stringify({
               content: catalog.map((entry) => ({
+                // The contract publishes an images array on every item, empty
+                // when there are none, so a surface never distinguishes "no
+                // images" from "an older server".
+                media: [],
                 ...entry,
                 publishedAt: '2026-08-15T12:00:00.000Z',
               })),

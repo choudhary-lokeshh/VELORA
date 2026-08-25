@@ -771,6 +771,48 @@
   position: relative;
 }
 
+/*
+ * A creator page's cover and a catalog item's image.
+ *
+ * Both are bands with a fixed ratio rather than whatever the source happens to
+ * be, so a page does not reflow as addresses arrive and one creator's portrait
+ * upload does not make their page three times taller than another's.
+ */
+.v-creator-cover {
+  aspect-ratio: 3 / 1;
+  border-radius: var(--radius-lg);
+  margin-bottom: calc(var(--space-6) * -1);
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.v-creator-cover::after {
+  background: linear-gradient(
+    to top,
+    var(--canvas) 0%,
+    rgb(12 10 12 / 55%) 45%,
+    transparent 100%
+  );
+  content: '';
+  inset: 0;
+  position: absolute;
+}
+
+.v-creator-cover__image,
+.v-item-cover__image {
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+}
+
+.v-item-cover {
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+
 /* ============================ Notifications =========================== */
 
 .v-notification {

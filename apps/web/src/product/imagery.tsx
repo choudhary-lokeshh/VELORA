@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { MediaVariant } from '@velora/consumer-client';
+import type { MediaAddressBook, MediaVariant } from '@velora/consumer-client';
 
 import { useMediaAddressBook } from '../app/providers';
 
@@ -28,7 +28,22 @@ export function useMediaAddresses(
   references: readonly string[],
   variant: MediaVariant,
 ): ReadonlyMap<string, string> {
-  const book = useMediaAddressBook();
+  return useAddressesFrom(references, variant, useMediaAddressBook());
+}
+
+/**
+ * The same hook against a book the caller holds itself.
+ *
+ * The public creator page is not inside the signed-in shell — it is the one
+ * surface a visitor with no account reaches — so it has no provider to take a
+ * book from and builds its own. Everything else about how addresses are
+ * obtained is identical, which is the point of it being one function.
+ */
+export function useAddressesFrom(
+  references: readonly string[],
+  variant: MediaVariant,
+  book: MediaAddressBook<MediaVariant>,
+): ReadonlyMap<string, string> {
   const [addresses, setAddresses] = useState<ReadonlyMap<string, string>>(
     () => new Map(),
   );
