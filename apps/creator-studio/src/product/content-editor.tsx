@@ -5,11 +5,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { CreatorClubList, CreatorContent } from '@velora/creator-client';
 import { failureMessage, isOk } from '@velora/creator-client';
+import { maximumContentMedia } from '@velora/validation/profile-bounds';
 
 import { ConfirmDialog } from '../design/dialog';
 import {
   Badge,
-  BlockedState,
   Button,
   ButtonLink,
   Card,
@@ -32,6 +32,8 @@ import {
   contentLifecycleMeaning,
   formatDateTime,
 } from './format';
+import { useMediaAddresses } from './imagery';
+import { ImageTile, ImageUpload } from './images';
 import { useCollection, useResource, useSingleFlight } from './resource';
 
 /**
@@ -151,6 +153,93 @@ export function EditContent({ contentId }: { readonly contentId: string }) {
         />
       </Card>
     </>
+  );
+}
+
+/**
+ * Images attached to one item.
+ *
+ * A draft has no images to show anybody yet and that is deliberate: the same
+ * attachment that decides where an image appears also decides who may be served
+ * it, so a draft's images are deliverable to nobody until the item is published.
+ * The tiles here are the creator's own view, which is why they show a state
+ * rather than only what is ready.
+ *
+ * A new draft has no item to attach to yet, so the control appears once the
+ * draft has been saved rather than pretending an unsaved item can hold one.
+ */
+function ContentImages({
+  item,
+  onChanged,
+}: {
+  readonly item: CreatorContent | undefined;
+  readonly onChanged: (() => void) | undefined;
+}) {
+  const api = useApi();
+  const { busy, run } = useSingleFlight();
+  const media = item?.media ?? [];
+  const addresses = useMediaAddresses(
+    media.filter((one) => one.state === 'ready').map((one) => one.id),
+    'card',
+  );
+
+  if (item === undefined) {
+    return (
+      <Card>
+        <CardHead
+          lede="Save the draft first. An image belongs to an item, so there is nowhere to put one until there is one."
+          title="Pictures with this item"
+        />
+      </Card>
+    );
+  }
+
+  const full = media.length >= maximumContentMedia;
+  return (
+    <Card>
+      <CardHead
+        lede="Up to six, in the order you add them. They appear on your public page when the item is published, and to nobody before that."
+        title="Pictures with this item"
+      />
+      <div className="s-stack s-stack--4">
+        {media.length === 0 ? null : (
+          <ul className="s-image-grid" data-testid="content-media">
+            {media.map((image) => (
+              <ImageTile
+                address={addresses.get(image.id)}
+                busy={busy}
+                image={image}
+                key={image.id}
+                onRemove={() => {
+                  run(async () => {
+                    await api.removeContentMedia(image.id);
+                    onChanged?.();
+                  });
+                }}
+                testId={`content-media-${String(image.position)}`}
+              />
+            ))}
+          </ul>
+        )}
+        <ImageUpload
+          confirm={async (mediaId) => api.completeContentMediaUpload(mediaId)}
+          disabled={busy || full}
+          inputId="content-image"
+          label={
+            full
+              ? `Six pictures is the maximum`
+              : media.length === 0
+                ? 'Add a picture'
+                : 'Add another picture'
+          }
+          onUploaded={() => {
+            onChanged?.();
+          }}
+          reserve={async () => api.startContentMediaUpload(item.id)}
+          testId="content-image-input"
+        />
+      </div>
+    </Card>
   );
 }
 
@@ -491,23 +580,7 @@ function ContentEditor({
         ) : null}
       </Card>
 
-      <Card>
-        <CardHead title="A picture with this item" />
-        <BlockedState
-          label="Not available"
-          testId="content-media-blocked"
-          title="You cannot attach an image yet"
-        >
-          <p>
-            VELORA has no approved place to store creator images and publishes
-            no way to attach one to an item, so there is nothing here that would
-            upload.
-          </p>
-          <p>
-            This is a platform decision rather than something waiting on you.
-          </p>
-        </BlockedState>
-      </Card>
+      <ContentImages item={item} onChanged={onSaved} />
 
       {item === undefined || !creator.canWrite ? null : (
         <Card testId="content-lifecycle-actions">

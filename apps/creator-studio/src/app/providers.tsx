@@ -16,8 +16,14 @@ import type {
   CreatorApi,
   CreatorOnboardingState,
   CreatorProfile,
+  MediaAddressBook,
+  MediaVariant,
 } from '@velora/creator-client';
-import { creatorStage, type CreatorStage } from '@velora/creator-client';
+import {
+  createMediaAddressBook,
+  creatorStage,
+  type CreatorStage,
+} from '@velora/creator-client';
 
 import {
   createCreatorStudioAuthClient,
@@ -54,6 +60,14 @@ import {
 interface ApiValue {
   readonly api: CreatorApi;
   readonly authClient: CreatorAuthClient;
+  /**
+   * Where image references become addresses.
+   *
+   * Above the screens because the editor, the catalog, and the public preview
+   * all render the same images, and three books would mean three grants for one
+   * photograph.
+   */
+  readonly media: MediaAddressBook<MediaVariant>;
 }
 
 const ApiContext = createContext<ApiValue | undefined>(undefined);
@@ -64,6 +78,14 @@ export function useApi(): CreatorApi {
     throw new Error('useApi used outside StudioProviders');
   }
   return value.api;
+}
+
+export function useMediaAddressBook(): MediaAddressBook<MediaVariant> {
+  const value = useContext(ApiContext);
+  if (value === undefined) {
+    throw new Error('useMediaAddressBook used outside StudioProviders');
+  }
+  return value.media;
 }
 
 export interface SessionValue {
@@ -129,23 +151,26 @@ export function StudioProviders({
   /** Injected by tests so the whole journey runs without a network. */
   readonly fetchImplementation?: typeof globalThis.fetch;
 }) {
-  const clients = useMemo<ApiValue>(
-    () => ({
-      api: createStudioCreatorApi({
-        apiBaseUrl,
-        ...(fetchImplementation === undefined
-          ? {}
-          : { fetch: fetchImplementation }),
-      }),
+  const clients = useMemo<ApiValue>(() => {
+    const api = createStudioCreatorApi({
+      apiBaseUrl,
+      ...(fetchImplementation === undefined
+        ? {}
+        : { fetch: fetchImplementation }),
+    });
+    return {
+      api,
       authClient: createCreatorStudioAuthClient({
         apiBaseUrl,
         ...(fetchImplementation === undefined
           ? {}
           : { fetch: fetchImplementation }),
       }),
-    }),
-    [apiBaseUrl, fetchImplementation],
-  );
+      media: createMediaAddressBook<MediaVariant>({
+        exchange: async (request) => api.mediaDeliveries(request),
+      }),
+    };
+  }, [apiBaseUrl, fetchImplementation]);
 
   return (
     <ApiContext.Provider value={clients}>

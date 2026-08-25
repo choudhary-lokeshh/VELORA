@@ -484,20 +484,31 @@ export function CreatorAvatar({
   displayName,
   seed,
   size = 'sm',
+  src,
 }: {
   readonly displayName: string;
   /** Usually the handle, so the tone survives a display-name change. */
   readonly seed?: string;
   readonly size?: 'xs' | 'sm' | 'md' | 'lg';
+  /** A short-lived address. Absent whenever there is nothing to show. */
+  readonly src?: string | undefined;
 }) {
+  const className = `s-avatar s-avatar--${size} s-avatar--tone-${String(
+    toneOf(seed ?? displayName),
+  )}`;
+  if (src === undefined) {
+    return (
+      <span aria-hidden="true" className={className}>
+        {initialsOf(displayName)}
+      </span>
+    );
+  }
   return (
-    <span
-      aria-hidden="true"
-      className={`s-avatar s-avatar--${size} s-avatar--tone-${String(
-        toneOf(seed ?? displayName),
-      )}`}
-    >
-      {initialsOf(displayName)}
+    <span aria-hidden="true" className={`${className} s-avatar--image`}>
+      {/* A plain element rather than the framework's optimised one: the address
+          is issued per request and viewer-scoped, so nothing upstream can fetch
+          or cache it. */}
+      <img alt="" className="s-avatar__image" src={src} />
     </span>
   );
 }

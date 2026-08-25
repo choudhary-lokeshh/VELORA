@@ -10,7 +10,6 @@ import { failureMessage } from '@velora/creator-client';
 
 import {
   Badge,
-  BlockedState,
   Button,
   ButtonLink,
   Card,
@@ -27,6 +26,8 @@ import {
   TextInput,
 } from '../design/primitives';
 import { useApi, useCreator, useToast } from '../app/providers';
+import { useMediaAddresses } from './imagery';
+import { ImageTile, ImageUpload } from './images';
 import { useSingleFlight } from './resource';
 
 /**
@@ -385,24 +386,98 @@ function ProfileEditor({
         </form>
       </Card>
 
-      <Card>
-        <CardHead title="A picture of you" />
-        <BlockedState
-          label="Not available"
-          testId="creator-media-blocked"
-          title="You cannot add a photograph yet"
-        >
-          <p>
-            VELORA has no approved place to store creator images and no way to
-            deliver one, so there is nothing here that would upload. Your page
-            shows the mark above instead, drawn from your handle.
-          </p>
-          <p>
-            This is a platform decision rather than something waiting on you.
-          </p>
-        </BlockedState>
-      </Card>
+      <ProfileImages profile={profile} />
     </>
+  );
+}
+
+/**
+ * The two images a creator page has.
+ *
+ * A page with no profile saved yet has nowhere to put one, and the platform
+ * refuses rather than inventing a slot, so the control only appears once there
+ * is a page for it to belong to. Each slot holds one image; adding to a slot
+ * that already has one replaces it, which the copy says rather than making
+ * somebody remove first.
+ */
+function ProfileImages({
+  profile,
+}: {
+  readonly profile: CreatorProfile | undefined;
+}) {
+  const api = useApi();
+  const creator = useCreator();
+  const { busy, run } = useSingleFlight();
+  const media = profile?.media ?? [];
+  const addresses = useMediaAddresses(
+    media.filter((one) => one.state === 'ready').map((one) => one.id),
+    'avatar_large',
+  );
+
+  if (profile === undefined) {
+    return (
+      <Card>
+        <CardHead
+          lede="Save your page first. An image belongs to a page, so there is nowhere to put one until there is one."
+          title="Your page images"
+        />
+      </Card>
+    );
+  }
+
+  const slotFor = (slot: 'avatar' | 'cover') =>
+    media.find((one) => one.slot === slot);
+
+  return (
+    <Card>
+      <CardHead
+        lede="A portrait and a wide cover. Adding to a slot that already holds an image replaces it."
+        title="Your page images"
+      />
+      <div className="s-stack s-stack--4">
+        <ul className="s-image-grid" data-testid="creator-media">
+          {media.map((image) => (
+            <ImageTile
+              address={addresses.get(image.id)}
+              busy={busy}
+              image={image}
+              key={image.id}
+              onRemove={() => {
+                run(async () => {
+                  await api.removeProfileMedia(image.id);
+                  creator.reloadAll();
+                });
+              }}
+              testId={`creator-media-${image.slot}`}
+            />
+          ))}
+        </ul>
+        <div className="s-inline s-inline--wrap">
+          {(['avatar', 'cover'] as const).map((slot) => (
+            <ImageUpload
+              confirm={async (mediaId) =>
+                api.completeProfileMediaUpload(mediaId)
+              }
+              disabled={busy}
+              inputId={`creator-image-${slot}`}
+              key={slot}
+              label={
+                slotFor(slot) === undefined
+                  ? slot === 'avatar'
+                    ? 'Add a portrait'
+                    : 'Add a cover'
+                  : slot === 'avatar'
+                    ? 'Replace the portrait'
+                    : 'Replace the cover'
+              }
+              onUploaded={creator.reloadAll}
+              reserve={async () => api.startProfileMediaUpload(slot)}
+              testId={`creator-image-input-${slot}`}
+            />
+          ))}
+        </div>
+      </div>
+    </Card>
   );
 }
 

@@ -576,6 +576,88 @@
  * but each pairing clears it anyway, because a tone that washed out would look
  * like a rendering fault.
  */
+/*
+ * A photograph fills the same box the monogram occupies and leaves the tone
+ * underneath it, so a slow load, a transparent image, and a decode failure each
+ * fall back to something rather than to the page.
+ */
+/*
+ * A creator's images, as tiles.
+ *
+ * A fixed ratio rather than the source's, so a grid keeps its shape whatever
+ * somebody uploads and does not reflow as short-lived addresses arrive. The
+ * state and the control sit over a scrim so they stay readable on a bright
+ * picture.
+ */
+.s-image-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.s-image-tile {
+  align-items: center;
+  aspect-ratio: 4 / 3;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  justify-content: center;
+  overflow: hidden;
+  padding: var(--space-3);
+  position: relative;
+  text-align: center;
+}
+
+.s-image-tile__image {
+  block-size: 100%;
+  inline-size: 100%;
+  inset: 0;
+  object-fit: cover;
+  position: absolute;
+}
+
+.s-image-tile__foot {
+  align-items: center;
+  backdrop-filter: blur(10px);
+  background: var(--surface-overlay);
+  border-radius: var(--radius-pill);
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  position: relative;
+}
+
+/*
+ * The input is reached through its label, which is a real control. Hiding it
+ * with `display: none` would take it out of the accessibility tree and out of
+ * the tab order; this keeps it operable and invisible.
+ */
+.s-file-input {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.s-avatar__image {
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  position: relative;
+}
+
+.s-avatar--image {
+  color: transparent;
+}
+
 .s-avatar--tone-1 {
   background: #f0dbc9;
   color: #6b3a1c;

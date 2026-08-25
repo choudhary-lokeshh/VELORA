@@ -28,6 +28,14 @@ export interface CreatorApiDoubleState {
     displayName: string;
     handle: string;
     links: { label?: string; url: string }[];
+    /** The page images, as the creator sees them. Empty unless a test adds one. */
+    media?: {
+      id: string;
+      rejectionReason?: string;
+      slot: 'avatar' | 'cover';
+      state: string;
+      uploadExpiresAt?: string;
+    }[];
     publication: 'draft' | 'published';
     publishedAt?: string;
     version: number;
@@ -260,6 +268,7 @@ export function createCreatorApiDouble(
           displayName: state.profile.displayName,
           handle: state.profile.handle,
           links: state.profile.links,
+          media: state.profile.media ?? [],
           publicPath: `/c/${state.profile.handle}`,
           publication: state.profile.publication,
           ...(state.profile.publishedAt === undefined

@@ -23,6 +23,7 @@ import {
 } from '../design/primitives';
 import { useApi, useCreator } from '../app/providers';
 import { formatDate, plural } from './format';
+import { useMediaAddresses } from './imagery';
 import { useResource } from './resource';
 
 /**
@@ -166,6 +167,15 @@ function VisitorView({
 }) {
   const items = catalog?.content ?? [];
   const rooms = clubs?.clubs ?? [];
+  // Exactly what a visitor would be served, obtained the same way: a reference
+  // exchanged for an address, decided by the platform. An image that does not
+  // come back here would not come back for anybody, which is the point of a
+  // preview being a preview rather than a mock-up.
+  const avatarRef = creator.avatar?.id;
+  const avatars = useMediaAddresses(
+    avatarRef === undefined ? [] : [avatarRef],
+    'avatar_large',
+  );
 
   return (
     <div className="s-preview">
@@ -175,6 +185,7 @@ function VisitorView({
             displayName={creator.displayName}
             seed={creator.handle}
             size="lg"
+            src={avatarRef === undefined ? undefined : avatars.get(avatarRef)}
           />
           <div className="s-stack s-stack--2">
             <h2 className="s-title">{creator.displayName}</h2>

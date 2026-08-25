@@ -508,16 +508,49 @@ describe('the public page', () => {
     );
   });
 
-  it('says a picture cannot be added, and why it is not the creator’s problem', async () => {
+  it('offers a control for each page image slot', async () => {
     const double = createCreatorApiDouble(withProfile());
     renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
 
-    const blocked = await screen.findByTestId('creator-media-blocked');
-    expect(blocked.textContent).toContain(
-      'no approved place to store creator images',
+    expect(
+      await screen.findByTestId('creator-image-input-avatar'),
+    ).toBeTruthy();
+    expect(screen.getByTestId('creator-image-input-cover')).toBeTruthy();
+    // Nothing claims the platform cannot store an image any more, because it
+    // can — the storage *provider* decision is a different question and this
+    // screen was never the place that answered it.
+    expect(screen.queryByTestId('creator-media-blocked')).toBeNull();
+  });
+
+  it('shows an image its creator added, and offers to replace it', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        profile: {
+          ...(withProfile().profile ?? {
+            displayName: '',
+            handle: '',
+            links: [],
+            publication: 'draft' as const,
+            version: 1,
+          }),
+          media: [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              slot: 'avatar' as const,
+              state: 'ready',
+            },
+          ],
+        },
+      }),
     );
-    expect(blocked.textContent).toContain('platform decision');
-    expect(screen.queryByRole('button', { name: /upload/iu })).toBeNull();
+    renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
+
+    const tile = await screen.findByTestId('creator-media-avatar');
+    expect(tile.getAttribute('data-state')).toBe('ready');
+    expect(
+      screen.getByTestId('creator-image-input-avatar').closest('label')
+        ?.textContent,
+    ).toContain('Replace');
   });
 });
 
