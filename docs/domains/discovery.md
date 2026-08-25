@@ -48,6 +48,16 @@ Adult eligibility is read from the assurance evidence rather than inferred from 
 
 Nothing purchasable participates. There is no spend, subscription, popularity, follower, or boost column in the predicate, in the ordering, or in the schema behind either, so no future change can quietly buy visibility without adding one.
 
+### Who may see somebody's photograph
+
+USERS owns a consumer's profile images and cannot answer this, because it is a question about a relationship. DISCOVERY publishes the answer as a port, and there are exactly two ways to hold a reason.
+
+**The pair holds a live introduction** — an unexpired pending signal in either direction, or a mutual one. Somebody who has turned discoverability off, whose availability window has closed, or who no longer matches on language does not vanish from a conversation they are already in, so this arm re-asks none of those.
+
+**The subject is a candidate the viewer may currently be shown**, revalidated through the same predicate a signal is revalidated against. A photograph is therefore visible exactly where the person is, and stops being visible when they stop being eligible — including when their availability window closes, which is the one place presence legitimately reaches imagery.
+
+Both arms are conditioned on Trust & Safety permitting the pair, so a block withdraws imagery in both directions at the next issuance whatever relationship preceded it. What is deliberately not asked is whether the *viewer* is discoverable: being seen and being able to see are different questions, and requiring the first would stop somebody who has turned themselves off from seeing the people they are already talking to.
+
 Shared language is a requirement rather than a ranking signal, because two people who cannot read each other have nothing an introduction could lead to. Region is the opposite: a signal, not a filter, so a coarse mismatch orders somebody lower rather than making them invisible.
 
 ### Ranking

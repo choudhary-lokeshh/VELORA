@@ -8,6 +8,12 @@
 
 What the Consumer Web product interface froze with, what it deliberately does not do, and what unfreezes the rest. Companion to the [media](13-media-freeze-report.md), [identity](14-identity-freeze-report.md), [RTC](16-rtc-freeze-report.md), and [notifications](17-notifications-freeze-report.md) reports, written to the same rule: architecture that is finished is described as finished, and a capability that cannot run says so in its own words.
 
+## Superseded since the freeze
+
+One claim in this report is no longer true, and it is the one that shaped most of the rest. **Consumer photographs are now rendered.** `POST /v1/media/deliveries` exchanges the image references every projection already carried for short-lived addresses, and DISCOVERY publishes the peer-visibility rule USERS was missing. Every sentence below about no photograph existing anywhere describes what was true at this freeze; the decision that closed it is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), and [MEDIA](../domains/media.md) and [DISCOVERY](../domains/discovery.md) carry the rule.
+
+Nothing else here changed. The storage and delivery **provider** decisions are untouched and still open, so a deployed environment still serves nothing; what was closed was the platform's own gap.
+
 ## What this work owns
 
 The Consumer Web client, and nothing behind it. No contract, table, route, migration, or authorization rule changed. One client package gained the two notification-preference operations the contract already published and no client had bound.

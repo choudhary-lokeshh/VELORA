@@ -193,6 +193,20 @@ Credentials are verifiable across replicas, which is why the signing key is conf
 
 Where no provider is approved, delivery reports `unavailable` rather than a refusal. Nothing about the viewer or the asset is wrong; there is simply no approved way to serve bytes.
 
+### The one route
+
+`POST /v1/media/deliveries` exchanges up to twenty-four asset references for addresses in one named variant. It is the only route MEDIA publishes, and it reserves nothing: an upload is a purpose an owning domain authorizes, while a delivery is a question about references the caller already holds.
+
+It is deliberately open to a caller with no credential, because a published creator page is answered without a session and its imagery is public. Authorization is per asset and taken from the owning domain at the moment of issuance, never from the audience; an unauthenticated caller simply has no relationship any restricted asset could depend on, so it is served the public ones and nothing else.
+
+Three properties are load-bearing.
+
+**An asset that cannot be served is absent from the answer rather than refused.** Absent, unprocessed, unpublished, not this caller's to see, and restricted by Safety are one indistinguishable silence, so no sequence of requests can be used to test whether somebody's photograph exists — which matters because the reference itself is published in projections other people hold.
+
+**The environment is the single exception.** A platform with no approved delivery provider refuses the whole call with `503 DEPENDENCY_UNAVAILABLE`, because that is a fact about the platform rather than about anything named in the request, and an empty list would read to a surface as "you may see none of these people".
+
+**The surface is derived from the credential, never from the request.** `DistributionSurface` participates in the mature-content gate, so a client naming its own surface would be a client choosing its own safety answer.
+
 ## Consumer profile media
 
 USERS is the first domain to hold a MEDIA asset, and `0040_users_profile_media_assets` is where the ownership split became real. `users_profile_media` keeps which asset occupies which slot, in what order, and whether the slot is attached or removed. Everything else it used to carry — the object key, the digest, the measured size, the sniffed content type, the upload expiry, the refusal reason — moved here, because holding one fact in two domains means the copy that goes stale is the one somebody is watching a spinner against.

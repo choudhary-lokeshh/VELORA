@@ -5,6 +5,12 @@
 - Freeze date: 2026-08-24
 - Interface authority: [ADR-0030](../decisions/ADR-0030-consumer-mobile-product-interface.md)
 
+## Superseded since the freeze
+
+One claim in this report is no longer true, and it is the one that shaped most of the rest. **Consumer photographs are now rendered.** `POST /v1/media/deliveries` exchanges the image references every projection already carried for short-lived addresses, and DISCOVERY publishes the peer-visibility rule USERS was missing. Every sentence below about no photograph existing anywhere describes what was true at this freeze; the decision that closed it is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), and [MEDIA](../domains/media.md) and [DISCOVERY](../domains/discovery.md) carry the rule.
+
+Nothing else here changed. The storage and delivery **provider** decisions are untouched and still open, so a deployed environment still serves nothing; what was closed was the platform's own gap.
+
 ## What this work owns
 
 `apps/mobile` only, plus two changes outside it that exist to serve it: a
