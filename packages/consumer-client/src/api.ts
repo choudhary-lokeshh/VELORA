@@ -21,6 +21,8 @@ import type {
   IntroductionList,
   JoinAuthorization,
   Message,
+  MediaDeliveryList,
+  MediaVariant,
   MessageList,
   NotificationList,
   NotificationPreferenceList,
@@ -184,6 +186,26 @@ export interface ConsumerApi {
   markNotificationsRead(
     notificationIds: readonly string[],
   ): Promise<ApiResult<{ readonly readIds: string[] }>>;
+  /**
+   * Exchanges image references for addresses this client may fetch.
+   *
+   * Every projection that carries somebody's photograph carries a reference
+   * rather than a URL, because an address that outlived the decision behind it
+   * would be a permission nobody could withdraw. A reference is worth nothing
+   * on its own; this call is where it becomes worth something, and the server
+   * re-decides the whole question each time.
+   *
+   * References the caller may not be served are absent from the answer rather
+   * than refused, so a surface renders what it got and shows an identity mark
+   * for the rest.
+   */
+  mediaDeliveries(
+    input: {
+      readonly assetIds: readonly string[];
+      readonly variant: MediaVariant;
+    },
+    signal?: AbortSignal,
+  ): Promise<ApiResult<MediaDeliveryList>>;
   messages(
     query: PageQuery & { readonly conversationId: string },
     signal?: AbortSignal,
@@ -341,6 +363,15 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         api.GET('/v1/messaging/conversations', {
           ...(await reading(signal)),
           params: { query: pageParameters(query) },
+        }),
+      ),
+
+    mediaDeliveries: async (input, signal) =>
+      attempt(async () =>
+        api.POST('/v1/media/deliveries', {
+          ...(await writing()),
+          body: { assetIds: [...input.assetIds], variant: input.variant },
+          ...(signal === undefined ? {} : { signal }),
         }),
       ),
 

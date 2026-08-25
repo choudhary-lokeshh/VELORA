@@ -53,6 +53,12 @@ export type ConversationList = JsonBody<
   200
 >;
 export type Conversation = ConversationList['conversations'][number];
+export type MediaDeliveryList = JsonBody<'/v1/media/deliveries', 'post', 200>;
+export type MediaDelivery = MediaDeliveryList['deliveries'][number];
+export type MediaVariant = RequestBody<
+  '/v1/media/deliveries',
+  'post'
+>['variant'];
 export type MessageList = JsonBody<'/v1/messaging/messages', 'get', 200>;
 export type Message = MessageList['messages'][number];
 export type NotificationList = JsonBody<'/v1/notifications', 'get', 200>;
