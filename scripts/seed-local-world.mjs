@@ -143,12 +143,12 @@ function caller(origin, device) {
     }
   };
 
-  const call = async (method, path, body) => {
+  const call = async (method, path, body, extraHeaders = {}) => {
     // A device per seeded person, because the sign-in rate limiter attributes
     // attempts to one. Thirty-two people signing in as one device is one
     // requester making thirty-two attempts, which is exactly what that limiter
     // exists to stop — and stopping it here would be the limiter working.
-    const headers = { origin, 'x-velora-device': device };
+    const headers = { origin, 'x-velora-device': device, ...extraHeaders };
     if (jar.size > 0) {
       headers.cookie = [...jar]
         .map(([key, value]) => `${key}=${value}`)
@@ -174,8 +174,8 @@ function caller(origin, device) {
   return {
     call,
     /** The same call, but a refusal is a failure rather than a value. */
-    async must(method, path, body) {
-      const answer = await call(method, path, body);
+    async must(method, path, body, extraHeaders = {}) {
+      const answer = await call(method, path, body, extraHeaders);
       if (!answer.ok) {
         throw new Error(
           `${method} ${path} -> ${String(answer.status)} ${JSON.stringify(answer.body)}`,
@@ -564,6 +564,8 @@ async function seedCreator(fixture, index) {
     );
   }
 
+  await studio.must('POST', '/v1/creator/gifts/catalog/provision');
+
   return { fixture, studio, subject };
 }
 
@@ -673,6 +675,37 @@ async function seedMemberships(creatorWork, people) {
   return { invited, redeemed };
 }
 
+/** A few real, ledger-backed gifts through the consumer product route. */
+async function seedGifts(people, seededCreators) {
+  let sent = 0;
+  for (let index = 0; index < Math.min(6, people.length); index += 1) {
+    const person = people[index];
+    const creator = seededCreators[index % seededCreators.length];
+    if (person === undefined || creator === undefined) continue;
+    const catalog = await person.session.call(
+      'GET',
+      `/v1/billing/gifts/catalog?handle=${encodeURIComponent(creator.fixture.handle)}&currency=USD`,
+    );
+    if (!catalog.ok || catalog.body.items.length === 0) continue;
+    const item = catalog.body.items[index % catalog.body.items.length];
+    const result = await person.session.call(
+      'POST',
+      '/v1/billing/gifts',
+      {
+        context: { type: 'creator_profile' },
+        currency: 'USD',
+        giftItemId: item.id,
+        handle: creator.fixture.handle,
+      },
+      {
+        'x-velora-idempotency-key': `seed-gift-${String(index).padStart(3, '0')}`,
+      },
+    );
+    if (result.ok) sent += 1;
+  }
+  return sent;
+}
+
 async function main() {
   guard();
   say(`seeding ${apiBaseUrl}`);
@@ -720,6 +753,9 @@ async function main() {
     `${String(memberships.invited)} invitations, ${String(memberships.redeemed)} redeemed`,
   );
 
+  const gifts = await seedGifts(people, seededCreators);
+  say(`${String(gifts)} gifts sent through verified settlement`);
+
   process.stdout.write(
     [
       '',
@@ -732,6 +768,7 @@ async function main() {
       `  invitations       ${String(memberships.invited)} (${String(memberships.redeemed)} redeemed)`,
       `  introductions     ${String(introductions.size)} mutual, ${String(pendingPairs.length)} waiting`,
       `  conversations     ${String(conversations.opened)}`,
+      `  gifts             ${String(gifts)}`,
       '',
       `Sign in on Consumer Web as any of: ${subjectFor('person', 0)} … ${subjectFor('person', consumers.length - 1)}`,
       `Sign in on Creator Studio as any of: ${subjectFor('creator', 0)} … ${subjectFor('creator', creators.length - 1)}`,

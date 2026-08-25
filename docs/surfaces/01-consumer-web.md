@@ -27,7 +27,7 @@ A person is an address of their own, reached from the portrait on a card. It sho
 
 Clubs appear in neither section, and that is a rule rather than an omission: Creator Private Clubs stay separate from Social Discovery, so a club is reached from the page of the creator who runs it, and the access somebody already holds is under You.
 
-Exact visual specification remains `DESIGN REQUIRED` in Figma. What exists in code is the approved Master Visual Language filled in for the Consumer expression under ADR-0027, which records both the values and the bound on them. Public creator pages remain part of creator/club commerce architecture; they must not alter consumer discovery. The canonical public creator address is `/c/{handle}`, resolved against the explicitly public projection CREATORS publishes; it carries no consumer product, no session requirement, and no purchase control, and an unknown handle, an unpublished profile, and a creator who is not active are one indistinguishable answer. The page shows the creator's published public catalog alongside their profile, paged and bounded by the server; drafts, archived items, and members-only items never appear on it. Published clubs appear as metadata only — a name and a description — with no member count, no member list, and no control implying anybody can pay to join, because membership comes from an invitation the creator sends and no payment path exists.
+Exact visual specification remains `DESIGN REQUIRED` in Figma. What exists in code is the approved Master Visual Language filled in for the Consumer expression under ADR-0027, which records both the values and the bound on them. Public creator pages remain separate from Social Discovery. The canonical public creator address is `/c/{handle}`, resolved against the explicitly public projection CREATORS publishes; an unknown handle, an unpublished profile, and a creator who is not active are one indistinguishable answer. Its public profile/catalog reads require no session. Separately, an authenticated Consumer Web session may ask BILLING for the creator's virtual-gift catalog under [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md), review an immutable price, and send support through local/test commerce. That control widens neither the public creator projection nor club access, and it is unavailable in production while provider and commercial gates remain closed. Published clubs remain metadata only — a name and a description — with no member count, no member list, and no control implying a gift or payment joins one.
 
 ### Calling
 
@@ -43,7 +43,7 @@ An ending is disclosed in the vocabulary the person is entitled to. A call ended
 
 ## Domains and dependencies
 
-AUTH owns identity/session; IDENTITY ASSURANCE owns verified assurance evidence; USERS owns self-declaration/profile/account; DISCOVERY owns candidate/introduction state; MESSAGING owns conversations/messages; TRUST & SAFETY owns blocks/reports/enforcement; NOTIFICATIONS owns delivery/preferences; BILLING owns consumer payment/subscription truth; PRIVATE CLUBS owns creator entitlements. AI, RTC, verification workflow, creator commerce, and monetisation are phase-gated dependencies, not Web-owned behavior.
+AUTH owns identity/session; IDENTITY ASSURANCE owns verified assurance evidence; USERS owns self-declaration/profile/account; DISCOVERY owns candidate/introduction state; MESSAGING owns conversations/messages; TRUST & SAFETY owns blocks/reports/enforcement; NOTIFICATIONS owns delivery/preferences; BILLING owns consumer payment, gift, and subscription truth; PRIVATE CLUBS owns creator entitlements. AI, RTC, verification workflow, creator commerce, and live monetisation are phase-gated dependencies, not Web-owned behavior.
 
 ## Authentication and permissions
 
@@ -69,7 +69,7 @@ Every screen defines initial loading, refresh/loading-more, skeleton where usefu
 
 ## What the surface may not state
 
-Consumer Web renders server answers and adds nothing. In particular it carries no photograph of anybody — consumer media has no durable address and no authorized delivery route exists, so every person is drawn as an identity mark and the profile screen says why — no unread *message* count, because the contract publishes sequence positions rather than a count, no distance, compatibility score, popularity, or view count, no online indicator, and no purchase control. A capability the platform has deliberately not enabled is presented as a decision rather than as a failure, so nobody reports a product gap as a bug.
+Consumer Web renders server answers and adds nothing. In particular it carries no unread *message* count, because the contract publishes sequence positions rather than a count, no distance, compatibility score, popularity, or view count, and no online indicator. A gift control renders only the catalog identity and immutable price BILLING published, states that it grants no access, and confirms server settlement rather than animating a client assumption. A capability the platform has deliberately not enabled is presented as a decision rather than as a failure, so nobody reports a product gap as a bug.
 
 ## Security, phase, and authority
 

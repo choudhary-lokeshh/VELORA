@@ -11,6 +11,11 @@ import type {
   ConsumerAccount,
   ConsumerProfile,
   ConsumerSubscriptionList,
+  ConsumerGiftList,
+  GiftCatalog,
+  GiftCatalogItem,
+  SendGiftBody,
+  SendGiftResponse,
   Conversation,
   ConversationList,
   CreateAppealBody,
@@ -112,11 +117,19 @@ export interface ConsumerApi {
   /**
    * The commercial relationships this person is paying for.
    *
-   * A read of server truth and nothing else. There is no purchase method on
-   * this client, because there is no approved payment provider and a control
-   * that could not succeed would be a promise in a button.
+   * A read of server truth and nothing else. Virtual gifts are a separate
+   * one-time support operation and never appear as a subscription.
    */
   subscriptions(): Promise<ApiResult<ConsumerSubscriptionList>>;
+  giftCatalog(input: {
+    readonly currency: GiftCatalogItem['price']['currency'];
+    readonly handle: string;
+  }): Promise<ApiResult<GiftCatalog>>;
+  sentGifts(): Promise<ApiResult<ConsumerGiftList>>;
+  sendGift(input: {
+    readonly body: SendGiftBody;
+    readonly idempotencyKey: string;
+  }): Promise<ApiResult<SendGiftResponse>>;
   /** Private clubs this person may currently read. */
   clubAccess(signal?: AbortSignal): Promise<ApiResult<ClubAccessList>>;
   /**
@@ -316,6 +329,32 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
       attempt(async () =>
         api.GET('/v1/billing/subscriptions', await reading(undefined)),
       ),
+
+    giftCatalog: async ({ currency, handle }) =>
+      attempt(async () =>
+        api.GET('/v1/billing/gifts/catalog', {
+          ...(await reading(undefined)),
+          params: { query: { currency, handle } },
+        }),
+      ),
+
+    sentGifts: async () =>
+      attempt(async () =>
+        api.GET('/v1/billing/gifts', await reading(undefined)),
+      ),
+
+    sendGift: async ({ body, idempotencyKey }) =>
+      attempt(async () => {
+        const request = await writing();
+        return api.POST('/v1/billing/gifts', {
+          ...request,
+          body,
+          headers: {
+            ...request.headers,
+            'x-velora-idempotency-key': idempotencyKey,
+          },
+        });
+      }),
 
     clubAccess: async (signal) =>
       attempt(async () => api.GET('/v1/clubs/access', await reading(signal))),

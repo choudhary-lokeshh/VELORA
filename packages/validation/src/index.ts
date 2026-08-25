@@ -17,6 +17,12 @@ import {
 import {
   checkoutResponseSchema,
   consumerSubscriptionListResponseSchema,
+  consumerGiftListResponseSchema,
+  creatorReceivedGiftListResponseSchema,
+  giftCatalogResponseSchema,
+  giftCatalogProvisionResponseSchema,
+  sendGiftRequestSchema,
+  sendGiftResponseSchema,
   creatorEarningsHistoryResponseSchema,
   creatorEarningsResponseSchema,
   creatorPayoutHistoryResponseSchema,
@@ -243,6 +249,8 @@ export const apiRoutePaths = {
   creatorAccountSelf: '/v1/creator/me',
   creatorEarnings: '/v1/creator/earnings',
   creatorEarningsHistory: '/v1/creator/earnings/history',
+  creatorReceivedGifts: '/v1/creator/gifts',
+  creatorGiftCatalogProvision: '/v1/creator/gifts/catalog/provision',
   creatorPayoutOnboarding: '/v1/creator/payouts/onboarding',
   creatorPayoutReadiness: '/v1/creator/payouts/readiness',
   creatorPayouts: '/v1/creator/payouts',
@@ -281,6 +289,8 @@ export const apiRoutePaths = {
   consumerSafetyStanding: '/v1/safety/standing',
   creatorMatureReadiness: '/v1/creator/safety/readiness',
   checkouts: '/v1/billing/checkouts',
+  gifts: '/v1/billing/gifts',
+  giftCatalog: '/v1/billing/gifts/catalog',
   identityProviderEvents: '/v1/identity/provider-events',
   providerEvents: '/v1/billing/provider-events',
   subscriptions: '/v1/billing/subscriptions',
@@ -403,6 +413,12 @@ export const apiSchemas = {
   CreatorPolicyAcknowledgementRequest:
     creatorPolicyAcknowledgementRequestSchema,
   CheckoutResponse: checkoutResponseSchema,
+  ConsumerGiftListResponse: consumerGiftListResponseSchema,
+  CreatorReceivedGiftListResponse: creatorReceivedGiftListResponseSchema,
+  GiftCatalogResponse: giftCatalogResponseSchema,
+  GiftCatalogProvisionResponse: giftCatalogProvisionResponseSchema,
+  SendGiftRequest: sendGiftRequestSchema,
+  SendGiftResponse: sendGiftResponseSchema,
   ConsumerSubscriptionListResponse: consumerSubscriptionListResponseSchema,
   CreatorEarningsHistoryResponse: creatorEarningsHistoryResponseSchema,
   CreatorEarningsResponse: creatorEarningsResponseSchema,
@@ -1973,6 +1989,101 @@ export const apiOperations = [
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'get',
+    operationId: 'getGiftCatalog',
+    path: apiRoutePaths.giftCatalog,
+    requestQuery: [
+      { description: 'Published creator handle', name: 'handle' },
+      { description: 'Requested catalog currency', name: 'currency' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "Active platform gift items with this creator's immutable active price in the requested currency.",
+        schemaName: 'GiftCatalogResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '403': commerceNotEligibleResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'sendGift',
+    path: apiRoutePaths.gifts,
+    requestHeaders: [idempotencyHeader],
+    requestSchemaName: 'SendGiftRequest',
+    responses: {
+      '201': {
+        description:
+          'The gift and payment are durable and, in local/test, settlement passed through the signed provider inbox and balanced journal.',
+        schemaName: 'SendGiftResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '403': commerceNotEligibleResponse,
+      '409': {
+        description: 'The idempotency key names different gift inputs.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Consumer Web only. A gift sends value, never access or entitlement.',
+  },
+  {
+    method: 'get',
+    operationId: 'listSentGifts',
+    path: apiRoutePaths.gifts,
+    responses: {
+      '200': {
+        description: "The consumer's own sent-gift history.",
+        schemaName: 'ConsumerGiftListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'get',
+    operationId: 'listReceivedGifts',
+    path: apiRoutePaths.creatorReceivedGifts,
+    responses: {
+      '200': {
+        description:
+          'Received gifts with gross and journal-derived creator earning. Sender identity is withheld.',
+        schemaName: 'CreatorReceivedGiftListResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'provisionLocalGiftCatalog',
+    path: apiRoutePaths.creatorGiftCatalogProvision,
+    responses: {
+      '200': {
+        description:
+          'Fixed platform gift offers exist for the acting creator in local/test only.',
+        schemaName: 'GiftCatalogProvisionResponse',
+      },
+      ...creatorAuthenticationResponses,
+      ...sharedErrorResponses,
+      '503': commerceUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Local/test seed support. No request field can choose catalog terms or enable a deployed environment.',
   },
   {
     method: 'get',

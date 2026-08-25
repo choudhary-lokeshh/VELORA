@@ -965,3 +965,94 @@
   gap: 2px;
   min-width: 0;
 }
+/* Virtual gifts use the approved Consumer surface tokens and code-native art. */
+.v-gifts {
+  overflow: hidden;
+  position: relative;
+}
+
+.v-gift-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.v-gift-choice {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 112px;
+  padding: var(--space-3);
+  transition:
+    border-color 180ms ease-out,
+    transform 180ms ease-out;
+  width: 100%;
+}
+
+.v-gift-choice:hover {
+  border-color: var(--border-strong);
+}
+.v-gift-choice:active {
+  transform: scale(0.98);
+}
+.v-gift-choice[aria-pressed='true'] {
+  border-color: var(--ember);
+  box-shadow: 0 0 0 1px var(--ember);
+}
+
+.v-gift-art {
+  color: var(--ember);
+  height: 40px;
+  width: 40px;
+}
+
+.v-gift-choice__name {
+  font-size: var(--text-small-size);
+  font-weight: 600;
+}
+.v-gift-success {
+  color: var(--status-positive);
+  font-size: var(--text-small-size);
+}
+.v-gifts--sent::after {
+  animation: v-gift-glow 420ms ease-out both;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--ember) 30%, transparent),
+    transparent 70%
+  );
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+@keyframes v-gift-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.v-gift-history-mark {
+  align-items: center;
+  color: var(--ember);
+  display: flex;
+  font-weight: 700;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}

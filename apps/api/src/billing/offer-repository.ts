@@ -47,6 +47,7 @@ export class OfferRepository {
         and(
           eq(billingOffers.id, input.offerId),
           eq(billingOffers.creatorId, input.creatorId),
+          eq(billingOffers.resourceType, 'club'),
         ),
       )
       .limit(1);
@@ -94,9 +95,13 @@ export class OfferRepository {
       .from(billingOffers)
       .where(
         after === undefined
-          ? eq(billingOffers.creatorId, input.creatorId)
+          ? and(
+              eq(billingOffers.creatorId, input.creatorId),
+              eq(billingOffers.resourceType, 'club'),
+            )
           : and(
               eq(billingOffers.creatorId, input.creatorId),
+              eq(billingOffers.resourceType, 'club'),
               or(
                 lt(billingOffers.createdAt, after.moment),
                 and(

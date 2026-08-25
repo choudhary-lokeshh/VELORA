@@ -1,11 +1,14 @@
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+
+import type { ConsumerApi } from '@velora/consumer-client';
 
 import { CreatorPublicPage } from '../src/product/creator-page';
 
@@ -220,6 +223,159 @@ describe('the public creator page', () => {
         name: 'Links this creator chose to show',
       }),
     ).toBeDefined();
+  });
+});
+
+describe('virtual gifts on a creator page', () => {
+  it('requires review, sends the catalog identity, and renders confirmed server truth', async () => {
+    const calls: unknown[] = [];
+    const item = {
+      description: 'A small bloom of appreciation.',
+      id: '10000000-0000-4000-8000-000000000001',
+      name: 'Rose',
+      price: { amountMinor: '100', currency: 'USD' as const },
+      tier: 'small' as const,
+      visual: 'rose' as const,
+    };
+    const consumerApi = {
+      giftCatalog: () =>
+        Promise.resolve({
+          kind: 'ok' as const,
+          value: {
+            creator: {
+              displayName: published.displayName,
+              handle: published.handle,
+            },
+            enabled: true,
+            items: [item],
+          },
+        }),
+      sendGift: (input: unknown) => {
+        calls.push(input);
+        return Promise.resolve({
+          kind: 'ok' as const,
+          value: {
+            gift: {
+              createdAt: '2026-08-25T12:00:00.000Z',
+              creator: {
+                displayName: published.displayName,
+                handle: published.handle,
+              },
+              gift: { id: item.id, name: item.name, visual: item.visual },
+              id: '20000000-0000-4000-8000-000000000001',
+              price: item.price,
+              sentAt: '2026-08-25T12:00:01.000Z',
+              state: 'sent' as const,
+            },
+          },
+        });
+      },
+    } as unknown as ConsumerApi;
+
+    render(
+      <CreatorPublicPage
+        apiBaseUrl={baseUrl}
+        consumerApi={consumerApi}
+        fetchImplementation={doubleFor({ body: published, kind: 'ok' }).fetch}
+        handle={published.handle}
+        signedIn
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('gift-choice-rose'));
+    expect(calls).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Send Rose' }));
+    const dialog = screen.getByRole('dialog', { name: 'Confirm gift' });
+    expect(dialog.textContent).toContain('1.00 USD');
+    expect(dialog.textContent).toContain('unlocks no content');
+    fireEvent.click(screen.getByTestId('gift-confirm-accept'));
+    fireEvent.click(screen.getByTestId('gift-confirm-accept'));
+
+    await waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]).toMatchObject({
+      body: {
+        context: { type: 'creator_profile' },
+        currency: 'USD',
+        giftItemId: item.id,
+        handle: published.handle,
+      },
+    });
+    expect(await screen.findByText(/Gift sent/u)).toBeDefined();
+  });
+
+  it('never presents a pending payment as a sent gift and retries one intent safely', async () => {
+    const calls: { idempotencyKey: string }[] = [];
+    const messages: string[] = [];
+    const item = {
+      description: 'A small bloom of appreciation.',
+      id: '10000000-0000-4000-8000-000000000001',
+      name: 'Rose',
+      price: { amountMinor: '100', currency: 'USD' as const },
+      tier: 'small' as const,
+      visual: 'rose' as const,
+    };
+    const consumerApi = {
+      giftCatalog: () =>
+        Promise.resolve({
+          kind: 'ok' as const,
+          value: {
+            creator: {
+              displayName: published.displayName,
+              handle: published.handle,
+            },
+            enabled: true,
+            items: [item],
+          },
+        }),
+      sendGift: (input: { idempotencyKey: string }) => {
+        calls.push(input);
+        return Promise.resolve({
+          kind: 'ok' as const,
+          value: {
+            gift: {
+              createdAt: '2026-08-25T12:00:00.000Z',
+              creator: {
+                displayName: published.displayName,
+                handle: published.handle,
+              },
+              gift: { id: item.id, name: item.name, visual: item.visual },
+              id: '20000000-0000-4000-8000-000000000002',
+              price: item.price,
+              state: 'pending' as const,
+            },
+          },
+        });
+      },
+    } as unknown as ConsumerApi;
+
+    render(
+      <CreatorPublicPage
+        apiBaseUrl={baseUrl}
+        consumerApi={consumerApi}
+        fetchImplementation={doubleFor({ body: published, kind: 'ok' }).fetch}
+        handle={published.handle}
+        showToast={(message) => {
+          messages.push(message);
+        }}
+        signedIn
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('gift-choice-rose'));
+    fireEvent.click(screen.getByRole('button', { name: 'Send Rose' }));
+    fireEvent.click(screen.getByTestId('gift-confirm-accept'));
+    await waitFor(() => {
+      expect(messages.at(-1)).toContain('not sent yet');
+    });
+    expect(screen.queryByText(/Gift sent/u)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Rose' }));
+    fireEvent.click(screen.getByTestId('gift-confirm-accept'));
+    await waitFor(() => {
+      expect(calls).toHaveLength(2);
+    });
+    expect(calls[1]?.idempotencyKey).toBe(calls[0]?.idempotencyKey);
   });
 });
 

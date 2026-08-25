@@ -35,7 +35,7 @@ export type BillingInterval = (typeof billingIntervals)[number];
  * subscriptions, locked posts, and PPV in Phase 2, and the club is the one of
  * those with a real entitlement behind it already.
  */
-export const commercialResourceTypes = ['club'] as const;
+export const commercialResourceTypes = ['club', 'gift'] as const;
 export type CommercialResourceType = (typeof commercialResourceTypes)[number];
 
 /**

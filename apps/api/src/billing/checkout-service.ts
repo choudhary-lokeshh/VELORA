@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { isCurrencyCode } from '@velora/validation';
 
 import type { Executor, TransactionHandle } from '../database/executor.js';
+import { lockPair } from '../database/pair-lock.js';
+import type { SafetyDirectoryPort } from '../safety/directory.js';
 
 import { money, type Money } from '../money/money.js';
 import type { CommercePolicy } from './commerce-policy.js';
@@ -14,6 +16,7 @@ import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { CommercialConsumerPort, CommercialCreatorPort } from './ports.js';
 import type { TaxAssessment, TaxAuthorityPort } from './tax.js';
+import type { GiftRepository } from './gift-repository.js';
 
 /**
  * Turning an intention to buy into a durable operation, and only then asking a
@@ -73,11 +76,13 @@ export interface CheckoutServiceDependencies {
   readonly eligibility: CommerceEligibility;
   readonly creators: CommercialCreatorPort;
   readonly disputes: DisputeRepository;
+  readonly gifts?: GiftRepository;
   readonly now: () => Date;
   readonly offers: OfferRepository;
   readonly payments: PaymentRepository;
   readonly policy: CommercePolicy;
   readonly provider: PaymentProviderPort;
+  readonly safety?: SafetyDirectoryPort;
   /** Where the provider returns a consumer. Consumer Web, from configuration. */
   readonly returnOrigin: string | undefined;
   /** The tax authority. Assesses nothing in production, which blocks commerce. */
@@ -352,6 +357,16 @@ export class CheckoutService {
     if (offer?.state !== 'active') {
       return { kind: 'refused', reason: 'not_eligible' };
     }
+    if (
+      !(await this.giftPurchasePermitted(executor, {
+        consumerId: input.consumerId,
+        idempotencyKey: input.idempotencyKey,
+        now: input.now,
+        offer,
+      }))
+    ) {
+      return { kind: 'refused', reason: 'not_eligible' };
+    }
     const prices = await offers.livePricesFor(executor, offer.id);
     const price = prices.find((row) => row.currency === input.currency);
     if (price === undefined) return { kind: 'refused', reason: 'not_eligible' };
@@ -455,6 +470,16 @@ export class CheckoutService {
     if (offer?.state !== 'active') {
       return { kind: 'refused', reason: 'not_eligible' };
     }
+    if (
+      !(await this.giftPurchasePermitted(executor, {
+        consumerId: input.consumerId,
+        idempotencyKey: input.idempotencyKey,
+        now: input.now,
+        offer,
+      }))
+    ) {
+      return { kind: 'refused', reason: 'not_eligible' };
+    }
     const prices = await offers.livePricesFor(executor, offer.id);
     const price = prices.find((row) => row.currency === input.currency);
     if (price === undefined) return { kind: 'refused', reason: 'not_eligible' };
@@ -525,5 +550,60 @@ export class CheckoutService {
       kind: 'prepared',
       payment: inserted,
     };
+  }
+
+  private async giftPurchasePermitted(
+    executor: Executor,
+    input: {
+      readonly consumerId: string;
+      readonly idempotencyKey: string;
+      readonly now: Date;
+      readonly offer: Awaited<
+        ReturnType<OfferRepository['findOfferForPurchase']>
+      > & {};
+    },
+  ): Promise<boolean> {
+    if (input.offer.resourceType !== 'gift') return true;
+    const { gifts, safety } = this.dependencies;
+    if (gifts === undefined || safety === undefined) return false;
+    const gift = await gifts.findBySenderKey(executor, {
+      idempotencyKey: input.idempotencyKey,
+      senderUserId: input.consumerId,
+    });
+    if (
+      gift?.offerId !== input.offer.id ||
+      gift.recipientCreatorId !== input.offer.creatorId ||
+      gift.state !== 'pending'
+    ) {
+      return false;
+    }
+    await lockPair(
+      executor as TransactionHandle,
+      gift.senderUserId,
+      gift.recipientUserId,
+    );
+    const giftRecipientFor =
+      this.dependencies.creators.publishedGiftRecipientFor?.bind(
+        this.dependencies.creators,
+      );
+    if (giftRecipientFor === undefined) return false;
+    const [mayInteract, recipient] = await Promise.all([
+      safety.mayInteract({
+        executor,
+        first: gift.senderUserId,
+        now: input.now,
+        second: gift.recipientUserId,
+      }),
+      giftRecipientFor({
+        executor,
+        handle: gift.recipientHandle,
+        now: input.now,
+      }),
+    ]);
+    return (
+      mayInteract &&
+      recipient?.creatorId === gift.recipientCreatorId &&
+      recipient.userId === gift.recipientUserId
+    );
   }
 }

@@ -10,9 +10,9 @@ What the Consumer Web product interface froze with, what it deliberately does no
 
 ## Superseded since the freeze
 
-One claim in this report is no longer true, and it is the one that shaped most of the rest. **Consumer photographs are now rendered.** `POST /v1/media/deliveries` exchanges the image references every projection already carried for short-lived addresses, and DISCOVERY publishes the peer-visibility rule USERS was missing. Every sentence below about no photograph existing anywhere describes what was true at this freeze; the decision that closed it is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), and [MEDIA](../domains/media.md) and [DISCOVERY](../domains/discovery.md) carry the rule.
+Two claims in this report are no longer true. **Consumer photographs are now rendered.** `POST /v1/media/deliveries` exchanges the image references every projection already carried for short-lived addresses, and DISCOVERY publishes the peer-visibility rule USERS was missing. Every sentence below about no photograph existing anywhere describes what was true at this freeze; the decision that closed it is recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md), and [MEDIA](../domains/media.md) and [DISCOVERY](../domains/discovery.md) carry the rule.
 
-Nothing else here changed. The storage and delivery **provider** decisions are untouched and still open, so a deployed environment still serves nothing; what was closed was the platform's own gap.
+**A purchase control now exists for local/test virtual gifting.** An authenticated consumer may choose and confirm a BILLING-published gift on a creator page and read sent history. It uses the real payment inbox and journal path and grants no entitlement. Production remains blocked by the unchanged unavailable provider and unpublished commerce policy. [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md) and the [virtual gifting freeze report](23-virtual-gifting-freeze-report.md) supersede the no-purchase statements below; the original freeze evidence remains historical.
 
 ## What this work owns
 

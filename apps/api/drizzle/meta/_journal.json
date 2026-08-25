@@ -463,6 +463,13 @@
       "when": 1787394885435,
       "tag": "0065_notification-provider-events",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1787666330327,
+      "tag": "0066_virtual-gifting",
+      "breakpoints": true
     }
   ]
 }

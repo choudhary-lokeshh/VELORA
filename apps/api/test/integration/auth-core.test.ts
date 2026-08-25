@@ -105,6 +105,8 @@ describe('AUTH persistence and invariants', () => {
     ]);
     expect(names.filter((name) => !name.startsWith('auth_'))).toEqual([
       'billing_disputes',
+      'billing_gift_catalog_items',
+      'billing_gifts',
       'billing_journal_accounts',
       'billing_journal_entries',
       'billing_journal_transactions',

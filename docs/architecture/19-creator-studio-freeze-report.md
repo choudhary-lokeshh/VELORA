@@ -10,7 +10,7 @@ What the Creator Studio product interface froze with, what it deliberately does 
 
 ## Superseded since the freeze
 
-One claim in this report is no longer true. **Creator imagery exists.** A creator
+Two claims in this report are no longer true. **Creator imagery exists.** A creator
 can add an avatar and a cover to their page and up to six images to a catalog
 item, and every surface that renders a creator — the public page, the catalog,
 and this workspace's own preview — shows them. Every sentence below saying no
@@ -20,8 +20,14 @@ decision that closed it is recorded in
 [CREATORS](../domains/creators.md) and
 [PRIVATE CLUBS](../domains/private-clubs.md) carry the rules.
 
-Nothing else here changed. The storage and delivery **provider** decisions are
-untouched and still open, so a deployed environment still serves nothing.
+**Received gifts now exists under Money.** It lists durable local/test gift
+operations, immutable gross payment, and creator share from the BILLING journal,
+with sender identity withheld and payout transfer explicitly unclaimed. Production
+gifting and payout remain blocked by their independent provider and policy gates.
+[ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md) and the
+[virtual gifting freeze report](23-virtual-gifting-freeze-report.md) supersede the
+no-gift and three-money-readout statements below; the original freeze evidence
+remains historical. Storage and delivery provider decisions are also untouched.
 
 ## What this work owns
 

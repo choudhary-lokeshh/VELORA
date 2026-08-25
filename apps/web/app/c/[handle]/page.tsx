@@ -1,5 +1,5 @@
 import { resolveApiBaseUrl } from '../../../src/api';
-import { CreatorPublicPage } from '../../../src/product/creator-page';
+import { ConnectedCreatorPublicPage } from '../../../src/product/creator-page';
 
 // The API endpoint is read from the environment on every request, so one build
 // artifact serves every environment.
@@ -19,5 +19,10 @@ export default async function CreatorPage({
   readonly params: Promise<{ readonly handle: string }>;
 }) {
   const { handle } = await params;
-  return <CreatorPublicPage apiBaseUrl={resolveApiBaseUrl()} handle={handle} />;
+  return (
+    <ConnectedCreatorPublicPage
+      apiBaseUrl={resolveApiBaseUrl()}
+      handle={handle}
+    />
+  );
 }

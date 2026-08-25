@@ -378,3 +378,15 @@
   gap: var(--space-4);
   min-width: 0;
 }
+.s-gift-mark {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  color: var(--ember-ink);
+  display: flex;
+  flex: 0 0 44px;
+  font-weight: 700;
+  height: 44px;
+  justify-content: center;
+}

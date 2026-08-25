@@ -208,6 +208,23 @@ export function You() {
             <li>
               <ListRow
                 aside={<Icon name="chevronRight" size="sm" />}
+                href="/you/gifts"
+                testId="link-gifts"
+              >
+                <span className="v-notification__mark">
+                  <Icon name="sparkle" size="md" />
+                </span>
+                <span className="v-row__body">
+                  <span className="v-subheading">Sent gifts</span>
+                  <span className="v-caption v-quiet">
+                    Support you have sent to creators
+                  </span>
+                </span>
+              </ListRow>
+            </li>
+            <li>
+              <ListRow
+                aside={<Icon name="chevronRight" size="sm" />}
                 href="/you/safety"
                 testId="link-safety"
               >

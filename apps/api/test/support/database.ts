@@ -86,6 +86,7 @@ const truncationRoots = [
   // deletable, so both are listed explicitly ahead of the payments they name.
   'billing_disputes',
   'billing_refunds',
+  'billing_gifts',
   'billing_payments',
   'billing_prices',
   'billing_offers',

@@ -90,7 +90,7 @@ visual work depends on it.
 | Counterpart photograph in a conversation | B | `conversationCounterpartSchema.media` published; no delivery route |
 | Typing or presence | E | Deliberately absent; presence is Phase 2 and unbuilt |
 | Attachments | E | Deliberately absent from `packages/validation/src/messaging.ts` |
-| Gifting from a conversation | E | No gifting capability exists anywhere |
+| Gifting from a conversation | E | Virtual gifts exist only for the published creator-profile context under ADR-0032; MESSAGING publishes no eligible gift-context contract |
 
 ## Activity and retention
 
@@ -112,7 +112,7 @@ visual work depends on it.
 | Public preview | C | `preview.tsx` renders what the public projection publishes, which is thin for the same reason the public page is |
 | Any creator imagery | B | Same creator media gap |
 | Earnings and payouts | F | Real ledger-derived readouts that correctly report an unavailable capability; `BILLING_PAYMENT_PROVIDER` and `BILLING_COMMERCE_POLICY` refuse in every deployed environment |
-| Received gifts | E | No gifting capability exists |
+| Received gifts | F | `apps/creator-studio/src/product/gifts.tsx` renders durable gift/payment/journal truth in local/test; production commerce remains provider- and policy-blocked |
 | Anything telling a creator something happened while they were away | E | Recorded as an open decision: the notification contract is consumer-audience only |
 
 ## Platform Admin
@@ -127,14 +127,14 @@ visual work depends on it.
 | Capability | Class | Evidence |
 |---|---|---|
 | Journals, offers, prices, checkout orchestration, webhook inbox, refunds, disputes, reconciliation | A as architecture | `apps/api/src/billing/*`, `apps/api/src/money/*` |
-| Anything a consumer can buy | E as product | No purchasable surface exists, deliberately, and `local-test` is the only adapter that could complete one |
-| Virtual gifting | E | No catalog, no send path, no receipt, no history, no domain |
+| Anything a consumer can buy | F as product | Virtual gifts are purchasable through real local/test commerce on a creator page; staging/production accept only the unavailable provider and unpublished commerce policy |
+| Virtual gifting | A local/test; F production | Data-driven catalog, durable gift object, send/receipt/history, verified provider inbox, balanced ledger and reversals exist; production provider, terms, tax, channel, design, and payout gates remain closed |
 
 ## Demo population
 
 | Capability | Class | Evidence |
 |---|---|---|
-| Seeded local world | E | No seed script exists in `scripts/` or `apps/api/scripts/`. A fresh clone signs in to an empty product |
+| Seeded local world | A | `scripts/seed-local-world.mjs` creates the fictional world entirely through authenticated API routes, including catalog provisioning and settled gifts |
 
 The Android freeze report records that a profile photograph had to be written
 straight into the database to get a walk past onboarding. That is the shape of
@@ -143,14 +143,15 @@ this gap: the product has been demonstrated by hand-editing rows.
 ## What the classification implies about order
 
 The rows are not independent. Photographs unblock discovery, profiles,
-conversations, creator pages and the Studio preview simultaneously, and a seeded
-world is worth little before them. Creator discovery needs a listing route that
-does not exist. Gifting needs a phase decision before it needs code.
+conversations, creator pages and the Studio preview simultaneously. Creator
+discovery needs a listing route that does not exist. The seeded world and local/test
+gifting path now exist; live gifting remains downstream of provider, terms, tax,
+channel, design, and payout decisions rather than more client wiring.
 
-The order that falls out of the table is: authorized media delivery, then
-creator discoverability, then profile depth, then gifting, then the social and
-Studio depth work, then the seeded world, and only then the visual pass — because
-polishing a surface that renders no imagery and holds no data measures nothing.
+The remaining order starts with creator discoverability and profile depth, then
+the social and Studio depth work. Production gifting resumes only after its
+external gates are approved; repeating its local implementation would not close
+any of them.
 
 ## Cross-references
 

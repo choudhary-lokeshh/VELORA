@@ -16,6 +16,18 @@ Same idempotency key returns same operation; provider correlation/reference uniq
 
 Consumer sees own customer-safe receipts/status; creators see only approved aggregate earnings views; finance/admin scope is least privilege. Events: intent, charge, refund, dispute, reconciliation changes, redacted. Phase 2 consumer premium/club charges; Phase 3 coins/gifts. `DECISION REQUIRED`: provider, currency/country, tax, receipt/refund/dispute policy.
 
+## Implemented: virtual gifts
+
+[ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md) adds one product object without changing the money architecture. `billing_gifts` holds a sender-scoped idempotent operation, the CREATORS-published recipient snapshot, one platform catalog identity, the exact offer and eventual payment reference, creator-profile context, lifecycle timestamps, and a version. A database trigger freezes its identity, permits only forward lifecycle movement, and retains every row. Catalog identities are likewise retained and frozen except for activation state; changed presentation or value is a new identity and price, so old history cannot be rewritten.
+
+The caller cannot express an amount or recipient identifier. BILLING asks CREATORS to resolve an active published profile and asks TRUST & SAFETY to authorize the pair under the established lock immediately before creation and checkout. The same sender plus idempotency key converges on one gift, and direct checkout of the platform-owned gift offer is refused unless the matching pending gift already exists.
+
+Verified settlement posts the ordinary balanced capture and settled-revenue fact, then advances the gift to `sent` in the same transaction. The gift branch returns before the subscription and entitlement bridge, because support grants nothing. Verified failure advances a pending gift to `failed`; partial/full refund and lost-dispute processing advance it to `partially_reversed` or `reversed` while preserving the original capture and gift.
+
+History is a minimized projection. A consumer reads only gifts they sent. A creator reads only gifts addressed to their own creator identity; sender identity is absent, gross comes from the immutable payment, and earning comes from the creator-payable journal entry for that settlement rather than from a percentage recomputed at read time. The projection never says a payout occurred.
+
+Local/test catalog provisioning and settlement use the deterministic provider adapter and ordinary webhook/worker path. Staging and production retain the existing `unavailable` provider and unpublished commerce policy, so no gift or payment is written there. The fixture prices and allocation are not production terms.
+
 ## Implemented: the customer-money journal
 
 The first thing BILLING owns is the book, before any offer, payment, or subscription exists. [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md) gives the reason: a payment recorded before there is somewhere to account for it gets accounted for retroactively, by inference, from records that were not designed to support it.
@@ -32,13 +44,13 @@ Posting is idempotent by construction. A transaction carries the business event 
 
 Balances are derived on every read, never stored. A cached balance is a second source of truth that a concurrency bug can corrupt with nothing noticing, and the entry index carries the direction and the amount so the projection reads from the index rather than the heap. `sum` over `bigint` returns `numeric` in PostgreSQL, so an account cannot overflow however many entries it accumulates.
 
-Nothing posts to this book yet except a test. No provider is approved, no offer exists, and no reason but `correction` is reachable from application code; the rest of the vocabulary is declared with the phase that makes each one writable.
+Local/test checkout, subscriptions, refunds, disputes, and virtual gifts post to this book through the deterministic adapter and verified event path. No production provider or terms are approved, so deployed environments post none of them. Every posting reason remains reachable only through its owning service and verified lifecycle, never through a generic journal route.
 
 ## Implemented: commercial offers and frozen prices
 
 An offer says what a creator sells; a price says what it costs. They are separate rows with separate lifecycles because they answer to different rules: an offer can be withdrawn and reopened, and a price can never change at all.
 
-An offer points at a resource another domain owns — a private club today — by opaque identifier. BILLING never learns what is inside a club and PRIVATE CLUBS never learns what one costs. They meet through one published contract, `ClubCommercialDirectory`, which answers exactly one question: is this club owned by this creator, and is it published. An unknown club and somebody else's club give the same answer, so no creator can enumerate another's catalog by identifier.
+An offer normally points at a resource another domain owns — a private club by opaque identifier. BILLING never learns what is inside a club and PRIVATE CLUBS never learns what one costs. They meet through one published contract, `ClubCommercialDirectory`, which answers exactly one question: is this club owned by this creator, and is it published. An unknown club and somebody else's club give the same answer, so no creator can enumerate another's catalog by identifier. Virtual-gift offers are the narrow exception because BILLING owns their platform catalog; they are provisioned only by the local/test platform route, projected per eligible creator, and excluded from every creator-owned offer mutation and listing.
 
 Activation is a conjunction re-evaluated inside the transaction that performs it, never inferred from an earlier decision. Approved commercial terms must exist; the creator must currently be able to operate, read from CREATORS' published contract; the resource must be owned and published; and the offer must carry at least one live price in a currency the policy still approves. A price approved yesterday in a currency withdrawn today does not activate.
 

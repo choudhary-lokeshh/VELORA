@@ -267,6 +267,72 @@ async function sellableOffer(
   return offer.offer.id;
 }
 
+async function giftRecipient(
+  subject: string,
+  creatorHandle: string,
+): Promise<{
+  readonly owner: Session;
+  readonly recipientUserId: string;
+  readonly studio: Session;
+}> {
+  const owner = await consumer(live.runtime, subject);
+  const ownAccount = (await (
+    await live.runtime.app.handle(
+      signed('/v1/users/me', owner, testConsumerOrigin),
+    )
+  ).json()) as { id: string };
+  const studio = await session(live.runtime, subject, 'creator_studio');
+  const post = (path: string, body: unknown = {}) =>
+    live.runtime.app.handle(
+      signed(path, studio, testCreatorOrigin, { body, method: 'POST' }),
+    );
+  await post('/v1/creator');
+  await post('/v1/creator/onboarding/acknowledgements', { acknowledgements });
+  const profile = (await (
+    await post('/v1/creator/profile', {
+      displayName: 'Gifted Creator',
+      handle: creatorHandle,
+    })
+  ).json()) as { version: number };
+  await post('/v1/creator/profile/publication', {
+    publication: 'published',
+    version: profile.version,
+  });
+  const provisioned = await post('/v1/creator/gifts/catalog/provision');
+  expect(provisioned.status).toBe(200);
+  return { owner, recipientUserId: ownAccount.id, studio };
+}
+
+async function giftCatalog(buyer: Session, creatorHandle: string) {
+  return handle(
+    signed(
+      `/v1/billing/gifts/catalog?handle=${creatorHandle}&currency=USD`,
+      buyer,
+      testConsumerOrigin,
+    ),
+  );
+}
+
+async function sendGift(
+  buyer: Session,
+  creatorHandle: string,
+  giftItemId: string,
+  idempotencyKey: string,
+) {
+  return handle(
+    signed('/v1/billing/gifts', buyer, testConsumerOrigin, {
+      body: {
+        context: { type: 'creator_profile' },
+        currency: 'USD',
+        giftItemId,
+        handle: creatorHandle,
+      },
+      idempotencyKey,
+      method: 'POST',
+    }),
+  );
+}
+
 interface CheckoutBody {
   readonly payment: {
     readonly amount: {
@@ -542,6 +608,331 @@ describe('checkout orchestration', () => {
     const response = await startCheckout(buyer, offerId, 'checkout-key-pulled');
     expect(response.status).toBe(403);
     expect(await paymentCount()).toBe('0');
+  });
+});
+
+describe('virtual gifting', () => {
+  it('settles through the verified provider inbox and balanced journal without granting entitlement', async () => {
+    const recipient = await giftRecipient('gifted@velora.test', 'gifted');
+    const buyer = await consumer(live.runtime, 'giver@velora.test');
+    const catalogResponse = await giftCatalog(buyer, 'gifted');
+    expect(catalogResponse.status).toBe(200);
+    const catalog = (await catalogResponse.json()) as {
+      items: { id: string; price: { amountMinor: string } }[];
+    };
+    expect(catalog.items).toHaveLength(8);
+    const item = catalog.items[2];
+    if (item === undefined) throw new Error('gift item missing');
+
+    const sent = await sendGift(buyer, 'gifted', item.id, 'gift-send-0001');
+    expect(sent.status).toBe(201);
+    const body = (await sent.json()) as { gift: { id: string; state: string } };
+    expect(body.gift.state).toBe('sent');
+
+    const [payment] = await rowsOf<{
+      amount_minor: string;
+      id: string;
+      state: string;
+    }>(
+      database.sql`select id, amount_minor::text as amount_minor, state from billing_payments`,
+    );
+    expect(payment?.state).toBe('succeeded');
+    expect(payment?.amount_minor).toBe(item.price.amountMinor);
+    const [balance] = await rowsOf<{ debits: string; credits: string }>(
+      database.sql`select coalesce(sum(case when direction = 'debit' then amount_minor else 0 end), 0)::text as debits, coalesce(sum(case when direction = 'credit' then amount_minor else 0 end), 0)::text as credits from billing_journal_entries`,
+    );
+    expect(balance?.debits).toBe(balance?.credits);
+    const entitlementEvents = await rowsOf<{ count: string }>(
+      database.sql`select count(*)::text as count from billing_outbox where event_name = 'billing.entitlement.granted.v1'`,
+    );
+    expect(entitlementEvents[0]?.count).toBe('0');
+
+    const sentHistory = await handle(
+      signed('/v1/billing/gifts', buyer, testConsumerOrigin),
+    );
+    expect(sentHistory.status).toBe(200);
+    expect(
+      ((await sentHistory.json()) as { gifts: unknown[] }).gifts,
+    ).toHaveLength(1);
+    const receivedHistory = await handle(
+      signed('/v1/creator/gifts', recipient.studio, testCreatorOrigin),
+    );
+    const receivedBody = (await receivedHistory.json()) as {
+      gifts: { earning: { amountMinor: string }; senderVisibility: string }[];
+    };
+    expect(receivedBody.gifts[0]?.senderVisibility).toBe('withheld');
+    expect(
+      BigInt(receivedBody.gifts[0]?.earning.amountMinor ?? '0'),
+    ).toBeGreaterThan(0n);
+  });
+
+  it('deduplicates concurrent sends and blocks direct checkout of a gift offer', async () => {
+    await giftRecipient('rushgift@velora.test', 'rushgift');
+    const buyer = await consumer(live.runtime, 'rushgiver@velora.test');
+    const catalog = (await (await giftCatalog(buyer, 'rushgift')).json()) as {
+      items: { id: string }[];
+    };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        sendGift(buyer, 'rushgift', item.id, 'gift-rush-key'),
+      ),
+    );
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+    expect(
+      (
+        await rowsOf<{ count: string }>(
+          database.sql`select count(*)::text as count from billing_gifts`,
+        )
+      )[0]?.count,
+    ).toBe('1');
+    expect(await paymentCount()).toBe('1');
+
+    const [offer] = await rowsOf<{ id: string }>(
+      database.sql`select id from billing_offers where resource_type = 'gift' limit 1`,
+    );
+    if (offer === undefined) throw new Error('gift offer missing');
+    const bypass = await startCheckout(buyer, offer.id, 'gift-bypass-key');
+    expect(bypass.status).toBe(403);
+  });
+
+  it('refuses self-gifts, blocked pairs, missing items, and deployed provider absence', async () => {
+    const recipient = await giftRecipient('guardgift@velora.test', 'guardgift');
+    const buyer = await consumer(live.runtime, 'guardgiver@velora.test');
+    const catalog = (await (await giftCatalog(buyer, 'guardgift')).json()) as {
+      items: { id: string }[];
+    };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+
+    expect((await giftCatalog(recipient.owner, 'guardgift')).status).toBe(403);
+    expect(
+      (
+        await sendGift(
+          buyer,
+          'guardgift',
+          crypto.randomUUID(),
+          'gift-missing-key',
+        )
+      ).status,
+    ).toBe(404);
+    expect((await giftCatalog(buyer, 'missing-recipient')).status).toBe(404);
+    const blocked = await handle(
+      signed('/v1/safety/blocks', buyer, testConsumerOrigin, {
+        body: { targetId: recipient.recipientUserId },
+        method: 'POST',
+      }),
+    );
+    expect(blocked.status).toBe(200);
+    expect((await giftCatalog(buyer, 'guardgift')).status).toBe(403);
+    expect(await paymentCount()).toBe('0');
+
+    const absent = await consumer(
+      withoutProvider.runtime,
+      'nogifts@velora.test',
+    );
+    const unavailable = await withoutProvider.runtime.app.handle(
+      signed(
+        '/v1/billing/gifts/catalog?handle=guardgift&currency=USD',
+        absent,
+        testConsumerOrigin,
+      ),
+    );
+    expect(unavailable.status).toBe(503);
+  });
+
+  it('records a declined attempt as failed without showing it to the creator', async () => {
+    const recipient = await giftRecipient(
+      'declinedgift@velora.test',
+      'declinedgift',
+    );
+    const buyer = await consumer(live.runtime, 'declinedgiver@velora.test');
+    const catalog = (await (
+      await giftCatalog(buyer, 'declinedgift')
+    ).json()) as { items: { id: string }[] };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+    provider.behaveAs('declined');
+
+    const response = await sendGift(
+      buyer,
+      'declinedgift',
+      item.id,
+      'gift-declined-key',
+    );
+    expect(response.status).toBe(201);
+    expect(
+      ((await response.json()) as { gift: { state: string } }).gift.state,
+    ).toBe('failed');
+
+    const sent = await handle(
+      signed('/v1/billing/gifts', buyer, testConsumerOrigin),
+    );
+    expect(
+      ((await sent.json()) as { gifts: { state: string }[] }).gifts[0]?.state,
+    ).toBe('failed');
+    const received = await handle(
+      signed('/v1/creator/gifts', recipient.studio, testCreatorOrigin),
+    );
+    expect(
+      ((await received.json()) as { gifts: unknown[] }).gifts,
+    ).toHaveLength(0);
+    expect(
+      (
+        await rowsOf<{ count: string }>(
+          database.sql`select count(*)::text as count from billing_journal_transactions`,
+        )
+      )[0]?.count,
+    ).toBe('0');
+  });
+
+  it('keeps an ambiguous attempt pending until reconciliation settles it', async () => {
+    const recipient = await giftRecipient(
+      'reconciledgift@velora.test',
+      'reconciledgift',
+    );
+    const buyer = await consumer(live.runtime, 'reconciledgiver@velora.test');
+    const catalog = (await (
+      await giftCatalog(buyer, 'reconciledgift')
+    ).json()) as { items: { id: string }[] };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+    provider.behaveAs('ambiguous');
+
+    const pending = await sendGift(
+      buyer,
+      'reconciledgift',
+      item.id,
+      'gift-reconcile-key',
+    );
+    expect(pending.status).toBe(201);
+    expect(
+      ((await pending.json()) as { gift: { state: string } }).gift.state,
+    ).toBe('pending');
+    expect(
+      (
+        await rowsOf<{ count: string }>(
+          database.sql`select count(*)::text as count from billing_journal_transactions`,
+        )
+      )[0]?.count,
+    ).toBe('0');
+
+    provider.behaveAs('normal');
+    await execute(
+      database.sql`update billing_payments set updated_at = now() - interval '10 minutes'`,
+    );
+    await live.billing.reconciliation.reconcileOnce();
+    const [payment] = await rowsOf<{ provider_reference: string }>(
+      database.sql`select provider_reference from billing_payments`,
+    );
+    provider.markSucceeded(payment?.provider_reference ?? '');
+    await execute(
+      database.sql`update billing_payments set updated_at = now() - interval '10 minutes'`,
+    );
+    await live.billing.reconciliation.reconcileOnce();
+
+    const received = await handle(
+      signed('/v1/creator/gifts', recipient.studio, testCreatorOrigin),
+    );
+    const receivedBody = (await received.json()) as {
+      gifts: { earning: { amountMinor: string }; state: string }[];
+    };
+    expect(receivedBody.gifts[0]?.state).toBe('sent');
+    expect(
+      BigInt(receivedBody.gifts[0]?.earning.amountMinor ?? '0'),
+    ).toBeGreaterThan(0n);
+  });
+
+  it('moves gift history to reversed when a full refund settles', async () => {
+    const recipient = await giftRecipient(
+      'refundgift@velora.test',
+      'refundgift',
+    );
+    const buyer = await consumer(live.runtime, 'refundgiver@velora.test');
+    const catalog = (await (await giftCatalog(buyer, 'refundgift')).json()) as {
+      items: { id: string }[];
+    };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+    expect(
+      (await sendGift(buyer, 'refundgift', item.id, 'gift-refund-key')).status,
+    ).toBe(201);
+    const [payment] = await rowsOf<{
+      amount_minor: string;
+      currency: string;
+      id: string;
+    }>(
+      database.sql`select id, amount_minor::text as amount_minor, currency from billing_payments`,
+    );
+    if (payment === undefined) throw new Error('payment missing');
+    const refund = await live.billing.refunds.issue({
+      actorReference: 'test-operator',
+      amountMinor: BigInt(payment.amount_minor),
+      correlationId: 'gift-refund-correlation',
+      currency: payment.currency,
+      idempotencyKey: 'gift-refund-full',
+      paymentId: payment.id,
+      reasonCode: 'not_delivered',
+    });
+    expect(refund.kind).toBe('issued');
+    expect(
+      (
+        await rowsOf<{ state: string }>(
+          database.sql`select state from billing_gifts`,
+        )
+      )[0]?.state,
+    ).toBe('reversed');
+    const history = await handle(
+      signed('/v1/creator/gifts', recipient.studio, testCreatorOrigin),
+    );
+    const historyBody = (await history.json()) as {
+      gifts: { earning: { amountMinor: string }; state: string }[];
+    };
+    expect(historyBody.gifts[0]?.state).toBe('reversed');
+    expect(historyBody.gifts[0]?.earning.amountMinor).toBe('0');
+  });
+
+  it('freezes gift and catalog identity in PostgreSQL and retains their history', async () => {
+    await giftRecipient('frozentgift@velora.test', 'frozentgift');
+    const buyer = await consumer(live.runtime, 'frozentgiver@velora.test');
+    const catalog = (await (
+      await giftCatalog(buyer, 'frozentgift')
+    ).json()) as {
+      items: { id: string }[];
+    };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+    expect(
+      (await sendGift(buyer, 'frozentgift', item.id, 'gift-frozen-key')).status,
+    ).toBe(201);
+
+    for (const statement of [
+      database.sql`insert into billing_gifts
+        (catalog_item_id, context_type, created_at, id, idempotency_key, offer_id,
+         payment_id, recipient_creator_id, recipient_display_name, recipient_handle,
+         recipient_user_id, reversed_at, sender_user_id, sent_at, state, updated_at, version)
+        select catalog_item_id, context_type, now(), ${crypto.randomUUID()},
+               'gift-forged-key', offer_id, null, ${crypto.randomUUID()},
+               recipient_display_name, recipient_handle, recipient_user_id, null,
+               sender_user_id, null, 'pending', now(), 1
+          from billing_gifts limit 1`,
+      database.sql`update billing_gifts set recipient_handle = 'rewritten'`,
+      database.sql`update billing_gifts set state = 'pending', version = version + 1`,
+      database.sql`delete from billing_gifts`,
+      database.sql`update billing_gift_catalog_items set name = 'Rewritten' where id = ${item.id}`,
+      database.sql`delete from billing_gift_catalog_items where id = ${item.id}`,
+    ]) {
+      expect(await refused(async () => execute(statement))).toBe(true);
+    }
+
+    expect(
+      (
+        await rowsOf<{ count: string }>(
+          database.sql`select count(*)::text as count from billing_gifts`,
+        )
+      )[0]?.count,
+    ).toBe('1');
   });
 });
 

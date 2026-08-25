@@ -1,7 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+
+import type {
+  ConsumerApi,
+  GiftCatalog,
+  GiftCatalogItem,
+} from '@velora/consumer-client';
+import { failureMessage } from '@velora/consumer-client';
+import { formatMinorUnits } from '@velora/validation';
 
 import {
   createCreatorApi,
@@ -15,6 +23,7 @@ import {
 } from '@velora/creator-client';
 
 import { Icon } from '../design/icons';
+import { ConfirmDialog } from '../design/dialog';
 import {
   Avatar,
   Badge,
@@ -23,6 +32,7 @@ import {
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
+import { useApi, useSession, useToast } from '../app/providers';
 import { useAddressesFrom } from './imagery';
 import { useResource } from './resource';
 
@@ -32,13 +42,10 @@ import { useResource } from './resource';
  * The only VELORA surface a person with no account is meant to reach, and the
  * only one whose whole job is to render somebody else. Everything it shows came
  * from the explicitly public projection the server publishes: there is no
- * creator identifier, no account state, no member count, and nothing
- * purchasable, because none of those are in the response and none could be added
- * here without the server deciding to publish them first.
- *
- * There is deliberately no control that suggests somebody can buy something. No
- * payment path exists, and a button offering one would be a lie regardless of
- * what it did when pressed.
+ * creator identifier, no account state, and no member count, because none of
+ * those are in the response and none could be added here without the server
+ * deciding to publish them first. The signed-in gift control is a separate
+ * BILLING projection; it never widens this public creator projection.
  *
  * An unknown handle, a draft page, and a suspended creator are one answer,
  * because the server gives one answer. This surface does not try to tell them
@@ -49,11 +56,17 @@ export function CreatorPublicPage({
   apiBaseUrl,
   fetchImplementation,
   handle,
+  consumerApi,
+  signedIn = false,
+  showToast,
 }: {
   readonly apiBaseUrl: string;
   /** Injected by tests so the page renders without a network. */
   readonly fetchImplementation?: typeof globalThis.fetch;
   readonly handle: string;
+  readonly consumerApi?: ConsumerApi;
+  readonly signedIn?: boolean;
+  readonly showToast?: (message: string, tone: 'critical' | 'positive') => void;
 }) {
   const api = useMemo(
     () =>
@@ -136,12 +149,259 @@ export function CreatorPublicPage({
         {creator.value === undefined ? null : (
           <div className="v-stack v-stack--8">
             <CreatorProfileView creator={creator.value} media={media} />
+            <GiftPicker
+              api={consumerApi}
+              handle={handle}
+              showToast={showToast}
+              signedIn={signedIn}
+            />
             <CreatorCatalogView api={api} handle={handle} media={media} />
             <CreatorClubsView api={api} handle={handle} />
           </div>
         )}
       </main>
     </div>
+  );
+}
+
+/** Binds the public projection to the optional signed-in gift experience. */
+export function ConnectedCreatorPublicPage(props: {
+  readonly apiBaseUrl: string;
+  readonly handle: string;
+}) {
+  const api = useApi();
+  const session = useSession();
+  const toast = useToast();
+  return (
+    <CreatorPublicPage
+      {...props}
+      consumerApi={api}
+      showToast={(message, tone) => {
+        toast.show(message, tone);
+      }}
+      signedIn={session.signedIn}
+    />
+  );
+}
+
+function GiftPicker({
+  api,
+  handle,
+  showToast,
+  signedIn,
+}: {
+  readonly api: ConsumerApi | undefined;
+  readonly handle: string;
+  readonly showToast:
+    ((message: string, tone: 'critical' | 'positive') => void) | undefined;
+  readonly signedIn: boolean;
+}) {
+  const load = useCallback(
+    async () =>
+      api === undefined
+        ? ({ kind: 'unavailable' } as const)
+        : api.giftCatalog({ currency: 'USD', handle }),
+    [api, handle],
+  );
+  const catalog = useResource<GiftCatalog>(load, {
+    enabled: signedIn && api !== undefined,
+  });
+  const [selected, setSelected] = useState<GiftCatalogItem>();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState<GiftCatalogItem>();
+  const inFlight = useRef(false);
+  const intentKey = useRef<string | undefined>(undefined);
+
+  if (!signedIn) {
+    return (
+      <Card>
+        <div className="v-stack v-stack--3">
+          <h2 className="v-heading">Send a gift</h2>
+          <p className="v-small v-muted">
+            Sign in to support this creator with a virtual gift.
+          </p>
+          <div>
+            <Link
+              className="v-btn v-btn--secondary"
+              href={`/sign-in?returnTo=${encodeURIComponent(`/c/${handle}`)}`}
+            >
+              Sign in to choose
+            </Link>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+  if (catalog.loading && catalog.value === undefined) {
+    return (
+      <Card>
+        <Skeleton height={120} width="100%" />
+      </Card>
+    );
+  }
+  if (catalog.value?.enabled !== true) {
+    return (
+      <Card>
+        <div className="v-stack v-stack--3">
+          <h2 className="v-heading">Send a gift</h2>
+          <p className="v-small v-muted">
+            Gifts are not available for this creator right now.
+          </p>
+          {catalog.retryable ? (
+            <div>
+              <Button onClick={catalog.reload}>Try again</Button>
+            </div>
+          ) : null}
+        </div>
+      </Card>
+    );
+  }
+
+  const send = async () => {
+    if (selected === undefined || api === undefined || inFlight.current) return;
+    const idempotencyKey = intentKey.current ?? crypto.randomUUID();
+    intentKey.current = idempotencyKey;
+    inFlight.current = true;
+    try {
+      setBusy(true);
+      const result = await api.sendGift({
+        body: {
+          context: { type: 'creator_profile' },
+          currency: selected.price.currency,
+          giftItemId: selected.id,
+          handle,
+        },
+        idempotencyKey,
+      });
+      if (result.kind === 'ok') {
+        setConfirming(false);
+        if (result.value.gift.state === 'sent') {
+          setSent(selected);
+          intentKey.current = undefined;
+          showToast?.(`${selected.name} sent.`, 'positive');
+        } else if (result.value.gift.state === 'pending') {
+          setSent(undefined);
+          showToast?.(
+            'Gift not sent yet. Payment confirmation is pending.',
+            'critical',
+          );
+        } else {
+          setSent(undefined);
+          intentKey.current = undefined;
+          showToast?.('Gift payment failed. Nothing was sent.', 'critical');
+        }
+        return;
+      }
+      showToast?.(
+        failureMessage(result) ?? 'Gift could not be sent.',
+        'critical',
+      );
+    } catch {
+      showToast?.('Gift could not be sent.', 'critical');
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section
+      aria-labelledby="gift-picker-heading"
+      className={`v-card v-gifts${sent === undefined ? '' : ' v-gifts--sent'}`}
+    >
+      <div className="v-stack v-stack--3">
+        <div>
+          <h2 className="v-heading" id="gift-picker-heading">
+            Send a gift
+          </h2>
+          <p className="v-small v-muted">
+            Choose a gesture of support. A gift provides no access or
+            entitlement.
+          </p>
+        </div>
+        <ul className="v-gift-grid">
+          {catalog.value.items.map((item) => (
+            <li key={item.id}>
+              <button
+                aria-pressed={selected?.id === item.id}
+                className="v-gift-choice"
+                data-testid={`gift-choice-${item.visual}`}
+                onClick={() => {
+                  setSelected(item);
+                  setSent(undefined);
+                  intentKey.current = crypto.randomUUID();
+                }}
+                type="button"
+              >
+                <GiftArt visual={item.visual} />
+                <span className="v-gift-choice__name">{item.name}</span>
+                <span className="v-caption v-quiet">
+                  {formatGiftPrice(item)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <Button
+          block
+          disabled={selected === undefined}
+          onClick={() => {
+            setConfirming(true);
+          }}
+          tone="primary"
+        >
+          {selected === undefined ? 'Choose a gift' : `Send ${selected.name}`}
+        </Button>
+        {sent === undefined ? null : (
+          <p aria-live="polite" className="v-gift-success">
+            Gift sent. Thank you for supporting this creator.
+          </p>
+        )}
+      </div>
+      {confirming && selected !== undefined ? (
+        <ConfirmDialog
+          busy={busy}
+          confirmLabel={`Send ${selected.name}`}
+          confirmTone="primary"
+          onCancel={() => {
+            setConfirming(false);
+          }}
+          onConfirm={() => {
+            void send();
+          }}
+          testId="gift-confirm"
+          title="Confirm gift"
+        >
+          <p>
+            You are sending {selected.name} for {formatGiftPrice(selected)}.
+            This supports the creator and unlocks no content.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+    </section>
+  );
+}
+
+function formatGiftPrice(item: GiftCatalogItem): string {
+  return `${formatMinorUnits(item.price.amountMinor, item.price.currency)} ${item.price.currency}`;
+}
+
+function GiftArt({ visual }: { readonly visual: GiftCatalogItem['visual'] }) {
+  const shapes: Record<GiftCatalogItem['visual'], string> = {
+    celebration: 'M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z',
+    crown: 'M4 8l4 4 4-7 4 7 4-4-2 11H6L4 8z',
+    diamond: 'M7 4h10l4 6-9 10-9-10 4-6z',
+    heart: 'M12 20S4 15 4 9a4 4 0 018-2 4 4 0 018 2c0 6-8 11-8 11z',
+    ribbon: 'M8 3h8v9l-4 3-4-3V3zm2 12l-2 6 4-2 4 2-2-6',
+    rose: 'M12 7c3-5 8 0 4 3 5 1 2 7-2 4-1 5-7 3-5-1-6-6-2-4-3-4-1-9 3-7 4-5 8 0 4 3z',
+    spark: 'M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z',
+    star: 'M12 2l3 7 7 .6-5.3 4.6 1.7 7-6.4-3.7-6.4 3.7 1.7-7L2 9.6 9 9l3-7z',
+  };
+  return (
+    <svg aria-hidden="true" className="v-gift-art" viewBox="0 0 24 24">
+      <path d={shapes[visual]} fill="currentColor" fillRule="evenodd" />
+    </svg>
   );
 }
 

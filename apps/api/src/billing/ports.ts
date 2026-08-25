@@ -18,6 +18,20 @@ import type { Executor } from '../database/executor.js';
  */
 
 export interface CommercialCreatorPort {
+  /** Minimal published recipient identity for a virtual gift. */
+  publishedGiftRecipientFor?(input: {
+    readonly executor: Executor;
+    readonly handle: string;
+    readonly now: Date;
+  }): Promise<
+    | {
+        readonly creatorId: string;
+        readonly displayName: string;
+        readonly handle: string;
+        readonly userId: string;
+      }
+    | undefined
+  >;
   /** Whether this creator may currently operate at all. */
   mayOperate(input: {
     readonly creatorId: string;

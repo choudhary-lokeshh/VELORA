@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 /**
- * The three questions a creator asks about money, as three addresses.
+ * Creator money questions, as separate deep-linkable addresses.
  *
  * They are links rather than tabs because each is a page somebody may bookmark,
  * send to themselves, or reach with the browser's Back. A tab that looked
@@ -12,6 +12,7 @@ import { usePathname } from 'next/navigation';
  */
 const pages = [
   { label: 'Earnings', path: '/money' },
+  { label: 'Gifts', path: '/money/gifts' },
   { label: 'Payouts', path: '/money/payouts' },
   { label: 'Selling', path: '/money/selling' },
 ] as const;

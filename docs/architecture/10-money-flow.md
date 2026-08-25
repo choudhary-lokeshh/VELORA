@@ -13,7 +13,7 @@ Nothing in the diagrams below crosses these lines.
 | Authority | Owns | Is never derived from |
 |---|---|---|
 | Provider | Card data, bank details, identity documents, tokenization, external settlement, its own compliance state | Anything Velora stores |
-| BILLING | Offers, immutable price snapshots, payment operations, subscriptions, verified provider events, refunds, disputes, the customer-money journal | A client claim, a redirect, or an unverified webhook |
+| BILLING | Offers, immutable price snapshots, gift and payment operations, subscriptions, verified provider events, refunds, disputes, the customer-money journal | A client claim, a redirect, or an unverified webhook |
 | PRIVATE CLUBS | Club membership and entitlement, and the decision to admit somebody to content | A payment state read directly out of BILLING tables |
 | PAYOUTS | Creator payable balances, holds and reserves, payout instructions, the creator-liability journal | A mutable balance column, or any BILLING row read directly |
 
@@ -59,6 +59,24 @@ Five properties of that picture are load-bearing.
 
 **Access is re-decided on every read.** A membership row is an input to the decision, not the decision.
 
+## Consumer gift to creator revenue
+
+```mermaid
+flowchart TD
+  A[Consumer chooses a BILLING catalog item<br/>for a published creator profile] --> B[CREATORS resolves recipient;<br/>TRUST & SAFETY authorizes pair]
+  B -->|refused| B1[No gift or payment is created]
+  B -->|permitted| C[BILLING creates or reuses gift<br/>by sender + idempotency key]
+  C --> D[Existing checkout and provider path]
+  D --> E[Verified settlement in durable inbox]
+  E --> F[Payment succeeds and balanced<br/>BILLING capture posts]
+  F --> G[Gift advances to sent]
+  F --> H[Settled creator-revenue fact]
+  H --> I[PAYOUTS consumes through its published contract]
+  F -.never.-> J[No entitlement or subscription fact]
+```
+
+The gift row supplies product history; the payment and journal supply money truth. The sender cannot provide an amount or recipient identifier, and a direct checkout against a gift offer is refused without the matching pending gift. Settlement posts the ordinary capture and revenue event but deliberately returns before the entitlement bridge. A gift is support, not access. See [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md).
+
 ## Payment to creator payout
 
 ```mermaid
@@ -103,6 +121,8 @@ Each of these is a first-class path with its own state, not an edit to a happy-p
 
 The common rule across the table: history is appended to, never rewritten. A correction is a new balanced transaction that references what it corrects, so the books can be replayed and the reason for every movement survives.
 
+For a gift payment, full refund or lost full dispute also advances the retained gift to `reversed`, and a partial reversal to `partially_reversed`. Neither settlement nor reversal publishes an entitlement fact, because no access existed to grant or withdraw.
+
 ## What the map forbids
 
 - A client asserting that a payment succeeded, a refund completed, a subscription is active, or a payout was made.
@@ -116,4 +136,4 @@ The common rule across the table: history is appended to, never rewritten. A cor
 
 ## Cross-references
 
-[Payment lifecycle](../flows/payment-lifecycle.md), [creator entitlement](../flows/creator-entitlement.md), [BILLING](../domains/billing.md), [PAYOUTS](../domains/payouts.md), [PRIVATE CLUBS](../domains/private-clubs.md), [domain boundaries](03-domain-boundaries.md), [contracts and events](04-contracts-events.md), [data ownership](05-data-ownership.md), [provider adapters](06-provider-adapters.md), [payment and webhook security](../security/05-payments-webhooks.md), [payments, tax, and payout gates](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [jobs, idempotency and concurrency](../engineering/03-jobs-idempotency-concurrency.md), [ADR-0011](../decisions/ADR-0011-payments-payouts.md), [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md).
+[Payment lifecycle](../flows/payment-lifecycle.md), [creator entitlement](../flows/creator-entitlement.md), [BILLING](../domains/billing.md), [PAYOUTS](../domains/payouts.md), [PRIVATE CLUBS](../domains/private-clubs.md), [domain boundaries](03-domain-boundaries.md), [contracts and events](04-contracts-events.md), [data ownership](05-data-ownership.md), [provider adapters](06-provider-adapters.md), [payment and webhook security](../security/05-payments-webhooks.md), [payments, tax, and payout gates](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [jobs, idempotency and concurrency](../engineering/03-jobs-idempotency-concurrency.md), [ADR-0011](../decisions/ADR-0011-payments-payouts.md), [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md), [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md).

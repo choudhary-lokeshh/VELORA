@@ -161,6 +161,7 @@ const integrationSuiteCount = readdirSync(
 ).filter((entry) => entry.endsWith('.test.ts')).length;
 const perSuitePoolSize = 20;
 const maximumConnections = integrationSuiteCount * perSuitePoolSize + 40;
+const requestedSuites = process.argv.slice(2);
 
 const [postgres, redis] = await Promise.all([
   new PostgreSqlContainer('postgres:18.4-alpine3.24')
@@ -210,7 +211,9 @@ try {
         '180000',
         '--reporter=junit',
         `--reporter-outfile=${reportPath}`,
-        'test/integration',
+        ...(requestedSuites.length === 0
+          ? ['test/integration']
+          : requestedSuites),
       ],
       {
         env: {

@@ -9,6 +9,7 @@ import type { OfferRepository } from './offer-repository.js';
 import type { PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { RefundRepository } from './refund-repository.js';
+import type { GiftRepository } from './gift-repository.js';
 import { unwindEntries } from './revenue-entries.js';
 import { revenueReversedEvent } from './revenue-events.js';
 import {
@@ -67,6 +68,7 @@ export interface DisputeEvidence {
 export interface DisputeServiceDependencies {
   readonly disputes: DisputeRepository;
   readonly journal: JournalStore;
+  readonly gifts?: GiftRepository;
   readonly now: () => Date;
   readonly offers: OfferRepository;
   readonly outbox: OutboxAppendPort;
@@ -214,7 +216,7 @@ export class DisputeService {
       readonly withheld: Money;
     },
   ): Promise<void> {
-    const { journal, offers, outbox } = this.dependencies;
+    const { gifts, journal, offers, outbox } = this.dependencies;
     const lost = input.state === 'lost';
     const offer = await offers.findOfferForPurchase(
       executor,
@@ -275,6 +277,23 @@ export class DisputeService {
         subjectId: input.dispute.id,
         subjectType: 'billing.dispute',
       });
+    }
+
+    if (offer.resourceType === 'gift') {
+      if (gifts === undefined)
+        throw new Error('Gift dispute has no gift repository');
+      const totalReversed = await gifts.settledReversalTotal(
+        executor,
+        input.payment.id,
+      );
+      const full = totalReversed >= input.payment.amountMinor;
+      await gifts.transitionByPayment(executor, {
+        from: ['sent', 'partially_reversed'],
+        now: input.occurredAt,
+        paymentId: input.payment.id,
+        to: full ? 'reversed' : 'partially_reversed',
+      });
+      return;
     }
 
     // A dispute lost for the whole capture is that purchase reversed, and access

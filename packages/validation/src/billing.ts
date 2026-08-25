@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { creatorHandleSchema } from './creator.js';
 import {
   currencyCodeSchema,
   minorUnitsSchema,
@@ -31,7 +32,7 @@ export const billingIntervalValues = ['month', 'year'] as const;
 export const billingIntervalSchema = z.enum(billingIntervalValues);
 export type BillingIntervalValue = z.infer<typeof billingIntervalSchema>;
 
-export const commercialResourceTypeValues = ['club'] as const;
+export const commercialResourceTypeValues = ['club', 'gift'] as const;
 export const commercialResourceTypeSchema = z.enum(
   commercialResourceTypeValues,
 );
@@ -132,7 +133,9 @@ export const createCommercialOfferRequestSchema = z
   .object({
     mode: commercialModeSchema,
     resourceId: z.uuid(),
-    resourceType: commercialResourceTypeSchema,
+    // Gift offers are platform-managed catalog projections. Creator Studio may
+    // only create offers for creator-owned clubs.
+    resourceType: z.literal('club'),
   })
   .strict();
 export type CreateCommercialOfferRequest = z.infer<
@@ -246,6 +249,113 @@ export const checkoutResponseSchema = z
   })
   .strict();
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
+
+export const giftVisualValues = [
+  'rose',
+  'spark',
+  'heart',
+  'crown',
+  'celebration',
+  'diamond',
+  'star',
+  'ribbon',
+] as const;
+export const giftVisualSchema = z.enum(giftVisualValues);
+export const giftTierValues = [
+  'small',
+  'medium',
+  'large',
+  'signature',
+] as const;
+export const giftTierSchema = z.enum(giftTierValues);
+export const giftStateValues = [
+  'pending',
+  'sent',
+  'failed',
+  'partially_reversed',
+  'reversed',
+] as const;
+export const giftStateSchema = z.enum(giftStateValues);
+export const giftIdSchema = z.uuid();
+export const giftCatalogItemIdSchema = z.uuid();
+
+export const giftCatalogItemSchema = z
+  .object({
+    description: z.string().min(1).max(160),
+    id: giftCatalogItemIdSchema,
+    name: z.string().min(1).max(48),
+    price: moneySchema,
+    tier: giftTierSchema,
+    visual: giftVisualSchema,
+  })
+  .strict();
+
+export const giftCatalogResponseSchema = z
+  .object({
+    creator: z.object({ displayName: z.string(), handle: z.string() }).strict(),
+    enabled: z.boolean(),
+    items: z.array(giftCatalogItemSchema),
+  })
+  .strict();
+
+export const sendGiftRequestSchema = z
+  .object({
+    context: z.object({ type: z.literal('creator_profile') }).strict(),
+    currency: currencyCodeSchema,
+    giftItemId: giftCatalogItemIdSchema,
+    handle: creatorHandleSchema,
+  })
+  .strict();
+
+export const consumerGiftSchema = z
+  .object({
+    createdAt: z.iso.datetime(),
+    creator: z.object({ displayName: z.string(), handle: z.string() }).strict(),
+    gift: z
+      .object({
+        id: giftCatalogItemIdSchema,
+        name: z.string(),
+        visual: giftVisualSchema,
+      })
+      .strict(),
+    id: giftIdSchema,
+    price: moneySchema,
+    sentAt: z.iso.datetime().optional(),
+    state: giftStateSchema,
+  })
+  .strict();
+
+export const creatorReceivedGiftSchema = z
+  .object({
+    createdAt: z.iso.datetime(),
+    earning: moneySchema,
+    gift: z
+      .object({
+        id: giftCatalogItemIdSchema,
+        name: z.string(),
+        visual: giftVisualSchema,
+      })
+      .strict(),
+    gross: moneySchema,
+    id: giftIdSchema,
+    senderVisibility: z.literal('withheld'),
+    sentAt: z.iso.datetime().optional(),
+    state: giftStateSchema,
+  })
+  .strict();
+
+export const consumerGiftListResponseSchema = z
+  .object({ gifts: z.array(consumerGiftSchema) })
+  .strict();
+export const creatorReceivedGiftListResponseSchema = z
+  .object({ gifts: z.array(creatorReceivedGiftSchema) })
+  .strict();
+export const sendGiftResponseSchema = z
+  .object({ gift: consumerGiftSchema })
+  .strict();
+export const giftCatalogProvisionResponseSchema = z
+  .object({ offers: z.number().int().min(0) })
+  .strict();
 
 /**
  * What a provider webhook is told.

@@ -74,7 +74,7 @@ bun run dev:seed
 
 It fills a local VELORA with thirty-two fictional adults, twelve creators with
 published pages and catalogs, pictures on all of them, introductions, conversations,
-clubs, and invitations — by calling the same HTTP routes a browser calls, in the
+clubs, invitations, and settled virtual gifts — by calling the same HTTP routes a browser calls, in the
 same order, with the same refusals. There is no database connection in it: a rule
 the API enforces stops the seed too, so a seeded world is evidence about the product
 rather than about a script's idea of the product. Run it while `bun run dev` is up,
@@ -83,6 +83,8 @@ anything, and it leaves your own accounts alone. It refuses anything but a loopb
 API in a local environment, and a deployed environment could not produce a seeded
 account anyway: no storage provider, no local sign-in adapter, and no notification
 channel exists outside local and test.
+
+Virtual gifting is deliberately local/test-only. The seed provisions its data-driven catalog through the local API and sends gifts through the real checkout, signed provider event, durable inbox, balanced BILLING journal, creator-revenue event, history, and reversal-compatible state machine. Staging and production still accept only the unavailable payment provider and unpublished commerce policy; fixture prices and creator shares are not launch terms, and no gift grants content access or implies a payout. See the [virtual gifting freeze report](docs/architecture/23-virtual-gifting-freeze-report.md).
 
 Everybody it creates is invented, adult, and pictured by an image generated from
 their own fixture — two colours and a few soft shapes. No likeness of a real person

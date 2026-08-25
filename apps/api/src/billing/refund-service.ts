@@ -14,6 +14,7 @@ import type { RefundRepository, RefundRow } from './refund-repository.js';
 import { clearingAccount, unwindEntries } from './revenue-entries.js';
 import { revenueReversedEvent } from './revenue-events.js';
 import type { RefundReasonCode } from './reversal-policy.js';
+import type { GiftRepository } from './gift-repository.js';
 
 /**
  * Reversing captured money.
@@ -53,6 +54,7 @@ export type RefundOutcome =
 
 export interface RefundServiceDependencies {
   readonly journal: JournalStore;
+  readonly gifts?: GiftRepository;
   readonly now: () => Date;
   readonly offers: OfferRepository;
   readonly outbox: OutboxAppendPort;
@@ -222,7 +224,7 @@ export class RefundService {
       readonly refund: RefundRow;
     },
   ): Promise<RefundRow | undefined> {
-    const { journal, offers, outbox, refunds } = this.dependencies;
+    const { gifts, journal, offers, outbox, refunds } = this.dependencies;
     // The capture, before anything is read from it. Settling allocates against
     // everything already unwound, and that is a read-then-write over a sum:
     // two reversals of one charge settling at once would each see the other's
@@ -329,6 +331,22 @@ export class RefundService {
       currency: settled.currency,
       paymentId: settled.paymentId,
     });
+    if (offer.resourceType === 'gift') {
+      if (gifts === undefined)
+        throw new Error('Gift reversal has no gift repository');
+      const totalReversed = await gifts.settledReversalTotal(
+        executor,
+        input.payment.id,
+      );
+      const full = totalReversed >= input.payment.amountMinor;
+      await gifts.transitionByPayment(executor, {
+        from: ['sent', 'partially_reversed'],
+        now: input.occurredAt,
+        paymentId: input.payment.id,
+        to: full ? 'reversed' : 'partially_reversed',
+      });
+      return settled;
+    }
     if (
       !moneyEquals(
         returned,

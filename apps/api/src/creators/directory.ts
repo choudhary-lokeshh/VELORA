@@ -22,6 +22,20 @@ import { creatorAccounts, creatorProfiles } from './schema.js';
  * from the write it permits is not a check.
  */
 export interface CreatorDirectoryPort {
+  /** Minimal published recipient identity for an interaction product. */
+  publishedGiftRecipientFor(input: {
+    readonly executor: Executor;
+    readonly handle: string;
+    readonly now: Date;
+  }): Promise<
+    | {
+        readonly creatorId: string;
+        readonly displayName: string;
+        readonly handle: string;
+        readonly userId: string;
+      }
+    | undefined
+  >;
   /**
    * The creator behind a published public page, or nothing.
    *
@@ -82,7 +96,10 @@ export class CreatorDirectory implements CreatorDirectoryPort {
         readonly authAccountId: string;
         readonly executor: Executor;
         readonly now: Date;
-      }): Promise<{ readonly region: string | undefined } | undefined>;
+      }): Promise<
+        | { readonly region: string | undefined; readonly userId: string }
+        | undefined
+      >;
     },
   ) {}
 
@@ -129,6 +146,58 @@ export class CreatorDirectory implements CreatorDirectoryPort {
       )
       .limit(1);
     return rows[0]?.creatorId;
+  }
+
+  async publishedGiftRecipientFor(input: {
+    readonly executor: Executor;
+    readonly handle: string;
+    readonly now: Date;
+  }): Promise<
+    | {
+        readonly creatorId: string;
+        readonly displayName: string;
+        readonly handle: string;
+        readonly userId: string;
+      }
+    | undefined
+  > {
+    if (this.standing === undefined) return undefined;
+    const rows = await input.executor
+      .select({
+        authAccountId: creatorAccounts.authAccountId,
+        creatorId: creatorProfiles.creatorId,
+        displayName: creatorProfiles.displayName,
+        handle: creatorProfiles.handle,
+      })
+      .from(creatorProfiles)
+      .innerJoin(
+        creatorAccounts,
+        and(
+          eq(creatorAccounts.id, creatorProfiles.creatorId),
+          eq(creatorAccounts.status, 'active'),
+        ),
+      )
+      .where(
+        and(
+          eq(creatorProfiles.handle, canonicalCreatorHandle(input.handle)),
+          eq(creatorProfiles.publication, 'published'),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined) return undefined;
+    const standing = await this.standing.standingForAuthAccount({
+      authAccountId: row.authAccountId,
+      executor: input.executor,
+      now: input.now,
+    });
+    if (standing === undefined) return undefined;
+    return {
+      creatorId: row.creatorId,
+      displayName: row.displayName,
+      handle: row.handle,
+      userId: standing.userId,
+    };
   }
 
   async handlesFor(input: {

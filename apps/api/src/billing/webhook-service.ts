@@ -25,6 +25,7 @@ import type { RefundRepository } from './refund-repository.js';
 import { captureEntries } from './revenue-entries.js';
 import { revenueSettledEvent } from './revenue-events.js';
 import type { RefundService } from './refund-service.js';
+import type { GiftRepository } from './gift-repository.js';
 import {
   disputeReasonCodes,
   disputeStates,
@@ -73,6 +74,7 @@ export interface WebhookServiceDependencies {
   readonly disputes: DisputeRepository;
   readonly events: ProviderEventRepository;
   readonly journal: JournalStore;
+  readonly gifts?: GiftRepository;
   readonly logger: SafeLogger;
   readonly now: () => Date;
   readonly offers: OfferRepository;
@@ -529,7 +531,7 @@ export class WebhookService {
     event: ProviderEventRow,
     payment: PaymentRow,
   ): Promise<boolean> {
-    const { journal, offers, outbox, payments, subscriptions } =
+    const { gifts, journal, offers, outbox, payments, subscriptions } =
       this.dependencies;
     return payments.transaction(async (executor) => {
       const settled = await payments.transition(executor, {
@@ -603,6 +605,32 @@ export class WebhookService {
         });
       }
 
+      if (offer.resourceType === 'gift') {
+        if (gifts === undefined) {
+          throw new Error('Gift settlement has no gift repository');
+        }
+        const gift = await gifts.transitionByPayment(executor, {
+          from: ['pending'],
+          // The provider timestamp remains authoritative for the journal. The
+          // user-facing lifecycle records when Velora actually accepted and
+          // processed that fact, which also keeps deterministic local-provider
+          // fixtures from leaking their epoch timestamp into gift history.
+          now: this.dependencies.now(),
+          paymentId: payment.id,
+          to: 'sent',
+        });
+        if (gift === undefined) {
+          const existing = await gifts.findByPayment(executor, payment.id);
+          if (existing?.state !== 'sent') {
+            throw new Error('Gift payment has no settleable gift operation');
+          }
+        }
+        // A gift transfers no content or feature entitlement. Revenue is the
+        // effect; publishing an entitlement would promise access that was never
+        // sold.
+        return true;
+      }
+
       let commercialReference = payment.id;
       if (offer.commercialMode === 'subscription') {
         const prices = await offers.pricesForOffers(executor, [offer.id]);
@@ -656,9 +684,9 @@ export class WebhookService {
     payment: PaymentRow,
     reason: 'cancelled_by_consumer' | 'declined',
   ): Promise<boolean> {
-    const { payments } = this.dependencies;
-    await payments.transaction(async (executor) =>
-      payments.transition(executor, {
+    const { gifts, payments } = this.dependencies;
+    await payments.transaction(async (executor) => {
+      const failed = await payments.transition(executor, {
         failureReason: reason,
         // Deliberately not from a terminal state. A late decline for a payment
         // that already succeeded is a contradiction the provider has to resolve
@@ -674,8 +702,16 @@ export class WebhookService {
         now: this.dependencies.now(),
         paymentId: payment.id,
         to: reason === 'declined' ? 'failed' : 'cancelled',
-      }),
-    );
+      });
+      if (failed !== undefined && gifts !== undefined) {
+        await gifts.transitionByPayment(executor, {
+          from: ['pending'],
+          now: event.occurredAt,
+          paymentId: payment.id,
+          to: 'failed',
+        });
+      }
+    });
     void event;
     return true;
   }

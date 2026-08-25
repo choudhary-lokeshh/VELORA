@@ -99,6 +99,8 @@ export type CreatorEarningsHistory = JsonBody<
   200
 >;
 export type CreatorEarningsEntry = CreatorEarningsHistory['entries'][number];
+export type CreatorReceivedGiftList = JsonBody<'/v1/creator/gifts', 'get', 200>;
+export type CreatorReceivedGift = CreatorReceivedGiftList['gifts'][number];
 
 export type CreatorPayoutReadiness = JsonBody<
   '/v1/creator/payouts/readiness',

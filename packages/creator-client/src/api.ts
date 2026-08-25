@@ -17,6 +17,7 @@ import type {
   CreatorCurrencyEarnings,
   CreatorEarnings,
   CreatorEarningsHistory,
+  CreatorReceivedGiftList,
   CreatorMediaUploadCapability,
   CreatorOnboardingState,
   CreatorPayoutHistory,
@@ -92,6 +93,7 @@ export interface CreatorApi {
   }): Promise<ApiResult<CreatorClubList>>;
   /** Currency-separated earnings, every figure derived from server truth. */
   earnings(): Promise<ApiResult<CreatorEarnings>>;
+  receivedGifts(): Promise<ApiResult<CreatorReceivedGiftList>>;
   /** One currency's commercial history, keyset paged. */
   earningsHistory(query: {
     readonly currency: CreatorCurrencyEarnings['currency'];
@@ -360,6 +362,10 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
 
     async earnings() {
       return attempt(async () => api.GET('/v1/creator/earnings', await read()));
+    },
+
+    async receivedGifts() {
+      return attempt(async () => api.GET('/v1/creator/gifts', await read()));
     },
 
     async earningsHistory(query) {

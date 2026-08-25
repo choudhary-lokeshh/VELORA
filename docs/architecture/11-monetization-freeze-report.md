@@ -11,6 +11,10 @@ The monetization core and the money architecture are frozen: the internal archit
 
 Freezing the architecture is not the same as being able to take money, and this document exists mostly to keep those two apart. [ADR-0021](../decisions/ADR-0021-monetization-money-architecture.md) requires that the freeze report say so plainly rather than claim payment readiness. Velora cannot charge anybody today, the reasons are external to the code, and every one of them is a decision nobody has made rather than a component nobody has built.
 
+## Extended since the freeze
+
+The architecture remains unchanged, but it now carries one real local/test product. Virtual gifts use an explicit BILLING gift operation, platform catalog, ordinary offers and immutable prices, checkout, signed local provider event, durable inbox, balanced capture, settled-revenue fact, history, and reversals under [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md). This is deterministic simulation, not a real consumer charge. Every production block below remains in force, and the [virtual gifting freeze report](23-virtual-gifting-freeze-report.md) records the new runnable boundary and evidence.
+
 ## What is frozen
 
 The double-entry journal and its money primitives, offers and immutable price snapshots, checkout orchestration, subscriptions and their entitlement seam, refunds and disputes, creator earnings and payable balances, the payout and recipient architecture, commerce eligibility and the tax seam, the operator financial surface, and reconciliation for the three outcomes the platform can be genuinely unsure of — a capture whose provider answer was lost, a reversal in the same position, and a payout instruction sent and never confirmed. A subscription is not a fourth: it follows the capture it came from, so resolving the payment resolves it.

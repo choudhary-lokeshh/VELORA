@@ -17,6 +17,7 @@ import type { DatabaseHandle } from '../database/executor.js';
 import { OutboxRepository } from '../events/outbox.js';
 import { JournalStore } from '../money/journal.js';
 import type { ConsumerContextResolver } from '../users/context.js';
+import type { SafetyDirectoryPort } from '../safety/directory.js';
 import { CheckoutRoutes } from './checkout-routes.js';
 import { CheckoutService } from './checkout-service.js';
 import {
@@ -61,6 +62,9 @@ import {
   type PaymentProviderPort,
 } from './provider.js';
 import { billingJournalTables, billingOutbox } from './schema.js';
+import { GiftRepository } from './gift-repository.js';
+import { GiftService } from './gift-service.js';
+import { GiftRoutes } from './gift-routes.js';
 
 /**
  * BILLING composition root.
@@ -82,6 +86,9 @@ export interface BillingRuntime {
   readonly earningsRoutes: EarningsRoutes;
   readonly eventRepository: ProviderEventRepository;
   readonly journal: JournalStore;
+  readonly giftRepository: GiftRepository;
+  readonly gifts: GiftService;
+  readonly giftRoutes: GiftRoutes;
   /** BILLING's transactional outbox, drained by the shared relay. */
   readonly outbox: OutboxRepository;
   readonly offerRepository: OfferRepository;
@@ -150,6 +157,8 @@ export function createBillingRuntime(input: {
   readonly now?: () => Date;
   /** The published contract of whichever domain owns the sold resource. */
   readonly resources: CommercialResourcePort;
+  /** TRUST & SAFETY's current pair-interaction answer. */
+  readonly safety?: SafetyDirectoryPort;
 }): BillingRuntime {
   const now = input.now ?? (() => new Date());
   const buildPolicy = commercePolicies[input.config.BILLING_COMMERCE_POLICY];
@@ -187,6 +196,7 @@ export function createBillingRuntime(input: {
   const subscriptionRepository = new SubscriptionRepository(input.database);
   const refundRepository = new RefundRepository(input.database);
   const disputeRepository = new DisputeRepository(input.database);
+  const giftRepository = new GiftRepository(input.database);
   const outbox = new OutboxRepository(input.database, billingOutbox);
   const journal = new JournalStore({
     now,
@@ -203,6 +213,7 @@ export function createBillingRuntime(input: {
     warn: () => undefined,
   };
   const refunds = new RefundService({
+    gifts: giftRepository,
     journal,
     now,
     offers: offerRepository,
@@ -214,6 +225,7 @@ export function createBillingRuntime(input: {
   });
   const disputes = new DisputeService({
     disputes: disputeRepository,
+    gifts: giftRepository,
     journal,
     now,
     offers: offerRepository,
@@ -226,6 +238,7 @@ export function createBillingRuntime(input: {
     disputes: disputeRepository,
     events: eventRepository,
     journal,
+    gifts: giftRepository,
     logger,
     now,
     offers: offerRepository,
@@ -255,12 +268,14 @@ export function createBillingRuntime(input: {
     consumers: input.consumers,
     creators: input.creators,
     disputes: disputeRepository,
+    gifts: giftRepository,
     eligibility,
     now,
     offers: offerRepository,
     payments: paymentRepository,
     policy,
     provider,
+    ...(input.safety === undefined ? {} : { safety: input.safety }),
     // A provider needs somewhere to send a consumer back to, and Consumer Web
     // is the only surface that may start a purchase. The first configured
     // browser origin is that place; where none is configured, checkout refuses
@@ -274,6 +289,17 @@ export function createBillingRuntime(input: {
     policy,
     repository: offerRepository,
     resources: input.resources,
+  });
+  const gifts = new GiftService({
+    checkout,
+    consumers: input.consumers,
+    creators: input.creators,
+    gifts: giftRepository,
+    journal,
+    now,
+    provider,
+    ...(input.safety === undefined ? {} : { safety: input.safety }),
+    webhooks,
   });
   return {
     checkout,
@@ -294,6 +320,13 @@ export function createBillingRuntime(input: {
     }),
     eventRepository,
     journal,
+    giftRepository,
+    giftRoutes: new GiftRoutes({
+      consumerContext: input.consumerContext,
+      creatorContext: input.creatorContext,
+      service: gifts,
+    }),
+    gifts,
     offerRepository,
     offerRoutes: new OfferRoutes({
       creatorContext: input.creatorContext,

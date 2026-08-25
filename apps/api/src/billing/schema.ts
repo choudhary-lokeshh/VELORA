@@ -69,6 +69,18 @@ import {
   billingJournalPrefix,
   billingJournalReasons,
 } from './policy.js';
+import {
+  giftCatalogStates,
+  giftContextTypes,
+  giftStates,
+  giftTiers,
+  giftVisuals,
+  type GiftCatalogState,
+  type GiftContextType,
+  type GiftState,
+  type GiftTier,
+  type GiftVisual,
+} from './gift-policy.js';
 
 /**
  * BILLING-owned persistence.
@@ -100,6 +112,40 @@ export const billingJournalTransactions = journal.transactions;
 export const billingJournalEntries = journal.entries;
 
 export const billingJournalTables = journal;
+
+/** Platform gift vocabulary. Rows are product data; prices remain offers. */
+export const billingGiftCatalogItems = pgTable(
+  'billing_gift_catalog_items',
+  {
+    createdAt: timestamptz('created_at').notNull(),
+    description: text('description').notNull(),
+    id: uuid('id').primaryKey(),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').notNull(),
+    state: text('state').notNull().$type<GiftCatalogState>(),
+    tier: text('tier').notNull().$type<GiftTier>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    visual: text('visual').notNull().$type<GiftVisual>(),
+  },
+  (table) => [
+    uniqueIndex('billing_gift_catalog_sort_uk').on(table.sortOrder),
+    check(
+      'billing_gift_catalog_state_check',
+      inList(table.state, giftCatalogStates),
+    ),
+    check('billing_gift_catalog_tier_check', inList(table.tier, giftTiers)),
+    check(
+      'billing_gift_catalog_visual_check',
+      inList(table.visual, giftVisuals),
+    ),
+    check('billing_gift_catalog_name_check', lengthBetween(table.name, 1, 48)),
+    check(
+      'billing_gift_catalog_description_check',
+      lengthBetween(table.description, 1, 160),
+    ),
+    check('billing_gift_catalog_sort_check', sql`${table.sortOrder} >= 0`),
+  ],
+);
 
 /**
  * What a creator sells, separated from how money is collected for it.
@@ -144,7 +190,12 @@ export const billingOffers = pgTable(
     // offer would make "the price of this club" ambiguous, and a retired offer
     // is excluded so a creator may withdraw one and start again.
     uniqueIndex('billing_offers_live_uk')
-      .on(table.resourceType, table.resourceId, table.commercialMode)
+      .on(
+        table.creatorId,
+        table.resourceType,
+        table.resourceId,
+        table.commercialMode,
+      )
       .where(sql`${table.state} <> 'retired'`),
     index('billing_offers_creator_idx').on(
       table.creatorId,
@@ -420,6 +471,91 @@ export const billingPayments = pgTable(
     check(
       'billing_payments_tax_range_check',
       sql`${table.taxMinor} is null or (${table.taxMinor} >= 0 and ${table.taxMinor} <= ${table.amountMinor})`,
+    ),
+  ],
+);
+
+/**
+ * One consumer's durable intention to gift one catalog item to one creator.
+ *
+ * The row precedes checkout and is linked to exactly one payment operation.
+ * Settlement changes its lifecycle through the verified provider path; it
+ * never creates an entitlement.
+ */
+export const billingGifts = pgTable(
+  'billing_gifts',
+  {
+    catalogItemId: uuid('catalog_item_id')
+      .notNull()
+      .references(() => billingGiftCatalogItems.id),
+    contextType: text('context_type').notNull().$type<GiftContextType>(),
+    createdAt: timestamptz('created_at').notNull(),
+    id: uuid('id').primaryKey(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    offerId: uuid('offer_id')
+      .notNull()
+      .references(() => billingOffers.id),
+    paymentId: uuid('payment_id').references(() => billingPayments.id),
+    /** Opaque CREATORS reference. */
+    recipientCreatorId: uuid('recipient_creator_id').notNull(),
+    recipientDisplayName: text('recipient_display_name').notNull(),
+    recipientHandle: text('recipient_handle').notNull(),
+    /** Opaque USERS reference used only for safety re-authorization. */
+    recipientUserId: uuid('recipient_user_id').notNull(),
+    reversedAt: timestamptz('reversed_at'),
+    senderUserId: uuid('sender_user_id').notNull(),
+    sentAt: timestamptz('sent_at'),
+    state: text('state').notNull().$type<GiftState>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    uniqueIndex('billing_gifts_sender_idempotency_uk').on(
+      table.senderUserId,
+      table.idempotencyKey,
+    ),
+    uniqueIndex('billing_gifts_payment_uk')
+      .on(table.paymentId)
+      .where(sql`${table.paymentId} is not null`),
+    index('billing_gifts_sender_history_idx').on(
+      table.senderUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index('billing_gifts_recipient_history_idx').on(
+      table.recipientCreatorId,
+      table.createdAt,
+      table.id,
+    ),
+    check('billing_gifts_state_check', inList(table.state, giftStates)),
+    check(
+      'billing_gifts_context_check',
+      inList(table.contextType, giftContextTypes),
+    ),
+    check(
+      'billing_gifts_idempotency_key_check',
+      lengthBetween(table.idempotencyKey, 8, maximumIdempotencyKeyLength),
+    ),
+    check(
+      'billing_gifts_distinct_people_check',
+      sql`${table.senderUserId} <> ${table.recipientUserId}`,
+    ),
+    check(
+      'billing_gifts_recipient_name_check',
+      lengthBetween(table.recipientDisplayName, 1, 80),
+    ),
+    check(
+      'billing_gifts_recipient_handle_check',
+      lengthBetween(table.recipientHandle, 3, 32),
+    ),
+    check('billing_gifts_version_check', sql`${table.version} >= 1`),
+    check(
+      'billing_gifts_sent_shape_check',
+      sql`(${table.state} in ('sent', 'partially_reversed', 'reversed')) = (${table.sentAt} is not null)`,
+    ),
+    check(
+      'billing_gifts_reversed_shape_check',
+      sql`(${table.state} = 'reversed') = (${table.reversedAt} is not null)`,
     ),
   ],
 );

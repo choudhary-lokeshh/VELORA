@@ -699,6 +699,8 @@ describe('the database enforces the commercial invariants', () => {
     );
     expect(rows.map((row) => row.table_name)).toEqual([
       'billing_disputes',
+      'billing_gift_catalog_items',
+      'billing_gifts',
       'billing_journal_accounts',
       'billing_journal_entries',
       'billing_journal_transactions',

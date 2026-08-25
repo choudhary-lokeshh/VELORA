@@ -178,6 +178,8 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'auth_security_owners',
         'auth_sessions',
         'billing_disputes',
+        'billing_gift_catalog_items',
+        'billing_gifts',
         'billing_journal_accounts',
         'billing_journal_entries',
         'billing_journal_transactions',

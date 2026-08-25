@@ -180,3 +180,9 @@ export type ConsumerSubscriptionList = JsonBody<
 >;
 export type ConsumerSubscription =
   ConsumerSubscriptionList['subscriptions'][number];
+export type GiftCatalog = JsonBody<'/v1/billing/gifts/catalog', 'get', 200>;
+export type GiftCatalogItem = GiftCatalog['items'][number];
+export type ConsumerGiftList = JsonBody<'/v1/billing/gifts', 'get', 200>;
+export type ConsumerGift = ConsumerGiftList['gifts'][number];
+export type SendGiftBody = RequestBody<'/v1/billing/gifts', 'post'>;
+export type SendGiftResponse = JsonBody<'/v1/billing/gifts', 'post', 201>;

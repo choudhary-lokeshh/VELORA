@@ -416,6 +416,7 @@ export function createApplication(
         creators: creators.directory,
         database: ownedDatabase.database,
         resources: clubs.commercialDirectory,
+        safety: safety.directory,
       });
     // PAYOUTS depends on CREATORS' request resolver and on nothing else. It
     // learns what a creator is owed from a fact BILLING publishes rather than
@@ -1138,6 +1139,28 @@ export function createApplication(
     .get(
       apiRoutePaths.checkouts,
       admitted(async (input) => billing.checkoutRoutes.readCheckout(input)),
+    )
+    .get(
+      apiRoutePaths.giftCatalog,
+      admitted(async (input) => billing.giftRoutes.catalog(input)),
+    )
+    .post(
+      apiRoutePaths.gifts,
+      admitted(async (input) => billing.giftRoutes.send(input)),
+    )
+    .get(
+      apiRoutePaths.gifts,
+      admitted(async (input) => billing.giftRoutes.listSent(input)),
+    )
+    .get(
+      apiRoutePaths.creatorReceivedGifts,
+      admitted(async (input) => billing.giftRoutes.listReceived(input)),
+    )
+    .post(
+      apiRoutePaths.creatorGiftCatalogProvision,
+      admitted(async (input) =>
+        billing.giftRoutes.provisionLocalCatalog(input),
+      ),
     )
     .post(
       apiRoutePaths.providerEvents,
