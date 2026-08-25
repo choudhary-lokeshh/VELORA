@@ -139,23 +139,46 @@ test.describe('Consumer Web product journey', () => {
     ).toHaveCount(1, { timeout: 60_000 });
 
     // Inspection and processing are the worker's, so the surface only learns
-    // the outcome by asking again.
+    // the outcome by asking again. What it waits for is **admission**, not a
+    // transient state on this screen: the minimum profile needs a ready image,
+    // so the server's ladder opening the product is the server saying the
+    // photograph arrived. Watching the onboarding screen for `ready` instead
+    // would be watching for a state the product leaves as fast as it can — the
+    // gate redirects the moment admission lands, and whether a reload catches
+    // the window in between is a race with the worker rather than a fact about
+    // the product.
     // A short inner wait and a long outer one: each attempt is one reload and a
     // quick look, so the loop asks again often rather than sitting on a stale
     // page for five seconds at a time.
     await expect(async () => {
       await page.reload();
-      await expect(
-        page.locator('[data-testid^="profile-media-"][data-state="ready"]'),
-      ).toHaveCount(1, { timeout: 2_000 });
+      await expect(page).toHaveURL(/\/discover$/u, { timeout: 2_000 });
     }).toPass({ timeout: 120_000 });
 
-    // The minimum is met, so the server's own ladder lets this account through.
-    await page.goto(`${consumerWebOrigin}/discover`);
-    await expect(page).toHaveURL(/\/discover$/u);
+    // And the profile screen, which does not move underneath an assertion,
+    // shows the slot as ready and renders the photograph the platform now
+    // delivers — the whole round trip, from a file chosen in a browser to a
+    // derivative served back to it under a signed, short-lived address.
+    await page.goto(`${consumerWebOrigin}/you`);
+    await expect(
+      page.locator('[data-testid^="profile-media-"][data-state="ready"]'),
+    ).toHaveCount(1);
+    const thumbnail = page.locator('[data-testid^="profile-media-thumb-"]');
+    await expect(thumbnail).toHaveCount(1);
+    // Decoded, not merely present. A `src` that 404s still produces an element
+    // and still reports `complete`, so the only assertion that distinguishes a
+    // served photograph from a broken one is that the browser got pixels.
+    await expect
+      .poll(
+        async () =>
+          thumbnail.evaluate((node: HTMLImageElement) => node.naturalWidth),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0);
 
-    // Nothing about the storage address reaches the page, in success or
-    // failure: it is provider detail and it names a signed credential.
+    // Nothing about a storage address reaches the page as text, in success or
+    // failure: it is provider detail and it names a signed credential. The
+    // delivery address is an attribute on an image and is never rendered.
     const body = await page.locator('body').innerText();
     expect(body).not.toContain('signature=');
     expect(body).not.toContain('uploadUrl');
