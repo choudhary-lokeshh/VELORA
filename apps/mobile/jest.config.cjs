@@ -15,6 +15,8 @@ module.exports = {
       '<rootDir>/../../packages/design-tokens/dist/index.js',
     '^@velora/validation/messaging-bounds$':
       '<rootDir>/../../packages/validation/dist/messaging-bounds.js',
+    '^@velora/validation/notifications-bounds$':
+      '<rootDir>/../../packages/validation/dist/notifications-bounds.js',
     '^@velora/validation/profile-bounds$':
       '<rootDir>/../../packages/validation/dist/profile-bounds.js',
   },

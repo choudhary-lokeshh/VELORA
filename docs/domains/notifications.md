@@ -48,7 +48,7 @@ The published fact carries no message body, display name, or preview, and the st
 
 ### What blocks production
 
-- **No delivery provider is approved.** [Notification provider eligibility](../compliance/11-notification-provider-eligibility.md) records why, from each vendor's own current text: four of six assessed email vendors prohibit this business category outright, one is silent, and one will only consider it against written guarantees nobody holds. No push vendor's governing text could be both retrieved and cleared, and separately there is no native build pipeline, so no device token can be issued at all. `NOTIFICATIONS_DELIVERY_CHANNEL` defaults to `unavailable` and configuration refuses anything else in staging and production. `unavailable` reports that no attempt was made: it spends no attempt budget, records no attempt row, and leaves the notice owed, so an approved provider can be switched on without a backlog having quietly expired.
+- **No delivery provider is approved.** [Notification provider eligibility](../compliance/11-notification-provider-eligibility.md) records why, from each vendor's own current text: four of six assessed email vendors prohibit this business category outright, one is silent, and one will only consider it against written guarantees nobody holds. No push vendor's governing text could be both retrieved and cleared. The Android native build now exists, but its provider-neutral token source returns unavailable and asks for no permission while there is no provider behind it. `NOTIFICATIONS_DELIVERY_CHANNEL` defaults to `unavailable` and configuration refuses anything else in staging and production. `unavailable` reports that no attempt was made: it spends no attempt budget, records no attempt row, and leaves the notice owed, so an approved provider can be switched on without a backlog having quietly expired.
 - **Quiet hours, frequency caps, and the legal classification of mandatory notices are undecided.** [ADR-0026](../decisions/ADR-0026-notification-delivery-platform.md) decides the preference architecture — categories, with mandatory classes a preference cannot silence — and V1 sends only transactional notices, which those rules would not suppress. What remains open is the policy content rather than where it evaluates.
 - **Retention is undecided.** Nothing here expires and no correctness rule depends on a row being physically deleted, so an approved duration can be applied as a deletion pass without changing behaviour.
 
@@ -84,7 +84,7 @@ A push token is a bearer credential for reaching a device. Whoever is holding th
 
 One live registration per token, across the platform. Registering a token another account holds retires that account's registration in the same transaction, because two live registrations for one token is one person's notice arriving on another person's phone. One live registration per installation per person, so a device that rotates its token replaces its own row instead of accumulating a second one that would double every notice. And a registration is never re-enabled: whatever retires it, the device registers again and gets a new row, because a fresh registration is the only evidence this side can have that the device still holds the token.
 
-**The token itself is not stored.** Only a SHA-256 fingerprint of it is, which is enough to recognise the same token arriving again and enough to name a device in a log without naming a credential. No response echoes a token or a fingerprint; the caller already has its own token, and returning one would put a bearer credential into a response body, a log, and a proxy cache for no purpose. The column that would hold a sendable token lands with the provider that needs it, not before — no push provider is approved and there is no native build pipeline to issue a token at all, so a stored credential today is one nothing could spend.
+**The token itself is not stored.** Only a SHA-256 fingerprint of it is, which is enough to recognise the same token arriving again and enough to name a device in a log without naming a credential. No response echoes a token or a fingerprint; the caller already has its own token, and returning one would put a bearer credential into a response body, a log, and a proxy cache for no purpose. The column that would hold a sendable token lands with the provider that needs it, not before — no push provider is approved, so the native token source returns unavailable and a stored credential today would be one nothing could spend.
 
 Registration is serialized by two transaction-scoped advisory locks, on the token and on the installation, taken in sorted order. All three of its decisions are about the *absence* of a row, which has nothing to lock, and fifty concurrent registrations of one token demonstrated the gap before the locks were added: some of them lost the insert race on the partial unique index and failed rather than settling on the row that won. Two locks rather than one because two different uniqueness rules are being protected, and sorted because two transactions needing both must ask in the same order.
 
@@ -138,7 +138,7 @@ The seeded disparity is roughly a thousand to one and is the reason the assertio
 
 Five paths are covered: the delivery worker's due query, the provider-event claim, a person's live devices, recognising a token already registered, and one person's feed page — the last both from the top and resumed from a cursor, because an `OFFSET` deep in a large feed reads and discards everything before it. The preference lookup is asserted against the primary key, since it runs inside the claiming transaction on every single delivery.
 
-## In-app notifications, and the second V1 event
+## In-app notifications and activity coverage
 
 `0013_notifications_feed_discovery_outbox` adds `notifications_feed` and `discovery_outbox`.
 
@@ -154,13 +154,17 @@ Reads are paged with a keyset cursor over immutable values, and the safety filte
 
 ### Notification event coverage
 
-Two events are approved, and that is the complete list of V1 business transitions judged to warrant telling somebody:
+Four events are approved, and that is the complete list of V1 business transitions judged to warrant telling somebody:
 
 | Event | Producer | Recipient | Why |
 | --- | --- | --- | --- |
 | `messaging.message.sent.v1` | MESSAGING | the participant who did not send it | Somebody wrote to them, and they cannot know without being told. |
 | `discovery.introduction.mutual.v1` | DISCOVERY | the person who signalled first | The other side signalled back. The responder already has the introduction in the response to their own request, so only the initiator is told. |
+| `realtime.call.invited.v1` | REALTIME | the invited participant | A live invitation exists against their mutual relationship. External delivery expires with the ring; the in-app line remains history. |
+| `realtime.call.missed.v1` | REALTIME | the invited participant | The invitation deadline elapsed without an answer, whether or not any device received an external notice. |
 
 Everything else was evaluated and rejected. A pass, a suppression, and a block are silent by design — telling anybody would disclose another person's decision. A report acknowledgement is the response to the reporter's own request. A profile, availability, or media change is the recipient's own action. Enforcement notices are a legal-policy decision that is not approved.
 
-`discovery_outbox` follows the same ownership rule as `messaging_outbox`: the fact that an introduction became mutual is appended by the transaction that makes the transition, under the pair lock it already holds. One relay drains both, and it hands facts to consumers rather than granting anybody access to a source table.
+`discovery_outbox` and `realtime_outbox` follow the same ownership rule as `messaging_outbox`: the fact that an introduction became mutual, a call was invited, or its deadline elapsed is appended by the transaction that makes that transition, under the pair lock it already holds. One relay drains all three, and it hands facts to consumers rather than granting anybody access to a source table.
+
+Consumer Web and Mobile resolve `subjectId` through DISCOVERY's authorized person projection before rendering display name or media. A missing or newly refused projection becomes an unavailable activity in place; transport failures remain explicit retryable errors. Message notices open their conversation, introduction notices open Introductions, and call history opens the current relationship rather than trying to revive a stale call. Read acknowledgement remains monotonic for both openable and unavailable rows.

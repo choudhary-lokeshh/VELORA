@@ -554,6 +554,13 @@ export function createMobileApiDouble(
       };
       return json(200, state.availability);
     }
+    if (path === '/v1/discovery/people' && method === 'GET') {
+      const wanted = url.searchParams.get('personId');
+      const found = state.candidates.find((one) => one.id === wanted);
+      return found === undefined
+        ? error(404, 'RESOURCE_NOT_FOUND')
+        : json(200, { ...found });
+    }
     if (path === '/v1/discovery/candidates') {
       return json(200, {
         candidates: state.candidates,
@@ -769,7 +776,18 @@ export function createMobileApiDouble(
       return json(200, message);
     }
     if (path === '/v1/notifications' && method === 'GET') {
-      return json(200, { notifications: state.notifications });
+      const requestedPageSize = Number(url.searchParams.get('pageSize') ?? 20);
+      const rawCursor = url.searchParams.get('cursor');
+      const offset = rawCursor?.startsWith('offset-')
+        ? Number(rawCursor.slice('offset-'.length))
+        : 0;
+      const end = offset + requestedPageSize;
+      return json(200, {
+        ...(end < state.notifications.length
+          ? { nextCursor: `offset-${String(end)}` }
+          : {}),
+        notifications: state.notifications.slice(offset, end),
+      });
     }
     if (path === '/v1/notifications/read') {
       const input = body as { notificationIds: string[] };

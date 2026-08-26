@@ -68,6 +68,8 @@ A link is matched against an allow-list of the addresses this application publis
 
 A notification tap carries a template key and one identifier and nothing else, so arriving fetches everything from the API at that moment. A cold launch is read once at mount, because an application started *by* a notification never receives the listener event for it; a tap is acted on once, keyed by the platform's own notification identifier, because Android re-delivers a response to a resumed activity. A call notice opens the relationship rather than a call, since a cold start restores nothing and the call it announced is over.
 
+The Notices destination applies the same rule to its durable in-app activity. It resolves each subject through DISCOVERY's authorized person projection, renders the safe current display name and portrait when available, and keeps a deleted or revoked line readable as unavailable without a broken action. Message rows open their conversation; mutual-introduction and call-history rows open Introductions. Opening acknowledges the row, while unavailable rows retain an explicit read action. Initial load, refresh failure, empty, pagination-bound page, and retry states are rendered rather than inferred from a device cache.
+
 ## Responsive and platform rules
 
 Mobile favors touch targets, safe areas, dynamic text, reduced motion, platform back behavior, keyboard/IME handling, portrait baseline, and explicit tablet adaptation. It need not match Web interface or expose identical features. Creator Studio and Platform Admin are not embedded as hidden Mobile screens.

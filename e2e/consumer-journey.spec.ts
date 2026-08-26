@@ -325,12 +325,17 @@ test.describe('Consumer Web product journey', () => {
 
   test('opens what a notice is about', async ({ page }, testInfo) => {
     const cohort = cohortFor(testInfo.project.name);
-    const [, counterpart] = cohort.people;
-    if (counterpart === undefined) throw new Error('the cohort needs a pair');
+    const [sender, counterpart] = cohort.people;
+    if (sender === undefined || counterpart === undefined) {
+      throw new Error('the cohort needs a pair');
+    }
 
     await signInAdmitted(page, counterpart.subject);
     await navigateTo(page, 'notifications');
     await expect(page.getByTestId('notification-list')).toBeVisible();
+    await expect(
+      page.locator('[data-testid^="notification-"]').first(),
+    ).toContainText(sender.displayName);
 
     // Said plainly, at the top, rather than implied by an empty inbox.
     await expect(page.getByTestId('notifications-delivery')).toContainText(

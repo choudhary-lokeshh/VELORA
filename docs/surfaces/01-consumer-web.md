@@ -65,7 +65,7 @@ Approved deep-link families may include authentication continuation, discovery/c
 
 ## Notifications and states
 
-In-product notification entry points show minimized content and re-authorize destination on open. Email/SMS/push links use bounded, validated tokens or authenticated routes; notification content never grants access.
+In-product notification entry points show minimized stored content, then resolve the counterpart's display name and portrait through DISCOVERY's authorized projection. Deleted, revoked, or newly unavailable subjects remain readable as unavailable activity rather than becoming broken links. Message and introduction rows deep-link to current server-authorized destinations; call history opens the relationship rather than a call that may no longer be ringing. Read acknowledgement is monotonic, including for unavailable rows. Email/SMS/push links use bounded, validated tokens or authenticated routes; notification content never grants access.
 
 Every screen defines initial loading, refresh/loading-more, skeleton where useful, empty, validation error, authorization-safe not found, offline/network loss, rate limit, dependency pending, partial failure, success confirmation, and session/feature-revoked states. Payment or entitlement ambiguity shows pending and reconciliation, not fabricated success.
 

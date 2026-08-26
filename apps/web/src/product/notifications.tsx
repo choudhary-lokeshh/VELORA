@@ -10,6 +10,7 @@ import type {
 } from '@velora/consumer-client';
 import { failureMessage } from '@velora/consumer-client';
 import type { ApiResult } from '@velora/api-client';
+import { maximumNotificationReadBatch } from '@velora/validation/notifications-bounds';
 
 import { useApi, useFeeds, useToast } from '../app/providers';
 import { Icon, type IconName } from '../design/icons';
@@ -101,6 +102,25 @@ function destinationOf(entry: NotificationEntry): string | undefined {
 
 type NotificationPeople = ReadonlyMap<string, DiscoveryPerson | null>;
 
+async function markRead(
+  api: ConsumerApi,
+  notificationIds: readonly string[],
+): Promise<string | undefined> {
+  for (
+    let start = 0;
+    start < notificationIds.length;
+    start += maximumNotificationReadBatch
+  ) {
+    const failure = failureMessage(
+      await api.markNotificationsRead(
+        notificationIds.slice(start, start + maximumNotificationReadBatch),
+      ),
+    );
+    if (failure !== undefined) return failure;
+  }
+  return undefined;
+}
+
 /**
  * Resolves only the identities a rendered page names, through DISCOVERY's
  * authorized projection. A missing answer is retained as `null` so the screen
@@ -191,10 +211,8 @@ export function Notifications() {
     if (fresh.length === 0) return;
     for (const id of fresh) acknowledged.current.add(id);
     setBusy(true);
-    void api
-      .markNotificationsRead(fresh)
-      .then((result) => {
-        const failure = failureMessage(result);
+    void markRead(api, fresh)
+      .then((failure) => {
         if (failure !== undefined) {
           // Not acknowledged after all, so a retry is still possible.
           for (const id of fresh) acknowledged.current.delete(id);

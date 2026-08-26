@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+import { maximumNotificationReadBatch } from './notifications-bounds.js';
+
+export { maximumNotificationReadBatch } from './notifications-bounds.js';
+
 /**
  * In-app notification contract.
  *
@@ -79,8 +83,6 @@ export const notificationListResponseSchema = z
  * the bound is a page. It exists so an acknowledgement cannot become an
  * unbounded write.
  */
-export const maximumNotificationReadBatch = 50;
-
 export const markNotificationsReadRequestSchema = z
   .object({
     notificationIds: z.array(z.uuid()).min(1).max(maximumNotificationReadBatch),

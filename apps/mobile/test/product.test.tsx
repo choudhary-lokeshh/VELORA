@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, waitFor } from '@testing-library/react-native';
+import { maximumNotificationReadBatch } from '@velora/validation/notifications-bounds';
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { ConversationScreen } from '../src/product/conversation';
@@ -469,13 +470,20 @@ describe('notices', () => {
     const state = admittedState();
     state.notifications = [
       {
+        conversationId,
         createdAt: new Date().toISOString(),
         id: 'n1',
         kind: 'message_received',
-        subjectId: conversationId,
+        subjectId: otherPersonId,
       },
     ];
-    const { double, view } = await mount(<NoticesScreen />, state);
+    const { double, view } = await mount(
+      <NoticesScreen
+        onOpenConversation={nothing}
+        onOpenIntroductions={nothing}
+      />,
+      state,
+    );
     await waitFor(() => {
       expect(view.getByTestId('notifications-mark-read')).toBeTruthy();
     });
@@ -492,7 +500,111 @@ describe('notices', () => {
     });
   });
 
-  it('offers nothing to press on a notice, because a stale one would lead nowhere', async () => {
+  it('lets a failed read acknowledgement be retried', async () => {
+    const state = admittedState();
+    state.notifications = [
+      {
+        conversationId,
+        createdAt: new Date().toISOString(),
+        id: 'n1',
+        kind: 'message_received',
+        subjectId: otherPersonId,
+      },
+    ];
+    const { double, view } = await mount(
+      <NoticesScreen
+        onOpenConversation={nothing}
+        onOpenIntroductions={nothing}
+      />,
+      state,
+    );
+    await waitFor(() => {
+      expect(view.getByText('Robin sent you a message.')).toBeTruthy();
+    });
+    double.failNext('/v1/notifications/read');
+
+    await fireEvent.press(view.getByTestId('notifications-mark-read'));
+    await waitFor(() => {
+      expect(view.getByTestId('notifications-mark-read')).toBeTruthy();
+    });
+    await fireEvent.press(view.getByTestId('notifications-mark-read'));
+
+    await waitFor(() => {
+      expect(
+        double.calls.filter(
+          (call) =>
+            call.path === '/v1/notifications/read' && call.method === 'POST',
+        ),
+      ).toHaveLength(2);
+    });
+  });
+
+  it('pages through older activity and acknowledges every rendered row within contract bounds', async () => {
+    const state = admittedState();
+    state.notifications = Array.from({ length: 51 }, (_, index) => ({
+      conversationId,
+      createdAt: new Date(Date.now() - index * 1_000).toISOString(),
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      kind: 'message_received',
+      subjectId: otherPersonId,
+    }));
+    const { double, view } = await mount(
+      <NoticesScreen
+        onOpenConversation={nothing}
+        onOpenIntroductions={nothing}
+      />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('notifications-more')).toBeTruthy();
+    });
+    const initialReads = double.calls.filter(
+      (call) => call.path === '/v1/notifications' && call.method === 'GET',
+    ).length;
+    await fireEvent.press(view.getByTestId('notifications-more'));
+    await waitFor(() => {
+      expect(
+        double.calls.filter(
+          (call) => call.path === '/v1/notifications' && call.method === 'GET',
+        ),
+      ).toHaveLength(initialReads + 1);
+    });
+    await fireEvent.press(view.getByTestId('notifications-more'));
+    await waitFor(() => {
+      expect(view.queryByTestId('notifications-more')).toBeNull();
+    });
+
+    await fireEvent.press(view.getByTestId('notifications-mark-read'));
+    await waitFor(() => {
+      expect(
+        double.calls.filter(
+          (call) =>
+            call.path === '/v1/notifications/read' && call.method === 'POST',
+        ),
+      ).toHaveLength(2);
+    });
+    const readBodies = double.calls
+      .filter(
+        (call) =>
+          call.path === '/v1/notifications/read' && call.method === 'POST',
+      )
+      .map((call) => call.body);
+    expect(readBodies).toEqual([
+      {
+        notificationIds: state.notifications
+          .slice(0, maximumNotificationReadBatch)
+          .map((entry) => entry.id),
+      },
+      {
+        notificationIds: state.notifications
+          .slice(maximumNotificationReadBatch)
+          .map((entry) => entry.id),
+      },
+    ]);
+  });
+
+  it('names who called and opens the current relationship, never a stale call', async () => {
     const state = admittedState();
     state.notifications = [
       {
@@ -502,14 +614,67 @@ describe('notices', () => {
         subjectId: otherPersonId,
       },
     ];
-    const { view } = await mount(<NoticesScreen />, state);
+    let openedIntroductions = 0;
+    const { view } = await mount(
+      <NoticesScreen
+        onOpenConversation={nothing}
+        onOpenIntroductions={() => {
+          openedIntroductions += 1;
+        }}
+      />,
+      state,
+    );
 
     await waitFor(() => {
-      expect(view.getByText('Somebody called you.')).toBeTruthy();
+      expect(view.getByText('Robin called you.')).toBeTruthy();
     });
-    // Past tense, and no control. A call that stopped ringing hours ago cannot
-    // be answered from a list.
+    await fireEvent.press(view.getByTestId('notification-n1'));
+    expect(openedIntroductions).toBe(1);
+    // Past tense and relationship-bound. No control can answer a call that may
+    // have stopped ringing hours ago.
     expect(view.queryByTestId('notification-n1-answer')).toBeNull();
+  });
+
+  it('keeps an unread line useful when its subject can no longer be resolved', async () => {
+    const state = admittedState();
+    state.candidates = [];
+    state.notifications = [
+      {
+        conversationId,
+        createdAt: new Date().toISOString(),
+        id: 'n1',
+        kind: 'message_received',
+        subjectId: otherPersonId,
+      },
+    ];
+    let opened = 0;
+    const { double, view } = await mount(
+      <NoticesScreen
+        onOpenConversation={() => {
+          opened += 1;
+        }}
+        onOpenIntroductions={() => {
+          opened += 1;
+        }}
+      />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(
+        view.getByText('This activity is no longer available.'),
+      ).toBeTruthy();
+    });
+    expect(opened).toBe(0);
+    await fireEvent.press(view.getByTestId('notification-read-n1'));
+    await waitFor(() => {
+      expect(
+        double.calls.filter(
+          (call) =>
+            call.path === '/v1/notifications/read' && call.method === 'POST',
+        ),
+      ).toHaveLength(1);
+    });
   });
 });
 

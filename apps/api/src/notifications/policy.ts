@@ -290,17 +290,18 @@ export interface NotificationTemplate {
 const oneDayMilliseconds = 86_400_000;
 
 /**
- * The whole approved catalogue. V1 sends two transactional notices, and that is
- * the complete list of business events judged to warrant one.
+ * The whole approved catalogue. V1 sends four transactional notices, and that
+ * is the complete list of business events judged to warrant one.
  *
- * Both follow something the recipient deliberately took part in and both tell
+ * Each follows something the recipient deliberately took part in and tells
  * them about a change they cannot see without being told: somebody wrote to
- * them, or somebody they signalled interest in signalled back. Every other V1
- * transition was evaluated and rejected. A pass, a suppression, and a block are
- * silent by design — telling anybody would disclose another person's decision.
- * A report acknowledgement is the response to the reporter's own request. A
- * profile, availability, or media change is the recipient's own action.
- * Enforcement notices are a legal-policy decision that is not yet approved.
+ * them, somebody they signalled interest in signalled back, or a call against
+ * that relationship arrived or went unanswered. Every other V1 transition was
+ * evaluated and rejected. A pass, a suppression, and a block are silent by
+ * design — telling anybody would disclose another person's decision. A report
+ * acknowledgement is the response to the reporter's own request. A profile,
+ * availability, or media change is the recipient's own action. Enforcement
+ * notices are a legal-policy decision that is not yet approved.
  *
  * The payload each carries is a deep-link target and nothing else. No body, no
  * sender name, no message preview: `docs/flows/notification-delivery.md`

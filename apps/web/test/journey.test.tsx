@@ -953,6 +953,39 @@ describe('notifications', () => {
     await screen.findByText('Everything here has been read.');
   });
 
+  it('acknowledges a long rendered activity list within contract batch bounds', async () => {
+    const state = admittedState();
+    state.notifications = Array.from({ length: 51 }, (_, index) => ({
+      conversationId,
+      createdAt: new Date(Date.now() - index * 1_000).toISOString(),
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      kind: 'message_received',
+      subjectId: otherPersonId,
+    }));
+    const double = createApiDouble(state);
+    renderProduct(<Notifications />, double, { pathname: '/notifications' });
+
+    await screen.findByText('51 unread.');
+    await click('notifications-mark-read');
+    await screen.findByText('Everything here has been read.');
+
+    const reads = double.calls.filter(
+      (call) =>
+        call.path === '/v1/notifications/read' && call.method === 'POST',
+    );
+    expect(reads).toHaveLength(2);
+    expect(reads.map((call) => call.body)).toEqual([
+      {
+        notificationIds: state.notifications
+          .slice(0, 50)
+          .map((entry) => entry.id),
+      },
+      {
+        notificationIds: state.notifications.slice(50).map((entry) => entry.id),
+      },
+    ]);
+  });
+
   it('publishes nothing about external delivery attempts', async () => {
     const double = createApiDouble(withNotification());
     renderProduct(<Notifications />, double, { pathname: '/notifications' });
