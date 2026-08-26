@@ -138,6 +138,8 @@ export interface BrowserSecurityHeaderOptions {
   /** Exact API origin the surface may call. Omitted means same-origin only. */
   readonly apiBaseUrl?: string | undefined;
   readonly appEnvironment?: string | undefined;
+  /** True only for `next dev`; never inferred from the product environment. */
+  readonly developmentRuntime?: boolean | undefined;
   readonly referrerPolicy: 'no-referrer' | 'same-origin';
   readonly robots?: string | undefined;
 }
@@ -194,6 +196,24 @@ function upgradesInsecureRequests(
   return !(local && isLoopbackApi(options.apiBaseUrl));
 }
 
+/**
+ * React's development runtime uses `eval` to reconstruct component stacks.
+ * Permit that debugging primitive only for `next dev` against the same local
+ * loopback combination that the client configuration already constrains. A
+ * production Next.js server using local/test data remains on the deployed CSP.
+ */
+function permitsDevelopmentEval(
+  options: BrowserSecurityHeaderOptions,
+): boolean {
+  const local =
+    options.appEnvironment === 'local' || options.appEnvironment === 'test';
+  return (
+    options.developmentRuntime === true &&
+    local &&
+    isLoopbackApi(options.apiBaseUrl)
+  );
+}
+
 export function browserSecurityHeaders(
   options: BrowserSecurityHeaderOptions,
 ): Readonly<Record<string, string>> {
@@ -214,7 +234,9 @@ export function browserSecurityHeaders(
       `img-src ${withApiOrigin(options.apiBaseUrl, "'self' data:")}`,
       "font-src 'self'",
       "style-src 'self' 'unsafe-inline'",
-      "script-src 'self' 'unsafe-inline'",
+      `script-src 'self' 'unsafe-inline'${
+        permitsDevelopmentEval(options) ? " 'unsafe-eval'" : ''
+      }`,
       ...(upgradesInsecureRequests(options)
         ? ['upgrade-insecure-requests']
         : []),

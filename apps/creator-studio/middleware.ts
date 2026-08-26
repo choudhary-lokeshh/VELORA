@@ -30,6 +30,7 @@ const headers = () => {
   return browserSecurityHeaders({
     apiBaseUrl: config?.apiBaseUrl,
     appEnvironment: config?.appEnvironment,
+    developmentRuntime: process.env.NODE_ENV === 'development',
     referrerPolicy: 'same-origin',
   });
 };

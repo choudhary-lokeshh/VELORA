@@ -743,6 +743,40 @@ describe('browser security headers', () => {
     }
   });
 
+  it('permits React development stack reconstruction only in local next dev', () => {
+    expect(
+      policy({
+        apiBaseUrl: 'http://127.0.0.1:4100',
+        appEnvironment: 'local',
+        developmentRuntime: true,
+      }),
+    ).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+
+    for (const options of [
+      {
+        apiBaseUrl: 'http://127.0.0.1:4100',
+        appEnvironment: 'local',
+      },
+      {
+        apiBaseUrl: 'http://127.0.0.1:4100',
+        appEnvironment: 'local',
+        developmentRuntime: false,
+      },
+      {
+        apiBaseUrl: 'https://api.velora.test',
+        appEnvironment: 'local',
+        developmentRuntime: true,
+      },
+      {
+        apiBaseUrl: 'https://api.velora.test',
+        appEnvironment: 'production',
+        developmentRuntime: true,
+      },
+    ]) {
+      expect(policy(options)).not.toContain("'unsafe-eval'");
+    }
+  });
+
   it('adds the Admin robots directive and nothing else by default', () => {
     expect(
       browserSecurityHeaders({ referrerPolicy: 'same-origin' })['x-robots-tag'],

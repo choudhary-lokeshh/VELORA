@@ -516,7 +516,11 @@ describe('the public page', () => {
     fireEvent.change(screen.getByTestId('creator-display-name'), {
       target: { value: 'Ember V' },
     });
-    fireEvent.click(screen.getByTestId('creator-save-profile'));
+    const save = screen.getByTestId('creator-save-profile');
+    await waitFor(() => {
+      expect((save as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(save);
 
     expect(
       (await screen.findByTestId('creator-profile-error')).textContent,
