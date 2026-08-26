@@ -303,6 +303,7 @@
   background: var(--surface-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
   margin-bottom: var(--space-5);
   overflow: hidden;
 }
@@ -343,6 +344,7 @@
   background: var(--surface-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
   overflow: hidden;
   width: min(100%, 18rem);
 }

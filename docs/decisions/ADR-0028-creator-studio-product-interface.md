@@ -114,6 +114,12 @@ The preview is the screen this matters most on, and it is unchanged in principle
 
 Every other honest gap listed in that consequence stands. Nothing can be sold, no payout can be sent, mature content is refused for four reasons none of which are the creator's, and a members-only item with no club is still reachable by nobody. The storage and delivery **provider** decisions are untouched, so a deployed Studio still cannot store or serve an image.
 
+## Amendment 2026-08-26: Phase 8 editorial depth pass
+
+The product-owner Phase 8 brief asks WARM SIGNAL to feel more editorial and media-rich without changing its light-only direction. Studio therefore adds a restrained warm paper atmosphere, clearer navigation separation, more deliberate card depth, and lifted media presentation and preview surfaces. Every treatment is composed from the semantic values already locked by this ADR; no palette, type role, radius, component variant, route, workflow, or server claim was added.
+
+Operational and financial truth still outrank decoration. Pending, unavailable, and refused states retain their existing treatments; media lift never implies publication, and a card shadow never implies that selling or payout is enabled.
+
 ## Cross-references
 
 [Design principles](../design/01-design-principles.md), [design-system contract](../design/02-design-system-contract.md), [Figma source of truth](../design/03-figma-source-of-truth.md), [responsive rules](../design/04-responsive-platform-rules.md), [accessibility and motion](../design/05-accessibility-motion.md), [screen states](../design/06-screen-state-requirements.md), [Creator Studio surface](../surfaces/03-creator-studio.md), [ADR-0004](ADR-0004-client-frameworks.md), [ADR-0015](ADR-0015-shared-design-token-boundary.md), [ADR-0020](ADR-0020-creator-capability-activation.md), [ADR-0027](ADR-0027-consumer-web-product-interface.md), and the [Creator Studio freeze report](../architecture/19-creator-studio-freeze-report.md).

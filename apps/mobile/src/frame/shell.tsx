@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Icon } from '../design/icons';
 import { IconButton, Text, type TextTone } from '../design/primitives';
@@ -103,6 +104,7 @@ export function Screen({
 
   return (
     <View style={styles.screen} {...(testID === undefined ? {} : { testID })}>
+      <Atmosphere />
       {header}
       {scroll ? (
         <ScrollView
@@ -144,19 +146,62 @@ export function PlainScreen({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <ScrollView
-      contentContainerStyle={{
-        flexGrow: 1,
-        paddingBottom: insets.bottom + space[10],
-        paddingHorizontal: space[5],
-        paddingTop: insets.top + space[8],
-      }}
-      keyboardShouldPersistTaps="handled"
-      style={styles.screen}
-      {...(testID === undefined ? {} : { testID })}
+    <View style={styles.screen}>
+      <Atmosphere />
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: insets.bottom + space[10],
+          paddingHorizontal: space[5],
+          paddingTop: insets.top + space[8],
+        }}
+        keyboardShouldPersistTaps="handled"
+        style={styles.body}
+        {...(testID === undefined ? {} : { testID })}
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
+/**
+ * Native NIGHT CURRENT atmosphere, drawn from the same existing semantic
+ * washes as Web. The SVG dependency already draws every product icon; using it
+ * here adds no native module. The light stays behind every control, so it adds
+ * depth without affecting input or accessibility.
+ */
+function Atmosphere() {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={styles.atmosphere}
     >
-      {children}
-    </ScrollView>
+      <Svg height="100%" width="100%">
+        <Defs>
+          <RadialGradient cx="88%" cy="0%" id="shell-ember" r="64%">
+            <Stop offset="0" stopColor={color.emberWashStrong} />
+            <Stop
+              offset="1"
+              stopColor={color.emberWashStrong}
+              stopOpacity="0"
+            />
+          </RadialGradient>
+          <RadialGradient cx="12%" cy="100%" id="shell-neutral" r="58%">
+            <Stop offset="0" stopColor={color.statusNeutralWash} />
+            <Stop
+              offset="1"
+              stopColor={color.statusNeutralWash}
+              stopOpacity="0"
+            />
+          </RadialGradient>
+        </Defs>
+        <Rect fill="url(#shell-ember)" height="100%" width="100%" />
+        <Rect fill="url(#shell-neutral)" height="100%" width="100%" />
+      </Svg>
+    </View>
   );
 }
 
@@ -253,7 +298,12 @@ export function TabBar({
             ]}
             testID={`tab-${destination.id}`}
           >
-            <View>
+            <View
+              style={[
+                styles.tabIcon,
+                active ? styles.tabIconActive : undefined,
+              ]}
+            >
               <Icon
                 color={active ? color.ember : color.textTertiary}
                 name={destination.icon}
@@ -346,9 +396,19 @@ export function Toaster() {
 /* ================================ Styles ============================= */
 
 const styles = StyleSheet.create({
+  atmosphere: {
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
   body: { flex: 1 },
   header: {
-    backgroundColor: color.canvas,
+    backgroundColor: color.surfaceOverlay,
+    borderBottomColor: color.borderHairline,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     paddingBottom: space[3],
     paddingHorizontal: space[4],
   },
@@ -372,6 +432,14 @@ const styles = StyleSheet.create({
     minHeight: layout.minimumTouchTarget,
     paddingTop: space[2],
   },
+  tabIcon: {
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    justifyContent: 'center',
+    minHeight: space[8],
+    minWidth: space[12],
+  },
+  tabIconActive: { backgroundColor: color.emberWash },
   tabBar: {
     backgroundColor: color.canvasDeep,
     borderTopColor: color.borderHairline,

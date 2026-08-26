@@ -440,7 +440,11 @@
 /* ============================== Surfaces ============================= */
 
 .s-card {
-  background: var(--surface-1);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--surface-2) 32%, var(--surface-1)),
+    var(--surface-1) 46%
+  );
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-1);
@@ -464,6 +468,7 @@
   background:
     linear-gradient(var(--ember-wash), var(--ember-wash)), var(--surface-1);
   border-color: var(--ember-line);
+  box-shadow: var(--shadow-2);
 }
 
 .s-card__head {
@@ -612,6 +617,18 @@
   padding: var(--space-3);
   position: relative;
   text-align: center;
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .s-image-tile:hover {
+    border-color: var(--border-soft);
+    box-shadow: var(--shadow-2);
+    transform: translateY(-2px);
+  }
 }
 
 .s-image-tile__image {

@@ -15,6 +15,18 @@
  */
 
 .v-shell {
+  background:
+    radial-gradient(
+      circle at 88% -8%,
+      var(--ember-wash-strong),
+      transparent 34rem
+    ),
+    radial-gradient(
+      circle at 18% 112%,
+      var(--status-neutral-wash),
+      transparent 30rem
+    ),
+    var(--canvas);
   display: flex;
   min-height: 100dvh;
 }
@@ -24,6 +36,7 @@
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  position: relative;
 }
 
 .v-view {
@@ -35,6 +48,7 @@
 .v-view__inner {
   margin: 0 auto;
   max-width: var(--content-max);
+  position: relative;
   width: 100%;
 }
 
@@ -55,6 +69,7 @@
   padding: var(--space-2) var(--space-4);
   padding-top: calc(var(--space-2) + env(safe-area-inset-top));
   position: sticky;
+  box-shadow: var(--shadow-1);
   top: 0;
   z-index: var(--layer-navigation);
 }
@@ -74,6 +89,7 @@
   padding-bottom: env(safe-area-inset-bottom);
   position: fixed;
   right: 0;
+  box-shadow: var(--shadow-2);
   z-index: var(--layer-navigation);
 }
 
@@ -141,6 +157,8 @@
 /* ---------------------------------------------- tablet and desktop rail -- */
 
 .v-sidebar {
+  background: color-mix(in srgb, var(--canvas-deep) 92%, transparent);
+  backdrop-filter: blur(18px);
   border-right: 1px solid var(--border-hairline);
   display: none;
   flex-direction: column;

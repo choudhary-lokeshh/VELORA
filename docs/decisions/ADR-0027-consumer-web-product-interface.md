@@ -96,6 +96,12 @@ One bullet under "Nothing on the surface may state something the server did not"
 
 The five-destination information architecture, the navigation model, the palette, and every other locked decision above are unchanged by this.
 
+## Amendment 2026-08-26: Phase 8 depth pass
+
+The product-owner Phase 8 brief asks NIGHT CURRENT to become richer without becoming a new theme. Consumer Web therefore adds a restrained signed-in atmosphere, translucent navigation, lifted primary actions and cards, stronger media depth, and polished activity and gift states. Every effect is composed from the semantic values already locked by this ADR; no palette, type step, radius, icon, motion duration, component variant, route, or product claim was added.
+
+The earlier decision to reserve the strongest atmospheric wash for the public entry is narrowed rather than discarded. The public entry remains the strongest expression. The signed-in shell uses a quieter wash behind its content, while conversations and media retain opaque surfaces so decoration never competes with comprehension. Reduced-motion, contrast, focus, and responsive behavior remain unchanged.
+
 ## Cross-references
 
 [Design principles](../design/01-design-principles.md), [design-system contract](../design/02-design-system-contract.md), [Figma source of truth](../design/03-figma-source-of-truth.md), [responsive rules](../design/04-responsive-platform-rules.md), [accessibility and motion](../design/05-accessibility-motion.md), [screen states](../design/06-screen-state-requirements.md), [Consumer Web surface](../surfaces/01-consumer-web.md), [ADR-0004](ADR-0004-client-frameworks.md), [ADR-0015](ADR-0015-shared-design-token-boundary.md), and the [Consumer Web freeze report](../architecture/18-consumer-web-freeze-report.md).

@@ -15,6 +15,11 @@
  */
 
 .a-shell {
+  background: linear-gradient(
+    180deg,
+    var(--surface-inset),
+    var(--canvas) var(--space-24)
+  );
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
@@ -60,6 +65,7 @@
   min-height: var(--topbar-height);
   padding: var(--space-2) var(--space-3);
   position: sticky;
+  box-shadow: var(--shadow-1);
   top: 0;
   z-index: var(--layer-sticky);
 }
@@ -165,6 +171,7 @@
   .a-sidebar {
     background: var(--canvas-deep);
     border-right: 1px solid var(--border-hairline);
+    box-shadow: var(--shadow-1);
     display: flex;
     flex: none;
     flex-direction: column;

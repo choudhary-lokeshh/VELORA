@@ -50,10 +50,10 @@
 }
 
 /*
- * The one atmospheric element on the surface. A slow tonal wash behind the
- * entry copy, drawn from the signal colour rather than a new one, and absent
- * everywhere behind the product itself — an ambient gradient under a
- * conversation would be decoration competing with content.
+ * The strongest atmospheric element on the surface. A slow tonal wash behind
+ * the entry copy, drawn from the signal colour rather than a new one. The
+ * signed-in shell now carries a much quieter version of the same light so the
+ * product keeps its depth without competing with conversation or media.
  *
  * It spans the viewport rather than the content column, because a wash that
  * stops at a max-width has a visible rectangular edge, which reads as a panel
@@ -312,6 +312,13 @@
   border-color: var(--border-soft);
 }
 
+@media (hover: hover) {
+  .v-person:hover {
+    box-shadow: var(--shadow-2);
+    transform: translateY(-2px);
+  }
+}
+
 /*
  * The portrait area.
  *
@@ -431,6 +438,7 @@
   background: var(--surface-1);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -461,6 +469,7 @@
   background: var(--surface-1);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -947,6 +956,7 @@
 
 .v-notification--unread {
   background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
 }
 
 .v-notification--unread::before {
@@ -1012,7 +1022,7 @@
 
 .v-gift-choice {
   align-items: center;
-  background: var(--surface-2);
+  background: linear-gradient(145deg, var(--surface-3), var(--surface-2) 62%);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   color: var(--text-primary);
@@ -1036,7 +1046,9 @@
 }
 .v-gift-choice[aria-pressed='true'] {
   border-color: var(--ember);
-  box-shadow: 0 0 0 1px var(--ember);
+  box-shadow:
+    0 0 0 1px var(--ember),
+    var(--shadow-2);
 }
 
 .v-gift-art {

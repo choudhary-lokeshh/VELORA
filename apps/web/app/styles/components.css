@@ -27,6 +27,7 @@
   transition:
     background-color var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
   white-space: nowrap;
@@ -43,11 +44,14 @@
 
 .v-btn--primary {
   background: var(--ember);
+  box-shadow: var(--shadow-1);
   color: var(--text-on-accent);
 }
 
 .v-btn--primary:hover:not(:disabled) {
   background: var(--ember-bright);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
 }
 
 .v-btn--secondary {
@@ -375,9 +379,14 @@ select.v-control {
 /* ============================ Surfaces ================================ */
 
 .v-card {
-  background: var(--surface-1);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--surface-2) 42%, var(--surface-1)),
+    var(--surface-1) 48%
+  );
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
   min-width: 0;
   padding: var(--space-6);
 }
@@ -676,6 +685,13 @@ select.v-control {
 
 .v-empty {
   align-items: center;
+  background: radial-gradient(
+    circle at 50% 20%,
+    var(--surface-2),
+    transparent 68%
+  );
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);

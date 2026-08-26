@@ -81,3 +81,7 @@ Two consequences are visible in the decision form. Nothing is applied optimistic
 ## Authority and scope
 
 This ADR authorises the Platform Admin interface only. It changes no approved value, adds nothing to the shared token package, and authorises no interim filling for Consumer Mobile. `DESIGN REQUIRED` still stands for the full design-system handoff.
+
+## Amendment 2026-08-26: Phase 8 clarity pass
+
+The product-owner Phase 8 brief asks CLEAR PULSE to look finished while keeping operational clarity first. The console therefore adds only a quiet canvas depth, separation at the navigation boundary, and a stable inset face behind panel headings. All treatments use the semantic values already locked by this ADR. No decorative signal, data interpretation, status color, control, route, or privilege was added, and panels remain bordered operational regions rather than promotional cards.
