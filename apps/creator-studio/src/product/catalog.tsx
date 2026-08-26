@@ -28,6 +28,7 @@ import {
   formatDate,
   plural,
 } from './format';
+import { useMediaAddresses } from './imagery';
 import { useCollection, useResource, useSingleFlight } from './resource';
 
 /**
@@ -101,6 +102,11 @@ export function Catalog() {
     filter === 'all'
       ? catalog.items
       : catalog.items.filter((item) => item.lifecycle === filter);
+  const imageReferences = shown.flatMap((item) => {
+    const image = item.media.find((entry) => entry.state === 'ready');
+    return image === undefined ? [] : [image.id];
+  });
+  const imageAddresses = useMediaAddresses(imageReferences, 'card');
 
   const setLifecycle = (
     item: CreatorContent,
@@ -224,6 +230,13 @@ export function Catalog() {
                       : clubNames.get(item.clubId)
                   }
                   editable={creator.canWrite}
+                  imageAddress={imageAddresses.get(
+                    item.media.find((entry) => entry.state === 'ready')?.id ??
+                      '',
+                  )}
+                  imageReference={
+                    item.media.find((entry) => entry.state === 'ready')?.id
+                  }
                   item={item}
                   onArchive={() => {
                     setConfirming(item);
@@ -284,6 +297,8 @@ function ContentRow({
   busy,
   clubName,
   editable,
+  imageAddress,
+  imageReference,
   item,
   onArchive,
   onPublish,
@@ -293,6 +308,8 @@ function ContentRow({
   readonly busy: boolean;
   readonly clubName: string | undefined;
   readonly editable: boolean;
+  readonly imageAddress: string | undefined;
+  readonly imageReference: string | undefined;
   readonly item: CreatorContent;
   readonly onArchive: () => void;
   readonly onPublish: () => void;
@@ -309,50 +326,66 @@ function ContentRow({
           href={`/catalog/${item.id}`}
           testId={`content-open-${item.id}`}
         >
-          <span className="s-inline s-inline--tight">
-            <span className="s-subheading s-wrap">{item.title}</span>
-          </span>
-          {item.summary === undefined ? null : (
-            <span className="s-small s-muted s-wrap s-clamp-2">
-              {item.summary}
-            </span>
-          )}
-          <span className="s-inline s-inline--tight">
-            <Badge
-              icon={lifecycle.icon}
-              testId={`content-lifecycle-${item.id}`}
-              tone={lifecycle.tone}
-            >
-              {lifecycle.label}
-            </Badge>
-            <Badge
-              icon={visibility.icon}
-              testId={`content-visibility-${item.id}`}
-              tone={visibility.tone}
-            >
-              {visibility.label}
-            </Badge>
-            {/*
-              A members-only item with no club has nobody to admit, so it is
-              unreachable however it is marked. Saying so is kinder than
-              letting somebody believe it is behind a door.
-            */}
-            {item.visibility === 'members_only' && clubName !== undefined ? (
-              <Chip icon="users">{clubName}</Chip>
-            ) : null}
-            {item.visibility === 'members_only' && item.clubId === undefined ? (
-              <Badge
-                icon="alert"
-                testId={`content-unreachable-${item.id}`}
-                tone="caution"
-              >
-                Reaches nobody
-              </Badge>
-            ) : null}
-            <span className="s-caption s-quiet">
-              {item.lifecycle === 'published' && item.publishedAt !== undefined
-                ? `Published ${formatDate(item.publishedAt)}`
-                : `Edited ${formatDate(item.updatedAt)}`}
+          <span className="s-catalog-entry">
+            {imageReference === undefined ? null : (
+              <span aria-hidden="true" className="s-catalog-entry__image">
+                {imageAddress === undefined ? null : (
+                  <img
+                    alt=""
+                    data-testid={`content-image-${item.id}`}
+                    height={96}
+                    loading="lazy"
+                    src={imageAddress}
+                    width={128}
+                  />
+                )}
+              </span>
+            )}
+            <span className="s-catalog-entry__copy">
+              <span className="s-inline s-inline--tight">
+                <span className="s-subheading s-wrap">{item.title}</span>
+              </span>
+              {item.summary === undefined ? null : (
+                <span className="s-small s-muted s-wrap s-clamp-2">
+                  {item.summary}
+                </span>
+              )}
+              <span className="s-inline s-inline--tight">
+                <Badge
+                  icon={lifecycle.icon}
+                  testId={`content-lifecycle-${item.id}`}
+                  tone={lifecycle.tone}
+                >
+                  {lifecycle.label}
+                </Badge>
+                <Badge
+                  icon={visibility.icon}
+                  testId={`content-visibility-${item.id}`}
+                  tone={visibility.tone}
+                >
+                  {visibility.label}
+                </Badge>
+                {item.visibility === 'members_only' &&
+                clubName !== undefined ? (
+                  <Chip icon="users">{clubName}</Chip>
+                ) : null}
+                {item.visibility === 'members_only' &&
+                item.clubId === undefined ? (
+                  <Badge
+                    icon="alert"
+                    testId={`content-unreachable-${item.id}`}
+                    tone="caution"
+                  >
+                    Reaches nobody
+                  </Badge>
+                ) : null}
+                <span className="s-caption s-quiet">
+                  {item.lifecycle === 'published' &&
+                  item.publishedAt !== undefined
+                    ? `Published ${formatDate(item.publishedAt)}`
+                    : `Edited ${formatDate(item.updatedAt)}`}
+                </span>
+              </span>
             </span>
           </span>
         </ListRow>

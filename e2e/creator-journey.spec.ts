@@ -3,6 +3,7 @@ import {
   consumerWebOrigin,
   creatorStudioOrigin,
 } from './auth-environment.js';
+import { fixturePhoto } from './consumer.js';
 import {
   activateCreator,
   claimHandle,
@@ -174,6 +175,78 @@ test.describe('Creator Studio journey', () => {
       const body = await anonymous.locator('body').innerText();
       expect(body).not.toMatch(/\d+\s+members?/iu);
       expect(body).toContain('by invitation from this creator');
+    } finally {
+      await visitor.close();
+    }
+  });
+
+  test('publishes creator and catalog imagery through the real media pipeline', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const subject = uniqueSubject('creator-media');
+    const handle = uniqueHandle('i');
+    const photo = await fixturePhoto();
+
+    await declareAdult(page, subject);
+    await activateCreator(page, subject);
+    await claimHandle(page, handle);
+
+    await page.goto(`${creatorStudioOrigin}/profile`);
+    await page.getByTestId('creator-image-input-cover').setInputFiles({
+      buffer: photo,
+      mimeType: 'image/jpeg',
+      name: 'cover.jpg',
+    });
+    await expect(
+      page.locator('[data-testid="creator-media-cover"][data-state]'),
+    ).toHaveCount(1, { timeout: 60_000 });
+
+    await page.goto(`${creatorStudioOrigin}/catalog/new`);
+    await page.getByTestId('content-title').fill('A pictured studio note');
+    await page.getByTestId('content-summary').fill('Glaze tests in daylight.');
+    await page.getByTestId('content-save').click();
+    await page.waitForURL(/\/catalog\/[0-9a-f-]+$/u, { timeout: 30_000 });
+    await page.getByTestId('content-image-input').setInputFiles({
+      buffer: photo,
+      mimeType: 'image/jpeg',
+      name: 'catalog.jpg',
+    });
+    await expect(
+      page.locator('[data-testid^="content-media-"][data-state]'),
+    ).toHaveCount(1, { timeout: 60_000 });
+    await page.getByTestId('content-editor-publish').click();
+    await page.waitForURL(/\/catalog$/u, { timeout: 30_000 });
+
+    await page.goto(`${creatorStudioOrigin}/profile`);
+    await publishPage(page);
+
+    const visitor = await page.context().browser()?.newContext();
+    if (visitor === undefined) throw new Error('no browser for the visitor');
+    try {
+      const anonymous = await visitor.newPage();
+      await expect(async () => {
+        await anonymous.goto(`${consumerWebOrigin}/c/${handle}`);
+        await expect(anonymous.getByTestId('creator-page-cover')).toBeVisible({
+          timeout: 2_000,
+        });
+        await expect(
+          anonymous.locator('[data-testid^="creator-item-cover-"]'),
+        ).toHaveCount(1, { timeout: 2_000 });
+      }).toPass({ timeout: 180_000 });
+
+      for (const image of [
+        anonymous.getByTestId('creator-page-cover').locator('img'),
+        anonymous.locator('[data-testid^="creator-item-cover-"] img'),
+      ]) {
+        await expect
+          .poll(
+            async () =>
+              image.evaluate((node: HTMLImageElement) => node.naturalWidth),
+            { timeout: 15_000 },
+          )
+          .toBeGreaterThan(0);
+      }
     } finally {
       await visitor.close();
     }

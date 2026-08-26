@@ -6,7 +6,10 @@ import { useCallback, type ReactNode } from 'react';
 import type {
   CreatorClubList,
   CreatorContentList,
+  CreatorEarnings,
+  CreatorReceivedGiftList,
 } from '@velora/creator-client';
+import { formatAmount, formatMoney } from '@velora/creator-client';
 
 import { Icon } from '../design/icons';
 import {
@@ -15,13 +18,21 @@ import {
   Card,
   CardHead,
   CardSkeleton,
+  EmptyState,
   ErrorState,
+  ListRow,
   Metric,
   Notice,
   PageHeader,
+  RowSkeleton,
 } from '../design/primitives';
 import { useApi, useCreator } from '../app/providers';
-import { creatorStandingLook, plural, standingReasonLabels } from './format';
+import {
+  creatorStandingLook,
+  formatDateTime,
+  plural,
+  standingReasonLabels,
+} from './format';
 import { useResource } from './resource';
 
 /**
@@ -59,8 +70,12 @@ export function Home() {
     async () => api.clubs({ pageSize: overviewPageSize }),
     [api],
   );
+  const loadEarnings = useCallback(async () => api.earnings(), [api]);
+  const loadGifts = useCallback(async () => api.receivedGifts(), [api]);
   const content = useResource<CreatorContentList>(loadContent);
   const clubs = useResource<CreatorClubList>(loadClubs);
+  const earnings = useResource<CreatorEarnings>(loadEarnings);
+  const gifts = useResource<CreatorReceivedGiftList>(loadGifts);
 
   const profile = creator.profile.value;
   const items = content.value?.content ?? [];
@@ -87,6 +102,43 @@ export function Home() {
   const loadingCounts =
     (content.value === undefined && content.error === undefined) ||
     (clubs.value === undefined && clubs.error === undefined);
+  const recent = [
+    ...items.map((item) => ({
+      at: item.updatedAt,
+      href: `/catalog/${item.id}`,
+      id: `content-${item.id}`,
+      label: item.title,
+      meta:
+        item.lifecycle === 'published'
+          ? 'Published catalog item'
+          : item.lifecycle === 'archived'
+            ? 'Archived catalog item'
+            : 'Draft catalog item',
+    })),
+    ...rooms.map((club) => ({
+      at: club.updatedAt,
+      href: `/clubs/${club.id}`,
+      id: `club-${club.id}`,
+      label: club.name,
+      meta:
+        club.lifecycle === 'published'
+          ? 'Published private club'
+          : club.lifecycle === 'closed'
+            ? 'Closed private club'
+            : 'Draft private club',
+    })),
+    ...(gifts.value?.gifts ?? []).map((gift) => ({
+      at: gift.sentAt ?? gift.createdAt,
+      href: '/money/gifts',
+      id: `gift-${gift.id}`,
+      label: `Received ${gift.gift.name}`,
+      meta: `Your ledger share ${formatMoney(gift.earning)} · sender identity withheld`,
+    })),
+  ]
+    .sort((left, right) => right.at.localeCompare(left.at))
+    .slice(0, 5);
+  const loadingRecent =
+    loadingCounts || (gifts.value === undefined && gifts.error === undefined);
 
   return (
     <>
@@ -233,6 +285,110 @@ export function Home() {
                 </ButtonLink>
               </div>
             </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="s-split">
+        <Card testId="home-money">
+          <CardHead
+            actions={
+              <ButtonLink href="/money" size="sm">
+                Open money
+              </ButtonLink>
+            }
+            lede="Ledger balances only. Each currency stays separate, and none is a payout promise."
+            title="Money at a glance"
+          />
+          {earnings.error !== undefined ? (
+            <ErrorState
+              body={earnings.error}
+              onRetry={earnings.retryable ? earnings.reload : undefined}
+              testId="home-money-failed"
+            />
+          ) : earnings.loading && earnings.value === undefined ? (
+            <CardSkeleton rows={2} />
+          ) : (earnings.value?.currencies.length ?? 0) === 0 ? (
+            <EmptyState
+              body="A currency appears here only after its ledger has something to report."
+              icon="ledger"
+              testId="home-money-empty"
+              title="No balance yet"
+            />
+          ) : (
+            <div className="s-grid" data-testid="home-money-currencies">
+              {earnings.value?.currencies.map((currency) => (
+                <Metric
+                  caption={`${currency.currency} VELORA currently owes you`}
+                  key={currency.currency}
+                  testId={`home-money-${currency.currency}-payable`}
+                  value={formatAmount(currency.payable, currency.currency)}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card flush testId="home-recent">
+          <CardHead
+            actions={
+              <ButtonLink href="/money/gifts" size="sm">
+                See gifts
+              </ButtonLink>
+            }
+            lede="The latest real changes from your catalog, clubs, and received gifts."
+            title="Recent activity"
+          />
+          {content.error !== undefined ||
+          clubs.error !== undefined ||
+          gifts.error !== undefined ? (
+            <ErrorState
+              body={content.error ?? clubs.error ?? gifts.error ?? ''}
+              onRetry={
+                content.retryable || clubs.retryable || gifts.retryable
+                  ? () => {
+                      content.reload();
+                      clubs.reload();
+                      gifts.reload();
+                    }
+                  : undefined
+              }
+              testId="home-recent-failed"
+            />
+          ) : loadingRecent ? (
+            <RowSkeleton rows={3} />
+          ) : recent.length === 0 ? (
+            <EmptyState
+              body="Saved catalog work, club changes, and received gifts appear here."
+              icon="sparkle"
+              testId="home-recent-empty"
+              title="Nothing has happened yet"
+            />
+          ) : (
+            <ul className="s-list" data-testid="home-recent-list">
+              {recent.map((activity) => (
+                <li key={activity.id}>
+                  <ListRow
+                    aside={
+                      <time
+                        className="s-caption s-quiet"
+                        dateTime={activity.at}
+                      >
+                        {formatDateTime(activity.at)}
+                      </time>
+                    }
+                    href={activity.href}
+                  >
+                    <span className="s-subheading s-wrap">
+                      {activity.label}
+                    </span>
+                    <span className="s-caption s-quiet s-wrap">
+                      {activity.meta}
+                    </span>
+                  </ListRow>
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
       </div>

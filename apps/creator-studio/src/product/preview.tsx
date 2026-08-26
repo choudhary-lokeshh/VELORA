@@ -172,14 +172,37 @@ function VisitorView({
   // come back here would not come back for anybody, which is the point of a
   // preview being a preview rather than a mock-up.
   const avatarRef = creator.avatar?.id;
+  const coverRef = creator.cover?.id;
   const avatars = useMediaAddresses(
     avatarRef === undefined ? [] : [avatarRef],
     'avatar_large',
   );
+  const covers = useMediaAddresses(
+    coverRef === undefined ? [] : [coverRef],
+    'display',
+  );
+  const itemImageReferences = items.flatMap((item) => {
+    const image = item.media.at(0);
+    return image === undefined ? [] : [image.id];
+  });
+  const itemImages = useMediaAddresses(itemImageReferences, 'card');
 
   return (
     <div className="s-preview">
       <Card testId="preview-identity">
+        {coverRef === undefined ? null : (
+          <div aria-hidden="true" className="s-preview__cover">
+            {covers.get(coverRef) === undefined ? null : (
+              <img
+                alt=""
+                data-testid="preview-cover"
+                height={360}
+                src={covers.get(coverRef)}
+                width={960}
+              />
+            )}
+          </div>
+        )}
         <div className="s-preview__identity">
           <CreatorAvatar
             displayName={creator.displayName}
@@ -235,15 +258,33 @@ function VisitorView({
           <ul className="s-stack s-stack--3">
             {items.map((item) => (
               <li className="s-preview-item" key={item.id}>
-                <p className="s-subheading s-wrap">{item.title}</p>
-                {item.summary === undefined ? null : (
-                  <p className="s-small s-muted s-wrap s-clamp-3">
-                    {item.summary}
-                  </p>
+                {item.media.at(0) === undefined ? null : (
+                  <div aria-hidden="true" className="s-preview-item__image">
+                    {itemImages.get(item.media[0]?.id ?? '') === undefined ? (
+                      <span />
+                    ) : (
+                      <img
+                        alt=""
+                        data-testid={`preview-content-image-${item.id}`}
+                        height={300}
+                        loading="lazy"
+                        src={itemImages.get(item.media[0]?.id ?? '')}
+                        width={400}
+                      />
+                    )}
+                  </div>
                 )}
-                <p className="s-caption s-quiet">
-                  {formatDate(item.publishedAt)}
-                </p>
+                <div className="s-preview-item__copy">
+                  <p className="s-subheading s-wrap">{item.title}</p>
+                  {item.summary === undefined ? null : (
+                    <p className="s-small s-muted s-wrap s-clamp-3">
+                      {item.summary}
+                    </p>
+                  )}
+                  <p className="s-caption s-quiet">
+                    {formatDate(item.publishedAt)}
+                  </p>
+                </div>
               </li>
             ))}
           </ul>

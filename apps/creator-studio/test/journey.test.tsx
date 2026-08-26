@@ -342,6 +342,58 @@ describe('home', () => {
       expect(text).not.toContain(forbidden);
     }
   });
+
+  it('shows ledger money and recent real activity without exposing a gift sender', async () => {
+    const double = createCreatorApiDouble({
+      ...withProfile(),
+      content: [
+        {
+          id: 'content-1',
+          lifecycle: 'published',
+          title: 'Kiln notes',
+          version: 1,
+          visibility: 'public',
+        },
+      ],
+      earnings: [
+        {
+          currency: 'USD',
+          disputed: '0',
+          gross: '5000',
+          payable: '3450',
+          platform: '1550',
+          reversed: '0',
+          tax: '0',
+        },
+      ],
+      receivedGifts: [
+        {
+          createdAt: '2026-08-16T12:00:00.000Z',
+          earning: { amountMinor: '700', currency: 'USD' },
+          gift: {
+            id: '11111111-1111-4111-8111-111111111111',
+            name: 'Golden Spark',
+            visual: 'spark',
+          },
+          gross: { amountMinor: '1000', currency: 'USD' },
+          id: '22222222-2222-4222-8222-222222222222',
+          senderVisibility: 'withheld',
+          sentAt: '2026-08-16T12:00:01.000Z',
+          state: 'sent',
+        },
+      ],
+    });
+    renderStudio(<Home />, double, { pathname: '/home' });
+
+    expect(
+      (await screen.findByTestId('home-money-USD-payable')).textContent,
+    ).toContain('34.50 USD');
+    const recent = await screen.findByTestId('home-recent-list');
+    expect(recent.textContent).toContain('Received Golden Spark');
+    expect(recent.textContent).toContain('7.00 USD');
+    expect(recent.textContent).toContain('sender identity withheld');
+    expect(recent.textContent).not.toContain('consumer');
+  });
 });
 
 describe('the public page', () => {
@@ -575,6 +627,18 @@ describe('the preview', () => {
           displayName: 'Ember Vale',
           handle: 'embervale',
           links: [],
+          media: [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              slot: 'avatar',
+              state: 'ready',
+            },
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              slot: 'cover',
+              state: 'ready',
+            },
+          ],
           publication: 'published',
           publishedAt: '2026-08-15T12:00:00.000Z',
           version: 2,
@@ -583,6 +647,13 @@ describe('the preview', () => {
           {
             id: 'content-1',
             lifecycle: 'published',
+            media: [
+              {
+                id: '33333333-3333-4333-8333-333333333333',
+                position: 0,
+                state: 'ready',
+              },
+            ],
             title: 'Visible post',
             version: 1,
             visibility: 'public',
@@ -602,6 +673,14 @@ describe('the preview', () => {
     const catalog = await screen.findByTestId('preview-catalog');
     expect(catalog.textContent).toContain('Visible post');
     expect(catalog.textContent).not.toContain('Hidden draft');
+    expect(
+      (await screen.findByTestId('preview-cover')).getAttribute('src'),
+    ).toBe('https://media.test/22222222-2222-4222-8222-222222222222');
+    expect(
+      (
+        await screen.findByTestId('preview-content-image-content-1')
+      ).getAttribute('src'),
+    ).toBe('https://media.test/33333333-3333-4333-8333-333333333333');
   });
 });
 
@@ -656,6 +735,36 @@ describe('the catalog', () => {
     expect(
       (await screen.findByTestId('content-unreachable-content-1')).textContent,
     ).toContain('Reaches nobody');
+  });
+
+  it('shows a ready item image in the catalog from the media exchange', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        content: [
+          {
+            id: 'content-1',
+            lifecycle: 'draft',
+            media: [
+              {
+                id: '44444444-4444-4444-8444-444444444444',
+                position: 0,
+                state: 'ready',
+              },
+            ],
+            title: 'Illustrated draft',
+            version: 1,
+            visibility: 'public',
+          },
+        ],
+      }),
+    );
+    renderStudio(<Catalog />, double, { pathname: '/catalog' });
+
+    expect(
+      (await screen.findByTestId('content-image-content-1')).getAttribute(
+        'src',
+      ),
+    ).toBe('https://media.test/44444444-4444-4444-8444-444444444444');
   });
 
   it('publishes from the list and reports the new state', async () => {

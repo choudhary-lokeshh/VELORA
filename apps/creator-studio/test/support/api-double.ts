@@ -81,6 +81,28 @@ export interface CreatorApiDoubleState {
     reversed: string;
     tax: string;
   }[];
+  receivedGifts: {
+    createdAt: string;
+    earning: { amountMinor: string; currency: string };
+    gift: {
+      id: string;
+      name: string;
+      visual:
+        | 'rose'
+        | 'spark'
+        | 'heart'
+        | 'crown'
+        | 'celebration'
+        | 'diamond'
+        | 'star'
+        | 'ribbon';
+    };
+    gross: { amountMinor: string; currency: string };
+    id: string;
+    senderVisibility: 'withheld';
+    sentAt?: string;
+    state: 'failed' | 'partially_reversed' | 'pending' | 'reversed' | 'sent';
+  }[];
   /** What the server says about payout readiness, held as the wire shape. */
   payoutReadiness: {
     balances: {
@@ -135,6 +157,13 @@ export interface CreatorApiDoubleState {
     clubId?: string;
     id: string;
     lifecycle: 'draft' | 'published' | 'archived';
+    media?: {
+      id: string;
+      position: number;
+      rejectionReason?: string;
+      state: string;
+      uploadExpiresAt?: string;
+    }[];
     summary?: string;
     title: string;
     version: number;
@@ -197,6 +226,7 @@ export function emptyCreatorState(): CreatorApiDoubleState {
     content: [],
     earnings: [],
     earningsHistory: [],
+    receivedGifts: [],
     offers: [],
     payoutReadiness: {
       balances: [],
@@ -305,6 +335,7 @@ export function createCreatorApiDouble(
     createdAt: iso(),
     id: entry.id,
     lifecycle: entry.lifecycle,
+    media: entry.media ?? [],
     ...(entry.lifecycle === 'published' ? { publishedAt: iso() } : {}),
     ...(entry.summary === undefined ? {} : { summary: entry.summary }),
     title: entry.title,
@@ -362,6 +393,19 @@ export function createCreatorApiDouble(
     }
     if (request.signal.aborted) throw new DOMException('aborted');
 
+    // Public delivery exchange. The platform decides which references may be
+    // served; the double returns only the references the public projections or
+    // creator-owned reads handed to the surface.
+    if (path === '/v1/media/deliveries' && method === 'POST') {
+      const asked = (body as { assetIds?: string[] } | undefined)?.assetIds;
+      return json(200, {
+        deliveries: (asked ?? []).map((assetId) => ({
+          assetId,
+          url: `https://media.test/${assetId}`,
+        })),
+      });
+    }
+
     // The public creator page needs no session at all, so it is answered
     // before the credential check below.
     if (path === '/v1/creators' && method === 'GET') {
@@ -374,7 +418,29 @@ export function createCreatorApiDouble(
         return error(404, 'RESOURCE_NOT_FOUND');
       }
       return json(200, {
+        ...(state.profile.media?.find(
+          (image) => image.slot === 'avatar' && image.state === 'ready',
+        ) === undefined
+          ? {}
+          : {
+              avatar: {
+                id: state.profile.media.find(
+                  (image) => image.slot === 'avatar' && image.state === 'ready',
+                )?.id,
+              },
+            }),
         ...(state.profile.bio === undefined ? {} : { bio: state.profile.bio }),
+        ...(state.profile.media?.find(
+          (image) => image.slot === 'cover' && image.state === 'ready',
+        ) === undefined
+          ? {}
+          : {
+              cover: {
+                id: state.profile.media.find(
+                  (image) => image.slot === 'cover' && image.state === 'ready',
+                )?.id,
+              },
+            }),
         displayName: state.profile.displayName,
         handle: state.profile.handle,
         links: state.profile.links,
@@ -402,6 +468,9 @@ export function createCreatorApiDouble(
           .map((entry) => ({
             ...(entry.body === undefined ? {} : { body: entry.body }),
             id: entry.id,
+            media: (entry.media ?? [])
+              .filter((image) => image.state === 'ready')
+              .map((image) => ({ id: image.id, position: image.position })),
             publishedAt: iso(),
             ...(entry.summary === undefined ? {} : { summary: entry.summary }),
             title: entry.title,
@@ -490,6 +559,11 @@ export function createCreatorApiDouble(
           modes: [],
           source: 'unpublished',
         },
+      });
+    }
+    if (path === '/v1/creator/gifts' && method === 'GET') {
+      return json(200, {
+        gifts: state.receivedGifts.map((gift) => ({ ...gift })),
       });
     }
     if (path === '/v1/creator/earnings/history' && method === 'GET') {
