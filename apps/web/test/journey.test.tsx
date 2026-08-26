@@ -838,6 +838,7 @@ describe('messaging', () => {
     await click('message-retry');
     await waitFor(() => {
       expect(double.state.messages).toHaveLength(1);
+      expect(textOf('messages')).toContain('only once');
     });
 
     const sends = double.calls.filter(
@@ -947,6 +948,7 @@ describe('notifications', () => {
     renderProduct(<Notifications />, double, { pathname: '/notifications' });
 
     await screen.findByText('1 unread.');
+    await screen.findByText('Robin sent you a message.');
     await click('notifications-mark-read');
     await screen.findByText('Everything here has been read.');
   });
@@ -974,6 +976,23 @@ describe('notifications', () => {
         ),
       ).toBe(true);
     });
+  });
+
+  it('keeps a deleted or revoked activity readable without a broken link', async () => {
+    const state = withNotification();
+    state.candidates = [];
+    const double = createApiDouble(state);
+    renderProduct(<Notifications />, double, { pathname: '/notifications' });
+
+    await screen.findByText('This activity is no longer available.');
+    const row = screen.getByTestId(
+      'notification-99999999-9999-4999-8999-999999999999',
+    );
+    expect(row.tagName).toBe('DIV');
+    await click(
+      'notification-read-99999999-9999-4999-8999-999999999999',
+    );
+    await screen.findByText('Everything here has been read.');
   });
 
   it('says plainly that nothing is delivered outside VELORA', async () => {
