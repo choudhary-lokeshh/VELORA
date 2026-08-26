@@ -970,7 +970,22 @@
   flex: none;
   height: 40px;
   justify-content: center;
+  position: relative;
   width: 40px;
+}
+
+.v-notification__kind {
+  align-items: center;
+  background: var(--surface-1);
+  border-radius: 50%;
+  bottom: -2px;
+  color: var(--text-secondary);
+  display: flex;
+  height: 18px;
+  justify-content: center;
+  position: absolute;
+  right: -2px;
+  width: 18px;
 }
 
 .v-notification__body {

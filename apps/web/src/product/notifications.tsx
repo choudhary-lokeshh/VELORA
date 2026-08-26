@@ -1,14 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { NotificationEntry } from '@velora/consumer-client';
+import type {
+  ConsumerApi,
+  DiscoveryPerson,
+  NotificationEntry,
+} from '@velora/consumer-client';
 import { failureMessage } from '@velora/consumer-client';
+import type { ApiResult } from '@velora/api-client';
 
 import { useApi, useFeeds, useToast } from '../app/providers';
 import { Icon, type IconName } from '../design/icons';
 import {
+  Avatar,
   Button,
   EmptyState,
   ErrorMessage,
@@ -17,6 +23,8 @@ import {
   RowSkeleton,
 } from '../design/primitives';
 import { formatRelative } from './locale';
+import { portraitReferences, useMediaAddresses } from './imagery';
+import { useResource } from './resource';
 
 /**
  * What the platform has told this person.
@@ -32,37 +40,99 @@ import { formatRelative } from './locale';
  * environment this list is the only place a notice is actually seen. That is
  * said plainly at the top rather than papered over.
  *
- * A notice carries no name and no preview. The contract deliberately withholds
- * both — a client already has an authorized route to fetch them — so a line here
- * says what kind of thing happened and offers to open it.
+ * A notice carries no raw identifiers and no message preview. The contract
+ * supplies the subject person and the object reference, and the screen resolves
+ * the authorized counterpart identity from DISCOVERY. If the counterpart or
+ * target activity has been deleted or revoked, the item remains readable in
+ * place as unavailable rather than navigating to a broken route.
  */
 
 const notificationPageSize = 20;
 
 interface Presentation {
   readonly icon: IconName;
-  readonly text: string;
+  readonly text: (name: string) => string;
 }
 
 const presentation: Readonly<Record<string, Presentation>> = {
-  // Deliberately past tense and non-actionable. A ring is a live event and this
-  // list is a record of what happened; a notice offering to answer would be
-  // offering a call that stopped ringing long before anybody read it.
-  call_incoming: { icon: 'phone', text: 'Somebody called you.' },
-  call_missed: { icon: 'phoneOff', text: 'You missed a call.' },
+  call_incoming: {
+    icon: 'phone',
+    text: (name) =>
+      name.length > 0 ? `${name} called you.` : 'Somebody called you.',
+  },
+  call_missed: {
+    icon: 'phoneOff',
+    text: (name) =>
+      name.length > 0
+        ? `You missed a call from ${name}.`
+        : 'You missed a call.',
+  },
   introduction_mutual: {
     icon: 'link',
-    text: 'You have a new mutual introduction.',
+    text: (name) =>
+      name.length > 0
+        ? `You and ${name} have a mutual introduction.`
+        : 'You have a new mutual introduction.',
   },
-  message_received: { icon: 'message', text: 'You have a new message.' },
+  message_received: {
+    icon: 'message',
+    text: (name) =>
+      name.length > 0
+        ? `${name} sent you a message.`
+        : 'You have a new message.',
+  },
 };
 
 function destinationOf(entry: NotificationEntry): string | undefined {
-  if (entry.conversationId !== undefined) {
-    return `/messages/${entry.conversationId}`;
+  switch (entry.kind) {
+    case 'message_received':
+      return entry.conversationId === undefined
+        ? undefined
+        : `/messages/${entry.conversationId}`;
+    case 'introduction_mutual':
+      return entry.introductionId === undefined ? undefined : '/introductions';
+    case 'call_incoming':
+    case 'call_missed':
+      // A feed line is history, never a live ringing surface. Re-open the
+      // server-authorized relationship rather than a call that already ended.
+      return '/introductions';
   }
-  if (entry.introductionId !== undefined) return '/introductions';
-  return undefined;
+}
+
+type NotificationPeople = ReadonlyMap<string, DiscoveryPerson | null>;
+
+/**
+ * Resolves only the identities a rendered page names, through DISCOVERY's
+ * authorized projection. A missing answer is retained as `null` so the screen
+ * can render a durable deleted/unavailable state; a transport or server failure
+ * remains a real resource failure with retry rather than being disguised as a
+ * missing person.
+ */
+async function resolvePeople(
+  api: ConsumerApi,
+  subjectKey: string,
+  signal: AbortSignal,
+): Promise<ApiResult<NotificationPeople>> {
+  const subjectIds = subjectKey.length === 0 ? [] : subjectKey.split(',');
+  const answers = await Promise.all(
+    subjectIds.map(
+      async (subjectId) =>
+        [subjectId, await api.person(subjectId, signal)] as const,
+    ),
+  );
+  const people = new Map<string, DiscoveryPerson | null>();
+  for (const [subjectId, answer] of answers) {
+    if (answer.kind === 'ok') {
+      people.set(subjectId, answer.value);
+      continue;
+    }
+    if (answer.kind === 'not-found' || answer.kind === 'refused') {
+      people.set(subjectId, null);
+      continue;
+    }
+    return answer;
+  }
+  return { kind: 'ok', value: people };
 }
 
 export function Notifications() {
@@ -85,6 +155,36 @@ export function Notifications() {
 
   const entries = dedupe([...(first.value?.notifications ?? []), ...older]);
   const unread = entries.filter((entry) => entry.readAt === undefined);
+
+  const subjectKey = [...new Set(entries.map((entry) => entry.subjectId))]
+    .sort()
+    .join(',');
+
+  const loadPeople = useCallback(
+    async (signal: AbortSignal) => resolvePeople(api, subjectKey, signal),
+    [api, subjectKey],
+  );
+
+  const people = useResource<NotificationPeople>(loadPeople, {
+    enabled: entries.length > 0,
+  });
+
+  const peopleReady =
+    entries.length === 0 ||
+    (people.value !== undefined &&
+      entries.every((entry) => people.value?.has(entry.subjectId) === true));
+
+  const resolvedPeople =
+    people.value === undefined
+      ? []
+      : [...people.value.values()].filter(
+          (person): person is DiscoveryPerson => person !== null,
+        );
+
+  const portraits = useMediaAddresses(
+    portraitReferences(resolvedPeople),
+    'avatar_small',
+  );
 
   const acknowledge = (ids: readonly string[]) => {
     const fresh = ids.filter((id) => !acknowledged.current.has(id));
@@ -149,6 +249,10 @@ export function Notifications() {
         <RowSkeleton rows={4} />
       ) : null}
 
+      {entries.length > 0 && !peopleReady && people.error === undefined ? (
+        <RowSkeleton rows={Math.min(entries.length, 4)} />
+      ) : null}
+
       {first.error === undefined ? null : (
         <div className="v-stack v-stack--3">
           <ErrorMessage testId="notifications-failed">
@@ -157,6 +261,19 @@ export function Notifications() {
           {first.retryable ? (
             <div>
               <Button onClick={first.reload}>Try again</Button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {people.error === undefined ? null : (
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="notification-people-failed">
+            {people.error}
+          </ErrorMessage>
+          {people.retryable ? (
+            <div>
+              <Button onClick={people.reload}>Try again</Button>
             </div>
           ) : null}
         </div>
@@ -171,7 +288,7 @@ export function Notifications() {
         />
       ) : null}
 
-      {entries.length === 0 ? null : (
+      {entries.length === 0 || !peopleReady ? null : (
         <ul className="v-list" data-testid="notification-list">
           {entries.map((entry) => (
             <li key={entry.id}>
@@ -180,6 +297,10 @@ export function Notifications() {
                 onRead={() => {
                   acknowledge([entry.id]);
                 }}
+                person={people.value?.get(entry.subjectId) ?? null}
+                portrait={portraits.get(
+                  people.value?.get(entry.subjectId)?.media[0]?.id ?? '',
+                )}
               />
             </li>
           ))}
@@ -226,24 +347,48 @@ export function Notifications() {
 function NotificationRow({
   entry,
   onRead,
+  person,
+  portrait,
 }: {
   readonly entry: NotificationEntry;
   readonly onRead: () => void;
+  readonly person: DiscoveryPerson | null;
+  readonly portrait: string | undefined;
 }) {
-  const shown = presentation[entry.kind] ?? {
-    icon: 'info' as const,
-    text: 'Something happened.',
-  };
-  const destination = destinationOf(entry);
+  const destination = person === null ? undefined : destinationOf(entry);
+  const available = person !== null && destination !== undefined;
+  const shown = available
+    ? (presentation[entry.kind] ?? {
+        icon: 'info' as const,
+        text: () => 'Something happened.',
+      })
+    : {
+        icon: 'info' as const,
+        text: () => 'This activity is no longer available.',
+      };
   const unread = entry.readAt === undefined;
 
   const body = (
     <>
       <span className="v-notification__mark">
-        <Icon name={shown.icon} size="md" />
+        {available ? (
+          <>
+            <Avatar
+              displayName={person.displayName}
+              seed={person.id}
+              size="sm"
+              src={portrait}
+            />
+            <span className="v-notification__kind">
+              <Icon name={shown.icon} size="sm" />
+            </span>
+          </>
+        ) : (
+          <Icon name={shown.icon} size="md" />
+        )}
       </span>
       <span className="v-notification__body">
-        <span>{shown.text}</span>
+        <span>{shown.text(person?.displayName ?? '')}</span>
         <span className="v-caption v-quiet">
           <time dateTime={entry.createdAt}>
             {formatRelative(entry.createdAt)}
