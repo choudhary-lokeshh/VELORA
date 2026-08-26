@@ -1,7 +1,10 @@
 # AI suggestion platform freeze report
 
 - Freeze status: Local/test platform and product complete; no live provider
+- Freeze SHA: `de29e85b6c028d539e0632837ff20025d334a387`
 - Freeze date: 2026-08-26
+- Hosted CI: run 33000560345, both jobs green on the freeze SHA
+- Starting SHA: `07b0d9f38116d71388fbc32e235bc904217d369e`
 - Architecture authority: [ADR-0012](../decisions/ADR-0012-ai-platform-runtime.md)
 - Product implementation authority: [ADR-0033](../decisions/ADR-0033-local-test-ai-suggestion-platform.md)
 
