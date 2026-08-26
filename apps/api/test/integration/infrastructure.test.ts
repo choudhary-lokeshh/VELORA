@@ -163,6 +163,10 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
       // The exact set every migration creates. Any other table here would mean
       // a migration crossed a domain boundary or shipped an unrelated feature.
       expect(tables.map((table) => table.table_name)).toEqual([
+        'ai_capability_activations',
+        'ai_run_events',
+        'ai_runs',
+        'ai_usage_daily',
         'auth_accounts',
         'auth_admin_authenticators',
         'auth_high_impact_authorizations',

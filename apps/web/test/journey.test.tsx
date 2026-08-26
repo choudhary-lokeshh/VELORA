@@ -770,6 +770,24 @@ async function openConversation(
 }
 
 describe('messaging', () => {
+  it('keeps an AI reply editable and separate from Send', async () => {
+    const double = await openConversation();
+    await type('Message Robin', 'coffee after work');
+    await click('message-ai-generate');
+    await screen.findByTestId('message-ai-suggestion');
+    await click('message-ai-replace');
+
+    expect(screen.getByTestId<HTMLTextAreaElement>('message-body').value).toBe(
+      'Refined: coffee after work',
+    );
+    expect(
+      double.calls.some(
+        (call) =>
+          call.path === '/v1/messaging/messages' && call.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
   it('shows the server preview and relationship call entry without inventing presence', async () => {
     const state = withConversation();
     const conversation = state.conversations[0];
@@ -1136,6 +1154,31 @@ describe('safety', () => {
 /* ========================== profile and you ========================== */
 
 describe('profile', () => {
+  it('lets the person review an AI bio suggestion without saving it', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<You />, double, { pathname: '/you' });
+
+    await click('profile-edit');
+    fireEvent.change(await screen.findByTestId('profile-bio-input'), {
+      target: { value: 'weekend gardener' },
+    });
+    await click('profile-ai-generate');
+    expect(
+      (await screen.findByTestId<HTMLTextAreaElement>('profile-ai-suggestion'))
+        .value,
+    ).toBe('Refined: weekend gardener');
+    await click('profile-ai-replace');
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>('profile-bio-input').value,
+    ).toBe('Refined: weekend gardener');
+    expect(
+      double.calls.some(
+        (call) =>
+          call.path === '/v1/users/me/profile' && call.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
   it('reports honestly that no photo storage exists yet', async () => {
     const double = createApiDouble(admittedState());
     renderProduct(<You />, double, { pathname: '/you' });

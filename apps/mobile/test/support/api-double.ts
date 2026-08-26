@@ -471,6 +471,38 @@ export function createMobileApiDouble(
       return json(201, state.account);
     }
     if (state.account === null) return error(404, 'RESOURCE_NOT_FOUND');
+    if (path === '/v1/ai/suggestions' && method === 'POST') {
+      const input = body as {
+        capability: string;
+        context?: string;
+        draft: string;
+        runId: string;
+      };
+      const suggestedText =
+        input.draft.trim().length > 0
+          ? `Refined: ${input.draft.trim()}`
+          : 'What have you been looking forward to lately?';
+      return json(200, {
+        capability: input.capability,
+        modelId: 'velora-local-deterministic-v1',
+        outputSchemaVersion: 'suggestion.v1',
+        promptVersion: '2026-08-26.1',
+        providerId: 'local-test',
+        runId: input.runId,
+        suggestedText,
+        usage: {
+          estimatedCostMicrounits: 0,
+          inputCharacters: input.draft.length + (input.context?.length ?? 0),
+          outputCharacters: suggestedText.length,
+        },
+      });
+    }
+    if (path === '/v1/ai/runs/cancellation' && method === 'POST') {
+      return json(200, {
+        cancelled: true,
+        runId: (body as { runId: string }).runId,
+      });
+    }
     if (path === '/v1/users/me') return json(200, state.account);
     if (path === '/v1/users/me/onboarding') {
       return json(200, { account: state.account, ...state.onboarding });

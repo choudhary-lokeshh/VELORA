@@ -104,6 +104,10 @@ describe('AUTH persistence and invariants', () => {
       'auth_sessions',
     ]);
     expect(names.filter((name) => !name.startsWith('auth_'))).toEqual([
+      'ai_capability_activations',
+      'ai_run_events',
+      'ai_runs',
+      'ai_usage_daily',
       'billing_disputes',
       'billing_gift_catalog_items',
       'billing_gifts',

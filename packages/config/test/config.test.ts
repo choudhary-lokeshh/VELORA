@@ -88,6 +88,31 @@ describe('server configuration', () => {
     }
   });
 
+  it('keeps AI network-free locally and fail-closed in deployed environments', () => {
+    const defaults = loadServerConfig(validEnvironment);
+    expect(defaults.AI_PROVIDER).toBe('unavailable');
+    expect(defaults.AI_KILL_SWITCH).toBe('enabled');
+
+    const local = loadServerConfig({
+      ...validEnvironment,
+      AI_KILL_SWITCH: 'disabled',
+      AI_PROVIDER: 'local-test',
+    });
+    expect(local.AI_PROVIDER).toBe('local-test');
+    expect(local.AI_KILL_SWITCH).toBe('disabled');
+
+    for (const environment of ['staging', 'production'] as const) {
+      const failure = loadServerConfigResult({
+        ...validEnvironment,
+        AI_KILL_SWITCH: 'disabled',
+        AI_PROVIDER: 'local-test',
+        APP_ENV: environment,
+      });
+      expect(failure).toContain('AI_PROVIDER');
+      expect(failure).toContain('AI_KILL_SWITCH');
+    }
+  });
+
   /**
    * Every seam that could move money, refused in every deployed environment.
    *

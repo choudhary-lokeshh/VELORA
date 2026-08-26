@@ -22,6 +22,8 @@ AI run/context/memory/RAG data is derived and follows source authorization, clas
 
 No AI product capability is V1. Phase authority remains [product phases](../product/01-product-phases.md). [ADR-0012](../decisions/ADR-0012-ai-platform-runtime.md), as superseded only for backend mechanics by [ADR-0016](../decisions/ADR-0016-bun-elysia-redis-bullmq-backend.md), selects the explicit TypeScript Gateway/orchestrator, PostgreSQL run state, BullMQ workers, JSON Schema outputs, and OpenTelemetry API boundary. Provider, model, embedding, hosting, durable-memory, and vector/index choices remain deferred until their integration/feature gates.
 
+[ADR-0033](../decisions/ADR-0033-local-test-ai-suggestion-platform.md) implements a synchronous, tool-free local/test slice inside the existing API. It uses published USERS and CREATORS predicates rather than private persistence, gives Admin only a caller-built minimized case projection, retains redacted AI-owned operational evidence, and keeps every business effect outside AI. Configuration makes the provider unavailable and kill switch enabled by default and refuses any live-like activation in staging/production.
+
 ## Required reading
 
 Read all documents in [dedicated AI section](../DOCS_INDEX.md#ai-authority), [domain boundaries](03-domain-boundaries.md), [provider adapters](06-provider-adapters.md), [AI-assisted action](../flows/ai-assisted-action.md), and every affected domain authority.

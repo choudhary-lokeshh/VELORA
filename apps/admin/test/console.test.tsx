@@ -235,6 +235,41 @@ describe('the queues', () => {
 /* ================================ Case =============================== */
 
 describe('one case', () => {
+  it('summarises only bounded case metadata and cannot act on the case', async () => {
+    const state = withCase();
+    const privateReportDetail = state.cases[0]?.reports[0]?.detail;
+    const privateEvidenceReference = state.cases[0]?.evidence[0]?.referenceId;
+    const double = createAdminApiDouble(state);
+    renderConsole(<CaseScreen caseId="case-1" />, double, {
+      params: { caseId: 'case-1' },
+      pathname: '/queues/case-1',
+    });
+
+    fireEvent.click(await screen.findByTestId('case-ai-generate'));
+    await screen.findByTestId('case-ai-draft');
+    const request = double.calls.find(
+      (call) => call.path === '/v1/ai/suggestions',
+    );
+    const context = (request?.body as { context?: string } | undefined)
+      ?.context;
+    expect(context).toBeDefined();
+    if (privateReportDetail !== undefined) {
+      expect(context).not.toContain(privateReportDetail);
+    }
+    if (privateEvidenceReference !== undefined) {
+      expect(context).not.toContain(privateEvidenceReference);
+    }
+    expect(
+      double.calls.some((call) =>
+        [
+          '/v1/admin/safety/cases/claim',
+          '/v1/admin/safety/cases/triage',
+          '/v1/admin/safety/cases/decisions',
+        ].includes(call.path),
+      ),
+    ).toBe(false);
+  });
+
   it('shows what was filed, what was recorded, and what was decided', async () => {
     const double = createAdminApiDouble(withCase());
     renderConsole(<CaseScreen caseId="case-1" />, double, {

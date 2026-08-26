@@ -69,6 +69,14 @@ export interface TestDatabase {
  * carry no foreign key, so nothing cascades into it.
  */
 const truncationRoots = [
+  // AI has one FK from its append-only events to the durable run. Capability
+  // activation and daily accounting have no cross-domain reference by design.
+  'ai_run_events',
+  'ai_runs',
+  // Activation is immutable migration-owned release configuration. It is not
+  // runtime test residue, and keeping it lets every freshly-truncated suite
+  // exercise the same local/test gate the migration installed.
+  'ai_usage_daily',
   'auth_accounts',
   'auth_recovery_rate_events',
   // BILLING's journal. Entries cascade from neither table — the composite

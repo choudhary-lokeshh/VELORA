@@ -61,6 +61,12 @@ Consumer and creator AI cannot impersonate another person, autonomously send/pub
 
 Suspected injection, data leakage, unsafe tool attempt, poisoned corpus, route compromise, or provider behavior change can suspend capability, route, tool, memory, or corpus through deterministic controls. Preserve redacted evidence, revoke exposed access, rotate affected secrets, invalidate unsafe derived data, notify security/privacy/domain owners, assess impacted users and providers, and require regression evidence before re-enable.
 
+## Implemented local/test controls
+
+The first [local/test suggestion slice](../decisions/ADR-0033-local-test-ai-suggestion-platform.md) accepts only a bounded draft and optional already-authorized context projection. Deterministic input minimization strips control characters and rejects credential/token-shaped content plus common policy-override or prompt-exfiltration instructions before durable admission. Provider output is capped at 2,000 characters and strict-parsed into the public response contract. Generic logs and AI tables retain metadata/digests only.
+
+Consumer and Creator surfaces pass only the actor's current editable draft. They pass no counterpart profile, conversation transcript, or hidden/safety state. Admin passes case state, queue, priority, target type, policy version, counts, and latest category timestamps only; report prose, evidence references, target identity, and raw safety evidence are excluded by construction and regression test. No tool, retrieval, memory, RAG, network client, or provider secret is available to the model adapter.
+
 ## Phase and open decisions
 
 Controls are required before any AI capability in its approved phase. See [AI platform](01-ai-platform-architecture.md), [context/memory/RAG](03-ai-context-memory-rag.md), [outbound networking](../security/06-abuse-outbound-networking.md), and [incident response](../operations/04-incident-response.md).

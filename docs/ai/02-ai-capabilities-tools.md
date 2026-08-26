@@ -75,6 +75,12 @@ Tool availability is revocable independently of model/prompt versions. Emergency
 
 ## Phase and open decisions
 
+## Implemented local/test registry
+
+The [ADR-0033](../decisions/ADR-0033-local-test-ai-suggestion-platform.md) registry contains nine draft/recommend capabilities: consumer profile bio and chat reply; creator profile bio, caption, title, description, content idea, and club announcement; and Admin case summary. Each pins prompt `2026-08-26.1`, output schema `suggestion.v1`, and safety policy `draft-safety.1`; activation is exact on environment, capability, and those versions.
+
+All nine have zero tools and zero effect steps. Their only output is bounded editable text. The ordinary Save, Send, Publish, or Admin workflow remains outside AI and is neither proposed nor invoked by the gateway. Unknown, cross-audience, inactive, unavailable-provider, killed, over-budget, malformed, injected, and reused-run requests fail explicitly.
+
 Tool registration follows [product phases](../product/01-product-phases.md) and [AI product surfaces](06-ai-product-surfaces.md). See [AI-assisted action flow](../flows/ai-assisted-action.md), [RBAC](../security/02-access-control-rbac.md), [jobs/idempotency](../engineering/03-jobs-idempotency-concurrency.md), and every tool-owning domain document.
 
 `DECISION REQUIRED`: capability launch set, risk taxonomy, tool review ownership, effect classifications, confirmation/approval matrix, dual-control thresholds, approval expiry, human-review staffing, SLA, and emergency suspension authority.

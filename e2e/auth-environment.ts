@@ -128,6 +128,10 @@ export async function startAuthEnvironment(): Promise<void> {
   mkdirSync(mediaDirectory, { recursive: true });
 
   const backendEnvironment: Record<string, string> = {
+    // Phase 11 uses the deterministic, network-free route through the real AI
+    // gateway. Both values are rejected in staging/production.
+    AI_KILL_SWITCH: 'disabled',
+    AI_PROVIDER: 'local-test',
     APP_ENV: 'test',
     AUTH_BROWSER_ORIGINS_CONSUMER_WEB: consumerWebOrigin,
     // Creator Studio is a separate audience with its own cookie, so it needs its

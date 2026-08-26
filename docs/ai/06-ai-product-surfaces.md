@@ -36,6 +36,18 @@ Surfaces show when output is AI-assisted, what will happen before an effect, who
 
 AI assistance must have non-AI fallback or safe unavailable state where necessary. Feature refusal, provider outage, budget exhaustion, or missing consent cannot silently perform a weaker or less safe action.
 
+## Implemented local/test product proof
+
+[ADR-0033](../decisions/ADR-0033-local-test-ai-suggestion-platform.md) implements the Phase 3-shaped surfaces against the deterministic local/test provider while production remains disabled:
+
+- Consumer Web and Mobile: profile bio refinement and chat icebreaker/reply drafting with explicit Generate/Regenerate, editable suggestion, Use in draft, refusal, loading, and cancellation states. Use changes only local form state; Save and Send remain separate.
+- Creator Studio: bio, title, caption, description, content-idea, and club-announcement scratchpad drafts with tone selection and explicit use. The announcement scratchpad states that it is neither saved nor published; all publication controls remain separate.
+- Platform Admin: an editable review-only case note from bounded metadata/counts. It receives no report prose or evidence reference and exposes no AI-linked case action.
+
+The controls remain labeled AI assistance and degrade to honest unavailable/refusal states. This implementation does not change V1 exclusion or approve a live provider, capability rollout, country, or production design handoff.
+
+Real browser regression runs the normal Consumer and Creator surfaces against PostgreSQL, the API gateway, and the local/test adapter: a person generates and edits a bio before Save, edits a reply before explicit Send, and a creator edits a caption before the existing draft-save and Publish controls. Platform Admin remains inaccessible in a real browser because no approved route can issue its required audience and phishing-resistant assurance; its bounded context and no-action behavior are therefore proved at the generated client/component boundary and the authenticated API integration boundary without weakening that gate.
+
 ## Future autonomy boundary
 
 Broader agentic capabilities are Future / Moonshot. Even then, AI cannot replace domain source truth, deterministic authorization, approval, entitlement, payment, safety, audit, privacy, or compliance gates. New surface capability needs phase change control, threat/privacy review, registered tools, evaluation, operations readiness, and rollback.

@@ -112,6 +112,21 @@ matching nothing. Session, recovery, and privileged-access constants are locked
 by [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md)
 and are not configurable.
 
+### AI Platform
+
+| Variable | Secret | Classification | Default | Local alternative |
+|---|---|---|---|---|
+| `AI_PROVIDER` | No | Future provider; blocked in production | `unavailable` | `local-test`, deterministic and network-free |
+| `AI_KILL_SWITCH` | No | Safe default; fixed enabled when deployed | `enabled` | `disabled`, required to exercise local/test suggestions |
+
+Both gates must admit a run. `unavailable` refuses generation even when a
+capability activation exists, and `enabled` stops generation regardless of the
+provider. Staging and production reject `local-test` and reject a disabled kill
+switch because no live provider/model route, evaluation threshold, data terms,
+country, or operations approval exists. Neither variable reaches a client or
+contains provider credentials. See
+[ADR-0033](../decisions/ADR-0033-local-test-ai-suggestion-platform.md).
+
 ### Identity Assurance
 
 | Variable | Secret | Classification | Default | Local alternative |

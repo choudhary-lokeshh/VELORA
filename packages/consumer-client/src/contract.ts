@@ -186,3 +186,9 @@ export type ConsumerGiftList = JsonBody<'/v1/billing/gifts', 'get', 200>;
 export type ConsumerGift = ConsumerGiftList['gifts'][number];
 export type SendGiftBody = RequestBody<'/v1/billing/gifts', 'post'>;
 export type SendGiftResponse = JsonBody<'/v1/billing/gifts', 'post', 201>;
+
+/** A labeled, editable suggestion; it has no product side effect. */
+export type AiSuggestionBody = RequestBody<'/v1/ai/suggestions', 'post'>;
+export type AiSuggestion = JsonBody<'/v1/ai/suggestions', 'post', 200>;
+export type AiSuggestionCapability = AiSuggestionBody['capability'];
+export type AiSuggestionTone = AiSuggestionBody['tone'];

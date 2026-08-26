@@ -29,6 +29,12 @@ export const localAccessTokenSigner = 'local-development-ed25519';
 export const localRecoveryDelivery = 'local-test';
 export const unavailablePrivilegedVerifier = 'unavailable';
 
+/** AI stays fail-closed unless local/test explicitly selects both seams. */
+export const unavailableAiProvider = 'unavailable';
+export const localTestAiProvider = 'local-test';
+export const enabledAiKillSwitch = 'enabled';
+export const disabledAiKillSwitch = 'disabled';
+
 /**
  * Adult-assurance adapters. `unavailable` refuses every request, which is the
  * only behaviour a deployed environment may have while age verification is
@@ -414,6 +420,12 @@ const optionalTextSchema = z
 
 export const serverConfigSchema = z
   .object({
+    AI_KILL_SWITCH: z
+      .enum([enabledAiKillSwitch, disabledAiKillSwitch])
+      .default(enabledAiKillSwitch),
+    AI_PROVIDER: z
+      .enum([unavailableAiProvider, localTestAiProvider])
+      .default(unavailableAiProvider),
     APP_ENV: appEnvironmentSchema.default('local'),
     AUTH_ACCESS_TOKEN_SIGNER: z
       .enum([localAccessTokenSigner])
@@ -536,6 +548,20 @@ export const serverConfigSchema = z
     // a test recovery sink, or an absent privileged authenticator verifier must
     // never carry real authentication authority, and no replacement provider is
     // approved yet, so these environments refuse to start at all.
+    if (config.AI_PROVIDER !== unavailableAiProvider) {
+      context.addIssue({
+        code: 'custom',
+        message: `AI_PROVIDER is not usable in ${config.APP_ENV}: no live model/provider route is approved or evaluated`,
+        path: ['AI_PROVIDER'],
+      });
+    }
+    if (config.AI_KILL_SWITCH !== enabledAiKillSwitch) {
+      context.addIssue({
+        code: 'custom',
+        message: `AI_KILL_SWITCH must remain enabled in ${config.APP_ENV}: no live AI route is approved`,
+        path: ['AI_KILL_SWITCH'],
+      });
+    }
     if (
       config.IDENTITY_VERIFICATION_PROVIDER !==
       unavailableIdentityVerificationProvider
@@ -777,6 +803,8 @@ export function loadMigrationConfig(
 
 export function redactServerConfig(config: ServerConfig) {
   return {
+    aiKillSwitch: config.AI_KILL_SWITCH,
+    aiProvider: config.AI_PROVIDER,
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
     billingEntitlement: config.CLUBS_BILLING_ENTITLEMENT,
     consentPolicy: config.SAFETY_CONSENT_POLICY,

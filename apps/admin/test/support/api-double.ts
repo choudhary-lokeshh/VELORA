@@ -396,9 +396,40 @@ export function createAdminApiDouble(
     // Every privileged route checks the audience and the assurance in that
     // order and collapses both into one answer, exactly as the server does:
     // which condition failed is not a caller's business.
-    if (!path.startsWith('/v1/admin/')) return error(404, 'HTTP_404');
     if (state.session === null) return error(401, 'AUTH_REQUIRED');
     if (!privileged()) return error(403, 'ACTION_NOT_PERMITTED');
+
+    if (path === '/v1/ai/suggestions' && method === 'POST') {
+      const input = body as {
+        capability: string;
+        context?: string;
+        draft: string;
+        runId: string;
+      };
+      const suggestedText = `AI-generated record summary: ${input.context ?? 'No metadata supplied.'}`;
+      return json(200, {
+        capability: input.capability,
+        modelId: 'velora-local-deterministic-v1',
+        outputSchemaVersion: 'suggestion.v1',
+        promptVersion: '2026-08-26.1',
+        providerId: 'local-test',
+        runId: input.runId,
+        suggestedText,
+        usage: {
+          estimatedCostMicrounits: 0,
+          inputCharacters: input.draft.length + (input.context?.length ?? 0),
+          outputCharacters: suggestedText.length,
+        },
+      });
+    }
+    if (path === '/v1/ai/runs/cancellation' && method === 'POST') {
+      return json(200, {
+        cancelled: true,
+        runId: (body as { runId: string }).runId,
+      });
+    }
+
+    if (!path.startsWith('/v1/admin/')) return error(404, 'HTTP_404');
 
     if (path === '/v1/admin/billing/state') {
       return json(200, state.financial);

@@ -60,6 +60,12 @@ Portability is proven by adapter contract tests, normalized errors/usage, featur
 
 ## Phase and open decisions
 
+## Implemented local/test evidence
+
+The synchronous suggestion baseline records correlation/run identity, actor/audience, capability, state, pinned provider/model/prompt/schema/safety versions, input/output character counts and digests, failure code, retry/cancellation events, zero local-provider cost, and daily usage totals. The API request span supplies the OpenTelemetry correlation seam; safe structured logs contain only correlation ID, run ID, and normalized failure/retry kind.
+
+Repository regression currently covers real PostgreSQL migration/application, registered model/task routing, immutable terminal evidence, raw-content column absence, exact audience ownership, injection/secret refusal, oversized input, cross-caller isolation, duplicate run identity with rolled-back usage, bounded pre-output retry, persistent provider failure, timeout, oversized/malformed output refusal, inert action-shaped output, cancellation ownership, and durable actor-day quota enforcement. Consumer Web, Consumer Mobile, Creator Studio, and Platform Admin tests additionally prove suggestions are editable and trigger no implicit domain action. Real browser journeys prove bio edit/save, chat edit/explicit Send, and Creator caption edit/normal Publish against the local/test adapter. This is local/test implementation evidence only, not a provider-quality evaluation or production release approval.
+
 Evaluation and observability foundations are prerequisites for first AI capability, not V1 product capabilities. See [general observability](../engineering/04-observability.md), [testing/release](../engineering/05-testing-release.md), [jobs](../engineering/03-jobs-idempotency-concurrency.md), and [platform health](../operations/05-platform-health.md).
 
 `DECISION REQUIRED`: evaluation owner and thresholds, approved datasets and label process, content sampling, provider-cost accounting source, quota/spend ceilings, SLOs, alerts, model pinning/drift policy, canary size, rollback triggers, and portability baseline.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ApiResult } from '@velora/api-client';
 
@@ -34,6 +34,7 @@ import {
   Scroller,
   Select,
   Table,
+  TextArea,
   TextInput,
 } from '../design/primitives';
 import { useApi, useToast } from '../app/providers';
@@ -62,11 +63,10 @@ import { useResource, useSingleFlight } from './resource';
  * one refusal rather than two enforcements. Nothing is applied optimistically:
  * the screen never claims a state the owning domain has not confirmed.
  *
- * What the screen does not do is interpret. It shows the reports as filed, the
- * evidence as recorded, and the decisions as made; it does not summarise them,
- * score them, or suggest an outcome. An operator's judgement is the product
- * here, and a console that pre-judged would be making the decision while
- * leaving the operator's name on it.
+ * The optional AI panel is intentionally narrower than this record: it receives
+ * bounded metadata only, never prose evidence or report detail, and produces a
+ * review-only note. An operator's judgement remains the product; the panel has
+ * no route to triage, decide, claim, or otherwise act on a case.
  */
 
 export function CaseScreen({ caseId }: { readonly caseId: string }) {
@@ -183,6 +183,7 @@ function CaseDetailView({
         </div>
 
         <div className="a-stack a-stack--5">
+          <AdminAiCaseSummary detail={detail} />
           <Panel testId="case-facts">
             <PanelHead title="The record" />
             <PanelBody>
@@ -237,6 +238,166 @@ function CaseDetailView({
         </div>
       </div>
     </>
+  );
+}
+
+/** Only safe record metadata crosses the AI boundary; report/evidence prose never does. */
+function latestTimestamp(values: readonly string[]): string | undefined {
+  return values.reduce<string | undefined>(
+    (latest, value) =>
+      latest === undefined || value > latest ? value : latest,
+    undefined,
+  );
+}
+
+function safeCaseContext(detail: CaseDetail): string {
+  return JSON.stringify({
+    case: {
+      openedAt: detail.case.openedAt,
+      policyVersion: detail.case.policyVersion,
+      priority: detail.case.priority,
+      queue: detail.case.queue,
+      state: detail.case.state,
+      targetType: detail.case.targetType,
+    },
+    counts: {
+      decisions: detail.decisions.length,
+      evidence: detail.evidence.length,
+      reports: detail.reports.length,
+    },
+    timeline: {
+      latestDecisionAt: latestTimestamp(
+        detail.decisions.map((decision) => decision.decidedAt),
+      ),
+      latestEvidenceAt: latestTimestamp(
+        detail.evidence.map((evidence) => evidence.recordedAt),
+      ),
+      latestReportAt: latestTimestamp(
+        detail.reports.map((report) => report.createdAt),
+      ),
+    },
+  });
+}
+
+function AdminAiCaseSummary({ detail }: { readonly detail: CaseDetail }) {
+  const api = useApi();
+  const controller = useRef<AbortController | undefined>(undefined);
+  const activeRunId = useRef<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [summary, setSummary] = useState<string | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      const runId = activeRunId.current;
+      activeRunId.current = undefined;
+      controller.current?.abort();
+      if (runId !== undefined) void api.cancelAi(runId);
+    },
+    [api],
+  );
+
+  const generate = () => {
+    const runId = crypto.randomUUID();
+    const nextController = new AbortController();
+    activeRunId.current = runId;
+    controller.current = nextController;
+    setBusy(true);
+    setError(undefined);
+    void api
+      .suggestAi(
+        {
+          capability: 'admin_case_summary',
+          context: safeCaseContext(detail),
+          draft: '',
+          runId,
+          tone: 'concise',
+        },
+        nextController.signal,
+      )
+      .then((result) => {
+        if (activeRunId.current !== runId) return;
+        activeRunId.current = undefined;
+        controller.current = undefined;
+        setBusy(false);
+        if (result.kind !== 'ok') {
+          setError(failureMessage(result) ?? 'Summary unavailable. Try again.');
+          return;
+        }
+        setSummary(result.value.suggestedText);
+      });
+  };
+
+  const cancel = () => {
+    const runId = activeRunId.current;
+    if (runId === undefined) return;
+    activeRunId.current = undefined;
+    controller.current?.abort();
+    controller.current = undefined;
+    setBusy(false);
+    setError(undefined);
+    void api.cancelAi(runId);
+  };
+
+  return (
+    <Panel testId="case-ai-summary">
+      <PanelHead
+        lede="Bounded record metadata only — never report detail or raw evidence."
+        title="Review-only case summary"
+      />
+      <PanelBody>
+        <div className="a-stack a-stack--3">
+          <p className="a-small a-quiet">
+            This draft cannot claim, triage, decide, or execute anything. Review
+            the original record before taking any action.
+          </p>
+          <div className="a-inline a-inline--tight">
+            <Button
+              busy={busy}
+              data-testid="case-ai-generate"
+              onClick={generate}
+              tone="secondary"
+            >
+              {error !== undefined
+                ? 'Try again'
+                : summary === undefined
+                  ? 'Generate review note'
+                  : 'Regenerate note'}
+            </Button>
+            {busy ? (
+              <Button
+                data-testid="case-ai-cancel"
+                onClick={cancel}
+                tone="ghost"
+              >
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+          <p aria-live="polite" className="a-visually-hidden">
+            {busy ? 'Generating a review-only case summary.' : (error ?? '')}
+          </p>
+          {error === undefined ? null : (
+            <ErrorMessage testId="case-ai-error">{error}</ErrorMessage>
+          )}
+          {summary === undefined ? null : (
+            <Field label="Editable review note">
+              {(control) => (
+                <TextArea
+                  {...control}
+                  data-testid="case-ai-draft"
+                  onChange={(event) => {
+                    setSummary(event.target.value);
+                  }}
+                  rows={6}
+                  value={summary}
+                />
+              )}
+            </Field>
+          )}
+        </div>
+      </PanelBody>
+    </Panel>
   );
 }
 

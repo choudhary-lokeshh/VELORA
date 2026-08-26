@@ -38,6 +38,9 @@ export type CreatorOnboardingState = JsonBody<
 export type CreatorPolicyDocument =
   CreatorOnboardingState['outstandingPolicies'][number];
 export type CreatorProfile = JsonBody<'/v1/creator/profile', 'get', 200>;
+/** A labeled, editable draft. It never changes a creator resource. */
+export type AiSuggestionBody = RequestBody<'/v1/ai/suggestions', 'post'>;
+export type AiSuggestion = JsonBody<'/v1/ai/suggestions', 'post', 200>;
 export type SaveCreatorProfileBody = RequestBody<'/v1/creator/profile', 'post'>;
 export type CreatorProfileLink = NonNullable<
   SaveCreatorProfileBody['links']

@@ -28,6 +28,7 @@ import {
 import { useApi, useCreator, useToast } from '../app/providers';
 import { useMediaAddresses } from './imagery';
 import { ImageTile, ImageUpload } from './images';
+import { CreatorAiAssist } from './ai-assist';
 import { useSingleFlight } from './resource';
 
 /**
@@ -361,6 +362,13 @@ function ProfileEditor({
               />
             )}
           </Field>
+
+          <CreatorAiAssist
+            capability="creator_profile_bio"
+            draft={bio}
+            onReplace={setBio}
+            testId="creator-profile-ai"
+          />
 
           <LinksField error={linkError} links={links} onChange={setLinks} />
 

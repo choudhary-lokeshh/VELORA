@@ -89,7 +89,7 @@ export function createPlatformInstallationStore(): InstallationStore {
  * which is a far worse outcome than deriving the same value one layer down.
  * If neither works there is nothing left to try, and that does throw.
  */
-function mintUuid(): string {
+export function mintUuid(): string {
   const direct: unknown = randomUUID();
   if (typeof direct === 'string' && direct.length === 36) return direct;
 

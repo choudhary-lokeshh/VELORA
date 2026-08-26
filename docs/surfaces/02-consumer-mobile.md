@@ -16,6 +16,8 @@ Expected navigation groups are onboarding/authentication, discovery, conversatio
 
 Major V1 screens cover launch/admission, signup/sign-in/recovery, adult/country/consent gates, profile setup/edit, availability, candidate view, introduction status, conversation/message composer, notifications, block/report, session/privacy, export/deletion, and safe unavailable/error states.
 
+The local/test AI proof in [ADR-0033](../decisions/ADR-0033-local-test-ai-suggestion-platform.md) uses the same generated contract and bearer transport as the rest of Mobile. Profile and conversation assistants expose loading, cancellation, refusal, editable suggestion, and explicit **Use in draft** states. Use changes only native component state; the ordinary Save or Send remains the only effect. No conversation history, counterpart data, hidden state, or device secret enters AI context.
+
 ### Calling, and why it carries no media
 
 The calling area drives the call lifecycle — invite, answer, decline, withdraw, hang up, authorize a join — against REALTIME's existing authority over the ordinary bearer transport. It opens no microphone, no camera, no audio route, and no peer connection, it requests no device permission, and it says so on screen rather than implying a capability it does not have.

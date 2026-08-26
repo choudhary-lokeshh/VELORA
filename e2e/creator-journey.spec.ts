@@ -142,7 +142,17 @@ test.describe('Creator Studio journey', () => {
     // apart: saving produces a draft nobody can see.
     await page.goto(`${creatorStudioOrigin}/catalog/new`);
     await page.getByTestId('content-title').fill('A first post');
-    await page.getByTestId('content-summary').fill('Short form.');
+    await page
+      .getByTestId('content-summary')
+      .fill('short form from the studio');
+    await page.getByTestId('content-caption-ai-generate').click();
+    const caption = page.getByTestId('content-caption-ai-suggestion');
+    await expect(caption).toHaveValue('Short form from the studio.');
+    await caption.fill('Short form, edited by the creator.');
+    await page.getByTestId('content-caption-ai-replace').click();
+    await expect(page.getByTestId('content-summary')).toHaveValue(
+      'Short form, edited by the creator.',
+    );
     await page.getByTestId('content-body').fill('The body of the thing.');
     await page.getByTestId('content-save').click();
     await page.waitForURL(/\/catalog\/[0-9a-f-]+$/u, { timeout: 30_000 });

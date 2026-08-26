@@ -5,6 +5,8 @@ import {
 } from '@velora/api-client';
 
 import type {
+  AiSuggestion,
+  AiSuggestionBody,
   ClubInviteIssued,
   ClubInviteList,
   CommercialOfferList,
@@ -70,6 +72,16 @@ export interface CreatorApiOptions {
 }
 
 export interface CreatorApi {
+  /** Creates only an editable Studio draft. */
+  suggestAi(
+    body: AiSuggestionBody,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<AiSuggestion>>;
+  cancelAi(
+    runId: string,
+  ): Promise<
+    ApiResult<{ readonly cancelled: boolean; readonly runId: string }>
+  >;
   acknowledgePolicies(
     documents: readonly CreatorPolicyDocument[],
   ): Promise<ApiResult<CreatorOnboardingState>>;
@@ -227,12 +239,31 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
     ...init,
     headers: await options.transport.headers('read'),
   });
-  const write = async () => ({
+  const write = async (signal?: AbortSignal) => ({
     ...init,
     headers: await options.transport.headers('write'),
+    ...(signal === undefined ? {} : { signal }),
   });
 
   return {
+    async suggestAi(body, signal) {
+      return attempt(async () =>
+        api.POST('/v1/ai/suggestions', {
+          ...(await write(signal)),
+          body,
+        }),
+      );
+    },
+
+    async cancelAi(runId) {
+      return attempt(async () =>
+        api.POST('/v1/ai/runs/cancellation', {
+          ...(await write()),
+          body: { runId },
+        }),
+      );
+    },
+
     async publicCreatorDirectory(query) {
       return attempt(async () =>
         api.GET('/v1/creators/directory', {

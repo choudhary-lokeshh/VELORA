@@ -296,8 +296,15 @@ test.describe('Consumer Web product journey', () => {
     );
 
     const written = `A message written in a browser at ${String(Date.now())}`;
-    await page.getByTestId('message-body').fill(written);
-    await page.getByTestId('message-body').press('Enter');
+    await page.getByTestId('message-body').fill('coffee after work');
+    await page.getByTestId('message-ai-generate').click();
+    const suggestion = page.getByTestId('message-ai-suggestion');
+    await expect(suggestion).toHaveValue('Coffee after work.');
+    await suggestion.fill(written);
+    await page.getByTestId('message-ai-replace').click();
+    await expect(page.getByTestId('message-body')).toHaveValue(written);
+    await expect(page.getByTestId('messages')).not.toContainText(written);
+    await page.getByTestId('message-send').click();
     await expect(page.getByTestId('messages')).toContainText(written);
 
     // Nothing on this surface claims the message is end-to-end encrypted.
@@ -321,6 +328,33 @@ test.describe('Consumer Web product journey', () => {
 
     await expect(page.getByTestId('message-too-long')).toBeVisible();
     await expect(page.getByTestId('message-send')).toBeDisabled();
+  });
+
+  test('generates, edits, and explicitly saves a profile bio', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await signInAdmitted(page, person.subject);
+    await page.goto(`${consumerWebOrigin}/you`);
+    await page.getByTestId('profile-edit').click();
+    await page
+      .getByTestId('profile-bio-input')
+      .fill('i make small gardens for city balconies');
+    await page.getByTestId('profile-ai-generate').click();
+    const suggestion = page.getByTestId('profile-ai-suggestion');
+    await expect(suggestion).toHaveValue(
+      'I make small gardens for city balconies.',
+    );
+    const edited =
+      'I make small gardens for city balconies and share cuttings.';
+    await suggestion.fill(edited);
+    await page.getByTestId('profile-ai-replace').click();
+    await expect(page.getByTestId('profile-bio-input')).toHaveValue(edited);
+    await page.getByTestId('profile-save').click();
+    await expect(page.getByTestId('profile-view')).toContainText(edited);
+    await page.reload();
+    await expect(page.getByTestId('profile-view')).toContainText(edited);
   });
 
   test('opens what a notice is about', async ({ page }, testInfo) => {

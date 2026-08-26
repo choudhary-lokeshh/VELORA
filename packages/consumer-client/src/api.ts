@@ -2,6 +2,8 @@ import { createVeloraApiClient } from '@velora/api-client';
 
 import type {
   Appeal,
+  AiSuggestion,
+  AiSuggestionBody,
   AppealList,
   Availability,
   Block,
@@ -113,6 +115,17 @@ function pageParameters(query: PageQuery): {
  * the path, so a screen asks for what it wants and never assembles a URL.
  */
 export interface ConsumerApi {
+  /** Creates only an editable draft. It never saves or sends it. */
+  suggestAi(
+    body: AiSuggestionBody,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<AiSuggestion>>;
+  /** Cancels a caller-owned suggestion run; safe to repeat. */
+  cancelAi(
+    runId: string,
+  ): Promise<
+    ApiResult<{ readonly cancelled: boolean; readonly runId: string }>
+  >;
   account(signal?: AbortSignal): Promise<ApiResult<ConsumerAccount>>;
   /**
    * The commercial relationships this person is paying for.
@@ -316,12 +329,29 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     ...(signal === undefined ? {} : { signal }),
   });
 
-  const writing = async () => ({
+  const writing = async (signal?: AbortSignal) => ({
     ...shared,
     headers: await options.transport.headers('write'),
+    ...(signal === undefined ? {} : { signal }),
   });
 
   return {
+    suggestAi: async (body, signal) =>
+      attempt(async () =>
+        api.POST('/v1/ai/suggestions', {
+          ...(await writing(signal)),
+          body,
+        }),
+      ),
+
+    cancelAi: async (runId) =>
+      attempt(async () =>
+        api.POST('/v1/ai/runs/cancellation', {
+          ...(await writing()),
+          body: { runId },
+        }),
+      ),
+
     account: async (signal) =>
       attempt(async () => api.GET('/v1/users/me', await reading(signal))),
 

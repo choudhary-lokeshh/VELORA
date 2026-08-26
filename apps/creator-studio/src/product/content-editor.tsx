@@ -34,6 +34,7 @@ import {
 } from './format';
 import { useMediaAddresses } from './imagery';
 import { ImageTile, ImageUpload } from './images';
+import { CreatorAiAssist } from './ai-assist';
 import { useCollection, useResource, useSingleFlight } from './resource';
 
 /**
@@ -443,6 +444,13 @@ function ContentEditor({
             )}
           </Field>
 
+          <CreatorAiAssist
+            capability="creator_content_title"
+            draft={title}
+            onReplace={setTitle}
+            testId="content-title-ai"
+          />
+
           <Field
             count={{ length: summary.length, maximum: summaryMaximum }}
             hint="One or two lines. It is what people see in a list before they open the item."
@@ -464,6 +472,13 @@ function ContentEditor({
             )}
           </Field>
 
+          <CreatorAiAssist
+            capability="creator_content_caption"
+            draft={summary}
+            onReplace={setSummary}
+            testId="content-caption-ai"
+          />
+
           <Field
             count={{ length: body.length, maximum: bodyMaximum }}
             error={bodyError}
@@ -484,6 +499,19 @@ function ContentEditor({
               />
             )}
           </Field>
+
+          <CreatorAiAssist
+            capability="creator_content_description"
+            draft={body}
+            onReplace={setBody}
+            testId="content-description-ai"
+          />
+          <CreatorAiAssist
+            capability="creator_content_idea"
+            draft={body}
+            onReplace={setBody}
+            testId="content-idea-ai"
+          />
 
           <div className="s-form-actions">
             <Button

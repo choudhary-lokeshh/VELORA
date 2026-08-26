@@ -7,6 +7,8 @@ import {
 import type {
   AdminCreatorList,
   AdminSession,
+  AiSuggestion,
+  AiSuggestionBody,
   AppealList,
   AppealOutcomeBody,
   CaseDetail,
@@ -65,6 +67,16 @@ export interface AdminApi {
   /* --- Session ------------------------------------------------------- */
   session(): Promise<ApiResult<AdminSession>>;
   signOut(): Promise<ApiResult<unknown>>;
+  /** Creates a review-only draft. It cannot decide or execute a case action. */
+  suggestAi(
+    body: AiSuggestionBody,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<AiSuggestion>>;
+  cancelAi(
+    runId: string,
+  ): Promise<
+    ApiResult<{ readonly cancelled: boolean; readonly runId: string }>
+  >;
 
   /* --- Money --------------------------------------------------------- */
   financialState(): Promise<ApiResult<FinancialState>>;
@@ -156,15 +168,31 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
     (() => (typeof document === 'undefined' ? '' : document.cookie));
 
   const read = () => ({ credentials: 'include' as const });
-  const write = () => {
+  const write = (signal?: AbortSignal) => {
     const token = readAdminCsrfToken(cookies());
     return {
       credentials: 'include' as const,
       headers: token === undefined ? {} : { [csrfHeaderName]: token },
+      ...(signal === undefined ? {} : { signal }),
     };
   };
 
   return {
+    async suggestAi(body, signal) {
+      return attempt(async () =>
+        api.POST('/v1/ai/suggestions', { ...write(signal), body }),
+      );
+    },
+
+    async cancelAi(runId) {
+      return attempt(async () =>
+        api.POST('/v1/ai/runs/cancellation', {
+          ...write(),
+          body: { runId },
+        }),
+      );
+    },
+
     async appeals(query) {
       return attempt(async () =>
         api.GET('/v1/admin/safety/appeals', {

@@ -25,6 +25,7 @@ import {
 } from '@velora/observability/server';
 
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
+import { createAiRuntime, type AiRuntime } from './ai/composition.js';
 import { createAdminRuntime, type AdminRuntime } from './admin/composition.js';
 import { NotificationOperations } from './notifications/operations.js';
 import {
@@ -125,6 +126,7 @@ import {
 export { maximumRequestBodyBytes } from '@velora/validation';
 
 export interface ApplicationDependencies {
+  readonly ai?: AiRuntime;
   readonly admin: AdminRuntime;
   readonly auth: AuthRuntime;
   readonly billing: BillingRuntime;
@@ -203,6 +205,7 @@ export function createApplication(
   const ownedDependencies: HealthDependency[] = [];
   const injectedDatabase = options.dependencies?.database;
   const injectedAuth = options.dependencies?.auth;
+  const injectedAi = options.dependencies?.ai;
   const ownsAuth = injectedAuth === undefined;
 
   const injectedUsers = options.dependencies?.users;
@@ -222,6 +225,7 @@ export function createApplication(
   let database: HealthDependency;
   let ownedDatabaseService: DatabaseService | undefined;
   let auth: AuthRuntime;
+  let ai: AiRuntime | undefined;
   let users: UsersRuntime;
   let creators: CreatorsRuntime;
   let clubs: ClubsRuntime;
@@ -358,6 +362,16 @@ export function createApplication(
         database: ownedDatabase.database,
         eligibility: users.adultStanding,
         media: media.service,
+      });
+    ai =
+      injectedAi ??
+      createAiRuntime({
+        caller: auth.caller,
+        config,
+        creators: creators.service,
+        database: ownedDatabase.database,
+        logger,
+        users: users.service,
       });
     // PRIVATE CLUBS depends on CREATORS' published directory and on nothing
     // else, so it is composed immediately after it.
@@ -560,6 +574,7 @@ export function createApplication(
     }
     database = injectedDatabase;
     auth = injectedAuth;
+    ai = injectedAi;
     users = injectedUsers;
     creators = injectedCreators;
     clubs = injectedClubs;
@@ -596,6 +611,7 @@ export function createApplication(
     new DatabaseAdmission();
 
   const dependencies: ApplicationDependencies = {
+    ...(ai === undefined ? {} : { ai }),
     admin,
     auth,
     billing,
@@ -676,6 +692,21 @@ export function createApplication(
         );
       }
       return run(realtime.routes, input);
+    };
+  }
+
+  function aiRoute(
+    run: (runtime: AiRuntime, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (ai === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(ai, input);
     };
   }
 
@@ -939,6 +970,16 @@ export function createApplication(
     .post(
       apiRoutePaths.logoutAll,
       admitted(async (input) => auth.routes.logoutAll(input)),
+    )
+    .post(
+      apiRoutePaths.aiSuggestions,
+      admitted(
+        aiRoute(async (runtime, input) => runtime.routes.suggest(input)),
+      ),
+    )
+    .post(
+      apiRoutePaths.aiRunCancellation,
+      admitted(aiRoute(async (runtime, input) => runtime.routes.cancel(input))),
     )
     .post(
       apiRoutePaths.recoveryStart,

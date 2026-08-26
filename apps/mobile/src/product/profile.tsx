@@ -28,6 +28,7 @@ import {
 } from '../design/primitives';
 import { languageName } from './locale';
 import { ProfilePhotos } from './photos';
+import { MobileAiAssist } from './ai-assist';
 import {
   useResource,
   useRevalidateOnForeground,
@@ -129,6 +130,13 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                   />
                 )}
               </Field>
+
+              <MobileAiAssist
+                capability="consumer_profile_bio"
+                draft={about}
+                onReplace={setBio}
+                testID="profile-ai"
+              />
 
               <Button
                 busy={busy}

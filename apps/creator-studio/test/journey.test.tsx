@@ -397,6 +397,32 @@ describe('home', () => {
 });
 
 describe('the public page', () => {
+  it('keeps an AI bio as an editable Studio draft until Save', async () => {
+    const double = createCreatorApiDouble(withProfile());
+    renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
+
+    fireEvent.change(await screen.findByTestId('creator-bio'), {
+      target: { value: 'wheel-thrown pieces' },
+    });
+    fireEvent.click(screen.getByTestId('creator-profile-ai-generate'));
+    expect(
+      (
+        await screen.findByTestId<HTMLTextAreaElement>(
+          'creator-profile-ai-suggestion',
+        )
+      ).value,
+    ).toBe('Studio draft: wheel-thrown pieces');
+    fireEvent.click(screen.getByTestId('creator-profile-ai-replace'));
+    expect(screen.getByTestId<HTMLTextAreaElement>('creator-bio').value).toBe(
+      'Studio draft: wheel-thrown pieces',
+    );
+    expect(
+      double.calls.some(
+        (call) => call.path === '/v1/creator/profile' && call.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
   it('claims a handle and keeps publishing a separate decision', async () => {
     const double = createCreatorApiDouble(activeCreatorState());
     renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
@@ -689,6 +715,35 @@ describe('the preview', () => {
 });
 
 describe('the catalog', () => {
+  it('keeps an edited AI caption in the draft until the creator saves', async () => {
+    const double = createCreatorApiDouble(withProfile());
+    renderStudio(<NewContent />, double, { pathname: '/catalog/new' });
+
+    fireEvent.change(await screen.findByTestId('content-summary'), {
+      target: { value: 'morning light on clay' },
+    });
+    fireEvent.click(screen.getByTestId('content-caption-ai-generate'));
+    const suggestion = await screen.findByTestId<HTMLTextAreaElement>(
+      'content-caption-ai-suggestion',
+    );
+    fireEvent.change(suggestion, {
+      target: { value: 'Morning light, shaped slowly by hand.' },
+    });
+    fireEvent.click(screen.getByTestId('content-caption-ai-replace'));
+
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>('content-summary').value,
+    ).toBe('Morning light, shaped slowly by hand.');
+    expect(
+      double.calls.some(
+        (call) =>
+          (call.path === '/v1/creator/content' ||
+            call.path === '/v1/creator/content/lifecycle') &&
+          call.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
   it('saves a draft and does not publish it', async () => {
     const double = createCreatorApiDouble(withProfile());
     renderStudio(<NewContent />, double, { pathname: '/catalog/new' });

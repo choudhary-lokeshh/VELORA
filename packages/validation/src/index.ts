@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 import {
+  aiRunCancellationRequestSchema,
+  aiRunCancellationResponseSchema,
+  aiSuggestionRequestSchema,
+  aiSuggestionResponseSchema,
+} from './ai.js';
+
+import {
   createCreatorAccountRequestSchema,
   creatorAccountResponseSchema,
   creatorHandleSchema,
@@ -190,6 +197,7 @@ import {
 } from './auth.js';
 
 export * from './admin.js';
+export * from './ai.js';
 export * from './auth.js';
 export * from './billing.js';
 export * from './clubs.js';
@@ -239,6 +247,8 @@ export type ReadinessResponse = z.infer<typeof readinessResponseSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 
 export const apiRoutePaths = {
+  aiRunCancellation: '/v1/ai/runs/cancellation',
+  aiSuggestions: '/v1/ai/suggestions',
   consumerAccount: '/v1/users',
   consumerAccountSelf: '/v1/users/me',
   consumerAdultDeclaration: '/v1/users/me/onboarding/adult-declaration',
@@ -403,6 +413,10 @@ export const apiErrorCodes = {
  * registry, so a response cannot name a schema the document does not define.
  */
 export const apiSchemas = {
+  AiRunCancellationRequest: aiRunCancellationRequestSchema,
+  AiRunCancellationResponse: aiRunCancellationResponseSchema,
+  AiSuggestionRequest: aiSuggestionRequestSchema,
+  AiSuggestionResponse: aiSuggestionResponseSchema,
   AdultDeclarationRequest: adultDeclarationRequestSchema,
   ApiError: apiErrorSchema,
   ConsumerAccountResponse: consumerAccountResponseSchema,
@@ -770,6 +784,54 @@ const mediaDeliveryUnavailableResponse = {
 } as const;
 
 export const apiOperations = [
+  {
+    method: 'post',
+    operationId: 'createAiSuggestion',
+    path: apiRoutePaths.aiSuggestions,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'AiSuggestionRequest',
+    responses: {
+      '200': {
+        description:
+          'A labeled, editable suggestion. It has not saved, sent, published, approved, or executed anything.',
+        schemaName: 'AiSuggestionResponse',
+      },
+      '401': authRequiredResponse,
+      '403': {
+        description:
+          'Browser integrity, audience/capability admission, capability activation, or the AI kill switch refused the run. The body is an ApiError.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      '429': {
+        description: `The actor's deterministic AI budget is exhausted. The body is an ApiError with code ${productErrorCodes.rateLimited}.`,
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Creates a suggestion through the provider-neutral AI Gateway. Clients cannot choose a provider, model, prompt, tool, or action.',
+  },
+  {
+    method: 'post',
+    operationId: 'cancelAiRun',
+    path: apiRoutePaths.aiRunCancellation,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'AiRunCancellationRequest',
+    responses: {
+      '200': {
+        description:
+          'Whether the caller-owned run was transitioned from an active state to cancelled. Repeating cancellation is safe.',
+        schemaName: 'AiRunCancellationResponse',
+      },
+      '401': authRequiredResponse,
+      '403': authBrowserOriginResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
   {
     method: 'get',
     operationId: 'getLiveness',

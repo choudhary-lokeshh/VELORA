@@ -5,6 +5,8 @@
 
 > Supersession note (2026-08-13): [ADR-0016](ADR-0016-bun-elysia-redis-bullmq-backend.md) replaces NestJS, pg-boss, and Valkey implementation detail with Elysia, BullMQ, and logically separated Redis. AI isolation, explicit orchestration, PostgreSQL run/registry/budget truth, deterministic tools/approvals, evaluation gates, and provider/model neutrality remain accepted. AI remains outside V1. Historical implementation analysis below is retained intentionally.
 
+> Implementation note (2026-08-26): [ADR-0033](ADR-0033-local-test-ai-suggestion-platform.md) records the bounded synchronous suggestion slice, deterministic local/test adapter, PostgreSQL activation/run/budget evidence, review-only product surfaces, and deployed-environment refusal. It does not select or approve a live provider/model or change product phase authority.
+
 ## Context
 
 ADR-0002 makes AI a provider-neutral, isolated platform capability. A technical runtime is now needed for Gateway admission, orchestration, provider routing, tools, prompts, structured output, context, optional memory/RAG, budgets, evaluations, tracing, async work, and human approval. No AI product capability is V1, and no provider/model choice may become product architecture.

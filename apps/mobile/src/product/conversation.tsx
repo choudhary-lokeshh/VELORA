@@ -40,6 +40,7 @@ import {
 } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
 import { CurrentCall } from './introductions';
+import { MobileAiAssist } from './ai-assist';
 
 /**
  * One conversation.
@@ -488,6 +489,13 @@ function Thread({
                 )}
               </Stack>
             )}
+
+            <MobileAiAssist
+              capability="consumer_chat_reply"
+              draft={draft}
+              onReplace={setDraft}
+              testID="message-ai"
+            />
 
             <View style={styles.composerRow}>
               <TextField

@@ -355,6 +355,38 @@ describe('messages', () => {
     ).toBe(false);
   });
 
+  it('keeps an edited AI reply in the composer until explicit Send', async () => {
+    const { double, view } = await mount(
+      <ConversationScreen conversationId={conversationId} onBack={nothing} />,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('message-input')).toBeTruthy();
+    });
+    await fireEvent.changeText(
+      view.getByTestId('message-input'),
+      'coffee after work',
+    );
+    await fireEvent.press(view.getByTestId('message-ai-generate'));
+    await waitFor(() => {
+      expect(view.getByTestId('message-ai-suggestion')).toBeTruthy();
+    });
+    await fireEvent.changeText(
+      view.getByTestId('message-ai-suggestion'),
+      'Coffee after work sounds good. Six?',
+    );
+    await fireEvent.press(view.getByTestId('message-ai-use'));
+
+    expect(view.getByTestId('message-input').props.value).toBe(
+      'Coffee after work sounds good. Six?',
+    );
+    expect(
+      double.calls.some(
+        (call) =>
+          call.path === '/v1/messaging/messages' && call.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
   it('sends a message and shows it once the server has it', async () => {
     const { double, view } = await mount(
       <ConversationScreen conversationId={conversationId} onBack={nothing} />,
@@ -679,6 +711,63 @@ describe('notices', () => {
 });
 
 describe('you', () => {
+  it('keeps an AI bio suggestion on-device until the person saves', async () => {
+    const { double, view } = await mount(<ProfileScreen onBack={nothing} />);
+    await waitFor(() => {
+      expect(view.getByTestId('profile-bio')).toBeTruthy();
+    });
+
+    await fireEvent.changeText(
+      view.getByTestId('profile-bio'),
+      'weekend gardener',
+    );
+    await fireEvent.press(view.getByTestId('profile-ai-generate'));
+    await waitFor(() => {
+      expect(view.getByTestId('profile-ai-suggestion').props.value).toBe(
+        'Refined: weekend gardener',
+      );
+    });
+    await fireEvent.press(view.getByTestId('profile-ai-use'));
+    expect(view.getByTestId('profile-bio').props.value).toBe(
+      'Refined: weekend gardener',
+    );
+    expect(
+      double.calls.some(
+        (call) =>
+          call.path === '/v1/users/me/profile' && call.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
+  it('still mints a run identity on a runtime with no global crypto', async () => {
+    // Hermes has no `globalThis.crypto`. The test renderer does, so a screen
+    // that reached through it passed here and failed on a device.
+    const held = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    Reflect.deleteProperty(globalThis, 'crypto');
+    try {
+      const { view } = await mount(<ProfileScreen onBack={nothing} />);
+      await waitFor(() => {
+        expect(view.getByTestId('profile-bio')).toBeTruthy();
+      });
+
+      await fireEvent.changeText(
+        view.getByTestId('profile-bio'),
+        'weekend gardener',
+      );
+      await fireEvent.press(view.getByTestId('profile-ai-generate'));
+      await waitFor(() => {
+        expect(view.getByTestId('profile-ai-suggestion').props.value).toBe(
+          'Refined: weekend gardener',
+        );
+      });
+      expect(view.queryByTestId('profile-ai-error')).toBeNull();
+    } finally {
+      if (held !== undefined) {
+        Object.defineProperty(globalThis, 'crypto', held);
+      }
+    }
+  });
+
   it('reports availability as the server has it, not as this device guessed', async () => {
     const state = admittedState();
     state.availability = {

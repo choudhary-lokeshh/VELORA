@@ -143,3 +143,7 @@ export type IdentityAttempt = IdentityState['attempts'][number];
 /* ================================ Session ============================ */
 
 export type AdminSession = JsonBody<'/v1/auth/session', 'get', 200>;
+
+/** AI may summarize a case; the operator still reviews and decides. */
+export type AiSuggestionBody = RequestBody<'/v1/ai/suggestions', 'post'>;
+export type AiSuggestion = JsonBody<'/v1/ai/suggestions', 'post', 200>;

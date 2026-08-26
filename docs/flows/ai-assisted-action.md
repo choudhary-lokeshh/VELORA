@@ -49,6 +49,8 @@ Prompt injection or disallowed tool request is denied and recorded as a security
 
 Async runs pin versions and checkpoint state, but re-authorize before every sensitive read/effect and after approval wait. Cancel stops future model/tool work where possible; already committed domain state follows domain compensation/reversal workflow, never AI rollback invention.
 
+The [implemented local/test slice](../decisions/ADR-0033-local-test-ai-suggestion-platform.md) stops at step 5. A client-created run identity permits in-flight cancellation; reuse is an explicit conflict and cannot consume a second durable usage reservation. The gateway has no registered tools, approvals, or effect state, so a generated draft can reach business truth only if the actor later uses the surface's ordinary, separately authorized Save, Send, or Publish control.
+
 ## Permissions, data, and observability
 
 Actor receives no more data or tool scope through AI than through direct product use. Model/provider receives no service credential. Proposal, approval, execution, and outcome use one correlation chain. Trace run/capability/prompt/model route/tool schema/approval/outcome with redaction; do not copy raw sensitive context into generic logs or analytics.

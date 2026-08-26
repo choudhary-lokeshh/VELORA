@@ -29,6 +29,7 @@ import {
   TextInput,
 } from '../design/primitives';
 import { AvailabilityCard } from './availability';
+import { ConsumerAiAssist } from './ai-assist';
 import { LanguagePicker } from './language-picker';
 import { languageName, regionName } from './locale';
 import { ProfilePhotos } from './media';
@@ -439,6 +440,13 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
             />
           )}
         </Field>
+
+        <ConsumerAiAssist
+          capability="consumer_profile_bio"
+          draft={bio}
+          onReplace={setBio}
+          testId="profile-ai"
+        />
 
         {message === undefined ? null : (
           <ErrorMessage testId="profile-error">{message}</ErrorMessage>

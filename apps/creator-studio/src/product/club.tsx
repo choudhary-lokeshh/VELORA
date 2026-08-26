@@ -45,6 +45,7 @@ import {
   plural,
 } from './format';
 import { clubDescriptionMaximum, clubNameBounds } from './clubs';
+import { CreatorAiAssist } from './ai-assist';
 import { useCollection, useResource, useSingleFlight } from './resource';
 
 /**
@@ -349,6 +350,7 @@ function ClubSettings({
   const { busy, run } = useSingleFlight();
   const [name, setName] = useState(club.name);
   const [description, setDescription] = useState(club.description ?? '');
+  const [announcement, setAnnouncement] = useState('');
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
 
@@ -451,6 +453,30 @@ function ClubSettings({
             />
           )}
         </Field>
+
+        <Field
+          hint="Local scratchpad only. It is not saved or published by this club form."
+          label="Announcement scratchpad"
+          optional
+        >
+          {(control) => (
+            <TextArea
+              {...control}
+              data-testid="club-announcement-scratchpad"
+              onChange={(event) => {
+                setAnnouncement(event.target.value);
+              }}
+              rows={3}
+              value={announcement}
+            />
+          )}
+        </Field>
+        <CreatorAiAssist
+          capability="creator_club_announcement"
+          draft={announcement}
+          onReplace={setAnnouncement}
+          testId="club-announcement-ai"
+        />
 
         <div className="s-form-actions">
           <Button

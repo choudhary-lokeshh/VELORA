@@ -31,6 +31,7 @@ import { portraitReferences, useMediaAddresses } from './imagery';
 import { PersonSafetyMenu } from './safety-actions';
 import { useSingleFlight } from './resource';
 import { CallControls } from './calls';
+import { ConsumerAiAssist } from './ai-assist';
 
 /**
  * Conversations, and the messages in them.
@@ -689,6 +690,12 @@ function Thread({
               </span>
             ) : null}
           </div>
+          <ConsumerAiAssist
+            capability="consumer_chat_reply"
+            draft={draft}
+            onReplace={setDraft}
+            testId="message-ai"
+          />
           {overLimit ? (
             <ErrorMessage testId="message-too-long">
               That is longer than a message can be. Trim it and send again.

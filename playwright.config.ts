@@ -22,6 +22,11 @@ export default defineConfig({
   ],
   reporter: 'list',
   testDir: './e2e',
+  // Two browser journeys can each fan out several API reads while the real
+  // worker is polling. Keeping this below the API's eight-unit database
+  // admission ceiling proves the product instead of intentionally eliciting
+  // capacity 503s from unrelated journeys running beside it.
+  workers: 2,
   use: {
     trace: 'retain-on-failure',
   },
