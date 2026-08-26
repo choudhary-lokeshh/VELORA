@@ -134,7 +134,7 @@ visual work depends on it.
 
 | Capability | Class | Evidence |
 |---|---|---|
-| Seeded local world | A | `scripts/seed-local-world.mjs` creates the fictional world entirely through authenticated API routes, including catalog provisioning and settled gifts |
+| Seeded local world | A | `scripts/seed-local-world.mjs` creates 32 fictional adults, 12 creators, 41 public pieces, and 6 clubs entirely through authenticated API routes, including repeat-safe invitations, catalog provisioning, and settled gifts; `pnpm seed:check` locks the population and non-local refusal floors |
 
 The Android freeze report records that a profile photograph had to be written
 straight into the database to get a walk past onboarding. That is the shape of

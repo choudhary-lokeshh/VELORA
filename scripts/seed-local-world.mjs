@@ -10,6 +10,7 @@ import {
   creators,
   subjectFor,
 } from './seed-fixtures.mjs';
+import { assertLocalSeedTarget } from './seed-safety.mjs';
 
 /**
  * Fills a local VELORA with people, creators, pictures, and the relationships
@@ -35,7 +36,7 @@ import {
  *
  * ## It is local-only, and structurally so
  *
- * The guard below refuses anything but a loopback API in a local environment.
+ * The imported guard refuses anything but a loopback API in a local environment.
  * That is the polite half. The structural half is that a deployed environment
  * has no storage provider, no local sign-in adapter, and no notification
  * channel — configuration refuses every one of them outside local and test — so
@@ -97,22 +98,12 @@ const creatorOrigin =
   fileEnvironment.get('AUTH_BROWSER_ORIGINS_CREATOR_STUDIO') ??
   'http://127.0.0.1:3001';
 
-const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]']);
-
 function guard() {
   const appEnvironment =
     process.env.VELORA_APP_ENV ??
     fileEnvironment.get('VELORA_APP_ENV') ??
     'local';
-  if (appEnvironment !== 'local') {
-    throw new Error(
-      `dev:seed is local only; VELORA_APP_ENV is ${appEnvironment}`,
-    );
-  }
-  const { hostname, protocol } = new URL(apiBaseUrl);
-  if (protocol !== 'http:' || !loopbackHosts.has(hostname)) {
-    throw new Error(`dev:seed refuses a non-loopback API at ${apiBaseUrl}`);
-  }
+  assertLocalSeedTarget({ apiBaseUrl, appEnvironment });
 }
 
 const started = Date.now();
@@ -503,19 +494,16 @@ async function seedConversations(introductions) {
 async function seedCreator(fixture, index) {
   const subject = subjectFor('creator', index);
   const consumerSession = await signIn('consumer_web', subject);
-  const account = await consumerSession.call('GET', '/v1/users/me');
-  if (!account.ok) await consumerSession.must('POST', '/v1/users', {});
-  const onboarding = await consumerSession.must(
-    'GET',
-    '/v1/users/me/onboarding',
-  );
-  if (onboarding.step === 'adult_declaration') {
+  const foundAccount = await consumerSession.call('GET', '/v1/users/me');
+  if (!foundAccount.ok) await consumerSession.must('POST', '/v1/users', {});
+  const account = await consumerSession.must('GET', '/v1/users/me');
+  if (account.region !== fixture.region) {
     await consumerSession.must(
       'POST',
       '/v1/users/me/onboarding/adult-declaration',
       {
         declaresAdult: true,
-        region: 'PT',
+        region: fixture.region,
       },
     );
   }
@@ -653,12 +641,24 @@ async function seedMemberships(creatorWork, people) {
   let invited = 0;
   let redeemed = 0;
   let redeemer = 0;
-  for (const { clubs } of creatorWork) {
+  for (const { clubs, studio } of creatorWork) {
     for (const club of clubs) {
-      const issued = await creatorWork
-        .find((entry) => entry.clubs.includes(club))
-        ?.studio.call('POST', '/v1/creator/clubs/invites', { clubId: club.id });
-      if (issued?.ok !== true) continue;
+      const existing = await studio.must(
+        'GET',
+        `/v1/creator/clubs/invites?clubId=${encodeURIComponent(club.id)}`,
+      );
+      if (existing.invites.length > 0) {
+        invited += existing.invites.length;
+        redeemed += existing.invites.filter(
+          (invite) => invite.redeemedAt !== undefined,
+        ).length;
+        continue;
+      }
+
+      const issued = await studio.call('POST', '/v1/creator/clubs/invites', {
+        clubId: club.id,
+      });
+      if (!issued.ok) continue;
       invited += 1;
       // Every other invitation is used, so both an outstanding invitation and a
       // live membership exist to look at.
@@ -677,18 +677,27 @@ async function seedMemberships(creatorWork, people) {
 
 /** A few real, ledger-backed gifts through the consumer product route. */
 async function seedGifts(people, seededCreators) {
+  // These are the explicit consumer countries published by the local-test
+  // commerce authority. Choosing from the fixture rather than changing a
+  // person's declaration keeps the checkout proof honest.
+  const eligibleRegions = new Set(['ES', 'FR', 'JP']);
+  const senders = people.filter((person) =>
+    eligibleRegions.has(person.fixture.region),
+  );
   let sent = 0;
-  for (let index = 0; index < Math.min(6, people.length); index += 1) {
-    const person = people[index];
+  for (let index = 0; index < 6; index += 1) {
+    const person = senders[index % senders.length];
     const creator = seededCreators[index % seededCreators.length];
     if (person === undefined || creator === undefined) continue;
-    const catalog = await person.session.call(
+    const catalog = await person.session.must(
       'GET',
       `/v1/billing/gifts/catalog?handle=${encodeURIComponent(creator.fixture.handle)}&currency=USD`,
     );
-    if (!catalog.ok || catalog.body.items.length === 0) continue;
-    const item = catalog.body.items[index % catalog.body.items.length];
-    const result = await person.session.call(
+    const item = catalog.items[index % catalog.items.length];
+    if (item === undefined) {
+      throw new Error(`${creator.fixture.handle}: gift catalog is empty`);
+    }
+    await person.session.must(
       'POST',
       '/v1/billing/gifts',
       {
@@ -701,7 +710,7 @@ async function seedGifts(people, seededCreators) {
         'x-velora-idempotency-key': `seed-gift-${String(index).padStart(3, '0')}`,
       },
     );
-    if (result.ok) sent += 1;
+    sent += 1;
   }
   return sent;
 }
@@ -754,7 +763,7 @@ async function main() {
   );
 
   const gifts = await seedGifts(people, seededCreators);
-  say(`${String(gifts)} gifts sent through verified settlement`);
+  say(`${String(gifts)} gifts present through verified settlement`);
 
   process.stdout.write(
     [

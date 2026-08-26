@@ -314,6 +314,7 @@ export const creators = [
       },
     ],
     links: [{ label: 'Studio', url: 'https://example.invalid/embervale' }],
+    region: 'ES',
     tone: ['#7a4a30', '#2b1c16'],
   },
   {
@@ -354,6 +355,7 @@ export const creators = [
       },
     ],
     links: [{ label: 'Listen', url: 'https://example.invalid/northsound' }],
+    region: 'FR',
     tone: ['#2f4a5e', '#141d26'],
   },
   {
@@ -389,6 +391,7 @@ export const creators = [
       },
     ],
     links: [],
+    region: 'ES',
     tone: ['#3f5e3a', '#1a2418'],
   },
   {
@@ -431,6 +434,7 @@ export const creators = [
     links: [
       { label: 'Commissions', url: 'https://example.invalid/singlestem' },
     ],
+    region: 'FR',
     tone: ['#5e4a2c', '#241d14'],
   },
   {
@@ -450,8 +454,19 @@ export const creators = [
         summary: 'Setting a page by hand.',
         title: 'Composing stick',
       },
+      {
+        images: 1,
+        summary: 'Why the paper decides how the ink behaves.',
+        title: 'Paper before pressure',
+      },
+      {
+        images: 1,
+        summary: 'Cleaning and oiling a machine built in 1912.',
+        title: 'A morning with the press',
+      },
     ],
     links: [],
+    region: 'ES',
     tone: ['#4a3a2c', '#1f1a14'],
   },
   {
@@ -477,8 +492,19 @@ export const creators = [
         summary: 'The recipe, properly.',
         title: 'Indigo, honestly',
       },
+      {
+        images: 1,
+        summary: 'The yellow hidden in an ordinary hedgerow.',
+        title: 'Weld from the roadside',
+      },
+      {
+        images: 1,
+        summary: 'Eight fibres, one pot, eight different colours.',
+        title: 'What the cloth changes',
+      },
     ],
     links: [],
+    region: 'FR',
     tone: ['#5e2c3f', '#26161f'],
   },
   {
@@ -498,8 +524,19 @@ export const creators = [
         summary: 'A petty knife, start to finish.',
         title: 'One knife',
       },
+      {
+        images: 1,
+        summary: 'The geometry behind a knife that feels quiet in use.',
+        title: 'Balance at the pinch',
+      },
+      {
+        images: 1,
+        summary: 'Three steels after a year in working kitchens.',
+        title: 'Patina is a record',
+      },
     ],
     links: [],
+    region: 'ES',
     tone: ['#2c3a4a', '#141d24'],
   },
   {
@@ -519,8 +556,19 @@ export const creators = [
         summary: 'Why the darkroom is the point.',
         title: 'Printing it myself',
       },
+      {
+        images: 1,
+        summary: 'The colour of the city before its first bus.',
+        title: 'Blue before morning',
+      },
+      {
+        images: 1,
+        summary: 'Contact sheets from walks that found nothing.',
+        title: 'The frames I passed over',
+      },
     ],
     links: [],
+    region: 'FR',
     tone: ['#3a3a4a', '#1c1c24'],
   },
   {
@@ -536,8 +584,19 @@ export const creators = [
         title: 'Eleven years of one culture',
       },
       { images: 1, summary: 'Why only three days.', title: 'On opening less' },
+      {
+        images: 1,
+        summary: 'Four loaves from the same dough and four different clocks.',
+        title: 'Weather in the proof',
+      },
+      {
+        images: 1,
+        summary: 'What remains when the shutters come down.',
+        title: 'After sell-out',
+      },
     ],
     links: [],
+    region: 'ES',
     tone: ['#5e4a3a', '#26201a'],
   },
   {
@@ -563,8 +622,19 @@ export const creators = [
         summary: 'The template, free to members.',
         title: 'Clamshell template',
       },
+      {
+        images: 1,
+        summary: 'Choosing grain direction before the first cut.',
+        title: 'Paper has a direction',
+      },
+      {
+        images: 1,
+        summary: 'A repair designed to be visible and reversible.',
+        title: 'Mending without pretending',
+      },
     ],
     links: [],
+    region: 'FR',
     tone: ['#4a2c2c', '#241616'],
   },
   {
@@ -580,8 +650,19 @@ export const creators = [
         summary: 'Cutting curves without swearing.',
         title: 'On curves',
       },
+      {
+        images: 1,
+        summary: 'Three transparent greys and the light between them.',
+        title: 'Building a quiet shadow',
+      },
+      {
+        images: 1,
+        summary: 'The full-size drawing underneath every finished window.',
+        title: 'Before the first cut',
+      },
     ],
     links: [],
+    region: 'ES',
     tone: ['#2c4a5e', '#142326'],
   },
   {
@@ -601,8 +682,19 @@ export const creators = [
         summary: 'Why it does not last as long.',
         title: 'On natural fixatives',
       },
+      {
+        images: 1,
+        summary: 'One garden sampled at four hours of the same day.',
+        title: 'A garden changes by noon',
+      },
+      {
+        images: 1,
+        summary: 'How one drop can make a blend easier to hear.',
+        title: 'The smallest note',
+      },
     ],
     links: [],
+    region: 'FR',
     tone: ['#4a3f5e', '#1e1a26'],
   },
 ];

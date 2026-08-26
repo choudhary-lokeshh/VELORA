@@ -73,14 +73,16 @@ bun run dev:seed
 ```
 
 It fills a local VELORA with thirty-two fictional adults, twelve creators with
-published pages and catalogs, pictures on all of them, introductions, conversations,
-clubs, invitations, and settled virtual gifts — by calling the same HTTP routes a browser calls, in the
+published pages, forty-one public catalog pieces, pictures on all of them,
+introductions, conversations, six clubs, invitations, and settled virtual gifts — by calling the same HTTP routes a browser calls, in the
 same order, with the same refusals. There is no database connection in it: a rule
 the API enforces stops the seed too, so a seeded world is evidence about the product
 rather than about a script's idea of the product. Run it while `bun run dev` is up,
-and run it again whenever you like — it is idempotent, it never resets or deletes
-anything, and it leaves your own accounts alone. It refuses anything but a loopback
-API in a local environment, and a deployed environment could not produce a seeded
+and run it again whenever you like — it is idempotent (including club invitations),
+it never resets or deletes anything, and it leaves your own accounts alone. The
+`pnpm seed:check` CI gate proves both the population floor and hard refusals for
+staging, production, HTTPS, credential-bearing URLs, and non-loopback hosts. A
+deployed environment could not produce a seeded
 account anyway: no storage provider, no local sign-in adapter, and no notification
 channel exists outside local and test.
 
