@@ -151,7 +151,7 @@ describe('session', () => {
 
   it('reports an unreachable service rather than claiming the person is signed out', async () => {
     const double = createApiDouble(admittedState());
-    double.failNext('/v1/auth/session');
+    double.failNext('/v1/auth/session', 'GET');
     renderProduct(
       <PublicGate>
         <SignIn />
@@ -421,7 +421,12 @@ describe('discovery', () => {
     renderProduct(<Discovery />, double, { pathname: '/discover' });
     await screen.findByTestId(`discovery-pass-${otherPersonId}`);
 
-    double.refuseNext('/v1/discovery/passes', 409, 'ACCOUNT_NOT_ELIGIBLE');
+    double.refuseNext(
+      '/v1/discovery/passes',
+      'POST',
+      409,
+      'ACCOUNT_NOT_ELIGIBLE',
+    );
     await click(`discovery-pass-${otherPersonId}`);
 
     await screen.findByText(
@@ -447,7 +452,7 @@ describe('discovery', () => {
 
   it('offers a retry when the feed could not be reached', async () => {
     const double = createApiDouble(admittedState());
-    double.failNext('/v1/discovery/candidates');
+    double.failNext('/v1/discovery/candidates', 'GET');
     renderProduct(<Discovery />, double, { pathname: '/discover' });
 
     await waitFor(() => {
@@ -825,7 +830,7 @@ describe('messaging', () => {
   it('retries a lost send with the same identifier and creates one message', async () => {
     const double = await openConversation();
 
-    double.failNext('/v1/messaging/messages');
+    double.failNext('/v1/messaging/messages', 'POST');
     await type('Message Robin', 'only once');
     await click('message-send');
     await screen.findByTestId('message-send-failed');
@@ -854,7 +859,12 @@ describe('messaging', () => {
     const double = await openConversation();
 
     // The pair stopped being eligible while the composer was open.
-    double.refuseNext('/v1/messaging/messages', 409, 'ACTION_NOT_PERMITTED');
+    double.refuseNext(
+      '/v1/messaging/messages',
+      'POST',
+      409,
+      'ACTION_NOT_PERMITTED',
+    );
     await type('Message Robin', 'too late');
     await click('message-send');
 
@@ -1151,7 +1161,7 @@ describe('profile', () => {
       ).toBe('Alex');
     });
 
-    double.refuseNext('/v1/users/me/profile', 409, 'STATE_CONFLICT');
+    double.refuseNext('/v1/users/me/profile', 'POST', 409, 'STATE_CONFLICT');
     await click('profile-save');
 
     await waitFor(() => {
@@ -1422,7 +1432,7 @@ describe('accessibility structure', () => {
 
   it('announces progress and failure to assistive technology', async () => {
     const double = createApiDouble(admittedState());
-    double.failNext('/v1/discovery/candidates');
+    double.failNext('/v1/discovery/candidates', 'GET');
     renderProduct(<Discovery />, double, { pathname: '/discover' });
 
     await waitFor(() => {

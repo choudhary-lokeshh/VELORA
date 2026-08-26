@@ -460,7 +460,7 @@ describe('the public page', () => {
     renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
     await screen.findByTestId('creator-handle-fixed');
 
-    double.refuseNext('/v1/creator/profile', 409, 'STATE_CONFLICT');
+    double.refuseNext('/v1/creator/profile', 'POST', 409, 'STATE_CONFLICT');
     fireEvent.change(screen.getByTestId('creator-display-name'), {
       target: { value: 'Ember V' },
     });
@@ -1284,7 +1284,7 @@ describe('money', () => {
     fireEvent.click(await screen.findByTestId('payouts-withdraw-EUR'));
     const dialog = await screen.findByTestId('payouts-withdraw-confirm');
 
-    double.failNext('/v1/creator/payouts');
+    double.failNext('/v1/creator/payouts', 'POST');
     fireEvent.click(
       within(dialog).getByTestId('payouts-withdraw-confirm-accept'),
     );

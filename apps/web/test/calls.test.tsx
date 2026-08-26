@@ -292,7 +292,7 @@ describe('a credential is asked for, never kept', () => {
 describe('a call that could not be placed at all', () => {
   it('says why and still offers a way out', async () => {
     const double = await openIntroductions();
-    double.refuseNext('/v1/rtc/calls', 409, 'RATE_LIMITED');
+    double.refuseNext('/v1/rtc/calls', 'POST', 409, 'RATE_LIMITED');
     await click(`call-voice-${introductionId}`);
 
     await waitFor(() => {
@@ -315,7 +315,7 @@ describe('a call that could not be placed at all', () => {
 describe('a capability the platform has not switched on', () => {
   it('reads as a decision rather than as a failure', async () => {
     const double = await openIntroductions();
-    double.refuseNext('/v1/rtc/calls', 503, 'DEPENDENCY_UNAVAILABLE');
+    double.refuseNext('/v1/rtc/calls', 'POST', 503, 'DEPENDENCY_UNAVAILABLE');
     await click(`call-voice-${introductionId}`);
 
     const blocked = await screen.findByTestId('call-blocked');

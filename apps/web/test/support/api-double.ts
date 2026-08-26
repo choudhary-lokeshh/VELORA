@@ -220,10 +220,15 @@ export interface ApiDouble {
   /** Every request the surface made, so a test can assert what it did not do. */
   readonly calls: { body: unknown; method: string; path: string }[];
   /** Forces the next matching request to fail as if the network were gone. */
-  failNext(path: string): void;
+  failNext(path: string, method: 'GET' | 'POST'): void;
   readonly fetch: typeof globalThis.fetch;
   /** Forces the next matching request to be refused with this product code. */
-  refuseNext(path: string, status: number, code: string): void;
+  refuseNext(
+    path: string,
+    method: 'GET' | 'POST',
+    status: number,
+    code: string,
+  ): void;
   readonly state: ApiDoubleState;
 }
 
@@ -394,6 +399,7 @@ export function createApiDouble(
   const calls: { body: unknown; method: string; path: string }[] = [];
   const failures = new Map<string, number>();
   const refusals = new Map<string, { code: string; status: number }>();
+  const requestKey = (path: string, method: string) => `${method} ${path}`;
   let sequence = state.messages.length;
 
   const json = (status: number, body: unknown) =>
@@ -419,13 +425,14 @@ export function createApiDouble(
     const body = raw.length > 0 ? (JSON.parse(raw) as unknown) : undefined;
     calls.push({ body, method, path });
 
-    if ((failures.get(path) ?? 0) > 0) {
-      failures.set(path, (failures.get(path) ?? 0) - 1);
+    const key = requestKey(path, method);
+    if ((failures.get(key) ?? 0) > 0) {
+      failures.set(key, (failures.get(key) ?? 0) - 1);
       throw new TypeError('network error');
     }
-    const refusal = refusals.get(path);
+    const refusal = refusals.get(key);
     if (refusal !== undefined) {
-      refusals.delete(path);
+      refusals.delete(key);
       return error(refusal.status, refusal.code);
     }
     if (request.signal.aborted) throw new DOMException('aborted');
@@ -1005,12 +1012,13 @@ export function createApiDouble(
 
   return {
     calls,
-    failNext(path) {
-      failures.set(path, (failures.get(path) ?? 0) + 1);
+    failNext(path, method) {
+      const key = requestKey(path, method);
+      failures.set(key, (failures.get(key) ?? 0) + 1);
     },
     fetch: handler,
-    refuseNext(path, status, code) {
-      refusals.set(path, { code, status });
+    refuseNext(path, method, status, code) {
+      refusals.set(requestKey(path, method), { code, status });
     },
     state,
   };
