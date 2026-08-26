@@ -989,9 +989,7 @@ describe('notifications', () => {
       'notification-99999999-9999-4999-8999-999999999999',
     );
     expect(row.tagName).toBe('DIV');
-    await click(
-      'notification-read-99999999-9999-4999-8999-999999999999',
-    );
+    await click('notification-read-99999999-9999-4999-8999-999999999999');
     await screen.findByText('Everything here has been read.');
   });
 
