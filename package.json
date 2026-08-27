@@ -47,6 +47,7 @@
     "design:parity": "node scripts/check-design-parity.mjs",
     "ci:verify": "pnpm toolchain:check && pnpm install:check && pnpm workspace:check && pnpm env:check && pnpm format:check && pnpm lint && pnpm boundaries && pnpm typecheck && pnpm contracts:check && pnpm runtime:inventory:check && pnpm auth:policy && pnpm design:parity && pnpm seed:check && pnpm test && pnpm test:integration && pnpm build:uncached && pnpm entrypoints:check && pnpm test:e2e && pnpm mobile:doctor && pnpm android:verify && pnpm infra:config && pnpm secrets:check && pnpm whitespace:check && pnpm audit:dependencies",
     "mobile:assets": "node scripts/generate-mobile-android-assets.mjs",
+    "web:assets": "node scripts/generate-web-icons.mjs",
     "android:verify": "node scripts/check-android-build.mjs",
     "android:build": "node scripts/build-android.mjs",
     "android:doctor": "node scripts/check-android-toolchain.mjs"

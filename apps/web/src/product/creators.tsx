@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   createCreatorApi,
@@ -19,7 +19,7 @@ import {
   Skeleton,
 } from '../design/primitives';
 import { useAddressesFrom } from './imagery';
-import { useResource } from './resource';
+import { useResource, useSingleFlight } from './resource';
 
 /**
  * Creators, as somebody browsing rather than somebody who already knows a
@@ -78,7 +78,7 @@ export function CreatorDirectory({
 
   const [extra, setExtra] = useState<readonly PublicCreatorSummary[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const paging = useSingleFlight();
 
   const load = useCallback(
     async () => api.publicCreatorDirectory({ pageSize }),
@@ -86,8 +86,15 @@ export function CreatorDirectory({
   );
   const first = useResource<PublicCreatorDirectory>(load);
 
-  const creators = [...(first.value?.creators ?? []), ...extra];
-  const next = cursor ?? first.value?.nextCursor;
+  useEffect(() => {
+    // A fresh first page supersedes whatever continuation was being held; the
+    // cursor it carries is the only one still valid. Holding the earlier pages
+    // against a newer first page is how the same creator gets listed twice.
+    setExtra([]);
+    setCursor(first.value?.nextCursor);
+  }, [first.value]);
+
+  const creators = dedupe([...(first.value?.creators ?? []), ...extra]);
   const portraits = useAddressesFrom(
     creators.flatMap((one) =>
       one.avatar === undefined ? [] : [one.avatar.id],
@@ -97,18 +104,21 @@ export function CreatorDirectory({
   );
 
   const more = () => {
-    if (next === undefined || loadingMore) return;
-    setLoadingMore(true);
-    void api
-      .publicCreatorDirectory({ cursor: next, pageSize })
-      .then((result) => {
-        if (result.kind !== 'ok') return;
-        setExtra((held) => [...held, ...result.value.creators]);
-        setCursor(result.value.nextCursor);
-      })
-      .finally(() => {
-        setLoadingMore(false);
+    // `cursor` alone decides whether there is another page, and it is undefined
+    // exactly when the server said this was the last one. Falling back to the
+    // first page's cursor here would re-read the page just delivered, every
+    // press, and list every creator on it again.
+    const from = cursor;
+    if (from === undefined) return;
+    paging.run(async () => {
+      const result = await api.publicCreatorDirectory({
+        cursor: from,
+        pageSize,
       });
+      if (result.kind !== 'ok') return;
+      setExtra((held) => [...held, ...result.value.creators]);
+      setCursor(result.value.nextCursor);
+    });
   };
 
   if (first.loading && first.value === undefined) {
@@ -190,13 +200,29 @@ export function CreatorDirectory({
         ))}
       </ul>
 
-      {next === undefined ? null : (
+      {cursor === undefined ? null : (
         <div className="v-continue">
-          <Button busy={loadingMore} onClick={more}>
+          <Button busy={paging.busy} onClick={more}>
             Show more creators
           </Button>
         </div>
       )}
     </>
   );
+}
+
+/**
+ * One entry per creator, whatever the pages between them overlapped on.
+ *
+ * A handle identifies a creator page for the whole product — it is what the
+ * address bar carries and what this list keys on — so two summaries sharing one
+ * is two views of a single page rather than two pages. The entry stays where it
+ * first appeared, so the order remains publication order, which is the only
+ * order this listing claims.
+ */
+function dedupe(
+  creators: readonly PublicCreatorSummary[],
+): readonly PublicCreatorSummary[] {
+  const byHandle = new Map(creators.map((one) => [one.handle, one]));
+  return [...byHandle.values()];
 }
