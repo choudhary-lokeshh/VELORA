@@ -3,6 +3,7 @@ import {
   correlationResponseHeader,
   csrfHeader,
   deviceHeader,
+  idempotencyHeader,
 } from '@velora/validation';
 
 /**
@@ -29,6 +30,16 @@ export const allowedRequestHeaderNames = [
   correlationResponseHeader,
   csrfHeader,
   deviceHeader,
+  /*
+   * The client key on every operation that must not happen twice.
+   *
+   * It was absent, and its absence was invisible: a custom header makes a POST
+   * preflighted, so a browser never sent the request at all and the surface
+   * reported that VELORA could not be reached. Every jsdom suite passed, because
+   * a fetch double has no preflight — the only thing that catches this is a real
+   * browser talking to a real API across two origins.
+   */
+  idempotencyHeader,
 ] as const;
 
 const allowedRequestHeaders = allowedRequestHeaderNames.join(', ');

@@ -75,6 +75,24 @@ export class OfferRepository {
   }
 
   /**
+   * A batch of offers by identifier, with no creator in the predicate.
+   *
+   * The batched form of `findOfferForPurchase`, and safe for the same reason:
+   * it grants nothing. A caller already holds the identifiers, because they
+   * came out of that caller's own subscriptions or payments.
+   */
+  async findOffersForPurchase(
+    executor: Executor,
+    offerIds: readonly string[],
+  ): Promise<OfferRow[]> {
+    if (offerIds.length === 0) return [];
+    return executor
+      .select()
+      .from(billingOffers)
+      .where(inArray(billingOffers.id, [...offerIds]));
+  }
+
+  /**
    * One creator's offers, newest first.
    *
    * Keyset paged on the creation instant and identifier, which is exactly the
@@ -112,6 +130,32 @@ export class OfferRepository {
             ),
       )
       .orderBy(desc(billingOffers.createdAt), desc(billingOffers.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * One creator's live offers, for the page a visitor is standing on.
+   *
+   * Only `active`, because a draft is a creator's private preparation and a
+   * retired one is a thing that is no longer sold. Ordered by creation so the
+   * card order on a public page is stable between loads rather than whatever
+   * the planner returned.
+   */
+  async listActiveOffers(
+    executor: Executor,
+    input: { readonly creatorId: string; readonly limit: number },
+  ): Promise<OfferRow[]> {
+    return executor
+      .select()
+      .from(billingOffers)
+      .where(
+        and(
+          eq(billingOffers.creatorId, input.creatorId),
+          eq(billingOffers.resourceType, 'club'),
+          eq(billingOffers.state, 'active'),
+        ),
+      )
+      .orderBy(billingOffers.createdAt, billingOffers.id)
       .limit(input.limit);
   }
 

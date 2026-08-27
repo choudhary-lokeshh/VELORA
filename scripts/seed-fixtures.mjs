@@ -279,8 +279,17 @@ export const creators = [
     bio: 'Wheel-thrown stoneware in small runs. Everything here is made in a converted dairy outside Lisbon, and everything is meant to be used rather than looked at.',
     clubs: [
       {
+        benefits: [
+          'Kiln notes the week they are written',
+          'The pieces that did not survive, and why',
+          'First refusal on a small run',
+        ],
         description:
           'Work in progress, kiln notes, and the pieces that do not survive the firing.',
+        membership: {
+          monthlyMinor: '1200',
+          yearlyMinor: '12000',
+        },
         name: 'The Kiln Room',
       },
     ],
@@ -321,7 +330,16 @@ export const creators = [
     bio: 'Field recordings and slow music. I spend most of the year somewhere with bad weather and good acoustics.',
     clubs: [
       {
+        benefits: [
+          'One unedited field recording a week',
+          'The notes that came with it',
+          'The tape that did not make the cut',
+        ],
         description: 'Unedited field recordings, one a week, with the notes.',
+        membership: {
+          monthlyMinor: '800',
+          yearlyMinor: '8000',
+        },
         name: 'Raw Tape',
       },
     ],
@@ -362,8 +380,16 @@ export const creators = [
     bio: 'Botanical illustration, mostly of things nobody considers worth illustrating. Weeds, seed heads, the plants in car parks.',
     clubs: [
       {
+        benefits: [
+          'Full-resolution plates',
+          'The working sketches behind them',
+          'A note on what each one is',
+        ],
         description:
           'Full-resolution plates and the working sketches behind them.',
+        membership: {
+          monthlyMinor: '1500',
+        },
         name: 'The Plate Room',
       },
     ],
@@ -398,6 +424,10 @@ export const creators = [
     bio: 'I build furniture from single trees. One tree, one commission, everything from it — including the parts nobody wants.',
     clubs: [
       {
+        benefits: [
+          'A month of one tree, photographed weekly',
+          'What changed and what did not',
+        ],
         description:
           'Commission diaries, from the standing tree to the finished room.',
         name: 'One Tree',
@@ -473,7 +503,15 @@ export const creators = [
     bio: 'Natural dye. Everything in the studio is a colour something grew.',
     clubs: [
       {
+        benefits: [
+          'Every batch, including the failures',
+          'Temperatures, timings, and what they cost',
+        ],
         description: 'Dye recipes and the failures behind them.',
+        membership: {
+          monthlyMinor: '900',
+          yearlyMinor: '9000',
+        },
         name: 'Vat Notes',
       },
     ],
@@ -603,6 +641,10 @@ export const creators = [
     bio: 'Bookbinding and box making. If it needs to survive a hundred years, I can probably help.',
     clubs: [
       {
+        benefits: [
+          'What is on the bench this week',
+          'The tools, and why those ones',
+        ],
         description: 'Structures, in detail, with the templates.',
         name: 'The Bench',
       },

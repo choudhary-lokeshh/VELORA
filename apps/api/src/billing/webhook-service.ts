@@ -402,6 +402,9 @@ export class WebhookService {
       case 'subscription.cancelled': {
         return this.cancelSubscription(event, payment);
       }
+      case 'subscription.past_due': {
+        return this.lapseSubscription(event, payment);
+      }
       case 'dispute.opened':
       case 'dispute.closed': {
         return this.applyDispute(event, payment);
@@ -714,6 +717,68 @@ export class WebhookService {
     });
     void event;
     return true;
+  }
+
+  /**
+   * A renewal the provider could not collect.
+   *
+   * `past_due` grants nothing, so the entitlement is withdrawn in the same
+   * transaction that records the lapse. Whether a lapsed payment keeps access,
+   * and for how long, is grace policy nobody has approved, and the fail-closed
+   * reading of an unresolved policy is no access — said by revoking rather than
+   * implied by a period that quietly kept working.
+   *
+   * The relationship is deliberately not ended, because a lapse is not a
+   * decision anybody took. What ends it is the holder cancelling, or a provider
+   * saying it is over; a row moved straight to a terminal state would have
+   * pre-empted both.
+   */
+  private async lapseSubscription(
+    event: ProviderEventRow,
+    payment: PaymentRow,
+  ): Promise<boolean> {
+    const { offers, outbox, subscriptions } = this.dependencies;
+    return subscriptions.transaction(async (executor) => {
+      const subscription = await subscriptions.findByOriginPayment(
+        executor,
+        payment.id,
+      );
+      if (subscription === undefined) return false;
+      const lapsed = await subscriptions.transition(executor, {
+        // Never from a terminal state, and never from `pending`: a subscription
+        // whose first payment has not settled has no renewal to fail.
+        from: ['active', 'cancel_at_period_end'],
+        now: this.dependencies.now(),
+        subscriptionId: subscription.id,
+        to: 'past_due',
+      });
+      // Already lapsed, already ended, or never started. A redelivery does
+      // nothing rather than republishing a revocation.
+      if (lapsed === undefined) return true;
+
+      const offer = await offers.findOfferForPurchase(
+        executor,
+        subscription.offerId,
+      );
+      if (offer === undefined) return true;
+      await outbox.append(executor as TransactionHandle, {
+        eventName: entitlementRevokedEvent,
+        eventVersion: 1,
+        now: this.dependencies.now(),
+        occurredAt: event.occurredAt,
+        payload: {
+          commercialReference: subscription.id,
+          consumerId: subscription.consumerId,
+          offerId: offer.id,
+          reason: 'subscription_lapsed',
+          resourceId: offer.resourceId,
+          resourceType: offer.resourceType,
+        },
+        subjectId: subscription.id,
+        subjectType: 'billing.subscription',
+      });
+      return true;
+    });
   }
 
   private async cancelSubscription(

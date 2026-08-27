@@ -115,6 +115,17 @@ import {
 export const financialReconciliationIntervalMilliseconds = 30_000;
 
 /**
+ * How often a paid period that has run out is actually closed.
+ *
+ * A minute, on the same reasoning the takedown sweep uses: the end of a period
+ * is a stored date rather than a timer, so the only question is how long
+ * somebody keeps access they have stopped paying for. A minute is short enough
+ * that nobody notices and long enough that the sweep is not the reason a
+ * database is busy.
+ */
+export const subscriptionExpiryIntervalMilliseconds = 60_000;
+
+/**
  * How often passed takedown deadlines are looked for.
  *
  * A minute, because a deadline is a row rather than a timer: the sweep is
@@ -198,6 +209,8 @@ export interface WorkerComposition {
   readonly providerFeedbackSweep: Poller;
   /** Resolves ambiguous financial outcomes from provider truth. */
   readonly financialReconciliation: Poller;
+  /** Closes scheduled cancellations whose paid period has run out. */
+  readonly subscriptionExpiry: Poller;
   /** Applies verified provider events. Never runs on a request thread. */
   readonly providerEventDrain: Poller;
   readonly relay: OutboxRelay;
@@ -482,6 +495,25 @@ export function createWorkerComposition(input: {
     intervalMilliseconds: financialReconciliationIntervalMilliseconds,
     logger: input.logger,
     name: 'financial-reconciliation',
+  });
+  // A cancelled subscription ends when its paid period does, not when somebody
+  // asked. This is the sweep that closes the ones that have run out and
+  // publishes the revocation; it reaches no provider, because the end of a
+  // period is arithmetic on a date this platform already stored.
+  const subscriptionExpiry = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const report = await billing.subscriptions.expireOnce();
+        // Silent when there was nothing due, which is the ordinary case.
+        if (report.expired === 0) return;
+        input.logger.info(
+          { examined: report.examined, expired: report.expired },
+          'subscription periods closed',
+        );
+      }),
+    intervalMilliseconds: subscriptionExpiryIntervalMilliseconds,
+    logger: input.logger,
+    name: 'subscription-expiry',
   });
   // TRUST & SAFETY's obligations are rows, so the worker's part is to notice
   // when one has passed and write that down. It never decides a case: a sweep
@@ -775,6 +807,7 @@ export function createWorkerComposition(input: {
   return {
     billing,
     financialReconciliation,
+    subscriptionExpiry,
     rtcObligationDrain,
     rtcSweep,
     identity,
@@ -795,6 +828,7 @@ export function createWorkerComposition(input: {
         identityProviderEventDrain.stop(),
         identityReconciliation.stop(),
         financialReconciliation.stop(),
+        subscriptionExpiry.stop(),
         rtcObligationDrain.stop(),
         rtcSweep.stop(),
         safetyDeadlineSweep.stop(),
@@ -819,6 +853,10 @@ export function createWorkerComposition(input: {
       await identityReconciliation.runOnce();
       await relayPoller.runOnce();
       await financialReconciliation.runOnce();
+      // After the relay, so a period that ended while the process was down is
+      // closed and its revocation is published in the same pass.
+      await subscriptionExpiry.runOnce();
+      await relayPoller.runOnce();
       await safetyDeadlineSweep.runOnce();
       // A restart drains what is owed before it settles into its interval: a
       // room left open by the process that died is the one thing here worth

@@ -40,9 +40,22 @@ import { providerDisputeReasons, providerDisputeStatuses } from './provider.js';
 export const localTestWebhookSecret = 'velora-local-test-webhook-secret';
 export const localTestSignatureHeader = 'x-velora-test-signature';
 
+/**
+ * Where this adapter's hosted page is served.
+ *
+ * Outside `/v1` deliberately: it is not a product route and it is not part of
+ * the published contract. It carries no session and no CSRF token, because a
+ * payment provider's own page has neither.
+ */
+export const localTestCheckoutPath = '/local-test/checkout';
+
 interface Recorded {
   readonly amount: Money;
+  /** Where the provider was told to send an abandoned consumer. */
+  readonly cancelUrl: string;
   readonly operationReference: string;
+  /** Where the provider was told to send a consumer who finished. */
+  readonly returnUrl: string;
   status: ProviderPaymentStatus;
 }
 
@@ -111,6 +124,31 @@ export type LocalTestBehaviour =
 export class LocalTestPaymentProvider implements PaymentProviderPort {
   readonly provider = 'local-test';
 
+  /**
+   * When this adapter says an event happened.
+   *
+   * A real provider stamps its own events and Velora takes that instant as
+   * authoritative — a journal entry is dated by when the money moved, and a
+   * subscription period starts when the provider says the charge settled. A
+   * fixed epoch here was deterministic and wrong in exactly one place that
+   * matters: every subscription would begin in 1970 and be over before anybody
+   * read it. Tests that need an exact instant put one in the event body.
+   */
+  constructor(private readonly now: () => Date = () => new Date()) {}
+
+  /**
+   * Where this adapter's own hosted page lives.
+   *
+   * A real provider's page is on the provider's origin. This one has no origin
+   * of its own, so it borrows the API's — the same arrangement the local-test
+   * media transport uses, and for the same reason: a development flow that
+   * cannot be walked in a browser is a flow nobody walks.
+   *
+   * Absent leaves the redirect at an unreachable address, which is what a test
+   * that only drives the adapter directly wants.
+   */
+  private checkoutOrigin: string | undefined;
+
   /** Keyed by idempotency key, which is what makes a retry return the same object. */
   private readonly byIdempotencyKey = new Map<string, string>();
 
@@ -125,6 +163,36 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
   /** Test-only control. Not reachable from any request path. */
   behaveAs(behaviour: LocalTestBehaviour): void {
     this.behaviour = behaviour;
+  }
+
+  /** Composition-time only. Where the adapter's hosted page is served from. */
+  hostCheckoutAt(origin: string): void {
+    this.checkoutOrigin = origin.replace(/\/+$/u, '');
+  }
+
+  /** What the adapter holds against a reference, for its own hosted page. */
+  sessionFor(providerReference: string):
+    | {
+        readonly amount: Money;
+        readonly cancelUrl: string;
+        readonly returnUrl: string;
+        readonly status: ProviderPaymentStatus;
+      }
+    | undefined {
+    const recorded = this.payments.get(providerReference);
+    if (recorded === undefined) return undefined;
+    return {
+      amount: money(recorded.amount.amountMinor, recorded.amount.currency),
+      cancelUrl: recorded.cancelUrl,
+      returnUrl: recorded.returnUrl,
+      status: recorded.status,
+    };
+  }
+
+  /** The adapter's own record moves to cancelled, as a provider's would. */
+  markCancelled(providerReference: string): void {
+    const recorded = this.payments.get(providerReference);
+    if (recorded !== undefined) recorded.status = 'cancelled';
   }
 
   /**
@@ -160,7 +228,9 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
       this.byIdempotencyKey.set(request.idempotencyKey, reference);
       this.payments.set(reference, {
         amount: request.amount,
+        cancelUrl: request.cancelUrl,
         operationReference: request.operationReference,
+        returnUrl: request.returnUrl,
         status: 'pending',
       });
       return Promise.reject(
@@ -173,7 +243,9 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
     this.byIdempotencyKey.set(request.idempotencyKey, reference);
     this.payments.set(reference, {
       amount: request.amount,
+      cancelUrl: request.cancelUrl,
       operationReference: request.operationReference,
+      returnUrl: request.returnUrl,
       status,
     });
     return Promise.resolve({
@@ -268,6 +340,7 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
       readonly dispute?: unknown;
       readonly eventId?: unknown;
       readonly eventType?: unknown;
+      readonly occurredAt?: unknown;
       readonly providerPaymentReference?: unknown;
       readonly providerRefundReference?: unknown;
       readonly status?: unknown;
@@ -299,7 +372,10 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
       ...(dispute === undefined ? {} : { dispute }),
       eventId,
       eventType,
-      occurredAt: new Date(0),
+      occurredAt:
+        typeof body.occurredAt === 'string'
+          ? new Date(body.occurredAt)
+          : this.now(),
       ...(typeof reference === 'string'
         ? { providerPaymentReference: reference }
         : {}),
@@ -340,7 +416,9 @@ export class LocalTestPaymentProvider implements PaymentProviderPort {
   }
 
   private redirectFor(reference: string): string {
-    return `https://local-test.provider.invalid/checkout/${reference}`;
+    return this.checkoutOrigin === undefined
+      ? `https://local-test.provider.invalid/checkout/${reference}`
+      : `${this.checkoutOrigin}${localTestCheckoutPath}?reference=${encodeURIComponent(reference)}`;
   }
 
   private reference(idempotencyKey: string): string {

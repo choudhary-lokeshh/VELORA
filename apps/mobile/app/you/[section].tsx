@@ -9,14 +9,15 @@ import {
   NoticePreferencesScreen,
   ProfileScreen,
 } from '../../src/product/profile';
+import { MembershipsScreen } from '../../src/product/memberships';
 import { SafetyScreen } from '../../src/product/safety';
 import { AccountScreen } from '../../src/product/you';
 
 /**
  * The screens under You, one address each.
  *
- * One route rather than five files because they are five leaves of the same
- * menu and the alternative is five identical wrappers. An unknown section is a
+ * One route rather than one file each, because they are leaves of the same menu
+ * and the alternative is a set of identical wrappers. An unknown section is a
  * dead link rather than a crash.
  */
 export default function YouSection() {
@@ -31,6 +32,16 @@ export default function YouSection() {
     }
     case 'availability': {
       return <AvailabilityScreen onBack={onBack} />;
+    }
+    case 'memberships': {
+      return (
+        <MembershipsScreen
+          onBack={onBack}
+          onOpenClub={(path) => {
+            router.push(path);
+          }}
+        />
+      );
     }
     case 'notices': {
       return <NoticePreferencesScreen onBack={onBack} />;

@@ -1,6 +1,9 @@
 import { leave, type Stack } from '../src/frame/navigation';
 import {
+  clubPath,
   conversationPath,
+  creatorPath,
+  discoverPath,
   messagesPath,
   youPath,
   youSectionPath,
@@ -87,5 +90,58 @@ describe('leaving a screen that was pushed', () => {
     // A conversation identifier arrives from a server payload or a link, so a
     // slash in one must not turn one address into two segments.
     expect(conversationPath('a/b')).toBe('/messages/a%2Fb');
+  });
+});
+
+/**
+ * Every pushed screen leaves for an address this application actually serves.
+ *
+ * The rule the other surfaces learned the same way: truncating a path to build
+ * a parent is right for `/you/<section>` and wrong for `/c/<handle>/club/<slug>`,
+ * because `/c/<handle>/club` is not an address anything serves. A Back that
+ * lands on one is a perfectly valid link until somebody follows it, so the
+ * parent is declared at the route rather than derived from the path.
+ */
+describe('where a pushed screen leaves for', () => {
+  /** Every address this application serves, from `apps/mobile/app`. */
+  const served = [
+    '/discover',
+    '/introductions',
+    '/messages',
+    '/messages/[conversationId]',
+    '/notices',
+    '/you',
+    '/you/[section]',
+    '/c/[handle]',
+    '/c/[handle]/club/[slug]',
+  ];
+
+  function isServed(address: string): boolean {
+    return served.some((route) =>
+      new RegExp(
+        `^${route.replaceAll(/\[[^\]]+\]/gu, '[^/]+').replaceAll('/', '\\/')}$`,
+        'u',
+      ).test(address),
+    );
+  }
+
+  it.each([
+    ['a conversation', conversationPath('conversation-1'), messagesPath],
+    ['a You section', youSectionPath('memberships'), youPath],
+    ['a creator page', creatorPath('ember_vale'), discoverPath],
+    ['a club', clubPath('ember_vale', 'inner'), creatorPath('ember_vale')],
+  ])('leaves %s for an address that exists', (_name, from, parent) => {
+    expect(isServed(from)).toBe(true);
+    expect(isServed(parent)).toBe(true);
+    const { calls, stack } = stackWith(false);
+    leave(stack, parent);
+    expect(calls).toEqual([`replace ${parent}`]);
+  });
+
+  it('never leaves a club for a truncation of its own address', () => {
+    // `/c/ember_vale/club` is what removing the last segment would produce and
+    // nothing serves it. The club's parent is the creator page it opens from.
+    expect(isServed('/c/ember_vale/club')).toBe(false);
+    expect(creatorPath('ember_vale')).toBe('/c/ember_vale');
   });
 });

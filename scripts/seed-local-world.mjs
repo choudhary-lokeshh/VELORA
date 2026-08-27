@@ -569,11 +569,25 @@ async function seedCreatorWork(creator, index) {
     let club = clubsByName.get(wanted.name);
     if (club === undefined) {
       const created = await studio.must('POST', '/v1/creator/clubs', {
+        benefits: wanted.benefits ?? [],
         description: wanted.description,
         name: wanted.name,
         slug: `${fixture.handle}-${String(clubIndex + 1)}`,
       });
       club = created.clubs[0];
+    } else if ((club.benefits ?? []).length === 0 && wanted.benefits) {
+      // A club seeded before benefits existed keeps everything else and gains
+      // the lines its creator would have written. Re-running the seed is how a
+      // world catches up rather than how it is replaced.
+      const edited = await studio.call('POST', '/v1/creator/clubs', {
+        benefits: wanted.benefits,
+        description: wanted.description,
+        clubId: club.id,
+        name: club.name,
+        slug: club.slug,
+        version: club.version,
+      });
+      if (edited.ok) club = edited.body.clubs[0];
     }
     if (club !== undefined && club.lifecycle !== 'published') {
       const published = await studio.call(
@@ -633,7 +647,7 @@ async function seedCreatorWork(creator, index) {
       });
     }
   }
-  return { clubs, images, items };
+  return { clubs, fixture, images, items, studio };
 }
 
 /** Invitations, and a few of them redeemed so a member exists to be one. */
@@ -673,6 +687,199 @@ async function seedMemberships(creatorWork, people) {
     }
   }
   return { invited, redeemed };
+}
+
+/**
+ * What each club costs, and a few people actually paying it.
+ *
+ * Every step is the product's own: the creator drafts an offer, publishes a
+ * price, puts it on sale; a consumer starts a checkout and completes it on the
+ * provider's own hosted page, exactly as a browser does. Nothing here writes a
+ * subscription, a membership, or a journal entry — those are what the platform
+ * does in response, and a seed that produced them directly would be evidence
+ * about itself rather than about the product.
+ *
+ * The world it leaves behind has all four states somebody would want to look
+ * at: a live membership, one scheduled to end, one whose payment was abandoned,
+ * and clubs that are invitation-only because their creator never priced them.
+ */
+async function seedMembershipOffers(creatorWork) {
+  const priced = [];
+  for (const { clubs, fixture, studio } of creatorWork) {
+    const existing = await studio.must('GET', '/v1/creator/offers?pageSize=50');
+    const byResource = new Map(
+      existing.offers.map((offer) => [offer.resourceId, offer]),
+    );
+    for (const [clubIndex, wanted] of fixture.clubs.entries()) {
+      const club = clubs[clubIndex];
+      // A club with no published terms is not a mistake. Invitation-only is a
+      // real product and always has been.
+      if (club === undefined || wanted.membership === undefined) continue;
+      let offer = byResource.get(club.id);
+      if (offer === undefined) {
+        const created = await studio.call('POST', '/v1/creator/offers', {
+          mode: 'subscription',
+          resourceId: club.id,
+          resourceType: 'club',
+        });
+        if (!created.ok) continue;
+        offer = created.body.offer;
+      }
+      const live = offer.prices.filter((price) => price.state === 'active');
+      const cadences = [
+        { amountMinor: wanted.membership.monthlyMinor, interval: 'month' },
+        ...(wanted.membership.yearlyMinor === undefined
+          ? []
+          : [
+              {
+                amountMinor: wanted.membership.yearlyMinor,
+                interval: 'year',
+              },
+            ]),
+      ];
+      for (const cadence of cadences) {
+        if (live.some((price) => price.interval === cadence.interval)) continue;
+        const published = await studio.call(
+          'POST',
+          '/v1/creator/offers/prices',
+          {
+            amountMinor: cadence.amountMinor,
+            currency: 'USD',
+            interval: cadence.interval,
+            offerId: offer.id,
+          },
+        );
+        if (published.ok) offer = published.body.offer;
+      }
+      if (offer.state === 'draft') {
+        const activated = await studio.call(
+          'POST',
+          '/v1/creator/offers/lifecycle',
+          { offerId: offer.id, state: 'active', version: offer.version },
+        );
+        if (activated.ok) offer = activated.body.offer;
+      }
+      if (offer.state === 'active') {
+        priced.push({ club, handle: fixture.handle, offer });
+      }
+    }
+  }
+  return priced;
+}
+
+/**
+ * A few people actually joining, through checkout and the provider's own page.
+ *
+ * The consumer countries here are the ones the local-test commerce authority
+ * publishes. Choosing a person who already declared one keeps the proof honest:
+ * a seed that edited somebody's declared region to make a sale go through would
+ * be demonstrating the seed rather than the gate.
+ */
+async function seedSubscriptions(priced, people) {
+  const eligibleRegions = new Set(['ES', 'FR', 'JP']);
+  const buyers = people.filter((person) =>
+    eligibleRegions.has(person.fixture.region),
+  );
+  let active = 0;
+  let ending = 0;
+  let abandoned = 0;
+
+  for (const [index, sale] of priced.entries()) {
+    const buyer = buyers[index % buyers.length];
+    if (buyer === undefined) continue;
+    const held = await buyer.session.must('GET', '/v1/billing/subscriptions');
+    const already = held.subscriptions.find(
+      (row) => row.offerId === sale.offer.id,
+    );
+    if (already !== undefined) {
+      if (already.state === 'cancel_at_period_end') ending += 1;
+      else if (already.state === 'active') active += 1;
+      continue;
+    }
+
+    // The cadence is named rather than left to the server. An offer that
+    // publishes both a monthly and a yearly price refuses a request that does
+    // not say which, and choosing here is what makes the seeded world show
+    // both being paid for.
+    const cadences = sale.offer.prices
+      .filter((price) => price.state === 'active')
+      .map((price) => price.interval)
+      .filter((interval) => interval !== undefined);
+    const interval =
+      cadences.length === 0
+        ? undefined
+        : (cadences[index % cadences.length] ?? cadences[0]);
+    const started = await buyer.session.call(
+      'POST',
+      '/v1/billing/checkouts',
+      {
+        currency: 'USD',
+        ...(interval === undefined ? {} : { interval }),
+        offerId: sale.offer.id,
+      },
+      {
+        'x-velora-idempotency-key': `seed-join-${sale.offer.id}-${interval ?? 'once'}`,
+      },
+    );
+    if (!started.ok) continue;
+    const redirect = started.body.redirectUrl;
+    if (typeof redirect !== 'string') continue;
+
+    // Every third person abandons on the provider's page, because a world with
+    // no abandoned payment in it cannot show what one looks like.
+    const outcome = index % 3 === 2 ? 'cancel' : 'pay';
+    const finished = await completeProviderCheckout(redirect, outcome);
+    if (!finished) continue;
+    if (outcome === 'cancel') {
+      abandoned += 1;
+      continue;
+    }
+
+    const settled = await buyer.session.must(
+      'GET',
+      '/v1/billing/subscriptions',
+    );
+    const subscription = settled.subscriptions.find(
+      (row) => row.offerId === sale.offer.id,
+    );
+    if (subscription === undefined) continue;
+    // Every other live membership is scheduled to end, so both states are on
+    // the Memberships page from the first run.
+    if (index % 2 === 1) {
+      const cancelled = await buyer.session.call(
+        'POST',
+        '/v1/billing/subscriptions/cancellation',
+        { subscriptionId: subscription.id },
+      );
+      if (cancelled.ok) {
+        ending += 1;
+        continue;
+      }
+    }
+    active += 1;
+  }
+  return { abandoned, active, ending };
+}
+
+/**
+ * Pressing the button on the local-test provider's own hosted page.
+ *
+ * A form post to somebody else's origin, which is exactly what a browser does
+ * at this point. The page is served by the API only because the local-test
+ * adapter has no origin of its own; it is outside `/v1`, carries no session,
+ * and settles nothing — the settlement is the signed event it delivers
+ * afterwards through the ordinary verified inbox.
+ */
+async function completeProviderCheckout(redirectUrl, outcome) {
+  const reference = new URL(redirectUrl).searchParams.get('reference');
+  if (reference === null) return false;
+  const response = await fetch(redirectUrl, {
+    body: new URLSearchParams({ outcome, reference }).toString(),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    method: 'POST',
+    redirect: 'manual',
+  });
+  return response.status === 303 || response.ok;
 }
 
 /** A few real, ledger-backed gifts through the consumer product route. */
@@ -762,6 +969,13 @@ async function main() {
     `${String(memberships.invited)} invitations, ${String(memberships.redeemed)} redeemed`,
   );
 
+  const priced = await seedMembershipOffers(work);
+  say(`${String(priced.length)} memberships on sale`);
+  const joined = await seedSubscriptions(priced, people);
+  say(
+    `${String(joined.active)} paid memberships live, ${String(joined.ending)} ending at the period, ${String(joined.abandoned)} payments abandoned`,
+  );
+
   const gifts = await seedGifts(people, seededCreators);
   say(`${String(gifts)} gifts present through verified settlement`);
 
@@ -775,6 +989,8 @@ async function main() {
       `  catalog items     ${String(items)}`,
       `  clubs             ${String(clubs)}`,
       `  invitations       ${String(memberships.invited)} (${String(memberships.redeemed)} redeemed)`,
+      `  memberships       ${String(priced.length)} on sale`,
+      `  subscriptions     ${String(joined.active)} live, ${String(joined.ending)} ending, ${String(joined.abandoned)} abandoned`,
       `  introductions     ${String(introductions.size)} mutual, ${String(pendingPairs.length)} waiting`,
       `  conversations     ${String(conversations.opened)}`,
       `  gifts             ${String(gifts)}`,

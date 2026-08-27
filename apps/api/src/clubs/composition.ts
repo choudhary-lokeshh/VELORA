@@ -116,6 +116,7 @@ export function createClubsRuntime(input: {
     clubRoutes: new ClubRoutes({
       consumerContext: input.consumerContext,
       creatorContext: input.creatorContext,
+      media: contentMedia,
       service: clubs,
     }),
     clubs,

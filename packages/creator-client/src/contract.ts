@@ -134,7 +134,29 @@ export type CreatorPayout = CreatorPayoutHistory['payouts'][number];
 export type RequestPayoutBody = RequestBody<'/v1/creator/payouts', 'post'>;
 export type CommercialOfferList = JsonBody<'/v1/creator/offers', 'get', 200>;
 export type CommercialOffer = CommercialOfferList['offers'][number];
+export type CommercialPrice = CommercialOffer['prices'][number];
 export type MonetisationReadiness = CommercialOfferList['readiness'];
+export type CreateCommercialOfferBody = RequestBody<
+  '/v1/creator/offers',
+  'post'
+>;
+export type CommercialOfferResponse = JsonBody<
+  '/v1/creator/offers',
+  'post',
+  201
+>;
+export type PublishCommercialPriceBody = RequestBody<
+  '/v1/creator/offers/prices',
+  'post'
+>;
+export type RetireCommercialPriceBody = RequestBody<
+  '/v1/creator/offers/prices/retirement',
+  'post'
+>;
+export type CommercialOfferLifecycleBody = RequestBody<
+  '/v1/creator/offers/lifecycle',
+  'post'
+>;
 
 export type CreatorMediaUploadCapability = JsonBody<
   '/v1/creator/profile/media',

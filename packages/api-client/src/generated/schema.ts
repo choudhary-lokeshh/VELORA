@@ -849,6 +849,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/clubs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Safe to reach by typed address. Entitlement is re-derived on this request from current club, creator, standing and membership state rather than from anything cached, so a revoked, blocked, or suspended reader loses the feed on their next load rather than at the next sweep. */
+        get: operations["getClub"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clubs/departures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Leaving is provenance-aware. A creator invitation is a gift and giving it back ends it; a commercial entitlement belongs to the subscription that produced it and is never ended by a membership action. */
+        post: operations["leaveClub"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/creators/clubs": {
         parameters: {
             query?: never;
@@ -856,8 +890,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button. */
+        /** Presentation only: an identifier, a name, a description, the benefits its creator wrote, the slug, and — for a caller who already holds one — their own membership. No member count, no member list, no invitation, no content, and no price: what a club costs is BILLING's to publish against the same identifier, through its own route. */
         get: operations["getPublicCreatorClubs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/creators/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What something costs, by opaque resource identifier. Which club that identifier names, what it is called, and what is inside it are PRIVATE CLUBS' to publish; the two answers are joined by the surface that asked for both, and neither domain reads the other. */
+        get: operations["getPublicCreatorMemberships"];
         put?: never;
         post?: never;
         delete?: never;
@@ -933,6 +984,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/billing/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listConsumerPayments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/billing/subscriptions/cancellation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancellation schedules the end of renewal and nothing else. There is no immediate option and no field that could become one: a refund is a separate, operator-authorized reversal, and this route never issues one. Unlike starting a purchase, it is open to every consumer surface: beginning a subscription from a mobile application is a different commercial arrangement, and ending one is not an arrangement at all. */
+        post: operations["cancelSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/billing/checkouts": {
         parameters: {
             query?: never;
@@ -942,7 +1026,7 @@ export interface paths {
         };
         get: operations["readCheckout"];
         put?: never;
-        /** The request names an offer and a currency and nothing else. The amount is read from the price row inside the transaction that records the operation, so no client can propose what it pays. A client idempotency key is required, scoped by consumer and offer, so a double-click resolves to one purchase. */
+        /** The request names an offer, a currency, and — where the offer publishes more than one cadence — which cadence. The amount is read from the price row inside the transaction that records the operation, so no client can propose what it pays, and an unnamed cadence against two published ones refuses rather than choosing. A client idempotency key is required, scoped by consumer and offer, so a double-click resolves to one purchase. */
         post: operations["startCheckout"];
         delete?: never;
         options?: never;
@@ -1534,6 +1618,23 @@ export interface paths {
         };
         /** A read and only a read. There is no operation anywhere in this API that edits a financial row; the one financial action an operator has is issuing a refund, and that goes through BILLING’s own service with an operator’s authority. Reporting the configured adapter name rather than a boolean is what makes "off" and "off because nobody has approved one" distinguishable. */
         get: operations["getAdminFinancialState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/billing/disputes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A read and only a read. There is no evidence submission here: whether VELORA may submit evidence, in what form, and through which provider is unresolved, and a control that accepted a file and did nothing with it would be worse than its absence. */
+        get: operations["listAdminDisputes"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2172,6 +2273,12 @@ export interface components {
                 id: string;
                 /** Format: uuid */
                 offerId: string;
+                resource?: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    type: "club" | "gift";
+                };
                 /** @enum {string} */
                 state: "created" | "provider_pending" | "requires_action" | "succeeded" | "failed" | "cancelled" | "reconciliation_pending";
                 /** Format: date-time */
@@ -2303,6 +2410,34 @@ export interface components {
                 state: "pending" | "sent" | "failed" | "partially_reversed" | "reversed";
             };
         };
+        ConsumerPaymentListResponse: {
+            nextCursor?: string;
+            payments: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                failureReason?: "declined" | "cancelled_by_consumer" | "expired" | "provider_error";
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                offerId: string;
+                resource?: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    type: "club" | "gift";
+                };
+                /** @enum {string} */
+                state: "created" | "provider_pending" | "requires_action" | "succeeded" | "failed" | "cancelled" | "reconciliation_pending";
+                /** Format: date-time */
+                updatedAt: string;
+            }[];
+        };
         ConsumerSubscriptionListResponse: {
             subscriptions: {
                 amount: {
@@ -2311,16 +2446,160 @@ export interface components {
                     currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
                 };
                 /** Format: date-time */
+                cancelledAt?: string;
+                /** Format: date-time */
                 createdAt: string;
                 /** Format: date-time */
                 currentPeriodEnd?: string;
+                /** Format: date-time */
+                currentPeriodStart?: string;
                 /** Format: uuid */
                 id: string;
+                /** @enum {string} */
+                interval?: "month" | "year";
                 /** Format: uuid */
                 offerId: string;
+                resource?: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    type: "club" | "gift";
+                };
                 /** @enum {string} */
                 state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
             }[];
+        };
+        ConsumerSubscriptionResponse: {
+            subscription: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: date-time */
+                cancelledAt?: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                currentPeriodEnd?: string;
+                /** Format: date-time */
+                currentPeriodStart?: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                interval?: "month" | "year";
+                /** Format: uuid */
+                offerId: string;
+                resource?: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    type: "club" | "gift";
+                };
+                /** @enum {string} */
+                state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
+            };
+        };
+        CancelSubscriptionRequest: {
+            /** Format: uuid */
+            subscriptionId: string;
+        };
+        PublicMembershipOfferListResponse: {
+            gates?: ("consumer_country" | "creator_country" | "currency" | "payment_capability" | "payout_capability" | "tax_authority")[];
+            handle: string;
+            offers: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                mode: "subscription" | "one_time";
+                prices: {
+                    amount: {
+                        amountMinor: string;
+                        /** @enum {string} */
+                        currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                    };
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    interval?: "month" | "year";
+                }[];
+                resource: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    type: "club" | "gift";
+                };
+            }[];
+            readiness: {
+                currencies: ("AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR")[];
+                enabled: boolean;
+                intervals: ("month" | "year")[];
+                modes: ("subscription" | "one_time")[];
+                source: string;
+            };
+            subscriptions: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: date-time */
+                cancelledAt?: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                currentPeriodEnd?: string;
+                /** Format: date-time */
+                currentPeriodStart?: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                interval?: "month" | "year";
+                /** Format: uuid */
+                offerId: string;
+                resource?: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    type: "club" | "gift";
+                };
+                /** @enum {string} */
+                state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
+            }[];
+        };
+        AdminDisputeListResponse: {
+            disputes: {
+                amount: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                evidenceDueAt?: string;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                openedAt: string;
+                /** Format: uuid */
+                paymentId: string;
+                /** @enum {string} */
+                reasonCode: "unrecognized" | "product_not_received" | "product_unacceptable" | "duplicate" | "fraudulent" | "subscription_cancelled" | "other";
+                /** Format: date-time */
+                resolvedAt?: string;
+                /** @enum {string} */
+                state: "opened" | "under_review" | "won" | "lost" | "withdrawn";
+                providerReference: string;
+            }[];
+            nextCursor?: string;
+            readiness: {
+                currencies: ("AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR")[];
+                enabled: boolean;
+                intervals: ("month" | "year")[];
+                modes: ("subscription" | "one_time")[];
+                source: string;
+            };
         };
         CreatorEarningsHistoryResponse: {
             /** @enum {string} */
@@ -2465,6 +2744,8 @@ export interface components {
         StartCheckoutRequest: {
             /** @enum {string} */
             currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+            /** @enum {string} */
+            interval?: "month" | "year";
             /** Format: uuid */
             offerId: string;
         };
@@ -3197,12 +3478,53 @@ export interface components {
                 /** Format: uuid */
                 clubId: string;
                 clubName: string;
+                clubSlug: string;
                 creatorHandle: string;
+                /** Format: date-time */
+                endedAt?: string;
                 /** Format: date-time */
                 grantedAt: string;
                 /** @enum {string} */
                 source: "creator_invite" | "admin_grant" | "billing";
+                /** @enum {string} */
+                state: "active" | "revoked";
             }[];
+        };
+        ClubDetailResponse: {
+            club: {
+                benefits: string[];
+                description?: string;
+                /** Format: uuid */
+                id: string;
+                membership?: {
+                    /** Format: date-time */
+                    grantedAt: string;
+                    /** @enum {string} */
+                    source: "creator_invite" | "admin_grant" | "billing";
+                };
+                name: string;
+                slug: string;
+            };
+            content: {
+                body?: string;
+                /** Format: uuid */
+                id: string;
+                media: {
+                    /** Format: uuid */
+                    id: string;
+                    position: number;
+                }[];
+                /** Format: date-time */
+                publishedAt: string;
+                summary?: string;
+                title: string;
+            }[];
+            creatorHandle: string;
+            nextCursor?: string;
+        };
+        LeaveClubRequest: {
+            /** Format: uuid */
+            clubId: string;
         };
         ClubInviteIssuedResponse: {
             invite: {
@@ -3263,6 +3585,7 @@ export interface components {
         };
         CreatorClubListResponse: {
             clubs: {
+                benefits: string[];
                 /** Format: date-time */
                 createdAt: string;
                 description?: string;
@@ -3294,7 +3617,16 @@ export interface components {
         };
         PublicClubListResponse: {
             clubs: {
+                benefits: string[];
                 description?: string;
+                /** Format: uuid */
+                id: string;
+                membership?: {
+                    /** Format: date-time */
+                    grantedAt: string;
+                    /** @enum {string} */
+                    source: "creator_invite" | "admin_grant" | "billing";
+                };
                 name: string;
                 slug: string;
             }[];
@@ -3312,6 +3644,7 @@ export interface components {
             membershipId: string;
         };
         SaveCreatorClubRequest: {
+            benefits?: string[];
             /** Format: uuid */
             clubId?: string;
             description?: string;
@@ -10363,6 +10696,201 @@ export interface operations {
             };
         };
     };
+    getClub: {
+        parameters: {
+            query?: {
+                /** @description Canonical creator handle */
+                handle?: string;
+                /** @description The club's slug within that creator */
+                slug?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The club's public identity, plus the caller's own membership and the members-only feed when they hold one. A caller who holds nothing gets the identity and an empty feed — never a protected body, summary, or media reference. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClubDetailResponse"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    leaveClub: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveClubRequest"];
+            };
+        };
+        responses: {
+            /** @description The invitation-based membership was ended, and the access the caller still holds is returned. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClubAccessListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The membership could not be ended here. The body is an ApiError with code ACTION_NOT_PERMITTED. A paid membership is refused deliberately: ending it is a billing decision with a period and a renewal attached, and it is cancelled through the subscription route instead. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getPublicCreatorClubs: {
         parameters: {
             query?: {
@@ -10387,6 +10915,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicClubListResponse"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getPublicCreatorMemberships: {
+        parameters: {
+            query?: {
+                /** @description Canonical creator handle */
+                handle?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description This creator's active offers with their live prices, the platform's current commercial readiness, and the caller's own subscriptions against those offers. An empty list under `enabled: false` means VELORA cannot transact; an empty list under `enabled: true` means the creator has published nothing. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicMembershipOfferListResponse"];
                 };
             };
             /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
@@ -10741,6 +11343,234 @@ export interface operations {
             };
             /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
             413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listConsumerPayments: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this history */
+                cursor?: string;
+                /** @description Maximum payments to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Everything the caller has been charged or nearly charged, newest first. A record of attempts rather than a set of receipts: what a receipt must say is unresolved commercial and tax policy, and calling this one would be a claim nobody approved. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumerPaymentListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cancelSubscription: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelSubscriptionRequest"];
+            };
+        };
+        responses: {
+            /** @description Renewal is scheduled to stop. The paid period is unchanged and access continues to its end, because withdrawing it at the moment somebody cancels would take back something already bought. Repeating the request is safe and returns the same state. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumerSubscriptionResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The subscription is not in a state that can be cancelled — it has already ended, or it never started. The body is an ApiError with code ACTION_NOT_PERMITTED. A subscription belonging to somebody else is the shared 404 instead, indistinguishable from one that does not exist. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
                 headers: {
                     /** @description Request correlation identifier */
                     "x-correlation-id"?: string;
@@ -15068,6 +15898,117 @@ export interface operations {
             };
             /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
             413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAdminDisputes: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this queue */
+                cursor?: string;
+                /** @description Maximum disputes to return */
+                pageSize?: number;
+                /** @description Restrict to live claims awaiting an answer, or omit for the whole history */
+                open?: "true" | "false";
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disputes an operator has to answer, soonest deadline first, with the provider reference each claim has to be quoted by. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDisputeListResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
                 headers: {
                     /** @description Request correlation identifier */
                     "x-correlation-id"?: string;

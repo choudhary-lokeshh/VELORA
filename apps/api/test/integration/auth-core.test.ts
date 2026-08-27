@@ -121,6 +121,7 @@ describe('AUTH persistence and invariants', () => {
       'billing_provider_events',
       'billing_refunds',
       'billing_subscriptions',
+      'clubs_benefits',
       'clubs_clubs',
       'clubs_content',
       'clubs_content_media',

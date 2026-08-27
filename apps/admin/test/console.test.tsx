@@ -679,6 +679,72 @@ describe('money', () => {
     };
   }
 
+  /** One live claim and one that is over, as a provider event would leave them. */
+  function withDisputes(): AdminApiDoubleState {
+    return {
+      ...withMoney(),
+      disputeQueue: [
+        {
+          amount: { amountMinor: '1500', currency: 'USD' },
+          createdAt: '2026-08-20T12:00:00.000Z',
+          evidenceDueAt: '2026-09-01T12:00:00.000Z',
+          id: 'dispute-1',
+          openedAt: '2026-08-20T11:00:00.000Z',
+          paymentId: '11111111-1111-4111-8111-111111111111',
+          providerReference: 'lt_dispute_open',
+          reasonCode: 'product_not_received',
+          state: 'opened',
+        },
+        {
+          amount: { amountMinor: '900', currency: 'USD' },
+          createdAt: '2026-08-01T12:00:00.000Z',
+          id: 'dispute-2',
+          openedAt: '2026-08-01T11:00:00.000Z',
+          paymentId: '22222222-2222-4222-8222-222222222222',
+          providerReference: 'lt_dispute_done',
+          reasonCode: 'duplicate',
+          resolvedAt: '2026-08-10T12:00:00.000Z',
+          state: 'won',
+        },
+      ],
+    };
+  }
+
+  it('shows the claims an operator has to answer, and no way to answer them', async () => {
+    const double = createAdminApiDouble(withDisputes());
+    renderConsole(<Money />, double, { pathname: '/money' });
+
+    // Live claims only, until somebody asks for the history.
+    await screen.findByTestId('dispute-dispute-1');
+    expect(screen.queryByTestId('dispute-dispute-2')).toBeNull();
+    // The provider's own reference, because an operator who cannot name the
+    // case cannot answer it.
+    expect(textOf('dispute-dispute-1')).toContain('lt_dispute_open');
+    expect(textOf('dispute-dispute-1')).toContain('15.00 USD');
+    expect(textOf('dispute-dispute-1')).toContain('did not receive it');
+    // No evidence submission anywhere, and the reason said plainly.
+    expect(textOf('dispute-evidence-blocked')).toContain(
+      'cannot submit evidence',
+    );
+
+    fireEvent.click(screen.getByTestId('dispute-queue-scope'));
+    await screen.findByTestId('dispute-dispute-2');
+  });
+
+  it('says a deadline is unpublished rather than inventing one', async () => {
+    const double = createAdminApiDouble(withDisputes());
+    renderConsole(<Money />, double, { pathname: '/money' });
+
+    // The scope control only exists once the first read has settled.
+    await screen.findByTestId('dispute-dispute-1');
+    fireEvent.click(screen.getByTestId('dispute-queue-scope'));
+    // A provider that publishes no deadline gets none recorded, and a date
+    // VELORA invented is a date an operator would plan around.
+    expect(
+      (await screen.findByTestId('dispute-dispute-2')).textContent,
+    ).toContain('Not published');
+  });
+
   it('reports adapter names rather than a boolean', async () => {
     const double = createAdminApiDouble(withMoney());
     renderConsole(<Money />, double, { pathname: '/money' });

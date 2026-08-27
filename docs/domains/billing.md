@@ -130,6 +130,24 @@ A replay is answered before any of this runs. A repeated submission resolves to 
 
 Nothing in any of this is legal or tax advice, and nothing in the repository decides a country list, a registration, or a rate.
 
+## Implemented: the membership product
+
+[ADR-0035](../decisions/ADR-0035-club-membership-product.md) makes the architecture reachable without changing what it guarantees. A membership is access to one club, sold through one commercial offer against that club, and there are no tiers anywhere: a creator who wants two levels makes two clubs, which is a distinction PRIVATE CLUBS already enforces.
+
+**A price is identified by currency and cadence.** The old rule — one live price per offer per currency — prevented an ambiguity by preventing a product, because a membership sold monthly *and* yearly is two prices in one currency. Two partial unique indexes replace it: one live price per offer, currency, and cadence for recurring prices, and one per offer and currency for one-time prices. The purchase names the cadence, so the ambiguity the old rule existed to prevent is answered rather than avoided. A request that names none against an offer publishing two is refused, and a reused idempotency key across two cadences is a conflict rather than a replay. Two live monthly prices in one currency are still impossible.
+
+**Cancellation belongs to the person paying.** `POST /v1/billing/subscriptions/cancellation` moves a live subscription to `cancel_at_period_end` and stops there. Access continues to the end of the period already paid for, because withdrawing it at the moment somebody cancels would take back something already bought, and there is no immediate option and no field that could become one. A lapsed subscription ends immediately instead, because it already grants nothing. Every consumer surface may call it: starting a purchase from a mobile application is a different commercial arrangement and stays refused for that audience, but ending one is not an arrangement at all.
+
+**A period ends because a date passed.** A worker sweep closes scheduled cancellations whose paid period has run out, moves them to `cancelled`, and publishes the revocation through the same outbox a grant travels through. It reaches no provider; the end of a period is arithmetic on a stored date. It is bounded, settles each row in its own transaction, and names the state it moves from, so running it twice revokes once.
+
+**`past_due` withdraws access.** A verified `subscription.past_due` event moves an active subscription to `past_due` and publishes a revocation with reason `subscription_lapsed`. Whether a lapsed payment keeps access is grace policy nobody approved, and the fail-closed reading of an unresolved policy is no access. The relationship is not ended, because a lapse is not a decision anybody took.
+
+**Consumers can see what they were charged.** `GET /v1/billing/payments` publishes every charge and near-charge, newest first, with the opaque resource each was for. It is a record of attempts rather than a set of receipts, and it says so: what a receipt must carry is unresolved commercial and tax policy.
+
+**What a creator sells is published for a page to render.** `GET /v1/creators/memberships` answers with a creator's active offers, their live prices, the platform's commercial readiness, the caller's own subscriptions against those offers, and every eligibility gate shut for this pairing. It publishes an opaque resource identifier and never a club's name: what that identifier is called and what is inside it are PRIVATE CLUBS' to publish, and the surface that asked for both joins them.
+
+**The local-test adapter has a page.** It is served on the API's own origin, outside `/v1`, and registered only where that adapter is the one configuration built — the same arrangement the local-test media transport uses. It collects nothing, settles nothing by being visited, and delivers a signed event through the ordinary verified inbox. No deployed environment builds the adapter, so no page exists there.
+
 ## Implemented: reconciliation
 
 Every ambiguous outcome leaves a durable row saying so, and reconciliation is what makes that a temporary state rather than a permanent one. A capture whose provider answer was lost, a reversal in the same position, and a payout instruction that was sent and never confirmed are all resolved from what the provider itself holds.
@@ -146,4 +164,4 @@ In a deployed environment the sweep examines nothing, because there is nobody to
 
 ## Cross-references
 
-[monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md), [PAYOUTS](payouts.md).
+[monetisation](../product/05-monetisation.md), [payment lifecycle](../flows/payment-lifecycle.md), [money flow](../architecture/10-money-flow.md), [payment security](../security/05-payments-webhooks.md), [payment compliance](../compliance/04-payments-tax-payout-gates.md), [provider eligibility](../compliance/06-payment-provider-eligibility.md), [finance operations](../operations/03-finance-payout-operations.md), [payment/payout ADR](../decisions/ADR-0011-payments-payouts.md), [money architecture ADR](../decisions/ADR-0021-monetization-money-architecture.md), [membership product ADR](../decisions/ADR-0035-club-membership-product.md), [PRIVATE CLUBS](private-clubs.md), [PAYOUTS](payouts.md).

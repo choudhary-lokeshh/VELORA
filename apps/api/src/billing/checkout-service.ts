@@ -9,7 +9,7 @@ import type { SafetyDirectoryPort } from '../safety/directory.js';
 import { money, type Money } from '../money/money.js';
 import type { CommercePolicy } from './commerce-policy.js';
 import type { BillingInterval } from './offer-policy.js';
-import type { OfferRepository } from './offer-repository.js';
+import type { OfferRepository, PriceRow } from './offer-repository.js';
 import type { CommerceEligibility } from './commerce-eligibility.js';
 import type { DisputeRepository } from './dispute-repository.js';
 import type { PaymentRepository, PaymentRow } from './payment-repository.js';
@@ -94,6 +94,34 @@ function refused(reason: CheckoutRefusal): CheckoutOutcome {
 }
 
 /**
+ * Which of a creator's published prices this purchase is for.
+ *
+ * A currency alone is no longer enough. An offer may carry a monthly price and
+ * a yearly one in the same currency — two prices for two different things — so
+ * the request names the cadence and this finds the row that matches it.
+ *
+ * The ambiguous case refuses rather than picking. A request that names no
+ * cadence against an offer with two is a client that has not decided what
+ * somebody is buying, and charging the cheaper one, the first one, or the one
+ * the database happened to return would each be Velora deciding it for them.
+ * One live price and no named cadence is unambiguous and is allowed, because
+ * there is nothing to choose between.
+ */
+function chosenPrice(
+  prices: readonly PriceRow[],
+  wanted: {
+    readonly currency: string;
+    readonly interval?: BillingInterval | undefined;
+  },
+): PriceRow | undefined {
+  const inCurrency = prices.filter((row) => row.currency === wanted.currency);
+  if (wanted.interval !== undefined) {
+    return inCurrency.find((row) => row.billingInterval === wanted.interval);
+  }
+  return inCurrency.length === 1 ? inCurrency[0] : undefined;
+}
+
+/**
  * The key Velora sends a provider for one purchase.
  *
  * Derived from the operation's own identity rather than random, so the key a
@@ -145,6 +173,8 @@ export class CheckoutService {
     readonly correlationId: string;
     readonly currency: string;
     readonly idempotencyKey: string;
+    /** Which published cadence was chosen. Absent selects the only one. */
+    readonly interval?: BillingInterval | undefined;
     readonly offerId: string;
   }): Promise<CheckoutOutcome> {
     const { payments, policy, provider } = this.dependencies;
@@ -173,10 +203,17 @@ export class CheckoutService {
       idempotencyKey: input.idempotencyKey,
       offerId: input.offerId,
     });
-    if (replay !== undefined && replay.currency !== input.currency) {
-      // The same key against a different currency is not a replay; it is a
-      // different purchase wearing a used key, and answering it with the old
-      // operation would charge for the wrong thing.
+    if (
+      replay !== undefined &&
+      !(await this.isReplayOf(replay, {
+        currency: input.currency,
+        ...(input.interval === undefined ? {} : { interval: input.interval }),
+      }))
+    ) {
+      // The same key against a different currency, or against a different
+      // cadence of the same offer, is not a replay; it is a different purchase
+      // wearing a used key, and answering it with the old operation would
+      // charge for the wrong thing.
       return refused('conflict');
     }
 
@@ -316,6 +353,46 @@ export class CheckoutService {
     return payments.findOwnPayment(payments.transactionless, input);
   }
 
+  /** The caller's own payment history, newest first. */
+  async listOwnPayments(input: {
+    readonly after: { readonly id: string; readonly moment: Date } | undefined;
+    readonly consumerId: string;
+    readonly limit: number;
+  }): Promise<readonly PaymentRow[]> {
+    const { payments } = this.dependencies;
+    return payments.listOwnPayments(payments.transactionless, input);
+  }
+
+  /**
+   * Whether a repeated submission is the same purchase as the one on record.
+   *
+   * The currency has to match, and so does the cadence when one was named. An
+   * offer may carry a monthly price and a yearly one, and a key reused across
+   * the two is somebody buying a different thing — answering it with the
+   * cheaper operation would charge for the wrong one and look like a successful
+   * retry while doing it.
+   *
+   * A request that names no cadence is compared on currency alone, which is
+   * exactly as strict as it was before cadences existed: nothing that was a
+   * replay has stopped being one.
+   */
+  private async isReplayOf(
+    payment: PaymentRow,
+    wanted: {
+      readonly currency: string;
+      readonly interval?: BillingInterval;
+    },
+  ): Promise<boolean> {
+    if (payment.currency !== wanted.currency) return false;
+    if (wanted.interval === undefined) return true;
+    const { offers } = this.dependencies;
+    const prices = await offers.pricesForOffers(offers.transactionless, [
+      payment.offerId,
+    ]);
+    const sold = prices.find((row) => row.id === payment.priceId);
+    return sold?.billingInterval === wanted.interval;
+  }
+
   /**
    * What the tax authority has to be asked about, read before it is asked.
    *
@@ -332,6 +409,7 @@ export class CheckoutService {
       readonly consumerId: string;
       readonly currency: string;
       readonly idempotencyKey: string;
+      readonly interval?: BillingInterval | undefined;
       readonly now: Date;
       readonly offerId: string;
     },
@@ -368,7 +446,7 @@ export class CheckoutService {
       return { kind: 'refused', reason: 'not_eligible' };
     }
     const prices = await offers.livePricesFor(executor, offer.id);
-    const price = prices.find((row) => row.currency === input.currency);
+    const price = chosenPrice(prices, input);
     if (price === undefined) return { kind: 'refused', reason: 'not_eligible' };
     if (!isCurrencyCode(price.currency)) {
       return { kind: 'refused', reason: 'unavailable' };
@@ -411,6 +489,7 @@ export class CheckoutService {
       readonly correlationId: string;
       readonly currency: string;
       readonly idempotencyKey: string;
+      readonly interval?: BillingInterval | undefined;
       readonly now: Date;
       readonly offerId: string;
     },
@@ -430,10 +509,15 @@ export class CheckoutService {
       offerId: input.offerId,
     });
     if (existing !== undefined) {
-      // The same key against a different amount or currency is not a replay,
-      // it is a different purchase wearing a used key, and answering it with
-      // the old operation would charge for the wrong thing.
-      if (existing.currency !== input.currency) {
+      // The same key against a different amount, currency, or cadence is not a
+      // replay; it is a different purchase wearing a used key, and answering it
+      // with the old operation would charge for the wrong thing.
+      if (
+        !(await this.isReplayOf(existing, {
+          currency: input.currency,
+          ...(input.interval === undefined ? {} : { interval: input.interval }),
+        }))
+      ) {
         return { kind: 'refused', reason: 'conflict' };
       }
       return {
@@ -481,7 +565,7 @@ export class CheckoutService {
       return { kind: 'refused', reason: 'not_eligible' };
     }
     const prices = await offers.livePricesFor(executor, offer.id);
-    const price = prices.find((row) => row.currency === input.currency);
+    const price = chosenPrice(prices, input);
     if (price === undefined) return { kind: 'refused', reason: 'not_eligible' };
     if (
       !isCurrencyCode(price.currency) ||

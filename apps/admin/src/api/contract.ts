@@ -70,6 +70,15 @@ export interface Backlog {
 
 export type FinancialState = JsonBody<'/v1/admin/billing/state', 'get', 200>;
 export type CurrencyTotal = FinancialState['payableTotals'][number];
+/**
+ * The claims an operator has to answer, and the reference each is quoted by.
+ *
+ * A dispute is somebody else's bank taking money back, so nothing in the
+ * product originates one: these rows exist only because a verified provider
+ * event created them.
+ */
+export type DisputeList = JsonBody<'/v1/admin/billing/disputes', 'get', 200>;
+export type Dispute = DisputeList['disputes'][number];
 export type IssueRefundBody = RequestBody<'/v1/admin/billing/refunds', 'post'>;
 export type IssuedRefund = JsonBody<
   '/v1/admin/billing/refunds',

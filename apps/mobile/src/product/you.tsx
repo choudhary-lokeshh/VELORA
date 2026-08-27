@@ -57,6 +57,12 @@ const entries: readonly Entry[] = [
     label: 'Availability',
   },
   {
+    caption: 'Clubs you have been let into, and anything you are paying for.',
+    icon: 'lock',
+    id: 'memberships',
+    label: 'Memberships',
+  },
+  {
     caption: 'What VELORA tells you about, and where.',
     icon: 'bell',
     id: 'notices',

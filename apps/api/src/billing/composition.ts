@@ -34,7 +34,10 @@ import { DisputeRepository } from './dispute-repository.js';
 import { EarningsRepository } from './earnings-repository.js';
 import { EarningsRoutes } from './earnings-routes.js';
 import { DisputeService } from './dispute-service.js';
+import { LocalTestCheckoutTransport } from './local-test-checkout.js';
 import { LocalTestPaymentProvider } from './local-test-provider.js';
+import { MembershipRoutes } from './membership-routes.js';
+import { MembershipService } from './membership-service.js';
 import { OfferRepository } from './offer-repository.js';
 import { OfferRoutes } from './offer-routes.js';
 import { OfferService } from './offer-service.js';
@@ -44,6 +47,7 @@ import { BillingReconciliation } from './reconciliation.js';
 import { RefundRepository } from './refund-repository.js';
 import { RefundService } from './refund-service.js';
 import { SubscriptionRepository } from './subscription-repository.js';
+import { SubscriptionService } from './subscription-service.js';
 import {
   LocalTestTaxAuthority,
   UnavailableTaxAuthority,
@@ -91,6 +95,8 @@ export interface BillingRuntime {
   readonly giftRoutes: GiftRoutes;
   /** BILLING's transactional outbox, drained by the shared relay. */
   readonly outbox: OutboxRepository;
+  readonly membershipRoutes: MembershipRoutes;
+  readonly memberships: MembershipService;
   readonly offerRepository: OfferRepository;
   readonly offerRoutes: OfferRoutes;
   readonly offers: OfferService;
@@ -103,12 +109,20 @@ export interface BillingRuntime {
   readonly tax: TaxAuthorityPort;
   /** The payment adapter. `unavailable` in every deployed environment. */
   readonly provider: PaymentProviderPort;
+  /**
+   * The local-test adapter's own hosted page, when that adapter is the one
+   * configuration built. Absent everywhere else, so there is nothing to
+   * register and nothing to reach.
+   */
+  readonly localCheckout: LocalTestCheckoutTransport | undefined;
   /** Resolves ambiguous outcomes from provider truth. Runs on the worker only. */
   readonly reconciliation: BillingReconciliation;
   readonly refundRepository: RefundRepository;
   /** Reversal orchestration. Operator-driven only; no consumer path reaches it. */
   readonly refunds: RefundService;
   readonly subscriptionRepository: SubscriptionRepository;
+  /** Consumer cancellation and the period-end sweep. No provider is involved. */
+  readonly subscriptions: SubscriptionService;
   readonly webhookRoutes: WebhookRoutes;
   readonly webhooks: WebhookService;
 }
@@ -137,8 +151,10 @@ const taxAuthorities: Readonly<Record<string, () => TaxAuthorityPort>> = {
   [unavailableTaxAuthority]: () => new UnavailableTaxAuthority(),
 };
 
-const paymentProviders: Readonly<Record<string, () => PaymentProviderPort>> = {
-  [localTestPaymentProvider]: () => new LocalTestPaymentProvider(),
+const paymentProviders: Readonly<
+  Record<string, (now: () => Date) => PaymentProviderPort>
+> = {
+  [localTestPaymentProvider]: (now) => new LocalTestPaymentProvider(now),
   [unavailablePaymentProvider]: () => new UnavailablePaymentProvider(),
 };
 
@@ -187,7 +203,7 @@ export function createBillingRuntime(input: {
     );
   }
   const policy = buildPolicy();
-  const provider = buildProvider();
+  const provider = buildProvider(now);
   const eligibility = buildEligibility();
   const tax = buildTax();
   const offerRepository = new OfferRepository(input.database);
@@ -290,6 +306,23 @@ export function createBillingRuntime(input: {
     repository: offerRepository,
     resources: input.resources,
   });
+  const subscriptions = new SubscriptionService({
+    logger,
+    now,
+    offers: offerRepository,
+    outbox,
+    subscriptions: subscriptionRepository,
+  });
+  const memberships = new MembershipService({
+    consumers: input.consumers,
+    creators: input.creators,
+    eligibility,
+    now,
+    offerService: offers,
+    offers: offerRepository,
+    policy,
+    subscriptions: subscriptionRepository,
+  });
   const gifts = new GiftService({
     checkout,
     consumers: input.consumers,
@@ -301,11 +334,22 @@ export function createBillingRuntime(input: {
     ...(input.safety === undefined ? {} : { safety: input.safety }),
     webhooks,
   });
+  // The adapter borrows the API's own origin for its hosted page, exactly as
+  // the local-test media transport does. Where no API base URL is configured it
+  // keeps its unreachable address: a redirect nobody can follow is a better
+  // answer than one pointing at a host nobody approved.
+  if (provider instanceof LocalTestPaymentProvider) {
+    provider.hostCheckoutAt(
+      `http://${input.config.HOST}:${String(input.config.PORT)}`,
+    );
+  }
   return {
     checkout,
     checkoutRoutes: new CheckoutRoutes({
       consumerContext: input.consumerContext,
+      offers: offerRepository,
       service: checkout,
+      subscriptionService: subscriptions,
       subscriptions: subscriptionRepository,
     }),
     database: input.database,
@@ -327,6 +371,15 @@ export function createBillingRuntime(input: {
       service: gifts,
     }),
     gifts,
+    localCheckout:
+      provider instanceof LocalTestPaymentProvider
+        ? new LocalTestCheckoutTransport({ provider, webhooks })
+        : undefined,
+    membershipRoutes: new MembershipRoutes({
+      consumerContext: input.consumerContext,
+      service: memberships,
+    }),
+    memberships,
     offerRepository,
     offerRoutes: new OfferRoutes({
       creatorContext: input.creatorContext,
@@ -341,6 +394,7 @@ export function createBillingRuntime(input: {
     refundRepository,
     refunds,
     subscriptionRepository,
+    subscriptions,
     tax,
     webhookRoutes: new WebhookRoutes({ service: webhooks }),
     webhooks,

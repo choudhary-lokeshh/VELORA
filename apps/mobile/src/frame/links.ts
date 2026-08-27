@@ -27,10 +27,27 @@ export function conversationPath(conversationId: string): string {
   return `${messagesPath}/${encodeURIComponent(conversationId)}`;
 }
 
-/** The five leaves under You, named so a typo is a compile error. */
+/** The leaves under You, named so a typo is a compile error. */
 export type YouSection =
-  'account' | 'availability' | 'notices' | 'profile' | 'safety';
+  'account' | 'availability' | 'memberships' | 'notices' | 'profile' | 'safety';
 
 export function youSectionPath(section: YouSection): string {
   return `${youPath}/${section}`;
+}
+
+/**
+ * A creator's public page, and one of their clubs.
+ *
+ * Addressed by handle and slug rather than by identifier, so the address a
+ * person sees on a phone is the address they see anywhere else and a link
+ * shared between the two lands in the same place. Possession of either grants
+ * nothing: the server re-derives on every request whether this reader may see
+ * what is inside.
+ */
+export function creatorPath(handle: string): string {
+  return `/c/${encodeURIComponent(handle)}`;
+}
+
+export function clubPath(handle: string, slug: string): string {
+  return `${creatorPath(handle)}/club/${encodeURIComponent(slug)}`;
 }

@@ -44,7 +44,12 @@ import {
   membershipSourceLabels,
   plural,
 } from './format';
-import { clubDescriptionMaximum, clubNameBounds } from './clubs';
+import {
+  clubBenefitLengthMaximum,
+  clubBenefitsMaximum,
+  clubDescriptionMaximum,
+  clubNameBounds,
+} from './clubs';
 import { CreatorAiAssist } from './ai-assist';
 import { useCollection, useResource, useSingleFlight } from './resource';
 
@@ -350,6 +355,7 @@ function ClubSettings({
   const { busy, run } = useSingleFlight();
   const [name, setName] = useState(club.name);
   const [description, setDescription] = useState(club.description ?? '');
+  const [benefits, setBenefits] = useState<readonly string[]>(club.benefits);
   const [announcement, setAnnouncement] = useState('');
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
@@ -358,6 +364,7 @@ function ClubSettings({
   useEffect(() => {
     setName(club.name);
     setDescription(club.description ?? '');
+    setBenefits(club.benefits);
   }, [club, version]);
 
   if (!creator.canWrite) return null;
@@ -370,9 +377,17 @@ function ClubSettings({
   const blocked =
     trimmedName.length < clubNameBounds.minimum ||
     description.length > clubDescriptionMaximum;
+  // The whole list travels on every save, so what is compared is the whole
+  // list. Empty lines are dropped rather than stored: a blank promise is a row
+  // somebody's page would render as a bullet with nothing after it.
+  const trimmedBenefits = benefits
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
   const changed =
     trimmedName !== club.name ||
-    description.trim() !== (club.description ?? '');
+    description.trim() !== (club.description ?? '') ||
+    trimmedBenefits.length !== club.benefits.length ||
+    trimmedBenefits.some((line, index) => line !== club.benefits[index]);
 
   return (
     <Card testId="club-settings">
@@ -389,6 +404,7 @@ function ClubSettings({
           run(async () => {
             const failure = failureMessage(
               await api.saveClub({
+                benefits: trimmedBenefits,
                 clubId: club.id,
                 ...(description.trim().length === 0
                   ? {}
@@ -453,6 +469,63 @@ function ClubSettings({
             />
           )}
         </Field>
+
+        <fieldset className="s-stack s-stack--3" data-testid="club-benefits">
+          <legend className="s-field__label">What members get</legend>
+          <p className="s-field__hint">
+            Short lines somebody reads before joining. Say what you actually
+            give them — not what it costs, and not a promise VELORA would have
+            to keep.
+          </p>
+          {benefits.map((line, index) => (
+            <div
+              className="s-inline s-inline--tight"
+              key={`benefit-${String(index)}`}
+            >
+              <TextInput
+                aria-label={`Benefit ${String(index + 1)}`}
+                data-testid={`club-benefit-${String(index)}`}
+                maxLength={clubBenefitLengthMaximum}
+                name={`benefit-${String(index)}`}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setBenefits((current) =>
+                    current.map((entry, position) =>
+                      position === index ? value : entry,
+                    ),
+                  );
+                }}
+                value={line}
+              />
+              <IconButton
+                data-testid={`club-benefit-remove-${String(index)}`}
+                label={`Remove benefit ${String(index + 1)}`}
+                name="x"
+                onClick={() => {
+                  setBenefits((current) =>
+                    current.filter((_, position) => position !== index),
+                  );
+                }}
+              />
+            </div>
+          ))}
+          {benefits.length >= clubBenefitsMaximum ? (
+            <p className="s-field__hint" data-testid="club-benefits-full">
+              Eight is the most a club may list.
+            </p>
+          ) : (
+            <div>
+              <Button
+                data-testid="club-benefit-add"
+                onClick={() => {
+                  setBenefits((current) => [...current, '']);
+                }}
+              >
+                Add a line
+              </Button>
+            </div>
+          )}
+        </fieldset>
 
         <Field
           hint="Local scratchpad only. It is not saved or published by this club form."

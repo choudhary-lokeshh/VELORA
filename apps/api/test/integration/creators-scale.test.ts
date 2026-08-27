@@ -319,6 +319,7 @@ describe('creator tables carry the indexes their access paths need', () => {
         order by tablename`,
     );
     expect(tables.map((row) => row.tablename)).toEqual([
+      'clubs_benefits',
       'clubs_clubs',
       'clubs_content',
       'clubs_content_media',

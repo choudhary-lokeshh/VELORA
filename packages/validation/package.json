@@ -12,6 +12,10 @@
       "types": "./dist/money.d.ts",
       "import": "./dist/money.js"
     },
+    "./money-bounds": {
+      "types": "./dist/money-bounds.d.ts",
+      "import": "./dist/money-bounds.js"
+    },
     "./messaging-bounds": {
       "types": "./dist/messaging-bounds.d.ts",
       "import": "./dist/messaging-bounds.js"

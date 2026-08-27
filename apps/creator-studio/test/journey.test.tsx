@@ -1389,6 +1389,151 @@ describe('money', () => {
     expect(screen.queryByRole('button', { name: /price/iu })).toBeNull();
   });
 
+  /** A published club and approved terms: the only state with controls on it. */
+  function sellable(): CreatorApiDoubleState {
+    const base = withProfile();
+    return {
+      ...base,
+      clubs: [
+        {
+          benefits: [],
+          description: 'A quiet room.',
+          id: 'club-1',
+          lifecycle: 'published',
+          memberCount: 0,
+          name: 'Inner Circle',
+          slug: 'inner',
+          version: 1,
+        },
+      ],
+      monetisation: {
+        currencies: ['USD'],
+        enabled: true,
+        intervals: ['month', 'year'],
+        modes: ['subscription'],
+        source: 'local-test',
+      },
+    };
+  }
+
+  it('sells access to a club, and puts nothing on sale without a price', async () => {
+    const double = createCreatorApiDouble(sellable());
+    renderStudio(<Selling />, double, { pathname: '/money/selling' });
+
+    // Approved terms exist, so the explanation is replaced by a control.
+    await screen.findByTestId('offer-create');
+    expect(screen.queryByTestId('offers-readiness')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('offer-create-club'), {
+      target: { value: 'club-1' },
+    });
+    fireEvent.click(screen.getByTestId('offer-create-submit'));
+
+    await screen.findByTestId('offer-manage-offer-1');
+    fireEvent.click(screen.getByTestId('offer-manage-offer-1'));
+
+    // A draft with no price cannot go on sale, and the screen says why rather
+    // than offering a control that would refuse.
+    expect(
+      (await screen.findByTestId('offer-needs-price-offer-1')).textContent,
+    ).toContain('Publish a price first');
+    expect(
+      screen.getByTestId<HTMLButtonElement>('offer-activate-offer-1').disabled,
+    ).toBe(true);
+  });
+
+  it('publishes two cadences and puts the membership on sale', async () => {
+    const double = createCreatorApiDouble(sellable());
+    renderStudio(<Selling />, double, { pathname: '/money/selling' });
+
+    fireEvent.change(await screen.findByTestId('offer-create-club'), {
+      target: { value: 'club-1' },
+    });
+    fireEvent.click(screen.getByTestId('offer-create-submit'));
+    fireEvent.click(await screen.findByTestId('offer-manage-offer-1'));
+
+    fireEvent.change(await screen.findByTestId('offer-price-amount-offer-1'), {
+      target: { value: '12.00' },
+    });
+    fireEvent.click(screen.getByTestId('offer-price-publish-offer-1'));
+    await screen.findByTestId('offer-live-price-price-1-offer-1');
+
+    // The same currency at a different cadence is a second price for a second
+    // thing, not a second answer to one question.
+    fireEvent.change(screen.getByTestId('offer-price-interval-offer-1'), {
+      target: { value: 'year' },
+    });
+    fireEvent.change(screen.getByTestId('offer-price-amount-offer-1'), {
+      target: { value: '120.00' },
+    });
+    fireEvent.click(screen.getByTestId('offer-price-publish-offer-1'));
+    await screen.findByTestId('offer-live-price-price-2-offer-1');
+
+    // Minor units, from digit manipulation rather than a multiplication that
+    // would reintroduce the floating point the contract exists to avoid.
+    expect(
+      double.state.offers[0]?.prices.map((price) => price.amount.amountMinor),
+    ).toEqual(['1200', '12000']);
+
+    fireEvent.click(screen.getByTestId('offer-activate-offer-1'));
+    await waitFor(() => {
+      expect(double.state.offers[0]?.state).toBe('active');
+    });
+  });
+
+  it('withdraws a price without rewriting what anybody agreed to', async () => {
+    const double = createCreatorApiDouble(sellable());
+    renderStudio(<Selling />, double, { pathname: '/money/selling' });
+
+    fireEvent.change(await screen.findByTestId('offer-create-club'), {
+      target: { value: 'club-1' },
+    });
+    fireEvent.click(screen.getByTestId('offer-create-submit'));
+    fireEvent.click(await screen.findByTestId('offer-manage-offer-1'));
+    fireEvent.change(await screen.findByTestId('offer-price-amount-offer-1'), {
+      target: { value: '12.00' },
+    });
+    fireEvent.click(screen.getByTestId('offer-price-publish-offer-1'));
+
+    fireEvent.click(
+      await screen.findByTestId('offer-price-retire-price-1-offer-1'),
+    );
+    // Said before it happens, because it is the thing creators assume wrongly.
+    expect(document.body.textContent).toContain('Anybody already paying it');
+    fireEvent.click(
+      screen.getByTestId('offer-price-retire-confirm-price-1-offer-1-accept'),
+    );
+
+    await waitFor(() => {
+      expect(double.state.offers[0]?.prices[0]?.state).toBe('retired');
+    });
+    // The row stays. A purchase made under it still points at what it was made
+    // against.
+    expect(double.state.offers[0]?.prices).toHaveLength(1);
+  });
+
+  it('previews the membership from the same answers a visitor gets', async () => {
+    const state = sellable();
+    state.clubs = state.clubs.map((club) => ({
+      ...club,
+      benefits: ['A letter every week'],
+    }));
+    const double = createCreatorApiDouble(state);
+    renderStudio(<Selling />, double, { pathname: '/money/selling' });
+
+    fireEvent.change(await screen.findByTestId('offer-create-club'), {
+      target: { value: 'club-1' },
+    });
+    fireEvent.click(screen.getByTestId('offer-create-submit'));
+    fireEvent.click(await screen.findByTestId('offer-manage-offer-1'));
+
+    const preview = await screen.findByTestId('offer-preview-offer-1');
+    expect(preview.textContent).toContain('Inner Circle');
+    expect(preview.textContent).toContain('A letter every week');
+    // Nothing invented: a membership with no price previews with none.
+    expect(preview.textContent).toContain('No price is published');
+  });
+
   it('separates a missing provider from a missing recipient record', async () => {
     const double = createCreatorApiDouble(withProfile());
     renderStudio(<Payouts />, double, { pathname: '/money/payouts' });

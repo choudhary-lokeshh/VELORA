@@ -214,11 +214,42 @@ export const consumerPaymentSchema = z
     failureReason: paymentFailureReasonSchema.optional(),
     id: paymentIdSchema,
     offerId: offerIdSchema,
+    /**
+     * What the charge was for, by opaque reference.
+     *
+     * The same join the subscription projection publishes and for the same
+     * reason: BILLING knows which resource an offer points at and nothing about
+     * what that resource is called. Absent only where the offer behind the
+     * payment can no longer be read.
+     */
+    resource: z
+      .object({ id: z.uuid(), type: commercialResourceTypeSchema })
+      .strict()
+      .optional(),
     state: paymentStateSchema,
     updatedAt: z.iso.datetime(),
   })
   .strict();
 export type ConsumerPayment = z.infer<typeof consumerPaymentSchema>;
+
+/**
+ * Everything this person has been charged, or nearly charged, newest first.
+ *
+ * A record of attempts rather than a set of receipts. A receipt is a document
+ * with legal weight in a jurisdiction, and what one has to say — the merchant
+ * of record, the tax breakdown, the sequence number — is unresolved commercial
+ * and tax policy. Publishing this list is honest; calling it a receipt would
+ * not be.
+ */
+export const consumerPaymentListResponseSchema = z
+  .object({
+    nextCursor: z.string().min(1).max(512).optional(),
+    payments: z.array(consumerPaymentSchema).max(100),
+  })
+  .strict();
+export type ConsumerPaymentListResponse = z.infer<
+  typeof consumerPaymentListResponseSchema
+>;
 
 /**
  * Starting a purchase.
@@ -230,7 +261,23 @@ export type ConsumerPayment = z.infer<typeof consumerPaymentSchema>;
  * from the price row inside the transaction that records the operation.
  */
 export const startCheckoutRequestSchema = z
-  .object({ currency: currencyCodeSchema, offerId: offerIdSchema })
+  .object({
+    currency: currencyCodeSchema,
+    /**
+     * How often the chosen price recurs.
+     *
+     * Required whenever the offer carries more than one live price in this
+     * currency, which is what makes "twelve a month" and "a hundred and twenty
+     * a year" two purchases rather than an ambiguity. An offer with one price
+     * needs none, and a one-time purchase has none to give.
+     *
+     * The amount is still not in this request. What something costs is read
+     * from the price row inside the transaction that records the operation;
+     * this only says which of a creator's published cadences was chosen.
+     */
+    interval: billingIntervalSchema.optional(),
+    offerId: offerIdSchema,
+  })
   .strict();
 export type StartCheckoutRequest = z.infer<typeof startCheckoutRequestSchema>;
 
@@ -393,10 +440,32 @@ export type SubscriptionStateValue = z.infer<typeof subscriptionStateSchema>;
 export const consumerSubscriptionSchema = z
   .object({
     amount: moneySchema,
+    /** Present exactly when the relationship has been ended. */
+    cancelledAt: z.iso.datetime().optional(),
     createdAt: z.iso.datetime(),
     currentPeriodEnd: z.iso.datetime().optional(),
+    currentPeriodStart: z.iso.datetime().optional(),
     id: z.uuid(),
+    /** Present exactly when the offer recurs. */
+    interval: billingIntervalSchema.optional(),
     offerId: offerIdSchema,
+    /**
+     * What was bought, by opaque reference.
+     *
+     * The identifier and its type, so a surface can join this to the club the
+     * owning domain publishes under the same identifier. No name, because
+     * BILLING does not have one and inventing one here would put a club's
+     * identity in the money contract.
+     *
+     * Absent only when the offer behind the subscription can no longer be read,
+     * which the schema's own foreign keys make unreachable. It is optional
+     * rather than defaulted because a guessed resource is a claim about what
+     * somebody bought.
+     */
+    resource: z
+      .object({ id: z.uuid(), type: commercialResourceTypeSchema })
+      .strict()
+      .optional(),
     state: subscriptionStateSchema,
   })
   .strict();
@@ -407,6 +476,104 @@ export const consumerSubscriptionListResponseSchema = z
   .strict();
 export type ConsumerSubscriptionListResponse = z.infer<
   typeof consumerSubscriptionListResponseSchema
+>;
+
+/**
+ * Ending a subscription from the surface that holds it.
+ *
+ * There is no `immediate` option and no field that could become one. What
+ * happens when somebody cancels is commercial policy, the approved reading of
+ * it is that a paid period stays paid, and an option that revoked access early
+ * would be taking back something already bought. A consumer schedules the end
+ * of renewal; the period ends on its own.
+ */
+export const cancelSubscriptionRequestSchema = z
+  .object({ subscriptionId: z.uuid() })
+  .strict();
+export type CancelSubscriptionRequest = z.infer<
+  typeof cancelSubscriptionRequestSchema
+>;
+
+export const consumerSubscriptionResponseSchema = z
+  .object({ subscription: consumerSubscriptionSchema })
+  .strict();
+export type ConsumerSubscriptionResponse = z.infer<
+  typeof consumerSubscriptionResponseSchema
+>;
+
+/**
+ * What a creator currently sells, as a visitor to their page sees it.
+ *
+ * An allow-list over the same offer and price rows Creator Studio reads, minus
+ * everything a stranger has no business with: no draft, no retired offer, no
+ * retired price, no version token, no creation instant, no creator identifier.
+ * What is left is the identity of the thing, what it costs, and how often.
+ *
+ * The resource is published by opaque identifier and nothing else. Which club
+ * that is, what it is called, and what is inside it are PRIVATE CLUBS' to
+ * publish, under the same identifier, through its own route.
+ *
+ * `readiness` travels with the list rather than being inferred from it. An
+ * empty list because no creator published anything and an empty list because
+ * the platform may not sell are different facts, and a surface that could not
+ * tell them apart would tell somebody the creator has nothing when the truth is
+ * that VELORA cannot transact.
+ */
+export const publicMembershipOfferSchema = z
+  .object({
+    id: offerIdSchema,
+    mode: commercialModeSchema,
+    prices: z.array(
+      z
+        .object({
+          amount: moneySchema,
+          id: priceIdSchema,
+          interval: billingIntervalSchema.optional(),
+        })
+        .strict(),
+    ),
+    resource: z
+      .object({ id: z.uuid(), type: commercialResourceTypeSchema })
+      .strict(),
+  })
+  .strict();
+export type PublicMembershipOffer = z.infer<typeof publicMembershipOfferSchema>;
+
+/**
+ * Why this person cannot buy this today, when they cannot.
+ *
+ * Reported per gate rather than as one refusal, because an operator and a
+ * consumer need different parts of the same answer and neither is served by
+ * "unavailable". The vocabulary is the eligibility authority's own, restated
+ * here so a surface can name the shut gate without guessing at it.
+ */
+export const commerceGateValues = [
+  'consumer_country',
+  'creator_country',
+  'currency',
+  'payment_capability',
+  'payout_capability',
+  'tax_authority',
+] as const;
+export const commerceGateSchema = z.enum(commerceGateValues);
+export type CommerceGateValue = z.infer<typeof commerceGateSchema>;
+
+export const publicMembershipOfferListResponseSchema = z
+  .object({
+    /**
+     * Every gate that is shut for this viewer and this creator, empty when the
+     * pairing is permitted. Present only for a viewer VELORA can evaluate.
+     */
+    gates: z.array(commerceGateSchema).optional(),
+    handle: creatorHandleSchema,
+    offers: z.array(publicMembershipOfferSchema).max(50),
+    readiness: monetisationReadinessSchema,
+    /** The viewer's own live relationships against these offers, if any. */
+    subscriptions: z.array(consumerSubscriptionSchema).max(50),
+  })
+  .strict();
+export type PublicMembershipOfferListResponse = z.infer<
+  typeof publicMembershipOfferListResponseSchema
 >;
 
 export const commercialOfferLifecycleValues = ['active', 'retired'] as const;
@@ -670,6 +837,37 @@ export const disputeSchema = z
   })
   .strict();
 export type Dispute = z.infer<typeof disputeSchema>;
+
+/**
+ * One dispute as the operator answering it sees it.
+ *
+ * The provider's own reference is published here and nowhere else in this
+ * contract, because answering a claim means quoting it to the provider and an
+ * operator who cannot name the case cannot work it. Nothing about the
+ * cardholder appears: a dispute is about a payment, and who made that payment
+ * is a consumer identity that a finance queue has no business grouping by.
+ *
+ * There is no evidence field and no submission action. Whether Velora may
+ * submit evidence, in what form, and through which provider is unresolved, and
+ * a control that accepted a file and did nothing with it would be worse than
+ * its absence.
+ */
+export const adminDisputeSchema = disputeSchema
+  .extend({ providerReference: z.string().min(1).max(200) })
+  .strict();
+export type AdminDispute = z.infer<typeof adminDisputeSchema>;
+
+export const adminDisputeListResponseSchema = z
+  .object({
+    disputes: z.array(adminDisputeSchema).max(100),
+    nextCursor: z.string().min(1).max(512).optional(),
+    /** Whether evidence submission exists at all in this environment. */
+    readiness: monetisationReadinessSchema,
+  })
+  .strict();
+export type AdminDisputeListResponse = z.infer<
+  typeof adminDisputeListResponseSchema
+>;
 
 /**
  * How far a creator has got with a payout provider's own onboarding.

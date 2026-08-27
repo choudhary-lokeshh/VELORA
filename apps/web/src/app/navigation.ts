@@ -67,22 +67,43 @@ export function isCurrent(pathname: string, path: string): boolean {
  * route missing from this table gets no Back at all, which is a visible gap
  * rather than a link into nothing.
  *
- * Each parent is a literal address the application serves, so a Back built from
- * one cannot 404 however the page was reached.
+ * Each parent is an address the application serves, so a Back built from one
+ * cannot 404 however the page was reached. A parent may be built from the
+ * match — a club's way out is its own creator's page — but never by truncating
+ * the path, because truncation is exactly what produced a Back into nothing.
  */
 const ancestry: readonly {
   readonly of: RegExp;
-  readonly parent: string;
+  readonly parent: string | ((match: RegExpMatchArray) => string);
 }[] = [
   { of: /^\/messages\/[^/]+$/u, parent: '/messages' },
   { of: /^\/people\/[^/]+$/u, parent: '/discover' },
+  {
+    of: /^\/c\/([^/]+)\/club\/([^/]+)\/join$/u,
+    parent: (match) => `/c/${match[1] ?? ''}/club/${match[2] ?? ''}`,
+  },
+  {
+    of: /^\/c\/([^/]+)\/club\/[^/]+$/u,
+    parent: (match) => `/c/${match[1] ?? ''}`,
+  },
   { of: /^\/c\/[^/]+$/u, parent: '/discover' },
+  // A provider sends somebody back to these, so they are arrived at from
+  // outside the site entirely. Memberships is where the thing they were paying
+  // for lives, which is the only destination that is useful either way.
+  { of: /^\/checkout\/[^/]+$/u, parent: '/you/memberships' },
   { of: /^\/you\/[^/]+$/u, parent: '/you' },
 ];
 
 /** The destination one level up, when this page has one. */
 export function parentOf(pathname: string): string | undefined {
-  return ancestry.find((one) => one.of.test(pathname))?.parent;
+  for (const entry of ancestry) {
+    const match = entry.of.exec(pathname);
+    if (match === null) continue;
+    return typeof entry.parent === 'string'
+      ? entry.parent
+      : entry.parent(match);
+  }
+  return undefined;
 }
 
 /** This page's own address, query and all, as somewhere to come back to. */

@@ -1,8 +1,11 @@
 import {
+  adminDisputeListResponseSchema,
   adminFinancialStateResponseSchema,
+  defaultPageSize,
   idempotencyHeader,
   idempotencyKeySchema,
   issueRefundRequestSchema,
+  pageSizeSchema,
   productErrorCodes,
   refundResponseSchema,
 } from '@velora/validation';
@@ -12,6 +15,12 @@ import type {
   RefundRefusal,
   RefundService,
 } from '../billing/refund-service.js';
+import { decodeOfferCursor, encodeOfferCursor } from '../billing/cursor.js';
+import type {
+  DisputeRepository,
+  DisputeRow,
+} from '../billing/dispute-repository.js';
+import type { MonetisationReadiness } from '../billing/offer-service.js';
 import type { RefundRow } from '../billing/refund-repository.js';
 import {
   contractHeader,
@@ -56,8 +65,41 @@ export interface AdminBillingRoutesDependencies {
     readonly payoutProvider: string;
     readonly taxAuthority: string;
   };
+  readonly disputes: DisputeRepository;
   readonly financial: AdminFinancialDirectory;
+  /** What the platform may currently sell, which is also what it may answer for. */
+  readonly readiness: () => MonetisationReadiness;
   readonly refunds: RefundService;
+}
+
+/**
+ * One claim as the operator answering it sees it.
+ *
+ * The provider's own reference is here because answering a dispute means
+ * quoting it back, and an operator who cannot name the case cannot work it.
+ * Nothing about the cardholder appears: a dispute is about a payment, and who
+ * made that payment is not something a finance queue should be able to group by.
+ */
+function disputeBody(dispute: DisputeRow) {
+  return {
+    amount: {
+      amountMinor: dispute.amountMinor.toString(),
+      currency: dispute.currency,
+    },
+    createdAt: dispute.createdAt.toISOString(),
+    ...(dispute.evidenceDueAt === null
+      ? {}
+      : { evidenceDueAt: dispute.evidenceDueAt.toISOString() }),
+    id: dispute.id,
+    openedAt: dispute.openedAt.toISOString(),
+    paymentId: dispute.paymentId,
+    providerReference: dispute.providerReference,
+    reasonCode: dispute.reasonCode,
+    ...(dispute.resolvedAt === null
+      ? {}
+      : { resolvedAt: dispute.resolvedAt.toISOString() }),
+    state: dispute.state,
+  };
 }
 
 /** One reversal as an operator sees it. No provider reference, no actor name. */
@@ -108,6 +150,69 @@ export class AdminBillingRoutes {
         subscriptions: state.subscriptions,
       }),
       status: 200,
+    };
+  }
+
+  /**
+   * The dispute queue.
+   *
+   * A read and only a read. There is no evidence submission and no field that
+   * could become one: whether VELORA may submit evidence, in what form, and
+   * through which provider is unresolved, and a control that accepted a file
+   * and did nothing with it would be worse than its absence.
+   */
+  async listDisputes(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.dependencies.adminContext.resolve(input);
+    if ('failure' in resolved) return resolved.failure;
+    const query = new URL(input.request.url).searchParams;
+    const rawPageSize = query.get('pageSize');
+    const pageSize =
+      rawPageSize === null
+        ? defaultPageSize
+        : pageSizeSchema.safeParse(rawPageSize).data;
+    const open = query.get('open');
+    if (
+      pageSize === undefined ||
+      (open !== null && open !== 'true' && open !== 'false')
+    ) {
+      return this.invalid(input);
+    }
+    const cursor = query.get('cursor');
+    const rows = await this.dependencies.disputes.listRecent(
+      this.dependencies.disputes.transactionless,
+      {
+        after: cursor === null ? undefined : decodeOfferCursor(cursor),
+        limit: pageSize + 1,
+        openOnly: open === 'true',
+      },
+    );
+    const page = rows.slice(0, pageSize);
+    const last = page.at(-1);
+    return {
+      body: adminDisputeListResponseSchema.parse({
+        disputes: page.map(disputeBody),
+        ...(rows.length > pageSize && last !== undefined
+          ? {
+              nextCursor: encodeOfferCursor({
+                id: last.id,
+                moment: last.openedAt,
+              }),
+            }
+          : {}),
+        readiness: this.readinessBody(),
+      }),
+      status: 200,
+    };
+  }
+
+  private readinessBody() {
+    const readiness = this.dependencies.readiness();
+    return {
+      currencies: [...readiness.currencies],
+      enabled: readiness.enabled,
+      intervals: [...readiness.intervals],
+      modes: [...readiness.modes],
+      source: readiness.source,
     };
   }
 

@@ -33,6 +33,38 @@ assert.ok(consumers.length >= 30, 'seed needs at least 30 consumers');
 assert.ok(creators.length >= 12, 'seed needs at least 12 creators');
 assert.ok(publicItems.length >= 40, 'seed needs at least 40 public items');
 assert.ok(clubs.length >= 6, 'seed needs at least 6 clubs');
+
+/**
+ * What the seeded world has to be able to show about money.
+ *
+ * A world where every club is priced would never render the invitation-only
+ * card, and one where none is could not render a membership at all. Both are
+ * real products, so both have to be in the world before anybody looks at it.
+ */
+const priced = clubs.filter((club) => club.membership !== undefined);
+assert.ok(priced.length >= 3, 'seed needs at least 3 clubs on sale');
+assert.ok(
+  priced.length < clubs.length,
+  'seed needs at least one invitation-only club, so both cards are visible',
+);
+assert.ok(
+  priced.some((club) => club.membership.yearlyMinor !== undefined),
+  'seed needs at least one membership with a second cadence',
+);
+for (const club of clubs) {
+  assert.ok(
+    Array.isArray(club.benefits) && club.benefits.length > 0,
+    `${club.name} needs benefit lines, because that is what a visitor reads`,
+  );
+  if (club.membership === undefined) continue;
+  for (const [cadence, amount] of Object.entries(club.membership)) {
+    assert.match(
+      amount,
+      /^[1-9][0-9]*$/u,
+      `${club.name} ${cadence} must be a positive count of minor units`,
+    );
+  }
+}
 assert.equal(flagships.length, 4, 'seed needs exactly four flagship creators');
 assert.equal(
   new Set(subjects).size,
@@ -76,5 +108,5 @@ for (const creator of creators) {
 }
 
 process.stdout.write(
-  `Seed world: ${String(consumers.length)} consumers, ${String(creators.length)} creators, ${String(publicItems.length)} public items, ${String(clubs.length)} clubs, ${String(flagships.length)} flagships; local-only guard proven.\n`,
+  `Seed world: ${String(consumers.length)} consumers, ${String(creators.length)} creators, ${String(publicItems.length)} public items, ${String(clubs.length)} clubs (${String(priced.length)} on sale), ${String(flagships.length)} flagships; local-only guard proven.\n`,
 );

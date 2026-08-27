@@ -20,12 +20,65 @@ export interface ApiDoubleState {
    */
   subscriptions: {
     amount: { amountMinor: string; currency: string };
+    cancelledAt?: string;
     createdAt: string;
     currentPeriodEnd?: string;
     id: string;
+    interval?: 'month' | 'year';
     offerId: string;
+    resource?: { id: string; type: 'club' | 'gift' };
     state: string;
   }[];
+  /** Charges and near-charges, as the payment history route publishes them. */
+  payments: {
+    amount: { amountMinor: string; currency: string };
+    createdAt: string;
+    failureReason?: string;
+    id: string;
+    offerId: string;
+    resource?: { id: string; type: 'club' | 'gift' };
+    state: string;
+    updatedAt: string;
+  }[];
+  /**
+   * What creators sell, keyed by handle, exactly as the two owning domains
+   * publish it: PRIVATE CLUBS says what a club is, BILLING says what it costs
+   * against the same opaque identifier, and the surface joins the two.
+   */
+  publicClubs: Record<
+    string,
+    {
+      benefits: string[];
+      description?: string;
+      id: string;
+      membership?: { grantedAt: string; source: string };
+      name: string;
+      slug: string;
+    }[]
+  >;
+  membershipOffers: Record<
+    string,
+    {
+      gates?: string[];
+      offers: {
+        id: string;
+        mode: 'subscription' | 'one_time';
+        prices: {
+          amount: { amountMinor: string; currency: string };
+          id: string;
+          interval?: 'month' | 'year';
+        }[];
+        resource: { id: string; type: 'club' | 'gift' };
+      }[];
+      readiness: {
+        currencies: string[];
+        enabled: boolean;
+        intervals: string[];
+        modes: string[];
+        source: string;
+      };
+    }
+  >;
   account: {
     createdAt: string;
     id: string;
@@ -60,14 +113,41 @@ export interface ApiDoubleState {
   clubAccess: {
     clubId: string;
     clubName: string;
+    clubSlug: string;
     creatorHandle: string;
+    endedAt?: string;
     grantedAt: string;
     source: string;
+    state: 'active' | 'revoked';
   }[];
+  /** One club as its own destination, keyed by `handle/slug`. */
+  clubDetails: Record<
+    string,
+    {
+      club: {
+        benefits: string[];
+        description?: string;
+        id: string;
+        membership?: { grantedAt: string; source: string };
+        name: string;
+        slug: string;
+      };
+      content: {
+        body?: string;
+        id: string;
+        media: { id: string; position: number }[];
+        publishedAt: string;
+        summary?: string;
+        title: string;
+      }[];
+      creatorHandle: string;
+    }
+  >;
   /** Invitations the double will honour, each exactly once. */
   clubInvites: {
     clubId: string;
     clubName: string;
+    clubSlug: string;
     creatorHandle: string;
     secret: string;
   }[];
@@ -241,6 +321,9 @@ export const ownAccountId = '11111111-1111-4111-8111-111111111111';
 export function emptyState(): ApiDoubleState {
   return {
     subscriptions: [],
+    payments: [],
+    publicClubs: {},
+    membershipOffers: {},
     account: null,
     call: null,
     availability: {
@@ -252,6 +335,7 @@ export function emptyState(): ApiDoubleState {
     creatorDirectory: [],
     mediaDelivery: 'granted',
     clubAccess: [],
+    clubDetails: {},
     clubInvites: [],
     candidates: [],
     conversations: [],
@@ -533,6 +617,39 @@ export function createApiDouble(
         runId: (body as { runId: string }).runId,
       });
     }
+    if (path === '/v1/billing/payments' && method === 'GET') {
+      return json(200, { payments: state.payments.map((row) => ({ ...row })) });
+    }
+    if (path === '/v1/billing/checkouts' && method === 'GET') {
+      const wanted = url.searchParams.get('paymentId');
+      const payment = state.payments.find((row) => row.id === wanted);
+      return payment === undefined
+        ? error(404, 'RESOURCE_NOT_FOUND')
+        : json(200, { payment: { ...payment } });
+    }
+    if (
+      path === '/v1/billing/subscriptions/cancellation' &&
+      method === 'POST'
+    ) {
+      const input = body as { subscriptionId: string };
+      const held = state.subscriptions.find(
+        (row) => row.id === input.subscriptionId,
+      );
+      if (held === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      if (held.state !== 'active' && held.state !== 'past_due') {
+        return error(409, 'ACTION_NOT_PERMITTED');
+      }
+      // Active schedules the end; a lapsed one has nothing left to honour.
+      const next =
+        held.state === 'active' ? 'cancel_at_period_end' : 'cancelled';
+      state.subscriptions = state.subscriptions.map((row) =>
+        row.id === input.subscriptionId ? { ...row, state: next } : row,
+      );
+      const moved = state.subscriptions.find(
+        (row) => row.id === input.subscriptionId,
+      );
+      return json(200, { subscription: { ...moved } });
+    }
     if (path === '/v1/billing/subscriptions' && method === 'GET') {
       return json(200, {
         subscriptions: state.subscriptions.map((row) => ({ ...row })),
@@ -661,6 +778,56 @@ export function createApiDouble(
     if (path === '/v1/clubs/access' && method === 'GET') {
       return json(200, { access: state.clubAccess });
     }
+    if (path === '/v1/clubs' && method === 'GET') {
+      const wanted = `${url.searchParams.get('handle') ?? ''}/${
+        url.searchParams.get('slug') ?? ''
+      }`;
+      const detail = state.clubDetails[wanted];
+      return detail === undefined
+        ? error(404, 'RESOURCE_NOT_FOUND')
+        : json(200, detail);
+    }
+    if (path === '/v1/clubs/departures' && method === 'POST') {
+      const input = body as { clubId: string };
+      const held = state.clubAccess.find(
+        (entry) => entry.clubId === input.clubId && entry.state === 'active',
+      );
+      // A paid membership is refused here on purpose: ending it is a billing
+      // decision with a period and a renewal attached.
+      if (held === undefined || held.source === 'billing') {
+        return error(409, 'ACTION_NOT_PERMITTED');
+      }
+      state.clubAccess = state.clubAccess.map((entry) =>
+        entry.clubId === input.clubId
+          ? { ...entry, endedAt: iso(), state: 'revoked' as const }
+          : entry,
+      );
+      return json(200, { access: state.clubAccess });
+    }
+    if (path === '/v1/creators/clubs' && method === 'GET') {
+      const wanted = url.searchParams.get('handle') ?? '';
+      return json(200, {
+        clubs: state.publicClubs[wanted] ?? [],
+        handle: wanted,
+      });
+    }
+    if (path === '/v1/creators/memberships' && method === 'GET') {
+      const wanted = url.searchParams.get('handle') ?? '';
+      const listing = state.membershipOffers[wanted];
+      return json(200, {
+        ...(listing?.gates === undefined ? {} : { gates: listing.gates }),
+        handle: wanted,
+        offers: listing?.offers ?? [],
+        readiness: listing?.readiness ?? {
+          currencies: [],
+          enabled: false,
+          intervals: [],
+          modes: [],
+          source: 'unpublished',
+        },
+        subscriptions: state.subscriptions,
+      });
+    }
     if (path === '/v1/clubs/redemptions' && method === 'POST') {
       const input = body as { secret: string };
       const invite = state.clubInvites.find(
@@ -677,9 +844,11 @@ export function createApiDouble(
         {
           clubId: invite.clubId,
           clubName: invite.clubName,
+          clubSlug: invite.clubSlug,
           creatorHandle: invite.creatorHandle,
           grantedAt: iso(),
           source: 'creator_invite',
+          state: 'active',
         },
       ];
       return json(200, { access: state.clubAccess });

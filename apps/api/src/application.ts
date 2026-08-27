@@ -42,6 +42,7 @@ import {
   createDiscoveryRuntime,
   type DiscoveryRuntime,
 } from './discovery/composition.js';
+import { localTestCheckoutPath } from './billing/local-test-provider.js';
 import { createMediaRuntime, type MediaRuntime } from './media/composition.js';
 import { MediaDeliveryRoutes } from './media/delivery-routes.js';
 import { maximumMediaObjectBytes } from './media/policy.js';
@@ -541,6 +542,8 @@ export function createApplication(
         // can make. There is no path from an operator to a financial row that
         // does not go through the domain that owns it.
         refunds: billing.refunds,
+        disputes: billing.disputeRepository,
+        readiness: () => billing.offers.readiness(),
         appeals: safety.appeals,
         moderation: safety.moderation,
         safety: safety.authority,
@@ -1177,6 +1180,20 @@ export function createApplication(
       apiRoutePaths.publicCreatorClubs,
       admitted(async (input) => clubs.clubRoutes.getPublicClubs(input)),
     )
+    .get(
+      apiRoutePaths.club,
+      admitted(async (input) => clubs.clubRoutes.getClub(input)),
+    )
+    .post(
+      apiRoutePaths.clubDepartures,
+      admitted(async (input) => clubs.clubRoutes.leaveClub(input)),
+    )
+    .get(
+      apiRoutePaths.publicCreatorMemberships,
+      admitted(async (input) =>
+        billing.membershipRoutes.listPublicMemberships(input),
+      ),
+    )
     .post(
       apiRoutePaths.checkouts,
       admitted(async (input) => billing.checkoutRoutes.startCheckout(input)),
@@ -1221,6 +1238,16 @@ export function createApplication(
       apiRoutePaths.subscriptions,
       admitted(async (input) =>
         billing.checkoutRoutes.listSubscriptions(input),
+      ),
+    )
+    .get(
+      apiRoutePaths.payments,
+      admitted(async (input) => billing.checkoutRoutes.listPayments(input)),
+    )
+    .post(
+      apiRoutePaths.subscriptionCancellation,
+      admitted(async (input) =>
+        billing.checkoutRoutes.cancelSubscription(input),
       ),
     )
     .get(
@@ -1324,6 +1351,10 @@ export function createApplication(
     .post(
       apiRoutePaths.adminBillingRefunds,
       admitted(async (input) => admin.billingRoutes.issueRefund(input)),
+    )
+    .get(
+      apiRoutePaths.adminBillingDisputes,
+      admitted(async (input) => admin.billingRoutes.listDisputes(input)),
     )
     .get(
       apiRoutePaths.adminBillingState,
@@ -1556,6 +1587,19 @@ export function createApplication(
       )
       .get(`${localTestPublicObjectPath}/*`, async ({ request }) =>
         transport.getPublic(request),
+      );
+  }
+  // The payment adapter's own hosted page, on exactly the same terms: present
+  // only where `BILLING_PAYMENT_PROVIDER` selected the `local-test` adapter,
+  // which configuration refuses outside `local` and `test`. It is not a product
+  // route, carries no session, and settles nothing — pressing its button
+  // delivers a signed event through the ordinary verified inbox.
+  if (billing.localCheckout !== undefined) {
+    const checkout = billing.localCheckout;
+    app
+      .get(localTestCheckoutPath, ({ request }) => checkout.get(request))
+      .post(localTestCheckoutPath, async ({ request }) =>
+        checkout.post(request, bodyFor(request)),
       );
   }
 

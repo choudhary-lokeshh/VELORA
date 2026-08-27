@@ -460,6 +460,8 @@ export function testAdminRuntime(input: {
       ? {}
       : { privilegedAccess: input.privilegedAccess }),
     profiles: input.creators.profileRepository,
+    disputes: input.billing.disputeRepository,
+    readiness: () => input.billing.offers.readiness(),
     refunds: input.billing.refunds,
     appeals: input.safety.appeals,
     moderation: input.safety.moderation,

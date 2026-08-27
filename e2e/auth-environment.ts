@@ -150,6 +150,22 @@ export async function startAuthEnvironment(): Promise<void> {
      * platform refuses privileged access, and those are very different claims.
      */
     AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN: platformAdminOrigin,
+    /*
+     * The deterministic commerce adapters, on the same terms as the media, RTC,
+     * notification, and AI ones above.
+     *
+     * Without them a browser cannot reach a price, a checkout, a subscription,
+     * or a members-only read at all, and the whole membership product would be
+     * unproved in a real browser. `packages/config/src/server.ts` refuses every
+     * one of these outside `local` and `test`, and that refusal has its own
+     * suite. Nothing here is evidence about an approved provider, approved
+     * terms, or an approved market: the adapter names are what stop a passing
+     * browser test from reading as though it were.
+     */
+    BILLING_COMMERCE_ELIGIBILITY: 'local-test',
+    BILLING_COMMERCE_POLICY: 'local-test',
+    BILLING_PAYMENT_PROVIDER: 'local-test',
+    BILLING_TAX_AUTHORITY: 'local-test',
     DATABASE_URL: databaseUrl,
     EPHEMERAL_REDIS_URL: `${redisUrl}/0`,
     LOG_LEVEL: 'warn',

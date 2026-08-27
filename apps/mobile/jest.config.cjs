@@ -13,6 +13,8 @@ module.exports = {
       '<rootDir>/../../packages/consumer-client/dist/index.js',
     '^@velora/design-tokens$':
       '<rootDir>/../../packages/design-tokens/dist/index.js',
+    '^@velora/validation/money-bounds$':
+      '<rootDir>/../../packages/validation/dist/money-bounds.js',
     '^@velora/validation/messaging-bounds$':
       '<rootDir>/../../packages/validation/dist/messaging-bounds.js',
     '^@velora/validation/notifications-bounds$':

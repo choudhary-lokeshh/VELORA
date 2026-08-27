@@ -5,6 +5,8 @@ import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { ConversationScreen } from '../src/product/conversation';
 import { DiscoverScreen } from '../src/product/discover';
 import { IntroductionsScreen } from '../src/product/introductions';
+import { CreatorScreen, ClubScreen } from '../src/product/creator';
+import { MembershipsScreen } from '../src/product/memberships';
 import { MessagesScreen } from '../src/product/messages';
 import { NoticesScreen } from '../src/product/notices';
 import { AvailabilityScreen, ProfileScreen } from '../src/product/profile';
@@ -896,3 +898,269 @@ interface Introduction {
   readonly role: 'initiator' | 'recipient';
   readonly state: 'pending' | 'mutual' | 'closed';
 }
+
+/* ============================= memberships =========================== */
+
+const clubId = '77777777-7777-4777-8777-777777777777';
+
+/** One live invitation-based entitlement, as the access route publishes one. */
+const invited = {
+  clubId,
+  clubName: 'Inner Circle',
+  clubSlug: 'inner',
+  creatorHandle: 'ember_vale',
+  grantedAt: '2026-08-14T12:00:00.000Z',
+  source: 'creator_invite',
+  state: 'active' as const,
+};
+
+describe('memberships', () => {
+  it('says nobody is in a club, and never offers a purchase', async () => {
+    const { view } = await mount(
+      <MembershipsScreen onBack={nothing} onOpenClub={nothing} />,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('club-access-empty')).toBeTruthy();
+    });
+    expect(view.getByTestId('memberships-empty')).toBeTruthy();
+    // Starting a purchase from a mobile application is a different commercial
+    // arrangement, and the API refuses it for this audience. The screen never
+    // offers a control that would meet that refusal.
+    expect(view.getByTestId('memberships-no-purchase')).toBeTruthy();
+    expect(view.queryByText('Join this club')).toBeNull();
+  });
+
+  it('stops a subscription renewing from the device somebody is holding', async () => {
+    const state = admittedState();
+    state.clubAccess = [{ ...invited, source: 'billing' }];
+    state.subscriptions = [
+      {
+        amount: { amountMinor: '1500', currency: 'USD' },
+        createdAt: '2026-08-15T12:00:00.000Z',
+        currentPeriodEnd: '2026-09-15T12:00:00.000Z',
+        id: 'sub-1',
+        interval: 'month',
+        offerId: '11111111-1111-4111-8111-111111111111',
+        resource: { id: clubId, type: 'club' },
+        state: 'active',
+      },
+    ];
+    const { double, view } = await mount(
+      <MembershipsScreen onBack={nothing} onOpenClub={nothing} />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('membership-sub-1')).toBeTruthy();
+    });
+    await fireEvent.press(view.getByTestId('membership-cancel-sub-1'));
+    // The confirmation says the thing people assume and VELORA has not
+    // promised, before it does anything.
+    expect(view.getByText(/This is not a refund/u)).toBeTruthy();
+    await fireEvent.press(view.getByTestId('membership-cancel-confirm-sub-1'));
+
+    await waitFor(() => {
+      expect(double.state.subscriptions[0]?.state).toBe('cancel_at_period_end');
+    });
+  });
+
+  it('grants nothing for a lapse and never implies a grace period', async () => {
+    const state = admittedState();
+    state.subscriptions = [
+      {
+        amount: { amountMinor: '1500', currency: 'USD' },
+        createdAt: '2026-08-15T12:00:00.000Z',
+        id: 'sub-2',
+        interval: 'month',
+        offerId: '11111111-1111-4111-8111-111111111111',
+        state: 'past_due',
+      },
+    ];
+    const { view } = await mount(
+      <MembershipsScreen onBack={nothing} onOpenClub={nothing} />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('membership-sub-2')).toBeTruthy();
+    });
+    expect(view.getByText(/access has stopped/u)).toBeTruthy();
+    expect(view.getByText(/no grace period/u)).toBeTruthy();
+  });
+
+  it('hands back an invitation and never offers to hand back a paid one', async () => {
+    const state = admittedState();
+    state.clubAccess = [invited];
+    const { double, view } = await mount(
+      <MembershipsScreen onBack={nothing} onOpenClub={nothing} />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId(`club-access-${clubId}`)).toBeTruthy();
+    });
+    await fireEvent.press(view.getByTestId(`club-leave-${clubId}`));
+    await fireEvent.press(view.getByTestId(`club-leave-confirm-${clubId}`));
+
+    await waitFor(() => {
+      expect(double.state.clubAccess[0]?.state).toBe('revoked');
+    });
+  });
+
+  it('redeems an invitation and never shows the secret again', async () => {
+    const state = admittedState();
+    state.clubInvites = [
+      {
+        clubId,
+        clubName: 'Inner Circle',
+        clubSlug: 'inner',
+        creatorHandle: 'ember_vale',
+        secret: 'a-bearer-secret-nobody-should-see-twice',
+      },
+    ];
+    const { view } = await mount(
+      <MembershipsScreen onBack={nothing} onOpenClub={nothing} />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('club-invite-secret')).toBeTruthy();
+    });
+    await fireEvent.changeText(
+      view.getByTestId('club-invite-secret'),
+      'a-bearer-secret-nobody-should-see-twice',
+    );
+    await fireEvent.press(view.getByTestId('club-invite-redeem'));
+
+    await waitFor(() => {
+      expect(view.getByTestId(`club-access-${clubId}`)).toBeTruthy();
+    });
+    expect(
+      view.queryByDisplayValue('a-bearer-secret-nobody-should-see-twice'),
+    ).toBeNull();
+  });
+});
+
+/* ========================== creator and club ========================= */
+
+describe('a creator page on a phone', () => {
+  function selling(): MobileApiState {
+    const state = admittedState();
+    state.publicClubs.ember_vale = [
+      {
+        benefits: ['A letter every week'],
+        description: 'A quiet room.',
+        id: clubId,
+        name: 'Inner Circle',
+        slug: 'inner',
+      },
+    ];
+    state.membershipOffers.ember_vale = {
+      gates: [],
+      offers: [
+        {
+          id: 'offer-1',
+          mode: 'subscription',
+          prices: [
+            {
+              amount: { amountMinor: '1500', currency: 'USD' },
+              id: 'price-1',
+              interval: 'month',
+            },
+          ],
+          resource: { id: clubId, type: 'club' },
+        },
+      ],
+      readiness: {
+        currencies: ['USD'],
+        enabled: true,
+        intervals: ['month'],
+        modes: ['subscription'],
+        source: 'local-test',
+      },
+    };
+    return state;
+  }
+
+  it('shows what a membership costs and says where it can be bought', async () => {
+    const { view } = await mount(
+      <CreatorScreen
+        handle="ember_vale"
+        onBack={nothing}
+        onOpenClub={nothing}
+      />,
+      selling(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('club-card-inner')).toBeTruthy();
+    });
+    expect(view.getByText(/15\.00 USD/u)).toBeTruthy();
+    expect(view.getByText(/A letter every week/u)).toBeTruthy();
+    // No purchase, and no external link either: whether an application may
+    // point somebody at a payment page outside it is unresolved store policy.
+    expect(view.getByTestId('club-buy-elsewhere-inner')).toBeTruthy();
+    expect(view.queryByTestId('club-open-inner')).toBeNull();
+  });
+
+  it('publishes nothing a member reads to somebody who is not one', async () => {
+    const state = selling();
+    state.clubDetails['ember_vale/inner'] = {
+      club: {
+        benefits: ['A letter every week'],
+        description: 'A quiet room.',
+        id: clubId,
+        name: 'Inner Circle',
+        slug: 'inner',
+      },
+      content: [],
+      creatorHandle: 'ember_vale',
+    };
+    const { view } = await mount(
+      <ClubScreen handle="ember_vale" onBack={nothing} slug="inner" />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('club-locked')).toBeTruthy();
+    });
+    expect(view.queryByTestId('club-feed')).toBeNull();
+  });
+
+  it('shows the feed to somebody the server says is a member', async () => {
+    const state = selling();
+    state.clubDetails['ember_vale/inner'] = {
+      club: {
+        benefits: [],
+        id: clubId,
+        membership: {
+          grantedAt: '2026-08-14T12:00:00.000Z',
+          source: 'billing',
+        },
+        name: 'Inner Circle',
+        slug: 'inner',
+      },
+      content: [
+        {
+          body: 'Only members read this.',
+          id: '88888888-8888-4888-8888-888888888888',
+          media: [],
+          publishedAt: '2026-08-15T12:00:00.000Z',
+          title: 'The first letter',
+        },
+      ],
+      creatorHandle: 'ember_vale',
+    };
+    const { view } = await mount(
+      <ClubScreen handle="ember_vale" onBack={nothing} slug="inner" />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('club-feed')).toBeTruthy();
+    });
+    expect(view.getByText('The first letter')).toBeTruthy();
+    expect(view.getByText('Only members read this.')).toBeTruthy();
+  });
+});

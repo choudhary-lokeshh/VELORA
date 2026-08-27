@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import type { CatalogCursor } from './cursor.js';
 import type {
@@ -8,6 +8,7 @@ import type {
 } from './policy.js';
 import type { ClubsDatabase, ClubsExecutor } from './repository.js';
 import {
+  clubBenefits,
   clubInvites,
   clubMemberships,
   clubs,
@@ -17,6 +18,7 @@ import {
 type AnyExecutor = ClubsDatabase | ClubsExecutor;
 
 export type ClubRow = typeof clubs.$inferSelect;
+export type ClubBenefitRow = typeof clubBenefits.$inferSelect;
 export type ClubMembershipRow = typeof clubMemberships.$inferSelect;
 export type ClubInviteRow = typeof clubInvites.$inferSelect;
 
@@ -110,6 +112,69 @@ export class ClubRepository {
       )
       .orderBy(asc(clubs.slug))
       .limit(input.limit);
+  }
+
+  /** One published club addressed the way a visitor types it. */
+  async findPublishedClubBySlug(
+    executor: AnyExecutor,
+    input: { readonly creatorId: string; readonly slug: string },
+  ): Promise<ClubRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(clubs)
+      .where(
+        and(
+          eq(clubs.creatorId, input.creatorId),
+          eq(clubs.slug, input.slug),
+          eq(clubs.lifecycle, 'published'),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Benefit lines for a batch of clubs, in position order.
+   *
+   * Batched because a creator page renders every club at once, and a list that
+   * issued a query per card is the shape that looks fine with two clubs.
+   */
+  async benefitsFor(
+    executor: AnyExecutor,
+    clubIds: readonly string[],
+  ): Promise<ClubBenefitRow[]> {
+    if (clubIds.length === 0) return [];
+    return executor
+      .select()
+      .from(clubBenefits)
+      .where(inArray(clubBenefits.clubId, [...clubIds]))
+      .orderBy(asc(clubBenefits.clubId), asc(clubBenefits.position));
+  }
+
+  /**
+   * Replaces a club's benefit lines with exactly what was sent.
+   *
+   * Delete and insert rather than a positional merge, inside the caller's
+   * transaction and behind the same optimistic version check the club row
+   * takes. A merge would have to decide what an absent position means, and the
+   * two plausible answers — "unchanged" and "removed" — differ by whether a
+   * creator's edit silently keeps a line they deleted.
+   */
+  async replaceBenefits(
+    executor: ClubsExecutor,
+    input: { readonly clubId: string; readonly texts: readonly string[] },
+  ): Promise<void> {
+    await executor
+      .delete(clubBenefits)
+      .where(eq(clubBenefits.clubId, input.clubId));
+    if (input.texts.length === 0) return;
+    await executor.insert(clubBenefits).values(
+      input.texts.map((text, position) => ({
+        clubId: input.clubId,
+        position,
+        text,
+      })),
+    );
   }
 
   /**
@@ -284,7 +349,19 @@ export class ClubRepository {
     return rows[0];
   }
 
-  /** Every live entitlement one person holds, for their own account view. */
+  /**
+   * Every entitlement one person has ever held, for their own account view.
+   *
+   * Ended ones are included, because somebody is entitled to see the club they
+   * used to be in — and because a subscription that has run out otherwise
+   * leaves a row on their Memberships page with nothing to name it. A revoked
+   * row grants no read: `readProtected` asks `findMembership`, which is live
+   * only.
+   *
+   * The club's own lifecycle is not in the predicate either. A club that was
+   * closed is still a place somebody was a member of, and hiding it would make
+   * their own history depend on a creator's later decision.
+   */
   async listMemberAccess(
     executor: AnyExecutor,
     input: { readonly limit: number; readonly memberId: string },
@@ -293,16 +370,39 @@ export class ClubRepository {
       .select({ club: clubs, membership: clubMemberships })
       .from(clubMemberships)
       .innerJoin(clubs, eq(clubs.id, clubMemberships.clubId))
-      .where(
-        and(
-          eq(clubMemberships.memberId, input.memberId),
-          eq(clubMemberships.state, 'active'),
-          eq(clubs.lifecycle, 'published'),
-        ),
+      .where(eq(clubMemberships.memberId, input.memberId))
+      // Live entitlements first — `active` sorts before `revoked` — then
+      // newest, so somebody's own page opens on what they still hold.
+      .orderBy(
+        asc(clubMemberships.state),
+        desc(clubMemberships.grantedAt),
+        desc(clubMemberships.id),
       )
-      .orderBy(desc(clubMemberships.grantedAt))
       .limit(input.limit);
     return rows;
+  }
+
+  /**
+   * The live memberships this person holds among a named set of clubs.
+   *
+   * For a page rendering several clubs at once, so "you are already in this"
+   * costs one statement rather than one per card.
+   */
+  async membershipsAmong(
+    executor: AnyExecutor,
+    input: { readonly clubIds: readonly string[]; readonly memberId: string },
+  ): Promise<ClubMembershipRow[]> {
+    if (input.clubIds.length === 0) return [];
+    return executor
+      .select()
+      .from(clubMemberships)
+      .where(
+        and(
+          inArray(clubMemberships.clubId, [...input.clubIds]),
+          eq(clubMemberships.memberId, input.memberId),
+          eq(clubMemberships.state, 'active'),
+        ),
+      );
   }
 
   /**
@@ -467,6 +567,77 @@ export class ClubRepository {
       .update(clubInvites)
       .set({ redeemedAt: null, redeemedBy: null })
       .where(eq(clubInvites.id, inviteId));
+  }
+
+  /**
+   * One club's published items, newest first.
+   *
+   * The members-only feed. Nothing about entitlement is in this predicate on
+   * purpose: whether the caller may see any of it is decided by the service
+   * before this is called, and folding the two together would make the access
+   * rule something a future caller could forget to pass.
+   */
+  async listClubContent(
+    executor: AnyExecutor,
+    input: {
+      readonly after: CatalogCursor | undefined;
+      readonly clubId: string;
+      readonly limit: number;
+    },
+  ): Promise<(typeof creatorContent.$inferSelect)[]> {
+    const after = input.after;
+    return executor
+      .select()
+      .from(creatorContent)
+      .where(
+        and(
+          eq(creatorContent.clubId, input.clubId),
+          eq(creatorContent.lifecycle, 'published'),
+          eq(creatorContent.visibility, 'members_only'),
+          after === undefined
+            ? undefined
+            : or(
+                lt(creatorContent.publishedAt, after.moment),
+                and(
+                  eq(creatorContent.publishedAt, after.moment),
+                  lt(creatorContent.id, after.id),
+                ),
+              ),
+        ),
+      )
+      .orderBy(desc(creatorContent.publishedAt), desc(creatorContent.id))
+      .limit(input.limit);
+  }
+
+  /**
+   * Ends one person's own membership, if it is live and theirs.
+   *
+   * The member is in the predicate, so a departure names a club rather than a
+   * membership identifier and cannot address anybody else's. The state is in it
+   * too, so leaving twice ends one membership.
+   */
+  async endOwnMembership(
+    executor: AnyExecutor,
+    input: {
+      readonly clubId: string;
+      readonly memberId: string;
+      readonly now: Date;
+      readonly source: MembershipSource;
+    },
+  ): Promise<ClubMembershipRow | undefined> {
+    const updated = await executor
+      .update(clubMemberships)
+      .set({ revokedAt: input.now, state: 'revoked' })
+      .where(
+        and(
+          eq(clubMemberships.clubId, input.clubId),
+          eq(clubMemberships.memberId, input.memberId),
+          eq(clubMemberships.source, input.source),
+          eq(clubMemberships.state, 'active'),
+        ),
+      )
+      .returning();
+    return updated[0];
   }
 
   /** One club-scoped item, with the club it belongs to, for a protected read. */

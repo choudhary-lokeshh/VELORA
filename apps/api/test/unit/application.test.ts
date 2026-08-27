@@ -13,6 +13,7 @@ import {
 } from '@velora/validation';
 
 import { createApplication } from '../../src/application.js';
+import { allowedRequestHeaderNames } from '../../src/http/cors.js';
 import type { AuthRuntime } from '../../src/auth/composition.js';
 import { DatabaseAdmission } from '../../src/database/admission.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
@@ -338,5 +339,41 @@ describe('Elysia API foundation', () => {
     expect(runtime().dependencies.outboundHttp).toBeInstanceOf(
       DenyAllOutboundHttp,
     );
+  });
+});
+
+/**
+ * Every header a documented operation requires is a header a browser may send.
+ *
+ * A custom request header makes a cross-origin POST preflighted, so one missing
+ * from the allowlist is not a degraded request — it is a request the browser
+ * never sends at all, and the surface reports that the API could not be
+ * reached. `x-velora-idempotency-key` was absent for exactly that long: every
+ * jsdom suite passed, because a fetch double has no preflight, and only a real
+ * browser across two origins ever saw it.
+ *
+ * Asserted against the published contract rather than against a list, so a new
+ * operation that requires a new header fails here rather than in somebody's
+ * browser.
+ */
+describe('cross-origin request headers', () => {
+  it('admits every header the published contract says an operation carries', () => {
+    // Two shapes in the registry: a bare name, and a name with a requirement.
+    // Both are headers a browser has to be allowed to send.
+    const required = new Set(
+      apiOperations.flatMap((operation) =>
+        'requestHeaders' in operation
+          ? [...operation.requestHeaders].map((header) =>
+              typeof header === 'string' ? header : header.name,
+            )
+          : [],
+      ),
+    );
+    expect(required.size).toBeGreaterThan(0);
+    for (const header of required) {
+      expect(allowedRequestHeaderNames as readonly string[], header).toContain(
+        header,
+      );
+    }
   });
 });

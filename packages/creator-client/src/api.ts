@@ -9,7 +9,12 @@ import type {
   AiSuggestionBody,
   ClubInviteIssued,
   ClubInviteList,
+  CommercialOfferLifecycleBody,
   CommercialOfferList,
+  CommercialOfferResponse,
+  CreateCommercialOfferBody,
+  PublishCommercialPriceBody,
+  RetireCommercialPriceBody,
   ClubLifecycleBody,
   ClubMembershipList,
   CreatorAccount,
@@ -118,6 +123,34 @@ export interface CreatorApi {
     readonly cursor?: string | undefined;
     readonly pageSize?: number | undefined;
   }): Promise<ApiResult<CommercialOfferList>>;
+  /**
+   * Opens commercial terms against one of this creator's own clubs.
+   *
+   * A draft. Nothing is purchasable until a price is published against it and
+   * the offer is activated, and both refuse where the platform has approved no
+   * terms.
+   */
+  createOffer(
+    body: CreateCommercialOfferBody,
+  ): Promise<ApiResult<CommercialOfferResponse>>;
+  /**
+   * Publishes a price.
+   *
+   * A price row is frozen once written. Changing what something costs retires
+   * the old row and writes a new one, so what somebody is already paying stays
+   * exactly what they agreed to.
+   */
+  publishPrice(
+    body: PublishCommercialPriceBody,
+  ): Promise<ApiResult<CommercialOfferResponse>>;
+  /** Withdraws a live price. Existing subscriptions keep the row they were sold at. */
+  retirePrice(
+    body: RetireCommercialPriceBody,
+  ): Promise<ApiResult<CommercialOfferResponse>>;
+  /** Activates or retires an offer, against the version the caller has read. */
+  setOfferLifecycle(
+    body: CommercialOfferLifecycleBody,
+  ): Promise<ApiResult<CommercialOfferResponse>>;
   onboarding(): Promise<ApiResult<CreatorOnboardingState>>;
   /** This creator's own payout instructions, newest first. */
   payouts(): Promise<ApiResult<CreatorPayoutHistory>>;
@@ -469,6 +502,33 @@ export function createCreatorApi(options: CreatorApiOptions): CreatorApi {
           ...(await read()),
           params: { query: pageQuery(query) },
         }),
+      );
+    },
+
+    async createOffer(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/offers', { ...(await write()), body }),
+      );
+    },
+
+    async publishPrice(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/offers/prices', { ...(await write()), body }),
+      );
+    },
+
+    async retirePrice(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/offers/prices/retirement', {
+          ...(await write()),
+          body,
+        }),
+      );
+    },
+
+    async setOfferLifecycle(body) {
+      return attempt(async () =>
+        api.POST('/v1/creator/offers/lifecycle', { ...(await write()), body }),
       );
     },
 

@@ -83,6 +83,25 @@ export interface AdminApiDoubleState {
     statusReason?: string;
     suspendedAt?: string;
   }[];
+  /**
+   * The cardholder claims an operator has to answer, in the wire shape.
+   *
+   * Nothing in the product originates one; these rows exist only because a
+   * verified provider event created them, which is why the double holds them
+   * rather than offering any way to make one.
+   */
+  disputeQueue: {
+    amount: { amountMinor: string; currency: string };
+    createdAt: string;
+    evidenceDueAt?: string;
+    id: string;
+    openedAt: string;
+    paymentId: string;
+    providerReference: string;
+    reasonCode: string;
+    resolvedAt?: string;
+    state: string;
+  }[];
   /** Every financial figure, held as the wire shape the server publishes. */
   financial: {
     capabilities: Record<string, string>;
@@ -208,6 +227,7 @@ export function anonymousState(): AdminApiDoubleState {
     appeals: [],
     cases: [],
     creators: [],
+    disputeQueue: [],
     financial: {
       capabilities: {
         commerceEligibility: 'unavailable',
@@ -431,6 +451,22 @@ export function createAdminApiDouble(
 
     if (!path.startsWith('/v1/admin/')) return error(404, 'HTTP_404');
 
+    if (path === '/v1/admin/billing/disputes') {
+      const openOnly = url.searchParams.get('open') === 'true';
+      const openStates = new Set(['opened', 'under_review']);
+      return json(200, {
+        disputes: state.disputeQueue.filter(
+          (dispute) => !openOnly || openStates.has(dispute.state),
+        ),
+        readiness: {
+          currencies: [],
+          enabled: false,
+          intervals: [],
+          modes: [],
+          source: 'unpublished',
+        },
+      });
+    }
     if (path === '/v1/admin/billing/state') {
       return json(200, state.financial);
     }

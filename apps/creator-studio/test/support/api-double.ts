@@ -41,6 +41,7 @@ export interface CreatorApiDoubleState {
     version: number;
   } | null;
   clubs: {
+    benefits?: string[];
     description?: string;
     id: string;
     lifecycle: 'draft' | 'published' | 'closed';
@@ -116,6 +117,20 @@ export interface CreatorApiDoubleState {
     policySource: string;
     providerSource: string;
     recipientStatus: 'absent' | 'onboarding' | 'ready' | 'restricted';
+  };
+  /**
+   * What the platform may currently sell, as the offers route publishes it.
+   *
+   * Held in state rather than fixed, because the difference between an approved
+   * policy and an unpublished one is the difference between a screen with
+   * controls and a screen with an explanation.
+   */
+  monetisation: {
+    currencies: string[];
+    enabled: boolean;
+    intervals: string[];
+    modes: string[];
+    source: string;
   };
   offers: {
     activatedAt?: string;
@@ -227,6 +242,13 @@ export function emptyCreatorState(): CreatorApiDoubleState {
     earnings: [],
     earningsHistory: [],
     receivedGifts: [],
+    monetisation: {
+      currencies: [],
+      enabled: false,
+      intervals: [],
+      modes: [],
+      source: 'unpublished',
+    },
     offers: [],
     payoutReadiness: {
       balances: [],
@@ -315,6 +337,7 @@ export function createCreatorApiDouble(
         };
 
   const clubBody = (club: CreatorApiDoubleState['clubs'][number]) => ({
+    benefits: club.benefits ?? [],
     createdAt: iso(),
     ...(club.description === undefined
       ? {}
@@ -617,14 +640,135 @@ export function createCreatorApiDouble(
       return json(200, {
         offers: rows.map((offer) => ({ ...offer })),
         ...(next === undefined ? {} : { nextCursor: next }),
-        readiness: {
-          currencies: [],
-          enabled: false,
-          intervals: [],
-          modes: [],
-          source: 'unpublished',
-        },
+        readiness: { ...state.monetisation },
       });
+    }
+    if (path === '/v1/creator/offers' && method === 'POST') {
+      if (!state.monetisation.enabled) {
+        return error(503, 'DEPENDENCY_UNAVAILABLE');
+      }
+      const requested = body as { resourceId: string };
+      const club = state.clubs.find(
+        (entry) => entry.id === requested.resourceId,
+      );
+      // Only a published club may be sold, and only once.
+      if (club?.lifecycle !== 'published') {
+        return error(409, 'STATE_CONFLICT');
+      }
+      if (
+        state.offers.some(
+          (offer) =>
+            offer.resourceId === requested.resourceId &&
+            offer.state !== 'retired',
+        )
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const created = {
+        createdAt: iso(),
+        id: `offer-${String(state.offers.length + 1)}`,
+        mode: 'subscription' as const,
+        prices: [],
+        resourceId: requested.resourceId,
+        resourceType: 'club' as const,
+        state: 'draft' as const,
+        updatedAt: iso(),
+        version: 1,
+      };
+      state.offers = [created, ...state.offers];
+      return json(201, { offer: created });
+    }
+    if (path === '/v1/creator/offers/prices' && method === 'POST') {
+      const requested = body as {
+        amountMinor: string;
+        currency: string;
+        interval?: 'month' | 'year';
+        offerId: string;
+      };
+      const offer = state.offers.find(
+        (entry) => entry.id === requested.offerId,
+      );
+      if (offer === undefined) return error(409, 'STATE_CONFLICT');
+      // One live price per offer, per currency, per cadence. Two of the same
+      // would make "the price" a question with two answers.
+      if (
+        offer.prices.some(
+          (price) =>
+            price.state === 'active' &&
+            price.amount.currency === requested.currency &&
+            price.interval === requested.interval,
+        )
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const price = {
+        amount: {
+          amountMinor: requested.amountMinor,
+          currency: requested.currency,
+        },
+        createdAt: iso(),
+        effectiveFrom: iso(),
+        id: `price-${String(offer.prices.length + 1)}-${offer.id}`,
+        ...(requested.interval === undefined
+          ? {}
+          : { interval: requested.interval }),
+        state: 'active' as const,
+      };
+      const updated = { ...offer, prices: [...offer.prices, price] };
+      state.offers = state.offers.map((entry) =>
+        entry.id === offer.id ? updated : entry,
+      );
+      return json(201, { offer: updated });
+    }
+    if (path === '/v1/creator/offers/prices/retirement' && method === 'POST') {
+      const requested = body as { offerId: string; priceId: string };
+      const offer = state.offers.find(
+        (entry) => entry.id === requested.offerId,
+      );
+      if (offer === undefined) return error(409, 'STATE_CONFLICT');
+      const updated = {
+        ...offer,
+        prices: offer.prices.map((price) =>
+          price.id === requested.priceId
+            ? { ...price, state: 'retired' as const }
+            : price,
+        ),
+      };
+      state.offers = state.offers.map((entry) =>
+        entry.id === offer.id ? updated : entry,
+      );
+      return json(200, { offer: updated });
+    }
+    if (path === '/v1/creator/offers/lifecycle' && method === 'POST') {
+      const requested = body as {
+        offerId: string;
+        state: 'active' | 'retired';
+        version: number;
+      };
+      const offer = state.offers.find(
+        (entry) => entry.id === requested.offerId,
+      );
+      if (offer?.version !== requested.version) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      // Nothing goes on sale without a live price: a join control that cannot
+      // succeed is worse than no control.
+      if (
+        requested.state === 'active' &&
+        !offer.prices.some((price) => price.state === 'active')
+      ) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const updated = {
+        ...offer,
+        ...(requested.state === 'active' ? { activatedAt: iso() } : {}),
+        state: requested.state,
+        version: offer.version + 1,
+      };
+      state.offers = state.offers.map((entry) =>
+        entry.id === offer.id ? updated : entry,
+      );
+      return json(200, { offer: updated });
     }
     if (path === '/v1/creator/safety/readiness' && method === 'GET') {
       // The only answer this endpoint has, in every environment.
@@ -708,6 +852,7 @@ export function createCreatorApiDouble(
       if (state.account.status !== 'active')
         return error(409, 'STATE_CONFLICT');
       const requested = body as {
+        benefits?: string[];
         clubId?: string;
         description?: string;
         name: string;
@@ -724,6 +869,11 @@ export function createCreatorApiDouble(
         }
         const edited = {
           ...current,
+          // Absent means unchanged. A surface with no benefit editor must not
+          // erase what another one wrote by omitting a field it never knew of.
+          ...(requested.benefits === undefined
+            ? {}
+            : { benefits: requested.benefits }),
           ...(requested.description === undefined
             ? {}
             : { description: requested.description }),
@@ -739,6 +889,7 @@ export function createCreatorApiDouble(
         return error(409, 'STATE_CONFLICT');
       }
       const created = {
+        benefits: requested.benefits ?? [],
         ...(requested.description === undefined
           ? {}
           : { description: requested.description }),

@@ -162,16 +162,46 @@ export type SavePreferencesBody = RequestBody<
 >;
 
 /**
- * A private club this person may currently read, as they may see it.
+ * A private club this person holds or has held, as they may see it.
  *
- * `source` records what created the entitlement rather than whether it was
- * paid: `creator_invite` is the only one anything can carry today, because the
- * commercial seam refuses in every environment. There is no member count and no
- * member list, because a club is not a public place.
+ * `source` records what created the entitlement rather than whether it was paid
+ * for: an invitation and a purchase are different things, and a `paid` boolean
+ * would have made them indistinguishable. Ended entitlements appear with
+ * `state: 'revoked'` so somebody's own history is theirs to see; nothing about
+ * a revoked row grants a read. There is no member count and no member list,
+ * because a club is not a public place.
  */
 export type ClubAccessList = JsonBody<'/v1/clubs/access', 'get', 200>;
 export type ClubAccess = ClubAccessList['access'][number];
 export type RedeemClubInviteBody = RequestBody<'/v1/clubs/redemptions', 'post'>;
+export type LeaveClubBody = RequestBody<'/v1/clubs/departures', 'post'>;
+
+/**
+ * One club as its own destination: identity, the viewer's standing, and the
+ * members-only feed when they may read it.
+ */
+export type ClubDetail = JsonBody<'/v1/clubs', 'get', 200>;
+export type MemberClubContent = ClubDetail['content'][number];
+export type PublicClubList = JsonBody<'/v1/creators/clubs', 'get', 200>;
+export type PublicClub = PublicClubList['clubs'][number];
+
+/**
+ * What a creator sells, joined to their clubs by opaque resource identifier.
+ *
+ * The money half of a membership card. What the identifier names and what a
+ * member gets come from the PRIVATE CLUBS route under the same identifier; the
+ * surface holds both and joins them, which is where a join between two owners
+ * belongs.
+ */
+export type MembershipOfferList = JsonBody<
+  '/v1/creators/memberships',
+  'get',
+  200
+>;
+export type MembershipOffer = MembershipOfferList['offers'][number];
+export type MembershipPrice = MembershipOffer['prices'][number];
+export type MonetisationReadiness = MembershipOfferList['readiness'];
+export type CommerceGate = NonNullable<MembershipOfferList['gates']>[number];
 
 export type ConsumerSubscriptionList = JsonBody<
   '/v1/billing/subscriptions',
@@ -180,6 +210,19 @@ export type ConsumerSubscriptionList = JsonBody<
 >;
 export type ConsumerSubscription =
   ConsumerSubscriptionList['subscriptions'][number];
+export type ConsumerPaymentList = JsonBody<'/v1/billing/payments', 'get', 200>;
+export type StartCheckoutBody = RequestBody<'/v1/billing/checkouts', 'post'>;
+export type CheckoutResponse = JsonBody<'/v1/billing/checkouts', 'post', 201>;
+export type ConsumerPayment = CheckoutResponse['payment'];
+export type CancelSubscriptionBody = RequestBody<
+  '/v1/billing/subscriptions/cancellation',
+  'post'
+>;
+export type ConsumerSubscriptionResponse = JsonBody<
+  '/v1/billing/subscriptions/cancellation',
+  'post',
+  200
+>;
 export type GiftCatalog = JsonBody<'/v1/billing/gifts/catalog', 'get', 200>;
 export type GiftCatalogItem = GiftCatalog['items'][number];
 export type ConsumerGiftList = JsonBody<'/v1/billing/gifts', 'get', 200>;

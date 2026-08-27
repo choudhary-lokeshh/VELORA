@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 
 import type { DatabaseHandle, Executor } from '../database/executor.js';
 import {
@@ -118,6 +118,67 @@ export class SubscriptionRepository {
         desc(billingSubscriptions.id),
       )
       .limit(input.limit);
+  }
+
+  /**
+   * Scheduled cancellations whose paid period has run out.
+   *
+   * Read outside any transaction and settled one at a time, so a long backlog
+   * neither holds a connection nor makes one unsettleable row block the rest.
+   * Oldest first, because the person whose period ended first has been waiting
+   * longest for the relationship to actually close.
+   */
+  async listExpiredSchedules(
+    executor: Executor,
+    input: { readonly limit: number; readonly now: Date },
+  ): Promise<readonly SubscriptionRow[]> {
+    return executor
+      .select()
+      .from(billingSubscriptions)
+      .where(
+        and(
+          eq(billingSubscriptions.state, 'cancel_at_period_end'),
+          isNotNull(billingSubscriptions.currentPeriodEnd),
+          lte(billingSubscriptions.currentPeriodEnd, input.now),
+        ),
+      )
+      .orderBy(
+        asc(billingSubscriptions.currentPeriodEnd),
+        asc(billingSubscriptions.id),
+      )
+      .limit(input.limit);
+  }
+
+  /**
+   * The caller's own subscriptions against a named set of offers.
+   *
+   * Consumer-scoped in the predicate rather than filtered afterwards, so a
+   * page that renders somebody's position against a creator's offers cannot
+   * accidentally render anybody else's. Every state is returned, including
+   * ended ones: a page that showed only live relationships would tell somebody
+   * who cancelled last week that they had never subscribed.
+   */
+  async listForOffers(
+    executor: Executor,
+    input: {
+      readonly consumerId: string;
+      readonly offerIds: readonly string[];
+    },
+  ): Promise<readonly SubscriptionRow[]> {
+    if (input.offerIds.length === 0) return [];
+    return executor
+      .select()
+      .from(billingSubscriptions)
+      .where(
+        and(
+          eq(billingSubscriptions.consumerId, input.consumerId),
+          inArray(billingSubscriptions.offerId, [...input.offerIds]),
+        ),
+      )
+      .orderBy(
+        desc(billingSubscriptions.createdAt),
+        desc(billingSubscriptions.id),
+      );
   }
 
   async findLiveForOffer(

@@ -41,6 +41,15 @@ export const maximumClubNameLength = 80;
  */
 export const maximumContentMedia = 6;
 export const maximumClubDescriptionLength = 600;
+
+/**
+ * How many benefit lines a club may publish, and how long one may be.
+ *
+ * Restated for the same reason `maximumContentMedia` is, and asserted identical
+ * to the published bound by a unit test.
+ */
+export const maximumClubBenefits = 8;
+export const maximumClubBenefitLength = 120;
 export const minimumClubSlugLength = 3;
 export const maximumClubSlugLength = 40;
 export const clubSlugPattern = '^[a-z0-9][a-z0-9_-]{1,38}[a-z0-9]$';

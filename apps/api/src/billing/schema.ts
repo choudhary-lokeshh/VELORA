@@ -269,11 +269,30 @@ export const billingPrices = pgTable(
     // The foreign-key target that keeps a payment's currency agreeing with the
     // price it was made against, so a snapshot cannot drift from its source.
     unique('billing_prices_currency_uk').on(table.id, table.currency),
-    // One live price per offer per currency. Two would make "the price" a
-    // question with two answers at the moment somebody pays.
-    uniqueIndex('billing_prices_live_uk')
+    // One live price per offer, per currency, per cadence.
+    //
+    // The rule used to be one per offer per currency, on the reasoning that two
+    // would make "the price" a question with two answers at the moment somebody
+    // pays. The cadence is what makes it one answer again: a purchase names the
+    // currency *and* how often it recurs, so "twelve euros a month" and "a
+    // hundred and twenty euros a year" are two prices for two different things
+    // rather than two prices for the same one.
+    //
+    // Two indexes rather than one over a nullable column, because a NULL is not
+    // equal to itself in a unique index and "no cadence twice" would silently
+    // stop being enforced. The recurrence CHECK above already guarantees the
+    // interval is present exactly when the mode recurs, so the two partial
+    // indexes cover every row between them with no overlap.
+    uniqueIndex('billing_prices_live_recurring_uk')
+      .on(table.offerId, table.currency, table.billingInterval)
+      .where(
+        sql`${table.state} = 'active' and ${table.billingInterval} is not null`,
+      ),
+    uniqueIndex('billing_prices_live_once_uk')
       .on(table.offerId, table.currency)
-      .where(sql`${table.state} = 'active'`),
+      .where(
+        sql`${table.state} = 'active' and ${table.billingInterval} is null`,
+      ),
     index('billing_prices_offer_idx').on(
       table.offerId,
       table.createdAt,
@@ -972,6 +991,12 @@ export const billingSubscriptions = pgTable(
       table.id,
     ),
     index('billing_subscriptions_offer_idx').on(table.offerId, table.state),
+    // The expiry sweep's only query: scheduled cancellations whose paid period
+    // has run out, oldest first. Partial, so it stays the size of what is
+    // actually pending rather than of every subscription ever held.
+    index('billing_subscriptions_expiry_idx')
+      .on(table.currentPeriodEnd, table.id)
+      .where(sql`${table.state} = 'cancel_at_period_end'`),
     foreignKey({
       columns: [table.priceId, table.currency],
       foreignColumns: [billingPrices.id, billingPrices.currency],

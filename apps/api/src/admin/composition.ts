@@ -17,6 +17,8 @@ import type { IdentityOperations } from '../identity/operations.js';
 import type { AppealService } from '../safety/appeals.js';
 import type { EnforcementAuthority } from '../safety/enforcement.js';
 import type { ModerationService } from '../safety/moderation.js';
+import type { DisputeRepository } from '../billing/dispute-repository.js';
+import type { MonetisationReadiness } from '../billing/offer-service.js';
 import { AdminBillingRoutes } from './billing-routes.js';
 import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
@@ -97,6 +99,10 @@ export function createAdminRuntime(input: {
    */
   readonly notifications: NotificationOperations;
   readonly rtc: RtcOperations;
+  /** BILLING's own dispute record. A read; nothing here may originate one. */
+  readonly disputes: DisputeRepository;
+  /** What the platform may currently sell, reported rather than inferred. */
+  readonly readiness: () => MonetisationReadiness;
   /** BILLING's reversal orchestration. ADMIN authorizes; BILLING decides. */
   readonly refunds: RefundService;
   /** TRUST & SAFETY's complaint seam. */
@@ -124,7 +130,9 @@ export function createAdminRuntime(input: {
     billingRoutes: new AdminBillingRoutes({
       adminContext,
       capabilities: input.capabilities,
+      disputes: input.disputes,
       financial: new AdminFinancialDirectory(input.database),
+      readiness: input.readiness,
       refunds: input.refunds,
     }),
     directory,

@@ -8,12 +8,21 @@ import type {
   Availability,
   Block,
   BlockList,
+  CancelSubscriptionBody,
   Call,
+  CheckoutResponse,
   ClubAccessList,
+  ClubDetail,
   ConsumerAccount,
   ConsumerProfile,
+  ConsumerPaymentList,
   ConsumerSubscriptionList,
+  ConsumerSubscriptionResponse,
   ConsumerGiftList,
+  LeaveClubBody,
+  MembershipOfferList,
+  PublicClubList,
+  StartCheckoutBody,
   GiftCatalog,
   GiftCatalogItem,
   SendGiftBody,
@@ -143,8 +152,74 @@ export interface ConsumerApi {
     readonly body: SendGiftBody;
     readonly idempotencyKey: string;
   }): Promise<ApiResult<SendGiftResponse>>;
-  /** Private clubs this person may currently read. */
+  /** Private clubs this person holds or has held. */
   clubAccess(signal?: AbortSignal): Promise<ApiResult<ClubAccessList>>;
+  /**
+   * One club as its own destination.
+   *
+   * Safe to call for anybody, including somebody who holds nothing: the server
+   * decides on this request whether the feed is theirs to read, and answers
+   * with an empty one when it is not.
+   */
+  club(
+    input: { readonly handle: string; readonly slug: string },
+    signal?: AbortSignal,
+  ): Promise<ApiResult<ClubDetail>>;
+  /** Published clubs on a creator's page, with this viewer's own standing. */
+  publicClubs(
+    handle: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<PublicClubList>>;
+  /** What that creator sells, by opaque resource identifier. */
+  membershipOffers(
+    handle: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<MembershipOfferList>>;
+  /**
+   * Starts a purchase.
+   *
+   * A client key is required rather than optional: without one a double-click
+   * is two purchases and the server has nothing to recognise the second by. The
+   * answer carries the provider-hosted page to send the person to; arriving
+   * there is not a purchase and coming back is not a receipt.
+   */
+  startCheckout(input: {
+    readonly body: StartCheckoutBody;
+    readonly idempotencyKey: string;
+  }): Promise<ApiResult<CheckoutResponse>>;
+  /** The state of one of this person's own payments. Nothing here transitions. */
+  readCheckout(
+    paymentId: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<CheckoutResponse>>;
+  /**
+   * Everything this person has been charged, or nearly charged.
+   *
+   * A record of attempts rather than a set of receipts: what a receipt must say
+   * is unresolved commercial and tax policy, and calling this one would be a
+   * claim nobody approved.
+   */
+  payments(
+    query?: { readonly cursor?: string; readonly pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<ApiResult<ConsumerPaymentList>>;
+  /**
+   * Stops a subscription renewing.
+   *
+   * The paid period is unchanged: access continues to its end and the
+   * relationship closes when the period does. There is no immediate option,
+   * because ending access early would take back something already bought.
+   */
+  cancelSubscription(
+    body: CancelSubscriptionBody,
+  ): Promise<ApiResult<ConsumerSubscriptionResponse>>;
+  /**
+   * Hands back an invitation.
+   *
+   * Refused for a membership somebody is paying for: that one ends through
+   * cancellation, where the period and the renewal are accounted for.
+   */
+  leaveClub(body: LeaveClubBody): Promise<ApiResult<ClubAccessList>>;
   /**
    * Presents an invitation.
    *
@@ -388,6 +463,79 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
 
     clubAccess: async (signal) =>
       attempt(async () => api.GET('/v1/clubs/access', await reading(signal))),
+
+    club: async ({ handle, slug }, signal) =>
+      attempt(async () =>
+        api.GET('/v1/clubs', {
+          ...(await reading(signal)),
+          params: { query: { handle, slug } },
+        }),
+      ),
+
+    publicClubs: async (handle, signal) =>
+      attempt(async () =>
+        api.GET('/v1/creators/clubs', {
+          ...(await reading(signal)),
+          params: { query: { handle } },
+        }),
+      ),
+
+    membershipOffers: async (handle, signal) =>
+      attempt(async () =>
+        api.GET('/v1/creators/memberships', {
+          ...(await reading(signal)),
+          params: { query: { handle } },
+        }),
+      ),
+
+    startCheckout: async ({ body, idempotencyKey }) =>
+      attempt(async () => {
+        const request = await writing();
+        return api.POST('/v1/billing/checkouts', {
+          ...request,
+          body,
+          headers: {
+            ...request.headers,
+            'x-velora-idempotency-key': idempotencyKey,
+          },
+        });
+      }),
+
+    readCheckout: async (paymentId, signal) =>
+      attempt(async () =>
+        api.GET('/v1/billing/checkouts', {
+          ...(await reading(signal)),
+          params: { query: { paymentId } },
+        }),
+      ),
+
+    payments: async (query, signal) =>
+      attempt(async () =>
+        api.GET('/v1/billing/payments', {
+          ...(await reading(signal)),
+          params: {
+            query: {
+              ...(query?.cursor === undefined ? {} : { cursor: query.cursor }),
+              ...(query?.pageSize === undefined
+                ? {}
+                : { pageSize: query.pageSize }),
+            },
+          },
+        }),
+      ),
+
+    cancelSubscription: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/billing/subscriptions/cancellation', {
+          ...(await writing()),
+          body,
+        }),
+      ),
+
+    leaveClub: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/clubs/departures', { ...(await writing()), body }),
+      ),
 
     redeemClubInvite: async (body) =>
       attempt(async () =>

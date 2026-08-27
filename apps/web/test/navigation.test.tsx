@@ -28,6 +28,10 @@ import { renderProduct } from './support/render';
 const served: readonly string[] = [
   '/',
   '/c/[handle]',
+  '/c/[handle]/club/[clubSlug]',
+  '/c/[handle]/club/[clubSlug]/join',
+  '/checkout/cancelled',
+  '/checkout/return',
   '/discover',
   '/introductions',
   '/messages',
@@ -43,19 +47,38 @@ const served: readonly string[] = [
   '/you/settings',
 ];
 
-/** The served addresses that take no parameter, as literal paths. */
-const literalRoutes = served.filter((route) => !route.includes('['));
-
 /** One concrete address per served route, with parameters filled in. */
 const concreteRoutes = served.map((route) =>
   route
     .replace('[handle]', 'aurora')
+    .replace('[clubSlug]', 'inner')
     .replace('[conversationId]', 'conversation-1')
     .replace('[personId]', 'person-1'),
 );
 
+/**
+ * Whether an address is one of the served routes.
+ *
+ * Matched against the route patterns rather than against a list of literals,
+ * because a parent may legitimately carry a parameter: a club's way out is its
+ * own creator's page, and `/c/aurora` is served even though it is not a
+ * literal.
+ */
+function isServed(address: string): boolean {
+  return served.some((route) =>
+    new RegExp(
+      `^${route.replaceAll(/\[[^\]]+\]/gu, '[^/]+').replaceAll('/', '\\/')}$`,
+      'u',
+    ).test(address),
+  );
+}
+
 const nestedRoutes = [
   '/c/aurora',
+  '/c/aurora/club/inner',
+  '/c/aurora/club/inner/join',
+  '/checkout/return',
+  '/checkout/cancelled',
   '/messages/conversation-1',
   '/people/person-1',
   '/you/gifts',
@@ -99,7 +122,7 @@ describe('where Back goes', () => {
     for (const route of concreteRoutes) {
       const parent = parentOf(route);
       if (parent === undefined) continue;
-      expect(literalRoutes).toContain(parent);
+      expect(isServed(parent), `${route} -> ${parent}`).toBe(true);
     }
   });
 
@@ -108,6 +131,19 @@ describe('where Back goes', () => {
     expect(parentOf('/c/aurora')).toBe('/discover');
     expect(parentOf('/messages/conversation-1')).toBe('/messages');
     expect(parentOf('/you/settings')).toBe('/you');
+  });
+
+  it('leaves a club for the creator whose club it is, not for a listing', () => {
+    // Truncation would give `/c/aurora/club`, which nothing serves. The parent
+    // is built from the match instead, so a club's way out is the page it is
+    // reached from.
+    expect(parentOf('/c/aurora/club/inner')).toBe('/c/aurora');
+    expect(parentOf('/c/aurora/club/inner/join')).toBe('/c/aurora/club/inner');
+  });
+
+  it('sends somebody returning from a payment provider to what they were paying for', () => {
+    expect(parentOf('/checkout/return')).toBe('/you/memberships');
+    expect(parentOf('/checkout/cancelled')).toBe('/you/memberships');
   });
 });
 

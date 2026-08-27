@@ -40,7 +40,33 @@ function doubleFor(
     | { readonly kind: 'missing' }
     | { readonly kind: 'offline' },
   catalog: { id: string; summary?: string; title: string }[] = [],
-  clubs: { description?: string; name: string; slug: string }[] = [],
+  clubs: {
+    benefits?: string[];
+    description?: string;
+    id?: string;
+    name: string;
+    slug: string;
+  }[] = [],
+  memberships: {
+    gates?: string[];
+    offers?: {
+      id: string;
+      mode: 'subscription';
+      prices: {
+        amount: { amountMinor: string; currency: string };
+        id: string;
+        interval?: 'month' | 'year';
+      }[];
+      resource: { id: string; type: 'club' };
+    }[];
+    readiness?: {
+      currencies: string[];
+      enabled: boolean;
+      intervals: string[];
+      modes: string[];
+      source: string;
+    };
+  } = {},
 ): { readonly calls: string[]; readonly fetch: typeof globalThis.fetch } {
   const calls: string[] = [];
   return {
@@ -56,10 +82,42 @@ function doubleFor(
         new URL(request.url).pathname === '/v1/creators/clubs'
       ) {
         return Promise.resolve(
-          new Response(JSON.stringify({ clubs, handle: answer.body.handle }), {
-            headers: { 'content-type': 'application/json' },
-            status: 200,
-          }),
+          new Response(
+            JSON.stringify({
+              clubs: clubs.map((club) => ({
+                benefits: [],
+                id: '99999999-9999-4999-8999-999999999999',
+                ...club,
+              })),
+              handle: answer.body.handle,
+            }),
+            { headers: { 'content-type': 'application/json' }, status: 200 },
+          ),
+        );
+      }
+      if (
+        answer.kind === 'ok' &&
+        new URL(request.url).pathname === '/v1/creators/memberships'
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...(memberships.gates === undefined
+                ? {}
+                : { gates: memberships.gates }),
+              handle: answer.body.handle,
+              offers: memberships.offers ?? [],
+              readiness: memberships.readiness ?? {
+                currencies: [],
+                enabled: false,
+                intervals: [],
+                modes: [],
+                source: 'unpublished',
+              },
+              subscriptions: [],
+            }),
+            { headers: { 'content-type': 'application/json' }, status: 200 },
+          ),
         );
       }
       if (
@@ -238,6 +296,30 @@ describe('virtual gifts on a creator page', () => {
       visual: 'rose' as const,
     };
     const consumerApi = {
+      // The membership section asks two owners for the same page. A gift test
+      // has nothing to say about either, so both answer empty rather than
+      // being left off and throwing inside a render.
+      membershipOffers: () =>
+        Promise.resolve({
+          kind: 'ok' as const,
+          value: {
+            handle: published.handle,
+            offers: [],
+            readiness: {
+              currencies: [],
+              enabled: false,
+              intervals: [],
+              modes: [],
+              source: 'unpublished',
+            },
+            subscriptions: [],
+          },
+        }),
+      publicClubs: () =>
+        Promise.resolve({
+          kind: 'ok' as const,
+          value: { clubs: [], handle: published.handle },
+        }),
       giftCatalog: () =>
         Promise.resolve({
           kind: 'ok' as const,
@@ -317,6 +399,30 @@ describe('virtual gifts on a creator page', () => {
       visual: 'rose' as const,
     };
     const consumerApi = {
+      // The membership section asks two owners for the same page. A gift test
+      // has nothing to say about either, so both answer empty rather than
+      // being left off and throwing inside a render.
+      membershipOffers: () =>
+        Promise.resolve({
+          kind: 'ok' as const,
+          value: {
+            handle: published.handle,
+            offers: [],
+            readiness: {
+              currencies: [],
+              enabled: false,
+              intervals: [],
+              modes: [],
+              source: 'unpublished',
+            },
+            subscriptions: [],
+          },
+        }),
+      publicClubs: () =>
+        Promise.resolve({
+          kind: 'ok' as const,
+          value: { clubs: [], handle: published.handle },
+        }),
       giftCatalog: () =>
         Promise.resolve({
           kind: 'ok' as const,
@@ -405,27 +511,70 @@ describe('the public creator catalog', () => {
 });
 
 describe('the public club listing', () => {
-  it('shows club metadata and nothing about members or payment', async () => {
-    renderPage(
-      doubleFor(
-        { body: published, kind: 'ok' },
-        [],
-        [{ description: 'A quiet room.', name: 'Inner Circle', slug: 'inner' }],
-      ),
-    );
+  const club = {
+    benefits: ['A letter every week'],
+    description: 'A quiet room.',
+    id: '99999999-9999-4999-8999-999999999999',
+    name: 'Inner Circle',
+    slug: 'inner',
+  };
+
+  it('offers no purchase for a club nobody priced', async () => {
+    renderPage(doubleFor({ body: published, kind: 'ok' }, [], [club]));
 
     const list = await screen.findByTestId('creator-public-clubs');
     expect(within(list).getByRole('heading', { level: 3 }).textContent).toBe(
       'Inner Circle',
     );
+    // What its creator promises is presentation, and it is theirs to write.
+    expect(list.textContent).toContain('A letter every week');
     const markup = document.body.textContent;
-    for (const forbidden of ['Join', 'Subscribe', 'Price', 'Buy', '€', '$']) {
+    for (const forbidden of ['Join this club', 'Subscribe', '€', '$']) {
       expect(markup, forbidden).not.toContain(forbidden);
     }
     // No member count of any kind, real or invented.
     expect(markup).not.toMatch(/\d+\s+members?/iu);
     // The honest statement about how somebody gets in.
     expect(markup).toContain('by invitation from this creator');
+  });
+
+  it('shows a price only when the commercial owner published one', async () => {
+    renderPage(
+      doubleFor({ body: published, kind: 'ok' }, [], [club], {
+        gates: [],
+        offers: [
+          {
+            id: 'offer-1',
+            mode: 'subscription',
+            prices: [
+              {
+                amount: { amountMinor: '1500', currency: 'USD' },
+                id: 'price-1',
+                interval: 'month',
+              },
+            ],
+            resource: { id: club.id, type: 'club' },
+          },
+        ],
+        readiness: {
+          currencies: ['USD'],
+          enabled: true,
+          intervals: ['month'],
+          modes: ['subscription'],
+          source: 'local-test',
+        },
+      }),
+    );
+
+    const list = await screen.findByTestId('creator-public-clubs');
+    // Two owners, joined on an opaque identifier by the surface that asked for
+    // both. Neither route knows the other exists.
+    expect(list.textContent).toContain('15.00 USD');
+    expect(list.textContent).toContain('a month');
+    // Signed out: the honest control is the one that gets somebody a session,
+    // not one that would refuse.
+    await screen.findByTestId('club-join-signin-inner');
+    expect(screen.queryByTestId('club-join-inner')).toBeNull();
   });
 
   it('says nothing at all when a creator has published no club', async () => {

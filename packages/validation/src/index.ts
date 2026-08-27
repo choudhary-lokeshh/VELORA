@@ -22,8 +22,13 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  adminDisputeListResponseSchema,
+  cancelSubscriptionRequestSchema,
   checkoutResponseSchema,
+  consumerPaymentListResponseSchema,
   consumerSubscriptionListResponseSchema,
+  consumerSubscriptionResponseSchema,
+  publicMembershipOfferListResponseSchema,
   consumerGiftListResponseSchema,
   creatorReceivedGiftListResponseSchema,
   giftCatalogResponseSchema,
@@ -85,7 +90,9 @@ import {
 } from './admin.js';
 import {
   clubAccessListResponseSchema,
+  clubDetailResponseSchema,
   clubIdSchema,
+  clubSlugSchema,
   clubInviteIssuedResponseSchema,
   clubInviteListResponseSchema,
   clubLifecycleRequestSchema,
@@ -96,6 +103,7 @@ import {
   creatorContentListResponseSchema,
   creatorContentMediaRequestSchema,
   issueClubInviteRequestSchema,
+  leaveClubRequestSchema,
   publicClubListResponseSchema,
   publicCreatorCatalogResponseSchema,
   redeemClubInviteRequestSchema,
@@ -271,6 +279,7 @@ export const apiRoutePaths = {
   creatorOffers: '/v1/creator/offers',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  adminBillingDisputes: '/v1/admin/billing/disputes',
   adminBillingRefunds: '/v1/admin/billing/refunds',
   adminBillingState: '/v1/admin/billing/state',
   adminCreatorObjectRemoval: '/v1/admin/creators/object-removal',
@@ -304,8 +313,12 @@ export const apiRoutePaths = {
   giftCatalog: '/v1/billing/gifts/catalog',
   identityProviderEvents: '/v1/identity/provider-events',
   providerEvents: '/v1/billing/provider-events',
+  payments: '/v1/billing/payments',
+  subscriptionCancellation: '/v1/billing/subscriptions/cancellation',
   subscriptions: '/v1/billing/subscriptions',
+  club: '/v1/clubs',
   clubAccess: '/v1/clubs/access',
+  clubDepartures: '/v1/clubs/departures',
   clubContent: '/v1/clubs/content',
   clubRedemptions: '/v1/clubs/redemptions',
   creatorClubInviteRevocation: '/v1/creator/clubs/invites/revocation',
@@ -328,6 +341,7 @@ export const apiRoutePaths = {
   publicCreatorDirectory: '/v1/creators/directory',
   publicCreatorCatalog: '/v1/creators/catalog',
   publicCreatorClubs: '/v1/creators/clubs',
+  publicCreatorMemberships: '/v1/creators/memberships',
   discoveryCandidates: '/v1/discovery/candidates',
   discoveryPerson: '/v1/discovery/people',
   discoveryIntroductionDecline: '/v1/discovery/introductions/decline',
@@ -435,7 +449,12 @@ export const apiSchemas = {
   GiftCatalogProvisionResponse: giftCatalogProvisionResponseSchema,
   SendGiftRequest: sendGiftRequestSchema,
   SendGiftResponse: sendGiftResponseSchema,
+  ConsumerPaymentListResponse: consumerPaymentListResponseSchema,
   ConsumerSubscriptionListResponse: consumerSubscriptionListResponseSchema,
+  ConsumerSubscriptionResponse: consumerSubscriptionResponseSchema,
+  CancelSubscriptionRequest: cancelSubscriptionRequestSchema,
+  PublicMembershipOfferListResponse: publicMembershipOfferListResponseSchema,
+  AdminDisputeListResponse: adminDisputeListResponseSchema,
   CreatorEarningsHistoryResponse: creatorEarningsHistoryResponseSchema,
   CreatorEarningsResponse: creatorEarningsResponseSchema,
   CreatorPayoutHistoryResponse: creatorPayoutHistoryResponseSchema,
@@ -480,6 +499,8 @@ export const apiSchemas = {
   ModerationNoteRequest: moderationNoteRequestSchema,
   ModerationTriageRequest: moderationTriageRequestSchema,
   ClubAccessListResponse: clubAccessListResponseSchema,
+  ClubDetailResponse: clubDetailResponseSchema,
+  LeaveClubRequest: leaveClubRequestSchema,
   ClubInviteIssuedResponse: clubInviteIssuedResponseSchema,
   ClubInviteListResponse: clubInviteListResponseSchema,
   ClubLifecycleRequest: clubLifecycleRequestSchema,
@@ -588,7 +609,10 @@ export const apiQueryParameters = {
   ownerDomain: adminIdentityOwnerDomainSchema,
   ownerReference: z.uuid(),
   clubId: clubIdSchema,
+  /** Restricts a queue read to claims still awaiting an answer. */
+  open: z.enum(['true', 'false']),
   personId: z.uuid(),
+  slug: clubSlugSchema,
   contentId: contentIdSchema,
   currency: currencyCodeSchema,
   handle: creatorHandleSchema,
@@ -1933,6 +1957,49 @@ export const apiOperations = [
   },
   {
     method: 'get',
+    operationId: 'getClub',
+    path: apiRoutePaths.club,
+    requestQuery: [
+      { description: 'Canonical creator handle', name: 'handle' },
+      { description: "The club's slug within that creator", name: 'slug' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "The club's public identity, plus the caller's own membership and the members-only feed when they hold one. A caller who holds nothing gets the identity and an empty feed — never a protected body, summary, or media reference.",
+        schemaName: 'ClubDetailResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'Safe to reach by typed address. Entitlement is re-derived on this request from current club, creator, standing and membership state rather than from anything cached, so a revoked, blocked, or suspended reader loses the feed on their next load rather than at the next sweep.',
+  },
+  {
+    method: 'post',
+    operationId: 'leaveClub',
+    path: apiRoutePaths.clubDepartures,
+    requestSchemaName: 'LeaveClubRequest',
+    responses: {
+      '200': {
+        description:
+          'The invitation-based membership was ended, and the access the caller still holds is returned.',
+        schemaName: 'ClubAccessListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The membership could not be ended here. The body is an ApiError with code ${productErrorCodes.actionNotPermitted}. A paid membership is refused deliberately: ending it is a billing decision with a period and a renewal attached, and it is cancelled through the subscription route instead.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Leaving is provenance-aware. A creator invitation is a gift and giving it back ends it; a commercial entitlement belongs to the subscription that produced it and is never ended by a membership action.',
+  },
+  {
+    method: 'get',
     operationId: 'getPublicCreatorClubs',
     path: apiRoutePaths.publicCreatorClubs,
     requestQuery: [{ description: 'Canonical creator handle', name: 'handle' }],
@@ -1945,7 +2012,24 @@ export const apiOperations = [
     },
     security: apiSecurityRequirements.public,
     summary:
-      'Metadata only: a name, a description, and the slug. No member count, no member list, no invitation, no content, and no control implying anybody can pay to join — no payment path exists, so offering one would be a lie in a button.',
+      "Presentation only: an identifier, a name, a description, the benefits its creator wrote, the slug, and — for a caller who already holds one — their own membership. No member count, no member list, no invitation, no content, and no price: what a club costs is BILLING's to publish against the same identifier, through its own route.",
+  },
+  {
+    method: 'get',
+    operationId: 'getPublicCreatorMemberships',
+    path: apiRoutePaths.publicCreatorMemberships,
+    requestQuery: [{ description: 'Canonical creator handle', name: 'handle' }],
+    responses: {
+      '200': {
+        description:
+          "This creator's active offers with their live prices, the platform's current commercial readiness, and the caller's own subscriptions against those offers. An empty list under `enabled: false` means VELORA cannot transact; an empty list under `enabled: true` means the creator has published nothing.",
+        schemaName: 'PublicMembershipOfferListResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      "What something costs, by opaque resource identifier. Which club that identifier names, what it is called, and what is inside it are PRIVATE CLUBS' to publish; the two answers are joined by the surface that asked for both, and neither domain reads the other.",
   },
   {
     method: 'post',
@@ -2031,6 +2115,52 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
   },
   {
+    method: 'get',
+    operationId: 'listConsumerPayments',
+    path: apiRoutePaths.payments,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this history',
+        name: 'cursor',
+      },
+      { description: 'Maximum payments to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Everything the caller has been charged or nearly charged, newest first. A record of attempts rather than a set of receipts: what a receipt must say is unresolved commercial and tax policy, and calling this one would be a claim nobody approved.',
+        schemaName: 'ConsumerPaymentListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'cancelSubscription',
+    path: apiRoutePaths.subscriptionCancellation,
+    requestSchemaName: 'CancelSubscriptionRequest',
+    responses: {
+      '200': {
+        description:
+          'Renewal is scheduled to stop. The paid period is unchanged and access continues to its end, because withdrawing it at the moment somebody cancels would take back something already bought. Repeating the request is safe and returns the same state.',
+        schemaName: 'ConsumerSubscriptionResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The subscription is not in a state that can be cancelled — it has already ended, or it never started. The body is an ApiError with code ${productErrorCodes.actionNotPermitted}. A subscription belonging to somebody else is the shared 404 instead, indistinguishable from one that does not exist.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Cancellation schedules the end of renewal and nothing else. There is no immediate option and no field that could become one: a refund is a separate, operator-authorized reversal, and this route never issues one. Unlike starting a purchase, it is open to every consumer surface: beginning a subscription from a mobile application is a different commercial arrangement, and ending one is not an arrangement at all.',
+  },
+  {
     method: 'post',
     operationId: 'startCheckout',
     path: apiRoutePaths.checkouts,
@@ -2057,7 +2187,7 @@ export const apiOperations = [
     },
     security: apiSecurityRequirements.cookieSession,
     summary:
-      'The request names an offer and a currency and nothing else. The amount is read from the price row inside the transaction that records the operation, so no client can propose what it pays. A client idempotency key is required, scoped by consumer and offer, so a double-click resolves to one purchase.',
+      'The request names an offer, a currency, and — where the offer publishes more than one cadence — which cadence. The amount is read from the price row inside the transaction that records the operation, so no client can propose what it pays, and an unnamed cadence against two published ones refuses rather than choosing. A client idempotency key is required, scoped by consumer and offer, so a double-click resolves to one purchase.',
   },
   {
     method: 'get',
@@ -2837,6 +2967,36 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'A read and only a read. There is no operation anywhere in this API that edits a financial row; the one financial action an operator has is issuing a refund, and that goes through BILLING\u2019s own service with an operator\u2019s authority. Reporting the configured adapter name rather than a boolean is what makes "off" and "off because nobody has approved one" distinguishable.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminDisputes',
+    path: apiRoutePaths.adminBillingDisputes,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this queue',
+        name: 'cursor',
+      },
+      { description: 'Maximum disputes to return', name: 'pageSize' },
+      {
+        description:
+          'Restrict to live claims awaiting an answer, or omit for the whole history',
+        name: 'open',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Disputes an operator has to answer, soonest deadline first, with the provider reference each claim has to be quoted by.',
+        schemaName: 'AdminDisputeListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A read and only a read. There is no evidence submission here: whether VELORA may submit evidence, in what form, and through which provider is unresolved, and a control that accepted a file and did nothing with it would be worse than its absence.',
   },
   {
     method: 'post',

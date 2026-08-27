@@ -38,6 +38,17 @@ export interface CommercialCreatorPort {
     readonly executor: Executor;
   }): Promise<boolean>;
   /**
+   * The creator behind a published public page, or nothing.
+   *
+   * One answer covers an unknown handle, a page that is still a draft, and a
+   * creator who is not active, so a caller cannot learn which by asking. What a
+   * creator sells is only published where the creator themselves is.
+   */
+  publishedCreatorFor(input: {
+    readonly executor: Executor;
+    readonly handle: string;
+  }): Promise<string | undefined>;
+  /**
    * Which country this creator operates from, or nothing when Velora does not
    * know.
    *

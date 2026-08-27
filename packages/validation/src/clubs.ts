@@ -227,6 +227,27 @@ export const minimumClubSlugLength = 3;
 export const maximumClubSlugLength = 40;
 
 /**
+ * What a creator promises a member, as short lines rather than as prose.
+ *
+ * Bounded in both directions on purpose. A benefit list is the part of a
+ * membership a visitor actually reads before deciding, and an unbounded one
+ * turns into a second description that nobody finishes. Eight lines of a
+ * hundred and twenty characters is enough to say what somebody gets and too
+ * little to hide a term in.
+ *
+ * These are presentation, owned by PRIVATE CLUBS along with the rest of a
+ * club's identity. They are deliberately not commercial terms: nothing here
+ * carries a price, a cadence, a refund rule, or a guarantee, because those are
+ * BILLING's to publish and none of them is approved.
+ */
+export const maximumClubBenefits = 8;
+export const maximumClubBenefitLength = 120;
+export const clubBenefitSchema = z
+  .string()
+  .min(1)
+  .max(maximumClubBenefitLength);
+
+/**
  * A club's address within one creator.
  *
  * The same repertoire as a creator handle and for the same reason — lower-case
@@ -290,6 +311,8 @@ export type MembershipStateValue = z.infer<typeof membershipStateSchema>;
 /** The creator's own view of one club, including a draft nobody else can see. */
 export const creatorClubSchema = z
   .object({
+    /** What a member is told they get, in the creator's own words. */
+    benefits: z.array(clubBenefitSchema).max(maximumClubBenefits),
     createdAt: z.iso.datetime(),
     description: z.string().max(maximumClubDescriptionLength).optional(),
     id: z.uuid(),
@@ -317,6 +340,12 @@ export type CreatorClubListResponse = z.infer<
 
 export const saveCreatorClubRequestSchema = z
   .object({
+    /**
+     * The whole list, every time. A partial update of an ordered list is how
+     * two editors silently reorder each other's work; sending the list the
+     * creator is looking at makes the optimistic version check mean something.
+     */
+    benefits: z.array(clubBenefitSchema).max(maximumClubBenefits).optional(),
     clubId: z.uuid().optional(),
     description: z.string().max(maximumClubDescriptionLength).optional(),
     name: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
@@ -439,14 +468,26 @@ export type RedeemClubInviteRequest = z.infer<
   typeof redeemClubInviteRequestSchema
 >;
 
-/** What a member is told after redeeming, and after asking what they hold. */
+/**
+ * What a member is told after redeeming, and after asking what they hold.
+ *
+ * Ended memberships are carried here alongside live ones rather than dropped,
+ * because somebody who paid for a club last month is entitled to see that they
+ * were in it — and because a subscription that has run out otherwise leaves a
+ * row on the Memberships page with nothing to name it. `state` is what tells
+ * the two apart; nothing about a revoked row grants a read.
+ */
 export const clubAccessSchema = z
   .object({
     clubId: z.uuid(),
     clubName: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
+    clubSlug: clubSlugSchema,
     creatorHandle: creatorHandleSchema,
+    /** Present exactly when the entitlement has ended. */
+    endedAt: z.iso.datetime().optional(),
     grantedAt: z.iso.datetime(),
     source: membershipSourceSchema,
+    state: membershipStateSchema,
   })
   .strict();
 export type ClubAccess = z.infer<typeof clubAccessSchema>;
@@ -458,10 +499,44 @@ export type ClubAccessListResponse = z.infer<
   typeof clubAccessListResponseSchema
 >;
 
-/** Club metadata a visitor may see on a published creator page. */
+/**
+ * Leaving a club somebody was invited into.
+ *
+ * Deliberately not a cancellation. A creator invitation is a gift and giving it
+ * back ends it; a paid membership is a commercial relationship and ending it is
+ * a billing decision with a period, a renewal, and a refund question attached.
+ * The route refuses a membership whose source is `billing` and says where to go
+ * instead, rather than quietly ending access somebody has already paid for.
+ */
+export const leaveClubRequestSchema = z.object({ clubId: z.uuid() }).strict();
+export type LeaveClubRequest = z.infer<typeof leaveClubRequestSchema>;
+
+/**
+ * Club metadata a visitor may see on a published creator page.
+ *
+ * The identifier is published because a visitor has to be able to join this
+ * club to what it costs, and what it costs is BILLING's to publish against the
+ * same opaque resource identifier. Neither domain reads the other's tables and
+ * neither route knows about the other; the join happens where both answers
+ * arrive, which is the surface.
+ *
+ * `membership` is present exactly when the person asking already holds one, so
+ * a page can say "you are in this" instead of offering to sell it to them
+ * again. It is absent for a visitor with no session, which is why the whole
+ * field is optional rather than a state with a `none` value.
+ */
 export const publicClubSchema = z
   .object({
+    benefits: z.array(clubBenefitSchema).max(maximumClubBenefits),
     description: z.string().max(maximumClubDescriptionLength).optional(),
+    id: z.uuid(),
+    membership: z
+      .object({
+        grantedAt: z.iso.datetime(),
+        source: membershipSourceSchema,
+      })
+      .strict()
+      .optional(),
     name: z.string().min(minimumClubNameLength).max(maximumClubNameLength),
     slug: clubSlugSchema,
   })
@@ -477,6 +552,53 @@ export const publicClubListResponseSchema = z
 export type PublicClubListResponse = z.infer<
   typeof publicClubListResponseSchema
 >;
+
+/**
+ * One members-only item, as somebody who may read it sees it.
+ *
+ * The same allow-list discipline the public catalog gets, and for the same
+ * reason: a member is owed the item, not its author's lifecycle, version, or
+ * pipeline. That it is members-only is already implied by where it was read
+ * from, so `visibility` is not repeated here.
+ */
+export const memberClubContentSchema = z
+  .object({
+    body: z.string().max(maximumCreatorContentBodyLength).optional(),
+    id: z.uuid(),
+    media: z
+      .array(
+        z.object({ id: z.uuid(), position: z.number().int().min(0) }).strict(),
+      )
+      .max(maximumContentMedia),
+    publishedAt: z.iso.datetime(),
+    summary: z.string().max(maximumCreatorContentSummaryLength).optional(),
+    title: z
+      .string()
+      .min(minimumCreatorContentTitleLength)
+      .max(maximumCreatorContentTitleLength),
+  })
+  .strict();
+export type MemberClubContent = z.infer<typeof memberClubContentSchema>;
+
+/**
+ * A club as its own destination.
+ *
+ * Two answers in one response because they are decided together. `membership`
+ * says whether this person is in the club right now, re-derived from current
+ * club, creator, standing and entitlement state rather than from anything
+ * cached; `content` is populated only when it is present. A visitor who is not
+ * a member gets the club's public identity and an empty feed — never a body, a
+ * summary, or a media reference belonging to a protected item.
+ */
+export const clubDetailResponseSchema = z
+  .object({
+    club: publicClubSchema,
+    content: z.array(memberClubContentSchema).max(50),
+    creatorHandle: creatorHandleSchema,
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+export type ClubDetailResponse = z.infer<typeof clubDetailResponseSchema>;
 
 /** Which club a creator-scoped read addresses. */
 export const clubIdSchema = z.uuid();

@@ -44,6 +44,17 @@ import { useCollection, useSingleFlight } from './resource';
 
 export const clubNameBounds = { maximum: 80, minimum: 2 };
 export const clubDescriptionMaximum = 600;
+/**
+ * How many promises a club may publish, and how long one may be.
+ *
+ * The contract's own bounds, restated here where the form needs them. Eight
+ * short lines is enough to say what somebody gets and too little to hide a
+ * commercial term in — which matters, because nothing a creator writes here is
+ * one: a price, a cadence, and a refund rule are VELORA's to publish and none
+ * of them is approved.
+ */
+export const clubBenefitsMaximum = 8;
+export const clubBenefitLengthMaximum = 120;
 const slugPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{1,38}[A-Za-z0-9]$/u;
 const clubsPageSize = 25;
 

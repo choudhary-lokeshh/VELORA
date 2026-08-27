@@ -231,6 +231,50 @@ export const enforcementScopeLabels: Readonly<Record<string, string>> = {
   creator_suspension: 'Creator suspension',
 };
 
+/**
+ * Where a cardholder claim has got to, and whether it still needs an answer.
+ *
+ * `lost` is a statement about where the money is rather than about who was
+ * right. That is the only reading that makes the accounting consequence
+ * unambiguous, and an operator scanning this column is reading it for exactly
+ * that.
+ */
+const disputeState: Readonly<Record<string, StateLook>> = {
+  lost: { icon: 'alert', label: 'Lost', tone: 'critical' },
+  opened: { icon: 'queue', label: 'Open', tone: 'caution' },
+  under_review: { icon: 'clock', label: 'Under review', tone: 'info' },
+  withdrawn: { icon: 'check', label: 'Withdrawn', tone: 'neutral' },
+  won: { icon: 'check', label: 'Won', tone: 'positive' },
+};
+
+export function disputeStateLook(state: string): StateLook {
+  return (
+    disputeState[state] ?? {
+      icon: 'info',
+      label: humanState(state),
+      tone: 'neutral',
+    }
+  );
+}
+
+/**
+ * Why a cardholder says they are claiming, normalized from whatever their
+ * provider called it.
+ *
+ * Restated rather than expanded. VELORA does not know whether a claim is
+ * correct, and a label that implied it did would be the console taking a side
+ * before anybody had looked.
+ */
+export const disputeReasonLabels: Readonly<Record<string, string>> = {
+  duplicate: 'Charged twice',
+  fraudulent: 'Not authorised by the cardholder',
+  other: 'Another reason the provider did not classify',
+  product_not_received: 'Says they did not receive it',
+  product_unacceptable: 'Says it was not what was described',
+  subscription_cancelled: 'Says the subscription was already cancelled',
+  unrecognized: 'Does not recognise the charge',
+};
+
 export const refundReasonLabels: Readonly<Record<string, string>> = {
   dispute_resolution: 'Dispute resolution',
   duplicate_charge: 'Duplicate charge',

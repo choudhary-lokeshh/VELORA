@@ -1333,17 +1333,27 @@ describe('settings', () => {
 
 /* ============================ memberships ============================ */
 
+/** One live entitlement, as the access route publishes one. */
+const invited = {
+  clubId: '77777777-7777-4777-8777-777777777777',
+  clubName: 'Inner Circle',
+  clubSlug: 'inner',
+  creatorHandle: 'ember_vale',
+  grantedAt: '2026-08-14T12:00:00.000Z',
+  source: 'creator_invite',
+  state: 'active' as const,
+};
+
 describe('memberships', () => {
-  it('says nothing can be bought and offers no way to buy', async () => {
+  it('offers no purchase from an account page', async () => {
     const double = createApiDouble(admittedState());
     renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
 
-    await screen.findByTestId('memberships-commerce');
-    expect(textOf('memberships-commerce')).toContain('can be bought yet');
     await screen.findByTestId('memberships-empty');
-
+    // Buying happens where the thing being bought is described — on a
+    // creator's page — rather than from a list of what somebody already holds.
     const markup = document.body.textContent;
-    for (const forbidden of ['Subscribe', 'Buy', 'Upgrade', 'Checkout']) {
+    for (const forbidden of ['Subscribe', 'Buy now', 'Upgrade', 'Checkout']) {
       expect(markup, forbidden).not.toContain(forbidden);
     }
   });
@@ -1353,9 +1363,7 @@ describe('memberships', () => {
     renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
 
     await screen.findByTestId('club-access-empty');
-    expect(textOf('club-access-empty')).toContain(
-      'no way to ask for one and nothing to buy',
-    );
+    expect(textOf('club-access-empty')).toContain('there is no way to ask');
   });
 
   it('redeems an invitation and never shows the secret again', async () => {
@@ -1365,6 +1373,7 @@ describe('memberships', () => {
         {
           clubId: '77777777-7777-4777-8777-777777777777',
           clubName: 'Inner Circle',
+          clubSlug: 'inner',
           creatorHandle: 'ember_vale',
           secret: 'a-bearer-secret-nobody-should-see-twice',
         },
@@ -1406,25 +1415,37 @@ describe('memberships', () => {
     expect(double.state.clubAccess).toHaveLength(0);
   });
 
-  it('does not pretend a club can be opened from here', async () => {
+  it('opens the club an invitation admitted somebody to', async () => {
     const double = createApiDouble({
       ...admittedState(),
-      clubAccess: [
-        {
-          clubId: '77777777-7777-4777-8777-777777777777',
-          clubName: 'Inner Circle',
-          creatorHandle: 'ember_vale',
-          grantedAt: '2026-08-14T12:00:00.000Z',
-          source: 'creator_invite',
-        },
-      ],
+      clubAccess: [invited],
     });
     renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
 
-    await screen.findByTestId('club-content-blocked');
-    expect(textOf('club-content-blocked')).toContain(
-      'nothing publishes a member',
+    const open = await screen.findByTestId(
+      'club-open-77777777-7777-4777-8777-777777777777',
     );
+    expect(open.getAttribute('href')).toBe('/c/ember_vale/club/inner');
+  });
+
+  it('hands back an invitation and keeps it in the record as ended', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      clubAccess: [invited],
+    });
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    await click('club-leave-77777777-7777-4777-8777-777777777777');
+    await click(
+      'club-leave-confirm-77777777-7777-4777-8777-777777777777-accept',
+    );
+
+    await waitFor(() => {
+      expect(double.state.clubAccess[0]?.state).toBe('revoked');
+    });
+    // Somebody's own history is theirs to see: the club they used to be in
+    // moves to Ended rather than disappearing.
+    await screen.findByTestId('past-club-77777777-7777-4777-8777-777777777777');
   });
 
   it('shows what the server says is being paid for, and grants nothing for a lapse', async () => {
@@ -1436,7 +1457,12 @@ describe('memberships', () => {
           createdAt: '2026-08-15T12:00:00.000Z',
           currentPeriodEnd: '2026-09-15T12:00:00.000Z',
           id: 'sub-1',
+          interval: 'month',
           offerId: '11111111-1111-4111-8111-111111111111',
+          resource: {
+            id: '77777777-7777-4777-8777-777777777777',
+            type: 'club',
+          },
           state: 'past_due',
         },
       ],
@@ -1445,7 +1471,81 @@ describe('memberships', () => {
 
     const row = await screen.findByTestId('membership-sub-1');
     expect(row.textContent).toContain('15.00 USD');
-    expect(row.textContent).toContain('access is not active');
+    // No grace period is implied anywhere, because none has been approved.
+    expect(row.textContent).toContain('access has stopped');
+    expect(row.textContent).toContain('no grace period');
+  });
+
+  it('schedules the end without taking the period already paid for', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      clubAccess: [{ ...invited, source: 'billing' }],
+      subscriptions: [
+        {
+          amount: { amountMinor: '1500', currency: 'USD' },
+          createdAt: '2026-08-15T12:00:00.000Z',
+          currentPeriodEnd: '2026-09-15T12:00:00.000Z',
+          id: 'sub-2',
+          interval: 'month',
+          offerId: '11111111-1111-4111-8111-111111111111',
+          resource: {
+            id: '77777777-7777-4777-8777-777777777777',
+            type: 'club',
+          },
+          state: 'active',
+        },
+      ],
+    });
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    await click('membership-cancel-sub-2');
+    // The confirmation says what actually happens, including the thing people
+    // assume and VELORA has not promised.
+    expect(document.body.textContent).toContain('This is not a refund');
+    await click('membership-cancel-confirm-sub-2-accept');
+
+    await waitFor(() => {
+      expect(double.state.subscriptions[0]?.state).toBe('cancel_at_period_end');
+    });
+    const row = await screen.findByTestId('membership-sub-2');
+    expect(row.textContent).toContain('You keep everything it gives you');
+  });
+
+  it('never offers to leave a club somebody is paying for', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      clubAccess: [{ ...invited, source: 'billing' }],
+    });
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    // A commercial entitlement is not an invitation and does not appear among
+    // them: leaving would end access while the money kept running, so the
+    // control does not exist rather than existing and refusing.
+    await screen.findByTestId('club-access-empty');
+    expect(
+      screen.queryByTestId('club-leave-77777777-7777-4777-8777-777777777777'),
+    ).toBeNull();
+  });
+
+  it('calls its payment record a record rather than a receipt', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      payments: [
+        {
+          amount: { amountMinor: '1500', currency: 'USD' },
+          createdAt: '2026-08-15T12:00:00.000Z',
+          id: 'pay-1',
+          offerId: '11111111-1111-4111-8111-111111111111',
+          state: 'succeeded',
+          updatedAt: '2026-08-15T12:00:00.000Z',
+        },
+      ],
+    });
+    renderProduct(<Memberships />, double, { pathname: '/you/memberships' });
+
+    const row = await screen.findByTestId('payment-pay-1');
+    expect(row.textContent).toContain('15.00 USD');
+    expect(textOf('payments-not-receipts')).toContain('not a receipt');
   });
 });
 

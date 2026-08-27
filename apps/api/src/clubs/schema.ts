@@ -25,6 +25,8 @@ import {
   maximumCreatorContentBodyLength,
   maximumCreatorContentSummaryLength,
   maximumCreatorContentTitleLength,
+  maximumClubBenefitLength,
+  maximumClubBenefits,
   maximumClubDescriptionLength,
   maximumClubNameLength,
   maximumContentMedia,
@@ -227,6 +229,42 @@ export const clubs = pgTable(
       sql`(${table.lifecycle} = 'closed') = (${table.closedAt} is not null)`,
     ),
     check('clubs_clubs_version_check', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
+ * What a creator promises a member, one line per row.
+ *
+ * A child table rather than an array column, for the reason every other
+ * ordered list in this schema is one: the position is a fact the database can
+ * hold unique, the length of a line is a CHECK rather than a service rule, and
+ * a benefit can be rewritten without rewriting the seven around it. An array
+ * would have made all three a matter of what the writing code remembered to do.
+ *
+ * These are presentation and nothing else. No row here carries a price, a
+ * cadence, or a term, because a promise about money made in a club's own words
+ * would be a commercial term that BILLING never approved and cannot enforce.
+ */
+export const clubBenefits = pgTable(
+  'clubs_benefits',
+  {
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    text: text('text').notNull(),
+  },
+  (table) => [
+    uniqueIndex('clubs_benefits_position_uk').on(table.clubId, table.position),
+    check('clubs_benefits_position_check', sql`${table.position} >= 0`),
+    check(
+      'clubs_benefits_position_bound_check',
+      sql`${table.position} < ${sql.raw(String(maximumClubBenefits))}`,
+    ),
+    check(
+      'clubs_benefits_text_check',
+      lengthBetween(table.text, 1, maximumClubBenefitLength),
+    ),
   ],
 );
 

@@ -385,7 +385,12 @@ describe('checkout orchestration', () => {
       amountMinor: '1500',
       currency: 'USD',
     });
-    expect(body.redirectUrl).toContain('local-test.provider.invalid');
+    // The provider's own page, not a Velora product route. The local-test
+    // adapter has no origin of its own so it borrows the API's, exactly as the
+    // local-test media transport does — but it stays outside `/v1`, carries no
+    // session, and settles nothing except through a signed event.
+    expect(body.redirectUrl).toContain('/local-test/checkout?reference=lt_');
+    expect(body.redirectUrl).not.toContain('/v1/');
 
     // The stored operation names a provider object and the price it was made
     // against; nothing about a payment instrument is anywhere in the row.

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   creatorContentLifecycleValues,
   creatorContentVisibilityValues,
+  maximumClubBenefitLength,
+  maximumClubBenefits,
   maximumContentMedia,
   maximumCreatorContentBodyLength,
   maximumCreatorContentSummaryLength,
@@ -32,6 +34,10 @@ describe('catalog policy is stated once', () => {
       maximumCreatorContentSummaryLength,
     );
     expect(schemaPolicy.maximumContentMedia).toBe(maximumContentMedia);
+    expect(schemaPolicy.maximumClubBenefits).toBe(maximumClubBenefits);
+    expect(schemaPolicy.maximumClubBenefitLength).toBe(
+      maximumClubBenefitLength,
+    );
     expect(schemaPolicy.maximumCreatorContentBodyLength).toBe(
       maximumCreatorContentBodyLength,
     );

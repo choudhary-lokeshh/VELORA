@@ -20,6 +20,15 @@ export const entitlementRevokedEvent = 'billing.entitlement.revoked.v1';
 /** Why an entitlement was withdrawn, in terms the access owner can act on. */
 export const entitlementRevocationReasons = [
   'subscription_cancelled',
+  /**
+   * A renewal the provider could not collect.
+   *
+   * Distinct from a cancellation because nobody decided it, and distinct from a
+   * reversal because no money came back. It withdraws access for the same
+   * fail-closed reason `past_due` grants none: grace policy is unresolved, and
+   * the honest reading of an unresolved policy is no access.
+   */
+  'subscription_lapsed',
   'subscription_terminated',
   'payment_reversed',
 ] as const;

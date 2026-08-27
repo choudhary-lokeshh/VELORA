@@ -10,6 +10,8 @@ import {
 
 import type {
   CurrencyTotal,
+  Dispute,
+  DisputeList,
   FinancialState,
   RefundReasonCode,
 } from '../api/contract';
@@ -17,6 +19,7 @@ import { failureMessage } from '../api/messages';
 import { Dialog } from '../design/dialog';
 import {
   Acknowledgement,
+  Badge,
   Button,
   EmptyState,
   ErrorMessage,
@@ -31,11 +34,18 @@ import {
   PanelHead,
   PanelSkeleton,
   Select,
+  Table,
   TextInput,
 } from '../design/primitives';
 import { useApi, useToast } from '../app/providers';
 import { Adapters, StateCounts } from './readouts';
-import { refundReasonLabels } from './format';
+import {
+  disputeReasonLabels,
+  disputeStateLook,
+  formatDate,
+  refundReasonLabels,
+  shortId,
+} from './format';
 import { useResource, useSingleFlight } from './resource';
 
 /**
@@ -162,6 +172,8 @@ export function Money() {
               what={['instruction', 'instructions']}
             />
           </div>
+
+          <DisputeQueue />
         </>
       )}
 
@@ -177,6 +189,137 @@ export function Money() {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * The claims an operator has to answer.
+ *
+ * The queue rather than the count. A number of open disputes tells somebody
+ * that work exists; this tells them which work, how much is at stake, when it
+ * is due, and the provider reference they have to quote to answer it — which is
+ * the whole of what a person can act on from a console.
+ *
+ * There is no evidence submission and no field that could become one. Whether
+ * VELORA may submit evidence, in what form, and through which provider is
+ * unresolved, and a control that accepted a file and did nothing with it would
+ * be worse than its absence. What an operator can do about a live claim today
+ * is know it exists and decide, separately and with an audit record, whether to
+ * refund the payment behind it.
+ *
+ * Nothing here identifies the cardholder. A dispute is about a payment, and who
+ * made that payment is not something a finance queue should be able to group by.
+ */
+function DisputeQueue() {
+  const api = useApi();
+  const [openOnly, setOpenOnly] = useState(true);
+  const load = useCallback(
+    async () => api.disputes({ open: openOnly, pageSize: 25 }),
+    [api, openOnly],
+  );
+  const disputes = useResource<DisputeList>(load);
+  const rows = disputes.value?.disputes ?? [];
+
+  return (
+    <Panel testId="money-dispute-queue">
+      <PanelHead
+        actions={
+          <Button
+            data-testid="dispute-queue-scope"
+            onClick={() => {
+              setOpenOnly((current) => !current);
+            }}
+          >
+            {openOnly ? 'Show every claim' : 'Show only live claims'}
+          </Button>
+        }
+        lede={
+          openOnly
+            ? 'Claims still awaiting an answer, newest first.'
+            : 'Every claim on record, newest first.'
+        }
+        title="Cardholder claims"
+      />
+      <PanelBody>
+        {disputes.error !== undefined && disputes.value === undefined ? (
+          <ErrorState
+            body={disputes.error}
+            onRetry={disputes.retryable ? disputes.reload : undefined}
+            testId="dispute-queue-failed"
+          />
+        ) : disputes.value === undefined ? (
+          <PanelSkeleton rows={3} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            body={
+              openOnly
+                ? 'No cardholder is currently claiming money back.'
+                : 'No cardholder has ever claimed money back here.'
+            }
+            testId="dispute-queue-empty"
+            title="Nothing to answer"
+          />
+        ) : (
+          <Table testId="dispute-queue">
+            <thead>
+              <tr>
+                <th scope="col">Claim</th>
+                <th scope="col">Amount</th>
+                <th scope="col">Reason</th>
+                <th scope="col">Opened</th>
+                <th scope="col">Evidence due</th>
+                <th scope="col">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((dispute) => (
+                <DisputeRow dispute={dispute} key={dispute.id} />
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <Notice testId="dispute-evidence-blocked" tone="quiet">
+          VELORA cannot submit evidence for any of these. No provider is
+          approved, nothing has decided what evidence may be sent or who may
+          send it, and a control here that accepted a file and did nothing with
+          it would be worse than its absence.
+        </Notice>
+      </PanelBody>
+    </Panel>
+  );
+}
+
+function DisputeRow({ dispute }: { readonly dispute: Dispute }) {
+  const look = disputeStateLook(dispute.state);
+  return (
+    <tr data-testid={`dispute-${dispute.id}`}>
+      <td>
+        {/* The provider's own reference: an operator who cannot name the case
+            cannot answer it. */}
+        <span className="a-numeric">{dispute.providerReference}</span>
+      </td>
+      <td className="a-numeric">
+        {formatMinorUnits(dispute.amount.amountMinor, dispute.amount.currency)}{' '}
+        {dispute.amount.currency}
+      </td>
+      <td>{disputeReasonLabels[dispute.reasonCode] ?? dispute.reasonCode}</td>
+      <td>{formatDate(dispute.openedAt)}</td>
+      <td>
+        {dispute.evidenceDueAt === undefined ? (
+          // A provider that publishes no deadline gets none recorded. A date
+          // VELORA invented is a date an operator would plan around.
+          <span className="a-quiet">Not published</span>
+        ) : (
+          formatDate(dispute.evidenceDueAt)
+        )}
+      </td>
+      <td>
+        <Badge icon={look.icon} tone={look.tone}>
+          {look.label}
+        </Badge>
+        <span className="a-quiet"> · payment {shortId(dispute.paymentId)}</span>
+      </td>
+    </tr>
   );
 }
 

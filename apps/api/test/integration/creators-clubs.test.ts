@@ -837,9 +837,11 @@ describe('club entitlement at the moment of the read', () => {
     expect(Object.keys(body.access[0] ?? {}).toSorted()).toEqual([
       'clubId',
       'clubName',
+      'clubSlug',
       'creatorHandle',
       'grantedAt',
       'source',
+      'state',
     ]);
     expect(body.access[0]?.creatorHandle).toBe(creator.handle);
   });
@@ -986,7 +988,13 @@ describe('club audience isolation', () => {
     };
 
     expect(response.status).toBe(200);
+    // The identifier is published so a visitor can join a club to what it
+    // costs, which BILLING publishes against the same opaque reference. The
+    // benefits are what its creator promises. Neither says anything about who
+    // is in it, and neither is a price.
     expect(Object.keys(body.clubs[0] ?? {}).toSorted()).toEqual([
+      'benefits',
+      'id',
       'name',
       'slug',
     ]);

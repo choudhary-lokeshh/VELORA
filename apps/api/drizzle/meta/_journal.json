@@ -477,6 +477,20 @@
       "when": 1787739887620,
       "tag": "0067_ai-platform",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1787824603936,
+      "tag": "0068_membership-product",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1787828184571,
+      "tag": "0069_membership-cadences",
+      "breakpoints": true
     }
   ]
 }

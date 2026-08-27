@@ -62,4 +62,41 @@ A visitor's catalog carries references to ready images only. The creator's own
 listing carries every attachment with its state, because that is the person who
 can do something about one that was refused.
 
-Phase 2 pilot: club/subscription/locked content/PPV only after decisions. Events: club/content/membership/entitlement lifecycle. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: subscription grace/cancellation/refund linkage, tiering, audience limits, content taxonomy and country rules. See [creator lifecycle](../flows/creator-lifecycle-content.md), [creator entitlement](../flows/creator-entitlement.md), [creator/content gates](../compliance/03-creator-content-gates.md), [BILLING](billing.md), [media security](../security/04-media-upload-delivery.md).
+## Implemented: the club as a destination
+
+[ADR-0035](../decisions/ADR-0035-club-membership-product.md) gives a club an
+address of its own and gives its creator something to say on it.
+
+`clubs_benefits` is what a member is told they get: short lines, bounded at
+eight of a hundred and twenty characters, owned beside the rest of a club's
+identity because that is what they are. No row here carries a price, a cadence,
+a term, or a guarantee — a promise about money made in a club's own words would
+be a commercial term BILLING never approved and cannot enforce. The whole list
+travels on every save, so a partial update cannot silently reorder somebody
+else's work, and it commits with the club row under the same optimistic version
+check.
+
+`GET /v1/clubs?handle&slug` answers with the club's public identity for anybody
+who asks, and with the members-only feed only for a caller the entitlement
+question permits **on that request**. Somebody who holds nothing gets the
+identity and an empty list — never a body, a summary, or a media reference
+belonging to a protected item — which is what makes a typed address, a shared
+link, and a developer console equally safe. Nothing consults a cached decision,
+so a revoked, blocked, suspended, or expired reader loses the feed on their next
+load rather than at the next sweep.
+
+`POST /v1/clubs/departures` is provenance-aware. A creator invitation is a gift
+and handing it back ends it; a membership whose source is `billing` is refused,
+because ending it here would revoke access while the subscription kept charging.
+That one is ended through cancellation, where the period and the renewal are
+accounted for. The ended row stays, revoked, so somebody's own history remains
+theirs to see — and a revoked row grants no read, because every protected read
+asks for a live membership.
+
+`membership.source = 'billing'` is now reachable. It arrives through the outbox
+intake and through nothing else, and a commercial revocation withdraws only what
+a commercial grant created: somebody who also holds an invitation keeps what the
+creator gave them, because the money ending is not the creator changing their
+mind.
+
+Phase 2 pilot: club/subscription/locked content/PPV only after decisions. Events: club/content/membership/entitlement lifecycle. `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: subscription grace/refund linkage, tiering, audience limits, content taxonomy and country rules. Cancellation itself is decided: it schedules the end of renewal and never takes back a paid period. See [creator lifecycle](../flows/creator-lifecycle-content.md), [creator entitlement](../flows/creator-entitlement.md), [creator/content gates](../compliance/03-creator-content-gates.md), [BILLING](billing.md), [media security](../security/04-media-upload-delivery.md).

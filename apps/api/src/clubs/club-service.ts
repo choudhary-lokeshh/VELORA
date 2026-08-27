@@ -85,6 +85,27 @@ export interface ClubPage<T> {
   readonly rows: readonly T[];
 }
 
+/** A club as a visitor's card renders it: identity, promises, and standing. */
+export interface ClubPresentation {
+  readonly benefits: readonly string[];
+  readonly club: ClubRow;
+  /** The viewer's own live entitlement, when they hold one. */
+  readonly membership: ClubMembershipRow | undefined;
+}
+
+export interface ClubPresentationListing {
+  readonly clubs: readonly ClubPresentation[];
+  readonly handle: string;
+}
+
+export interface ClubDetail {
+  readonly club: ClubPresentation;
+  /** Empty for anybody the entitlement question refuses right now. */
+  readonly content: readonly CreatorContentRow[];
+  readonly creatorHandle: string;
+  readonly nextCursor: string | undefined;
+}
+
 export interface ClubServiceDependencies {
   readonly clubs: ClubRepository;
   readonly creators: ContentCreatorPort;
@@ -142,23 +163,179 @@ export class ClubService {
     };
   }
 
-  /** Published clubs on a creator's public page, or nothing at all. */
-  async listPublic(
-    handle: string,
-  ): Promise<{ clubs: readonly ClubRow[]; handle: string } | undefined> {
+  /**
+   * Published clubs on a creator's public page, or nothing at all.
+   *
+   * Benefits travel with them because they are what a visitor reads before
+   * deciding, and the viewer's own membership travels with them because a page
+   * that offered to sell somebody what they already hold would be a page that
+   * had not asked. Neither is money: what a club costs is BILLING's to publish
+   * against the same identifier, through its own route.
+   */
+  async listPublic(input: {
+    readonly handle: string;
+    readonly memberId: string | undefined;
+  }): Promise<ClubPresentationListing | undefined> {
     const { clubs } = this.dependencies;
     const creatorId = await this.dependencies.creators.publishedCreatorFor({
       executor: clubs.transactionless,
-      handle,
+      handle: input.handle,
     });
     if (creatorId === undefined) return undefined;
+    const rows = await clubs.listPublishedClubs(clubs.transactionless, {
+      creatorId,
+      limit: maximumCatalogPageSize,
+    });
     return {
-      clubs: await clubs.listPublishedClubs(clubs.transactionless, {
-        creatorId,
-        limit: maximumCatalogPageSize,
-      }),
-      handle: canonicalCreatorHandle(handle),
+      clubs: await this.present({ clubs: rows, memberId: input.memberId }),
+      handle: canonicalCreatorHandle(input.handle),
     };
+  }
+
+  /**
+   * One club as its own destination, with its feed when the caller may read it.
+   *
+   * The entitlement question is asked here, on this request, against current
+   * club, creator, standing and membership state — the same question
+   * `readProtected` asks, for the same reason. A caller who holds nothing gets
+   * the club's public identity and an empty feed, which is what makes a typed
+   * address safe: there is no body, summary, or media reference in the answer
+   * to fall back on.
+   */
+  async readClub(input: {
+    readonly cursor: string | undefined;
+    readonly handle: string;
+    readonly memberId: string | undefined;
+    readonly pageSize: number;
+    readonly slug: string;
+  }): Promise<ClubDetail | undefined> {
+    const { clubs } = this.dependencies;
+    const creatorId = await this.dependencies.creators.publishedCreatorFor({
+      executor: clubs.transactionless,
+      handle: input.handle,
+    });
+    if (creatorId === undefined) return undefined;
+    const club = await clubs.findPublishedClubBySlug(clubs.transactionless, {
+      creatorId,
+      slug: input.slug,
+    });
+    if (club === undefined) return undefined;
+    const [presented] = await this.present({
+      clubs: [club],
+      memberId: input.memberId,
+    });
+    if (presented === undefined) return undefined;
+
+    const entitled =
+      input.memberId !== undefined &&
+      presented.membership !== undefined &&
+      (await this.membershipIfPermitted({
+        clubId: club.id,
+        creatorId: club.creatorId,
+        memberId: input.memberId,
+      }));
+    if (!entitled) {
+      return {
+        club: presented,
+        content: [],
+        creatorHandle: canonicalCreatorHandle(input.handle),
+        nextCursor: undefined,
+      };
+    }
+    const size = Math.min(input.pageSize, maximumCatalogPageSize);
+    const rows = await clubs.listClubContent(clubs.transactionless, {
+      after:
+        input.cursor === undefined
+          ? undefined
+          : decodeCatalogCursor(input.cursor),
+      clubId: club.id,
+      limit: size + 1,
+    });
+    const page = rows.slice(0, size);
+    const last = page.at(-1);
+    return {
+      club: presented,
+      content: page,
+      creatorHandle: canonicalCreatorHandle(input.handle),
+      nextCursor:
+        rows.length > size && last?.publishedAt != null
+          ? encodeCatalogCursor({ id: last.id, moment: last.publishedAt })
+          : undefined,
+    };
+  }
+
+  /**
+   * Somebody hands back an invitation.
+   *
+   * Provenance decides what may be given back. A creator invitation is a gift
+   * and ending it is the holder's own business; a commercial entitlement
+   * belongs to the subscription that produced it, and revoking it here would
+   * end access somebody is still paying for while leaving the money running.
+   * That case is refused rather than partially honoured, and the surface sends
+   * them to cancellation instead.
+   */
+  async leave(input: {
+    readonly clubId: string;
+    readonly memberId: string;
+  }): Promise<{ readonly kind: 'left' | 'refused' }> {
+    const { clubs } = this.dependencies;
+    const ended = await clubs.endOwnMembership(clubs.transactionless, {
+      clubId: input.clubId,
+      memberId: input.memberId,
+      now: this.dependencies.now(),
+      // Named rather than read-then-written, so a membership that became
+      // commercial between the read and the write is refused by the predicate
+      // rather than ended by a stale decision.
+      source: 'creator_invite',
+    });
+    return ended === undefined ? { kind: 'refused' } : { kind: 'left' };
+  }
+
+  /**
+   * Club rows plus the two things a visitor's card needs.
+   *
+   * One statement for the benefits and one for the memberships, whatever the
+   * number of clubs, because a creator page renders all of them at once.
+   *
+   * `membership` answers "may this person read this club right now", not "is
+   * there a row". They are the same answer almost always and differ in exactly
+   * the case that matters: somebody under a restriction still holds every
+   * membership they held, and may read none of them. Reporting the row would
+   * put "you are in this" above an empty feed, which is a surface contradicting
+   * itself about a safety decision. What they hold is still theirs to see on
+   * their own Memberships page, which is a different question.
+   *
+   * The creator side needs no check here. Every caller resolved the club
+   * through CREATORS' published contract, which answers nothing for a creator
+   * who is not active, so a suspended creator's clubs are already absent.
+   */
+  private async present(input: {
+    readonly clubs: readonly ClubRow[];
+    readonly memberId: string | undefined;
+  }): Promise<readonly ClubPresentation[]> {
+    const { clubs } = this.dependencies;
+    const ids = input.clubs.map((club) => club.id);
+    const admitted =
+      input.memberId === undefined
+        ? false
+        : await this.mayBeAdmitted(input.memberId);
+    const [benefits, held] = await Promise.all([
+      clubs.benefitsFor(clubs.transactionless, ids),
+      input.memberId === undefined || !admitted
+        ? Promise.resolve([])
+        : clubs.membershipsAmong(clubs.transactionless, {
+            clubIds: ids,
+            memberId: input.memberId,
+          }),
+    ]);
+    const byClub = new Map(held.map((row) => [row.clubId, row]));
+    return input.clubs.map((club) => ({
+      benefits: benefits
+        .filter((benefit) => benefit.clubId === club.id)
+        .map((benefit) => benefit.text),
+      club,
+      membership: byClub.get(club.id),
+    }));
   }
 
   async save(input: {
@@ -173,40 +350,82 @@ export class ClubService {
     const description = input.request.description ?? null;
     const now = this.dependencies.now();
 
+    // The benefit lines and the club row move together or not at all. A club
+    // whose name was accepted and whose promises were not is a club that says
+    // something its creator did not mean, and the optimistic version check is
+    // only meaningful if everything it guards commits with it.
+    const benefits = input.request.benefits;
     if (input.request.clubId === undefined) {
       if (input.request.version !== undefined) return { kind: 'conflict' };
-      const row = await clubs.insertClub(clubs.transactionless, {
+      return clubs.transaction(async (executor) => {
+        const row = await clubs.insertClub(executor, {
+          creatorId: input.creatorId,
+          description,
+          name: input.request.name,
+          now,
+          slug,
+        });
+        if (row === undefined) return { kind: 'conflict' };
+        if (benefits !== undefined) {
+          await clubs.replaceBenefits(executor, {
+            clubId: row.id,
+            texts: benefits,
+          });
+        }
+        return { created: true, kind: 'saved', row };
+      });
+    }
+    const clubId = input.request.clubId;
+    const expectedVersion = input.request.version;
+    if (expectedVersion === undefined) return { kind: 'conflict' };
+
+    return clubs.transaction(async (executor) => {
+      // No rename in this milestone, for the same reason a creator handle has
+      // none: a slug already appears in links people hold.
+      const existing = await clubs.findOwnClub(executor, {
+        clubId,
+        creatorId: input.creatorId,
+      });
+      if (existing?.slug !== slug) return { kind: 'conflict' };
+
+      const row = await clubs.updateClub(executor, {
+        clubId,
         creatorId: input.creatorId,
         description,
+        expectedVersion,
         name: input.request.name,
         now,
-        slug,
       });
-      return row === undefined
-        ? { kind: 'conflict' }
-        : { created: true, kind: 'saved', row };
+      if (row === undefined) return { kind: 'conflict' };
+      // Absent means unchanged. A creator surface that has no benefit editor
+      // yet must not be able to erase what another one wrote by omitting a
+      // field it never knew about.
+      if (benefits !== undefined) {
+        await clubs.replaceBenefits(executor, { clubId, texts: benefits });
+      }
+      return { created: false, kind: 'saved', row };
+    });
+  }
+
+  /** Live members of one club, for a response that has just changed it. */
+  async memberCount(clubId: string): Promise<number> {
+    const { clubs } = this.dependencies;
+    return clubs.activeMemberCount(clubs.transactionless, clubId);
+  }
+
+  /** Benefit lines for a creator's own clubs, for the Studio list. */
+  async benefitsFor(
+    clubIds: readonly string[],
+  ): Promise<ReadonlyMap<string, readonly string[]>> {
+    const { clubs } = this.dependencies;
+    const rows = await clubs.benefitsFor(clubs.transactionless, clubIds);
+    const grouped = new Map<string, string[]>();
+    for (const row of rows) {
+      const lines = grouped.get(row.clubId) ?? [];
+      lines.push(row.text);
+      grouped.set(row.clubId, lines);
     }
-    if (input.request.version === undefined) return { kind: 'conflict' };
-
-    // No rename in this milestone, for the same reason a creator handle has
-    // none: a slug already appears in links people hold.
-    const existing = await clubs.findOwnClub(clubs.transactionless, {
-      clubId: input.request.clubId,
-      creatorId: input.creatorId,
-    });
-    if (existing?.slug !== slug) return { kind: 'conflict' };
-
-    const row = await clubs.updateClub(clubs.transactionless, {
-      clubId: input.request.clubId,
-      creatorId: input.creatorId,
-      description,
-      expectedVersion: input.request.version,
-      name: input.request.name,
-      now,
-    });
-    return row === undefined
-      ? { kind: 'conflict' }
-      : { created: false, kind: 'saved', row };
+    return grouped;
   }
 
   async setLifecycle(input: {

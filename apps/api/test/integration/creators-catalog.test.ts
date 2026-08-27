@@ -673,13 +673,16 @@ describe('the public catalog', () => {
 });
 
 describe('the database enforces the catalog invariants', () => {
-  it('owns exactly the five clubs tables and nothing else', async () => {
+  it('owns exactly the six clubs tables and nothing else', async () => {
     const rows = await rowsOf<{ table_name: string }>(
       database.sql`select table_name from information_schema.tables
         where table_schema = 'public' and table_name like 'clubs_%'
         order by table_name`,
     );
     expect(rows.map((row) => row.table_name)).toEqual([
+      // What a creator promises a member, one line per row. Presentation, and
+      // deliberately not a commercial term: no price, no cadence, no guarantee.
+      'clubs_benefits',
       'clubs_clubs',
       'clubs_content',
       // The attachment, not the bytes. This domain records which image hangs

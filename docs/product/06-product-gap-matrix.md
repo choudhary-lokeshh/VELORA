@@ -127,7 +127,17 @@ visual work depends on it.
 | Capability | Class | Evidence |
 |---|---|---|
 | Journals, offers, prices, checkout orchestration, webhook inbox, refunds, disputes, reconciliation | A as architecture | `apps/api/src/billing/*`, `apps/api/src/money/*` |
-| Anything a consumer can buy | F as product | Virtual gifts are purchasable through real local/test commerce on a creator page; staging/production accept only the unavailable provider and unpublished commerce policy |
+| Creator sets a membership price and puts it on sale | A local/test; F production | `apps/creator-studio/src/product/selling.tsx` drafts an offer, publishes monthly and yearly prices, activates and retires; `BILLING_COMMERCE_POLICY` approves nothing in a deployed environment, so the controls are absent there rather than refusing |
+| Consumer buys a membership | A local/test; F production | `/c/[handle]` → `/c/[handle]/club/[clubSlug]/join` → the provider's hosted page → `/checkout/return`; proved end to end in `e2e/membership-journey.spec.ts` and `apps/api/test/integration/billing-memberships.test.ts` |
+| Reading what a membership admits somebody to | A | `/c/[handle]/club/[clubSlug]`, `GET /v1/clubs`; a caller the entitlement question refuses gets an empty feed rather than a filtered one |
+| Stopping a membership | A | `POST /v1/billing/subscriptions/cancellation` schedules the end of renewal from Consumer Web and Consumer Mobile; the paid period is never taken back |
+| Leaving an invitation-based club | A | `POST /v1/clubs/departures`; a paid membership is refused and routed to cancellation |
+| Payment history a consumer can read | A | `GET /v1/billing/payments`; stated as a record of attempts rather than as receipts, because what a receipt must carry is unresolved |
+| Operator dispute queue | A | `GET /v1/admin/billing/disputes`, `apps/admin/src/product/money.tsx`; a read with no evidence submission, because nothing has decided what evidence may be sent |
+| Evidence submission on a dispute | F | No approved provider, and no decision about what may be submitted or by whom |
+| Buying anything from Consumer Mobile | F | The API refuses `consumer_mobile` at the purchase route; an external purchase link is unresolved store policy and is deliberately absent |
+| Membership tiers | E | No tier exists in the domain; a creator who wants two levels makes two clubs, which the access rules already enforce |
+| Renewal actually being collected | F | Recurring collection is the provider's, and no provider is approved; `subscription.past_due` and period-end expiry are implemented, a successful renewal charge is not |
 | Virtual gifting | A local/test; F production | Data-driven catalog, durable gift object, send/receipt/history, verified provider inbox, balanced ledger and reversals exist; production provider, terms, tax, channel, design, and payout gates remain closed |
 
 ## Demo population
@@ -148,8 +158,16 @@ discovery needs a listing route that does not exist. The seeded world and local/
 gifting path now exist; live gifting remains downstream of provider, terms, tax,
 channel, design, and payout decisions rather than more client wiring.
 
+Monetisation has moved from architecture to product. A membership can be priced,
+bought, read, cancelled, and expired end to end in local and test, through the
+product's own routes and a real browser. What is left there is not client wiring:
+it is a payment provider, published commercial terms, a launch country, a tax
+authority, a refund and grace policy, a payout capability, and a store-channel
+decision for mobile purchasing. Every one of those is an approval rather than a
+build, and each is refused by configuration in the meantime.
+
 The remaining order starts with creator discoverability and profile depth, then
-the social and Studio depth work. Production gifting resumes only after its
+the social and Studio depth work. Production commerce resumes only after its
 external gates are approved; repeating its local implementation would not close
 any of them.
 

@@ -15,6 +15,7 @@ import type {
   CreatorEnforcement,
   DecisionBody,
   EnforcementReasonCode,
+  DisputeList,
   FinancialState,
   IdentityState,
   IssueRefundBody,
@@ -84,6 +85,18 @@ export interface AdminApi {
 
   /* --- Money --------------------------------------------------------- */
   financialState(): Promise<ApiResult<FinancialState>>;
+  /**
+   * The dispute queue, newest claim first.
+   *
+   * A read and only a read. There is no evidence submission anywhere in this
+   * client, because whether VELORA may submit evidence, in what form, and
+   * through which provider is unresolved — and a control that accepted a file
+   * and did nothing with it would be worse than its absence.
+   */
+  disputes(query?: {
+    readonly open?: boolean;
+    readonly pageSize?: number;
+  }): Promise<ApiResult<DisputeList>>;
   /**
    * The one financial operation an operator has. It carries an idempotency key
    * because a retried refund that produced a second refund would be money the
@@ -265,6 +278,24 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
     async decideCase(body) {
       return attempt(async () =>
         api.POST('/v1/admin/safety/cases/decisions', { ...write(), body }),
+      );
+    },
+
+    async disputes(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/billing/disputes', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.open === undefined
+                ? {}
+                : { open: query.open ? 'true' : 'false' }),
+              ...(query?.pageSize === undefined
+                ? {}
+                : { pageSize: query.pageSize }),
+            },
+          },
+        }),
       );
     },
 

@@ -143,27 +143,44 @@ export class DisputeRepository {
     return rows.length > 0;
   }
 
+  /**
+   * The operator queue.
+   *
+   * `open` narrows to claims still awaiting an answer, which is the shape of
+   * the work rather than of the history. The ordering stays newest-opened first
+   * in both cases: a deadline is not a reliable sort key because a provider
+   * that publishes none records nothing, and rows with no deadline would sort
+   * as though they had all the time in the world.
+   */
   async listRecent(
     executor: Executor,
     input: {
       readonly after: OfferCursor | undefined;
       readonly limit: number;
+      readonly openOnly?: boolean;
     },
   ): Promise<readonly DisputeRow[]> {
     const after = input.after;
+    const position =
+      after === undefined
+        ? undefined
+        : or(
+            lt(billingDisputes.openedAt, after.moment),
+            and(
+              eq(billingDisputes.openedAt, after.moment),
+              lt(billingDisputes.id, after.id),
+            ),
+          );
     return executor
       .select()
       .from(billingDisputes)
       .where(
-        after === undefined
-          ? undefined
-          : or(
-              lt(billingDisputes.openedAt, after.moment),
-              and(
-                eq(billingDisputes.openedAt, after.moment),
-                lt(billingDisputes.id, after.id),
-              ),
-            ),
+        input.openOnly === true
+          ? and(
+              inArray(billingDisputes.state, [...openDisputeStates]),
+              position,
+            )
+          : position,
       )
       .orderBy(desc(billingDisputes.openedAt), desc(billingDisputes.id))
       .limit(input.limit);

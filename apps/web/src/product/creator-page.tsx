@@ -6,10 +6,13 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type {
   ConsumerApi,
+  ConsumerSubscription,
   GiftCatalog,
   GiftCatalogItem,
+  MembershipOffer,
+  PublicClub,
 } from '@velora/consumer-client';
-import { failureMessage } from '@velora/consumer-client';
+import { createConsumerApi, failureMessage } from '@velora/consumer-client';
 import { formatMinorUnits } from '@velora/validation';
 
 import {
@@ -18,7 +21,6 @@ import {
   type CreatorApi,
   type MediaAddressBook,
   type MediaVariant,
-  type PublicClubList,
   type PublicCreator,
   type PublicCreatorCatalog,
 } from '@velora/creator-client';
@@ -30,11 +32,19 @@ import {
   Badge,
   Button,
   Card,
+  Chip,
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
 import { backTarget } from '../app/navigation';
 import { useApi, useSession, useToast } from '../app/providers';
+import {
+  cadenceLabels,
+  commerceGateLabels,
+  formatPrice,
+  membershipSourceLabels,
+  subscriptionStateMeaning,
+} from './commerce';
 import { useAddressesFrom } from './imagery';
 import { useResource } from './resource';
 
@@ -108,6 +118,27 @@ export function CreatorPublicPage({
    * VELORA page behind them, and offering them "back" to Discover would be
    * inventing a history they never had.
    */
+  /*
+   * A consumer view of the same public routes for somebody with no session.
+   *
+   * The membership answer is public — a price is not a secret — but a session
+   * adds two things to it: whether this person already holds the club, and
+   * which eligibility gates are shut for them. Rather than keep two code paths,
+   * the section takes whichever client is available and the server decides how
+   * much of the answer it is entitled to.
+   */
+  const visitorApi = useMemo(
+    () =>
+      createConsumerApi({
+        apiBaseUrl,
+        ...(fetchImplementation === undefined
+          ? {}
+          : { fetch: fetchImplementation }),
+        transport: { headers: () => Promise.resolve({}) },
+      }),
+    [apiBaseUrl, fetchImplementation],
+  );
+
   const arrivedFrom = useSearchParams().get('from');
   const back =
     arrivedFrom === null ? undefined : backTarget(usePathname(), arrivedFrom);
@@ -179,7 +210,11 @@ export function CreatorPublicPage({
               signedIn={signedIn}
             />
             <CreatorCatalogView api={api} handle={handle} media={media} />
-            <CreatorClubsView api={api} handle={handle} />
+            <CreatorMembershipsView
+              api={consumerApi ?? visitorApi}
+              handle={handle}
+              signedIn={signedIn}
+            />
           </div>
         )}
       </main>
@@ -618,17 +653,62 @@ function CreatorCatalogView({
  * when pressed. Access to a club comes from an invitation the creator sends,
  * which is not something a public page can offer.
  */
-function CreatorClubsView({
+/**
+ * What this creator sells, and what a visitor already holds.
+ *
+ * Two answers joined here rather than on a server. PRIVATE CLUBS publishes what
+ * a club is — its name, what its creator promises, and whether this person is
+ * already in it — and BILLING publishes what it costs against the same opaque
+ * identifier. Neither domain reads the other, and neither route knows the other
+ * exists; the join happens on the surface that asked for both, which is where a
+ * join between two owners belongs.
+ *
+ * A club with no offer still appears. Invitation-only clubs are a real product
+ * and always have been, and hiding one because nobody priced it would make the
+ * page a catalogue of what is for sale rather than of what the creator has.
+ */
+function CreatorMembershipsView({
   api,
   handle,
+  signedIn,
 }: {
-  readonly api: CreatorApi;
+  readonly api: ConsumerApi;
   readonly handle: string;
+  readonly signedIn: boolean;
 }) {
-  const load = useCallback(async () => api.publicClubs(handle), [api, handle]);
-  const clubs = useResource<PublicClubList>(load);
+  const loadClubs = useCallback(
+    async (signal: AbortSignal) => api.publicClubs(handle, signal),
+    [api, handle],
+  );
+  const loadOffers = useCallback(
+    async (signal: AbortSignal) => api.membershipOffers(handle, signal),
+    [api, handle],
+  );
+  const clubs = useResource(loadClubs);
+  const offers = useResource(loadOffers);
 
-  if (clubs.value === undefined || clubs.value.clubs.length === 0) return null;
+  const offerByResource = useMemo(() => {
+    const found = new Map<string, MembershipOffer>();
+    for (const offer of offers.value?.offers ?? []) {
+      found.set(offer.resource.id, offer);
+    }
+    return found;
+  }, [offers.value]);
+  const subscriptionByOffer = useMemo(() => {
+    const found = new Map<string, ConsumerSubscription>();
+    for (const held of offers.value?.subscriptions ?? []) {
+      // Newest first from the server, so the first one seen is the current
+      // relationship and an older ended one never overwrites it.
+      if (!found.has(held.offerId)) found.set(held.offerId, held);
+    }
+    return found;
+  }, [offers.value]);
+
+  const rows = clubs.value?.clubs ?? [];
+  if (rows.length === 0) return null;
+  const gates = offers.value?.gates ?? [];
+  const enabled = offers.value?.readiness.enabled ?? false;
+
   return (
     <section
       aria-labelledby="creator-clubs-heading"
@@ -638,29 +718,169 @@ function CreatorClubsView({
         Private clubs
       </h2>
       <ul className="v-stack v-stack--3" data-testid="creator-public-clubs">
-        {clubs.value.clubs.map((club) => (
-          <li key={club.slug}>
-            <Card>
-              <div className="v-stack v-stack--2">
-                <div className="v-inline v-inline--between">
-                  <h3 className="v-subheading v-wrap">{club.name}</h3>
-                  <Badge tone="neutral">
-                    <Icon name="lock" size="sm" />
-                    By invitation
-                  </Badge>
-                </div>
-                {club.description === undefined ? null : (
-                  <p className="v-small v-muted v-wrap">{club.description}</p>
-                )}
-              </div>
-            </Card>
-          </li>
-        ))}
+        {rows.map((club) => {
+          const offer = offerByResource.get(club.id);
+          const held =
+            offer === undefined ? undefined : subscriptionByOffer.get(offer.id);
+          return (
+            <li key={club.slug}>
+              <MembershipCard
+                club={club}
+                commerceEnabled={enabled}
+                gates={gates}
+                handle={handle}
+                held={held}
+                offer={offer}
+                signedIn={signedIn}
+              />
+            </li>
+          );
+        })}
       </ul>
-      <p className="v-caption v-quiet">
-        Membership is by invitation from this creator. Nothing here can be
-        bought.
-      </p>
+      {enabled ? null : (
+        <p className="v-caption v-quiet" data-testid="creator-clubs-blocked">
+          Nothing on VELORA can be bought yet: no payment provider is approved
+          for what it does. Membership of these clubs is by invitation from this
+          creator.
+        </p>
+      )}
     </section>
+  );
+}
+
+function MembershipCard({
+  club,
+  commerceEnabled,
+  gates,
+  handle,
+  held,
+  offer,
+  signedIn,
+}: {
+  readonly club: PublicClub;
+  readonly commerceEnabled: boolean;
+  readonly gates: readonly string[];
+  readonly handle: string;
+  readonly held: ConsumerSubscription | undefined;
+  readonly offer: MembershipOffer | undefined;
+  readonly signedIn: boolean;
+}) {
+  const prices = offer?.prices ?? [];
+  const member = club.membership !== undefined;
+  const live =
+    held !== undefined &&
+    (held.state === 'active' || held.state === 'cancel_at_period_end');
+
+  return (
+    <Card>
+      <div className="v-stack v-stack--3">
+        <div className="v-inline v-inline--between">
+          <h3 className="v-subheading v-wrap">{club.name}</h3>
+          {member ? (
+            <Badge tone="positive">
+              <Icon name="check" size="sm" />
+              You are in
+            </Badge>
+          ) : prices.length === 0 ? (
+            <Badge tone="neutral">
+              <Icon name="lock" size="sm" />
+              By invitation
+            </Badge>
+          ) : null}
+        </div>
+
+        {club.description === undefined ? null : (
+          <p className="v-small v-muted v-wrap">{club.description}</p>
+        )}
+
+        {club.benefits.length === 0 ? null : (
+          <ul className="v-benefits" data-testid={`club-benefits-${club.slug}`}>
+            {club.benefits.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
+
+        {prices.length === 0 ? null : (
+          <div className="v-inline v-inline--tight">
+            {prices.map((price) => (
+              <Chip key={price.id}>
+                <span className="v-numeric">{formatPrice(price.amount)}</span>
+                {price.interval === undefined
+                  ? null
+                  : ` ${cadenceLabels[price.interval] ?? ''}`}
+              </Chip>
+            ))}
+          </div>
+        )}
+
+        {member ? (
+          <>
+            <p className="v-caption v-quiet">
+              {held === undefined
+                ? (membershipSourceLabels[club.membership?.source ?? ''] ??
+                  'Access granted')
+                : subscriptionStateMeaning[held.state]}
+            </p>
+            <div className="v-inline v-inline--tight">
+              <Link
+                className="v-btn v-btn--primary"
+                data-testid={`club-open-${club.slug}`}
+                href={`/c/${handle}/club/${club.slug}`}
+              >
+                Open the club
+              </Link>
+              {live ? (
+                <Link
+                  className="v-btn v-btn--secondary"
+                  href="/you/memberships"
+                >
+                  Manage membership
+                </Link>
+              ) : null}
+            </div>
+          </>
+        ) : prices.length === 0 ? (
+          <p className="v-caption v-quiet">
+            Membership is by invitation from this creator. There is nothing to
+            buy here.
+          </p>
+        ) : !signedIn ? (
+          <div>
+            <Link
+              className="v-btn v-btn--primary"
+              data-testid={`club-join-signin-${club.slug}`}
+              href={`/sign-in?returnTo=${encodeURIComponent(`/c/${handle}`)}`}
+            >
+              Sign in to join
+            </Link>
+          </div>
+        ) : !commerceEnabled || gates.length > 0 ? (
+          <div
+            className="v-stack v-stack--2"
+            data-testid={`club-join-blocked-${club.slug}`}
+          >
+            <p className="v-caption v-quiet">You cannot join this today.</p>
+            <ul className="v-benefits">
+              {(gates.length > 0 ? gates : ['payment_capability']).map(
+                (gate) => (
+                  <li key={gate}>{commerceGateLabels[gate] ?? gate}</li>
+                ),
+              )}
+            </ul>
+          </div>
+        ) : (
+          <div>
+            <Link
+              className="v-btn v-btn--primary"
+              data-testid={`club-join-${club.slug}`}
+              href={`/c/${handle}/club/${club.slug}/join`}
+            >
+              Join this club
+            </Link>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
