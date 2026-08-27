@@ -110,6 +110,41 @@ describe('the door', () => {
     expect(screen.queryByRole('button', { name: /sign in/iu })).toBeNull();
   });
 
+  it('offers local development sign-in panel in local environment (ADR-0034)', async () => {
+    const double = createAdminApiDouble(anonymousState());
+    renderConsole(<Access />, double, {
+      appEnvironment: 'local',
+      pathname: '/access',
+    });
+
+    const signin = await screen.findByTestId('local-dev-signin');
+    expect(signin.textContent).toContain('Local Development Access');
+    expect(screen.getByTestId('local-admin-subject-input')).toBeDefined();
+    expect(
+      screen.getByRole('button', { name: /sign in as local platform admin/iu }),
+    ).toBeDefined();
+  });
+
+  it.each(['staging', 'production'] as const)(
+    'offers no sign-in at all in %s',
+    async (appEnvironment) => {
+      const double = createAdminApiDouble(anonymousState());
+      renderConsole(<Access />, double, {
+        appEnvironment,
+        pathname: '/access',
+      });
+
+      await screen.findByTestId('access-blocked');
+      // The guarantee the browser suite cannot check, because it runs against
+      // one environment and this is about the other. A form that always fails
+      // is worse than an explanation, and on this surface it would also be a
+      // control inviting somebody to try to get in.
+      expect(screen.queryByTestId('local-dev-signin')).toBeNull();
+      expect(document.querySelectorAll('form')).toHaveLength(0);
+      expect(document.querySelectorAll('input')).toHaveLength(0);
+    },
+  );
+
   it('says plainly when the browser holds nothing', async () => {
     const double = createAdminApiDouble(anonymousState());
     renderConsole(<Access />, double, { pathname: '/access' });

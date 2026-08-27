@@ -188,6 +188,7 @@ import {
   authSessionResponseSchema,
   csrfHeader,
   deviceHeader,
+  localAdminSessionRequestSchema,
   localMobileSessionRequestSchema,
   localWebSessionRequestSchema,
   mobileRefreshRequestSchema,
@@ -340,6 +341,7 @@ export const apiRoutePaths = {
   consumerProfileMediaRemoval: '/v1/users/me/profile/media/removal',
   liveness: '/v1/health/live',
   mediaDeliveries: '/v1/media/deliveries',
+  localAdminSession: '/v1/auth/local/admin-sessions',
   localMobileSession: '/v1/auth/local/mobile-sessions',
   localWebSession: '/v1/auth/local/web-sessions',
   messagingConversationRead: '/v1/messaging/conversations/read',
@@ -557,6 +559,7 @@ export const apiSchemas = {
   AuthAcknowledgement: authAcknowledgementSchema,
   AuthSessionResponse: authSessionResponseSchema,
   LivenessResponse: livenessResponseSchema,
+  LocalAdminSessionRequest: localAdminSessionRequestSchema,
   LocalMobileSessionRequest: localMobileSessionRequestSchema,
   LocalWebSessionRequest: localWebSessionRequestSchema,
   MobileRefreshRequest: mobileRefreshRequestSchema,
@@ -886,6 +889,27 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'Development and test identity adapter. It is refused outside the local and test application environments and can never mint Platform Admin authority.',
+  },
+  {
+    method: 'post',
+    operationId: 'createLocalAdminSession',
+    path: apiRoutePaths.localAdminSession,
+    requestHeaders: [deviceHeader],
+    requestSchemaName: 'LocalAdminSessionRequest',
+    responses: {
+      '201': {
+        description:
+          'A platform_admin browser session was established with phishing_resistant assurance and its audience-scoped cookie was set',
+        schemaName: 'AuthSessionResponse',
+      },
+      '403': authBrowserOriginResponse,
+      '422': invalidAuthInputResponse,
+      '429': authRateLimitedResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'Development and test only. Issues a platform_admin session with phishing_resistant assurance using the local-test-privileged authenticator adapter. Refused outside local and test environments, and refused whenever the configured verifier is not local-test-privileged. See ADR-0034.',
   },
   {
     method: 'post',

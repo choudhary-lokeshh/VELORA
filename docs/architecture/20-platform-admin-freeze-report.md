@@ -77,20 +77,20 @@ One `<h1>` per page, one named `main` landmark, a skip link, labelled navigation
 
 ## Live capability
 
-**Zero, in every environment.** No browser can reach any screen behind the door.
+**Zero in staging and production; reachable in local and test environments via the local-test privileged adapter (ADR-0034).**
 
-`/v1/auth/local/web-sessions` admits `consumer_web` and `creator_studio` and nothing else, so a `platform_admin` session cannot be issued. The local adapter issues `single_factor`. The only privileged verifier the platform composes is `UnavailablePrivilegedAuthenticatorVerifier`, which refuses every assertion because no phishing-resistant implementation is approved and hand-rolling one would be a fabricated control. Both conditions must be answered, and each fails independently.
+In staging and production, `/v1/auth/local/web-sessions` and `/v1/auth/local/admin-sessions` are refused, the privileged verifier defaults to `unavailable`, and no browser can reach any screen behind the door until an approved production WebAuthn provider is integrated.
 
-This is the truth rather than a defect, and the surface says so in those terms rather than leaving an operator on a console that answers nothing.
+In local and test environments, `POST /v1/auth/local/admin-sessions` issues a `platform_admin` session with `phishing_resistant` assurance using the deterministic `local-test-privileged` adapter (ADR-0034), making Platform Admin reachable on loopback origins (`http://127.0.0.1:3002`) for development and manual verification.
 
 ## What unfreezes each
 
 | Blocked | Unblocked by |
 |---|---|
-| Reaching any console screen in a browser | Privileged authenticator provider, plus a route that can issue a `platform_admin` audience — both in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md) |
+| Reaching any console screen in a production browser | Production phishing-resistant WebAuthn provider, plus production session issuance path — in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md) (Local development unblocked by ADR-0034) |
 | Role-filtered navigation and operations | Admin permission/approval matrix |
 | Approval, dual control, break-glass | Break-glass implementation, on the locked ADR-0017 semantics |
-| A browser assertion over the console screens | The two access decisions above; the screens themselves need no change |
+| A browser assertion over the console screens | The access decisions above; the screens themselves need no change |
 | Any identity manual review or override | Identity manual review or override decision; current capability is exact-reference read-only by design |
 
 ## Cross-references

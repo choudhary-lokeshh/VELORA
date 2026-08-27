@@ -948,6 +948,10 @@ export function createApplication(
       ),
     )
     .post(
+      apiRoutePaths.localAdminSession,
+      admitted(async (input) => auth.routes.createLocalAdminSession(input)),
+    )
+    .post(
       apiRoutePaths.localWebSession,
       admitted(async (input) => auth.routes.createLocalWebSession(input)),
     )

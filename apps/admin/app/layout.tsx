@@ -3,7 +3,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import './globals.css';
-import { resolveApiBaseUrl } from '../src/api';
+import { resolveApiBaseUrl, resolveAppEnvironment } from '../src/api';
 import { AdminProviders, ToastProvider } from '../src/app/providers';
 import { Toaster } from '../src/app/shell';
 
@@ -71,7 +71,10 @@ export default function RootLayout({
     >
       <body>
         <ToastProvider>
-          <AdminProviders apiBaseUrl={resolveApiBaseUrl()}>
+          <AdminProviders
+            apiBaseUrl={resolveApiBaseUrl()}
+            appEnvironment={resolveAppEnvironment()}
+          >
             {children}
             <Toaster />
           </AdminProviders>

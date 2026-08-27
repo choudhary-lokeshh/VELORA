@@ -56,6 +56,7 @@ export interface SessionValue {
    * built to never do that.
    */
   readonly answered: boolean;
+  readonly appEnvironment: string;
   /**
    * The audience this browser's session belongs to, if it has one at all.
    *
@@ -93,10 +94,12 @@ export function useSession(): SessionValue {
 
 export function AdminProviders({
   apiBaseUrl,
+  appEnvironment = 'local',
   children,
   fetchImplementation,
 }: {
   readonly apiBaseUrl: string;
+  readonly appEnvironment?: string | undefined;
   readonly children: ReactNode;
   /** Injected by tests so the console runs without a network. */
   readonly fetchImplementation?: typeof globalThis.fetch;
@@ -114,16 +117,20 @@ export function AdminProviders({
 
   return (
     <ApiContext.Provider value={api}>
-      <SessionProvider api={api}>{children}</SessionProvider>
+      <SessionProvider api={api} appEnvironment={appEnvironment}>
+        {children}
+      </SessionProvider>
     </ApiContext.Provider>
   );
 }
 
 function SessionProvider({
   api,
+  appEnvironment,
   children,
 }: {
   readonly api: AdminApi;
+  readonly appEnvironment: string;
   readonly children: ReactNode;
 }) {
   /**
@@ -148,6 +155,7 @@ function SessionProvider({
     const current = session.value;
     return {
       answered: !session.loading && session.error === undefined,
+      appEnvironment,
       assurance: current?.assurance,
       audience: current?.audience,
       busy,
@@ -165,7 +173,7 @@ function SessionProvider({
         });
       },
     };
-  }, [api, busy, run, session]);
+  }, [api, appEnvironment, busy, run, session]);
 
   return (
     <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

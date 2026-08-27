@@ -4,6 +4,7 @@ import {
   localAccessTokenSigner,
   localIdentityProvider,
   localRecoveryDelivery,
+  localTestPrivilegedVerifier,
   unavailablePrivilegedVerifier,
   type ServerConfig,
 } from '@velora/config/server';
@@ -17,6 +18,7 @@ import {
 import { CallerResolver } from './caller.js';
 import {
   LocalIdentityProvider,
+  LocalTestPrivilegedAuthenticatorVerifier,
   UnavailablePrivilegedAuthenticatorVerifier,
   type IdentityProvider,
   type PrivilegedAuthenticatorVerifier,
@@ -160,6 +162,8 @@ function selectRecoveryDelivery(config: ServerConfig): RecoveryDeliveryPort {
 const privilegedVerifiers: Readonly<
   Record<string, () => PrivilegedAuthenticatorVerifier>
 > = {
+  [localTestPrivilegedVerifier]: () =>
+    new LocalTestPrivilegedAuthenticatorVerifier(),
   [unavailablePrivilegedVerifier]: () =>
     new UnavailablePrivilegedAuthenticatorVerifier(),
 };
@@ -212,12 +216,12 @@ export function createAuthRuntime(input: {
     now,
     repository,
   });
+  const verifier =
+    input.options?.privilegedVerifier ?? selectPrivilegedVerifier(input.config);
   const privilegedAccess = new PrivilegedAccessService({
     now,
     repository,
-    verifier:
-      input.options?.privilegedVerifier ??
-      selectPrivilegedVerifier(input.config),
+    verifier,
   });
   const ownedRateLimiter =
     input.options?.rateLimiter ??
@@ -250,6 +254,7 @@ export function createAuthRuntime(input: {
       localIdentityEnabled,
       logger: input.logger,
       now,
+      privilegedVerifier: verifier,
       rateLimiter: ownedRateLimiter,
       recoveryService: recovery,
       requesterReference:

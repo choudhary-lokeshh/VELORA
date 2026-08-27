@@ -97,14 +97,31 @@
   font-weight: 600;
   gap: var(--space-2);
   justify-content: center;
-  line-height: 1;
+  /*
+   * A label wraps rather than pushing the page sideways.
+   *
+   * This used to be `nowrap` with a fixed `line-height: 1`, which is right
+   * until a label is long enough not to fit — and then it is not a cramped
+   * button, it is a document that scrolls horizontally at 200% text on a
+   * narrow screen, which `docs/design/05-accessibility-motion.md` forbids and
+   * the browser suite checks. Wrapping costs a taller button in the one case
+   * it happens and nothing at all in every other.
+   */
+  line-height: var(--text-small-line);
+  max-inline-size: 100%;
   min-height: var(--control-height);
+  padding-block: var(--space-2);
   padding-inline: var(--space-4);
   text-decoration: none;
   transition:
     background-color var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out);
-  white-space: nowrap;
+  white-space: normal;
+}
+
+/* An icon marks a control; it never shrinks to make room for the words. */
+.a-btn > svg {
+  flex: 0 0 auto;
 }
 
 .a-btn:disabled {

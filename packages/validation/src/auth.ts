@@ -83,6 +83,25 @@ export type LocalWebSessionRequest = z.infer<
   typeof localWebSessionRequestSchema
 >;
 
+/**
+ * Request body for the local-test `platform_admin` session issuance route.
+ *
+ * No audience field: the audience is always `platform_admin` and the route
+ * only exists so the condition can be verified server-side before the audience
+ * is committed, without the client being able to select it. The verifier must
+ * be `local-test-privileged` (ADR-0034) and the environment must be local or
+ * test; staging and production cannot reach this route at all.
+ */
+export const localAdminSessionRequestSchema = z
+  .object({
+    deviceId: installationSchema.optional(),
+    subject: identitySubjectSchema,
+  })
+  .strict();
+export type LocalAdminSessionRequest = z.infer<
+  typeof localAdminSessionRequestSchema
+>;
+
 export const localMobileSessionRequestSchema = z
   .object({
     deviceId: installationSchema.optional(),

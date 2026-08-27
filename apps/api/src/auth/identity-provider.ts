@@ -80,3 +80,26 @@ export class UnavailablePrivilegedAuthenticatorVerifier implements PrivilegedAut
     return Promise.resolve(undefined);
   }
 }
+
+/**
+ * Deterministic local-test privileged authenticator verifier.
+ *
+ * Performs no cryptography, reaches no network, and accepts every assertion.
+ * It exists solely for local development and integration testing of the
+ * Platform Admin privileged access flow (ADR-0034).
+ * Staging and production configuration hard-rejects this adapter at startup.
+ */
+export class LocalTestPrivilegedAuthenticatorVerifier implements PrivilegedAuthenticatorVerifier {
+  readonly kind = 'local-test-privileged';
+
+  verify(input: {
+    readonly assertion: PrivilegedAuthenticatorAssertion;
+    readonly challenge: string;
+    readonly publicKey: string;
+  }): Promise<PrivilegedAuthenticatorVerification | undefined> {
+    return Promise.resolve({
+      countersSupported: false,
+      signCount: input.assertion.signCount,
+    });
+  }
+}

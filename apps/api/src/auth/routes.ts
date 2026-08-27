@@ -6,6 +6,7 @@ import {
   authErrorCodes,
   authSessionResponseSchema,
   deviceHeader,
+  localAdminSessionRequestSchema,
   localMobileSessionRequestSchema,
   localWebSessionRequestSchema,
   maximumAuthRequestBodyBytes,
@@ -25,6 +26,7 @@ import {
 } from './caller.js';
 import type { AuthContext } from './context.js';
 import { issuedSessionCookie, presentedSessionCookie } from './cookies.js';
+import type { PrivilegedAuthenticatorVerifier } from './identity-provider.js';
 import { authAttemptLimits, type RateLimiter } from './rate-limit.js';
 import type { RecoveryService } from './recovery.js';
 import type { AuthService } from './service.js';
@@ -51,6 +53,7 @@ export interface AuthRoutesDependencies {
   readonly localIdentityEnabled: boolean;
   readonly logger: SafeLogger;
   readonly now: () => Date;
+  readonly privilegedVerifier?: PrivilegedAuthenticatorVerifier | undefined;
   readonly rateLimiter: RateLimiter;
   readonly recoveryService: RecoveryService;
   readonly requesterReference: (request: Request) => string;
@@ -230,6 +233,69 @@ export class AuthRoutes {
           token: issued.sessionToken,
         }),
         csrfCookie(parsed.value.audience, issued.csrfToken, maxAgeSeconds),
+      ],
+      status: 201,
+    };
+  }
+
+  async createLocalAdminSession(
+    input: AuthRouteRequest,
+  ): Promise<AuthRouteResult> {
+    if (
+      !this.localIdentityUsable ||
+      this.dependencies.privilegedVerifier?.kind !== 'local-test-privileged'
+    ) {
+      return failure(403, authErrorCodes.identityDisabled, input.correlationId);
+    }
+    if (
+      !(await this.throttle('authenticate', input.request, input.correlationId))
+    ) {
+      return failure(429, authErrorCodes.rateLimited, input.correlationId);
+    }
+    const parsed = parseBody(localAdminSessionRequestSchema, input.body);
+    if (!parsed.ok) {
+      return failure(422, authErrorCodes.validationFailed, input.correlationId);
+    }
+    const rejection = this.browserVerdict(
+      input.request,
+      'platform_admin',
+      false,
+    );
+    if (rejection !== undefined) {
+      return failure(403, rejection, input.correlationId);
+    }
+
+    const presented = presentedSessionCookie(
+      input.request.headers.get('cookie'),
+    );
+    const issued = await this.dependencies.authService.authenticateBrowser({
+      assuranceOverride: 'phishing_resistant',
+      audience: 'platform_admin',
+      correlationId: input.correlationId,
+      deviceReference:
+        parsed.value.deviceId ?? optionalHeader(input.request, deviceHeader),
+      subject: parsed.value.subject,
+      ...(presented?.audience === 'platform_admin'
+        ? { supersedeSessionToken: presented.token }
+        : {}),
+    });
+    const now = this.dependencies.now();
+    const maxAgeSeconds = Math.max(
+      0,
+      Math.floor(
+        (issued.context.absoluteExpiresAt.getTime() - now.getTime()) / 1000,
+      ),
+    );
+    return {
+      body: sessionBody(issued.context, issued.csrfToken),
+      cookies: [
+        issuedSessionCookie({
+          audience: 'platform_admin',
+          expiresAt: issued.context.absoluteExpiresAt,
+          now,
+          token: issued.sessionToken,
+        }),
+        csrfCookie('platform_admin', issued.csrfToken, maxAgeSeconds),
       ],
       status: 201,
     };

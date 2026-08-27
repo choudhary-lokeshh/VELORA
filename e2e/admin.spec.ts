@@ -50,7 +50,11 @@ test.describe('Platform Admin', () => {
     const blocked = page.getByTestId('access-blocked');
     await expect(blocked).toContainText('audience must be');
     await expect(blocked).toContainText('phishing-resistant');
-    await expect(blocked).toContainText('no route can issue one');
+    // Deliberately not asserted here any more: the card used to say "no route
+    // can issue one", and since ADR-0034 one route can — in local and test
+    // only. The refusal this page states is the production one, and the panel
+    // below it is what says the rest.
+    await expect(blocked).toContainText('production');
 
     // The browser holds nothing, and the console says exactly that rather than
     // reporting a failure — the origin is admitted, so the question was asked
@@ -60,16 +64,33 @@ test.describe('Platform Admin', () => {
   });
 
   /**
-   * A form that always fails is worse than an explanation, and on this surface
-   * it would also be a control inviting somebody to try to get in.
+   * The one way in is the development adapter, and it says so.
+   *
+   * This suite runs against `APP_ENV: test`, which is one of the two
+   * environments ADR-0034 permits the local adapter in, so the panel is
+   * present and asserting its absence would be asserting the wrong thing. What
+   * still has to be true is that it is the *only* way to type anything here,
+   * that it collects an identity subject rather than a credential, and that it
+   * is labelled as development-only — the absence of any panel at all in a
+   * deployed environment is asserted in `apps/admin/test/console.test.tsx`,
+   * where the environment can be injected and a browser suite cannot change it.
    */
-  test('offers no way to sign in, and nothing to type', async ({ page }) => {
+  test('offers only the development sign-in, and collects no credential', async ({
+    page,
+  }) => {
     await page.goto(`${platformAdminOrigin}/access`);
     await expect(page.getByTestId('access-blocked')).toBeVisible();
-    await expect(page.locator('input')).toHaveCount(0);
-    await expect(page.locator('form')).toHaveCount(0);
+    await expect(page.getByTestId('local-dev-signin')).toBeVisible();
+    await expect(page.getByTestId('local-dev-notice')).toContainText(
+      'only in local and test',
+    );
+
+    // One form, one field, and nothing that takes a secret.
+    await expect(page.locator('form')).toHaveCount(1);
+    await expect(page.locator('input')).toHaveCount(1);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
     const body = await page.locator('body').innerText();
-    for (const forbidden of ['Sign in', 'Password', 'Continue with']) {
+    for (const forbidden of ['Password', 'Continue with']) {
       expect(body).not.toContain(forbidden);
     }
   });

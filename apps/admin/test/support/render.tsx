@@ -25,6 +25,7 @@ export function renderConsole(
   ui: ReactNode,
   double: AdminApiDouble,
   options: {
+    readonly appEnvironment?: string;
     readonly params?: Record<string, string>;
     readonly pathname?: string;
     readonly search?: string;
@@ -36,6 +37,7 @@ export function renderConsole(
     <ToastProvider>
       <AdminProviders
         apiBaseUrl={testApiBaseUrl}
+        appEnvironment={options.appEnvironment ?? 'production'}
         fetchImplementation={double.fetch}
       >
         {ui}

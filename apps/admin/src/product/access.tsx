@@ -1,43 +1,148 @@
 'use client';
 
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, type SyntheticEvent } from 'react';
+
 import {
   BlockedState,
   Button,
+  ErrorMessage,
   ErrorState,
   Fact,
   Facts,
+  Field,
+  Notice,
   Panel,
   PanelBody,
   PanelHead,
   PanelSkeleton,
+  TextInput,
 } from '../design/primitives';
-import { useSession } from '../app/providers';
+import { failureMessage } from '../api/messages';
+import { useApi, useSession } from '../app/providers';
 import { DoorLayout } from '../app/shell';
 import { humanState } from './format';
+
+/**
+ * Local development only: establishes a platform_admin session using the
+ * deterministic local-test adapter (ADR-0034). Never rendered in staging
+ * or production.
+ */
+function LocalDevSignIn() {
+  const api = useApi();
+  const session = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [subject, setSubject] = useState('admin@velora.test');
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (event: SyntheticEvent) => {
+    event.preventDefault();
+    if (submitting) return;
+    setError(undefined);
+    setSubmitting(true);
+    try {
+      const result = await api.createLocalAdminSession({ subject });
+      if (result.kind === 'ok') {
+        session.refresh();
+        const next = searchParams.get('next');
+        const destination =
+          next !== null && next.startsWith('/') && !next.startsWith('//')
+            ? next
+            : '/queues';
+        router.push(destination);
+      } else {
+        setError(
+          failureMessage(result) ??
+            'Authentication was refused by the platform.',
+        );
+      }
+    } catch {
+      setError('Could not connect to the API.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Panel testId="local-dev-signin">
+      <PanelHead
+        lede="Deterministic local-test adapter for development and manual verification (ADR-0034)."
+        title="Local Development Access"
+      />
+      <PanelBody>
+        <Notice
+          icon="alert"
+          testId="local-dev-notice"
+          title="Development only"
+          tone="caution"
+        >
+          This sign-in panel is available only in local and test environments.
+          Staging and production fail-closed because no real WebAuthn provider
+          is approved.
+        </Notice>
+        <form
+          className="a-stack a-stack--3"
+          onSubmit={(event) => {
+            void handleSubmit(event);
+          }}
+          style={{ marginTop: 'var(--space-3)' }}
+        >
+          <Field
+            error={error}
+            hint="An arbitrary identity subject (e.g. admin@velora.test) used by the local identity provider."
+            label="Admin identity subject"
+          >
+            {(control) => (
+              <TextInput
+                {...control}
+                data-testid="local-admin-subject-input"
+                disabled={submitting}
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                }}
+                placeholder="admin@velora.test"
+                required
+                type="text"
+                value={subject}
+              />
+            )}
+          </Field>
+          {error !== undefined ? (
+            <ErrorMessage testId="local-admin-error">{error}</ErrorMessage>
+          ) : null}
+          <Button
+            busy={submitting}
+            data-testid="local-admin-submit"
+            icon="check"
+            tone="primary"
+            type="submit"
+          >
+            Sign in as Local Platform Admin
+          </Button>
+        </form>
+      </PanelBody>
+    </Panel>
+  );
+}
 
 /**
  * The door, and the only address on this surface anybody currently reaches.
  *
  * Platform Admin requires a session whose audience is `platform_admin` and
  * whose authenticator is phishing-resistant and recently used. [ADR-0017]
- * fixes both, and neither is obtainable: the authentication contract admits
- * only the two consumer-facing audiences, and the one privileged verifier the
- * platform composes refuses every assertion because no implementation is
- * approved. There is therefore no environment — local, test, staging, or
- * production — in which an operator can reach the console behind this page.
+ * fixes both, and in deployed environments neither is obtainable.
  *
- * What this page does about that is the whole design. It reports what the
- * browser actually holds, in the server's own words; it states both conditions
- * separately, because an operator whose audience is wrong and one whose
- * assurance is stale have different problems; and it offers **no sign-in form**,
- * because no route would accept one and a form that always fails is worse than
- * an explanation. The one control it does offer is signing out, which is real:
- * somebody may be carrying a consumer session on this origin and be better off
- * without it.
+ * In local development (ADR-0034), a deterministic test adapter allows
+ * issuing a `platform_admin` session with `phishing_resistant` assurance
+ * for developer testing.
  */
 export function Access() {
   const session = useSession();
   const holds = session.session.value;
+  const isLocalEnv =
+    session.appEnvironment === 'local' || session.appEnvironment === 'test';
 
   return (
     <DoorLayout>
@@ -50,10 +155,12 @@ export function Access() {
         </p>
       </div>
 
+      {isLocalEnv ? <LocalDevSignIn /> : null}
+
       <BlockedState
-        label="Unreachable"
+        label="Production Gate"
         testId="access-blocked"
-        title="No session can hold privileged access"
+        title="No production session can hold privileged access"
       >
         <p>
           Two conditions have to be true at once, and they are checked
@@ -63,13 +170,14 @@ export function Access() {
           <li>
             The session's audience must be <strong>Platform Admin</strong>. The
             authentication contract admits only the consumer and Creator Studio
-            audiences, so no route can issue one.
+            audiences in production.
           </li>
           <li>
             Its authenticator must be <strong>phishing-resistant</strong> and
             recently used. VELORA composes a verifier that refuses every
-            assertion, because no phishing-resistant implementation is approved
-            and hand-rolling one would be a fabricated control.
+            assertion in production, because no phishing-resistant
+            implementation is approved and hand-rolling one would be a
+            fabricated control.
           </li>
         </ul>
         <p>
@@ -106,8 +214,7 @@ export function Access() {
             />
           ) : holds === undefined ? (
             <p className="a-small a-muted" data-testid="access-no-session">
-              This browser holds no session at all. That is the ordinary state
-              for this origin: nothing signs in here.
+              This browser holds no session at all.
             </p>
           ) : (
             <>

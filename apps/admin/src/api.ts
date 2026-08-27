@@ -18,6 +18,12 @@ export function resolveApiBaseUrl(
   return resolveSurfaceConfig(environment).apiBaseUrl;
 }
 
+export function resolveAppEnvironment(
+  environment: ApiEnvironment = process.env,
+): string {
+  return resolveSurfaceConfig(environment).appEnvironment;
+}
+
 export function createSurfaceApiClient(baseUrl: string) {
   return createVeloraApiClient(baseUrl);
 }

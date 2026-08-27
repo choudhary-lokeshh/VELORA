@@ -28,6 +28,14 @@ export const localIdentityProvider = 'local';
 export const localAccessTokenSigner = 'local-development-ed25519';
 export const localRecoveryDelivery = 'local-test';
 export const unavailablePrivilegedVerifier = 'unavailable';
+/**
+ * Deterministic local-test stand-in for a phishing-resistant authenticator
+ * verifier. It accepts every assertion, performs no cryptography, and is
+ * rejected in staging and production by the `superRefine` guard below.
+ * Selecting it is how a developer reaches Platform Admin locally before a real
+ * WebAuthn implementation is approved. See ADR-0034.
+ */
+export const localTestPrivilegedVerifier = 'local-test-privileged';
 
 /** AI stays fail-closed unless local/test explicitly selects both seams. */
 export const unavailableAiProvider = 'unavailable';
@@ -439,7 +447,7 @@ export const serverConfigSchema = z
       .enum([localIdentityProvider])
       .default(localIdentityProvider),
     AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER: z
-      .enum([unavailablePrivilegedVerifier])
+      .enum([unavailablePrivilegedVerifier, localTestPrivilegedVerifier])
       .default(unavailablePrivilegedVerifier),
     AUTH_RECOVERY_DELIVERY: z
       .enum([localRecoveryDelivery])

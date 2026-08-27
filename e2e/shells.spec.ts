@@ -22,12 +22,12 @@ test('Platform Admin carries the operator product and nothing else', async ({
     'Platform Admin',
   );
   await expect(page.getByTestId('access-blocked')).toBeVisible();
-  // No consumer or creator product reaches this surface, and nothing on the one
-  // reachable page acts: no navigation, because there is nowhere to navigate
-  // to, and nothing to type, because no route would accept it.
+  // No consumer or creator product reaches this surface, and there is nowhere
+  // to navigate to from the one reachable page. The single form is the
+  // development adapter ADR-0034 permits in local and test; `admin.spec.ts`
+  // asserts what it is and what it refuses to collect.
   await expect(page.getByRole('navigation')).toHaveCount(0);
-  await expect(page.locator('input')).toHaveCount(0);
-  await expect(page.locator('form')).toHaveCount(0);
+  await expect(page.locator('form')).toHaveCount(1);
   for (const forbidden of ['Discovery', 'Creator access', 'Public profile']) {
     await expect(page.getByText(forbidden)).toHaveCount(0);
   }

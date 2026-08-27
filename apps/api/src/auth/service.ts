@@ -100,6 +100,7 @@ export class AuthService {
    * authentication rotation ADR-0017 requires.
    */
   async authenticateBrowser(input: {
+    readonly assuranceOverride?: AuthAssurance | undefined;
     readonly audience: BrowserAuthAudience;
     readonly correlationId: string;
     readonly deviceReference?: string | undefined;
@@ -149,7 +150,7 @@ export class AuthService {
           now.getTime() + policy.absoluteMilliseconds,
         ),
         accountId,
-        assurance: localAssurance,
+        assurance: input.assuranceOverride ?? localAssurance,
         audience: input.audience,
         csrfDigest: digestToken(csrfToken),
         deviceDigest,

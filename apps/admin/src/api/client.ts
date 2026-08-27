@@ -19,6 +19,7 @@ import type {
   IdentityState,
   IssueRefundBody,
   IssuedRefund,
+  LocalAdminSessionBody,
   MediaState,
   ModerationQueue,
   NotificationState,
@@ -65,6 +66,9 @@ export function readAdminCsrfToken(cookieSource: string): string | undefined {
 
 export interface AdminApi {
   /* --- Session ------------------------------------------------------- */
+  createLocalAdminSession(
+    body: LocalAdminSessionBody,
+  ): Promise<ApiResult<AdminSession>>;
   session(): Promise<ApiResult<AdminSession>>;
   signOut(): Promise<ApiResult<unknown>>;
   /** Creates a review-only draft. It cannot decide or execute a case action. */
@@ -331,6 +335,15 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
 
     async rtcState() {
       return attempt(async () => api.GET('/v1/admin/rtc/state', read()));
+    },
+
+    async createLocalAdminSession(body) {
+      return attempt(async () =>
+        api.POST('/v1/auth/local/admin-sessions', {
+          credentials: 'include',
+          body,
+        }),
+      );
     },
 
     async session() {
