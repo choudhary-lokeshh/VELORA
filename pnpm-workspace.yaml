@@ -9,7 +9,7 @@ catalog:
   '@types/bun': 1.3.14
   '@opentelemetry/api': 1.9.1
   '@playwright/test': 1.62.1
-  '@react-native/metro-config': 0.86.2
+  '@react-native/metro-config': 0.86.3
   '@testcontainers/postgresql': 12.1.0
   '@testing-library/dom': 10.4.1
   '@testing-library/react': 16.3.2
@@ -52,7 +52,7 @@ catalog:
   prettier: 3.9.6
   react: 19.2.3
   react-dom: 19.2.3
-  react-native: 0.86.2
+  react-native: 0.86.3
   react-native-svg: 15.15.4
   react-native-web: 0.21.2
   react-native-worklets: 0.10.1
@@ -74,6 +74,16 @@ strictPeerDependencies: true
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - globals@17.11.0
+
+# `expo-template-bare-minimum` pins react-native exactly, and the template
+# publishes behind the runtime it pins: 57.0.17 still asks for 0.86.2 after
+# 0.86.3 shipped. Left alone that pin holds a second copy of react-native — and
+# with it a second copy of every Expo package that resolves against it — in the
+# tree, which is what `expo-doctor` reports as a corrupted install. The template
+# is repacked from the installed package rather than downloaded, so the whole
+# graph resolving on one runtime is what the Android build already assumes.
+overrides:
+  react-native: 0.86.3
 
 allowBuilds:
   cpu-features: false

@@ -105,13 +105,7 @@ Acceptance ends at expiry. Before expiry the owner must either remediate, or rec
 
 ## Current acceptances
 
-### VRA-2026-001 and VRA-2026-002: Expo/Metro `image-size`
-
-Metro's asset plugin depends on `image-size@1.2.1`, which has two high-severity malformed-image infinite-loop advisories. Verified on 2026-08-13 against the npm registry: the latest published `image-size` is `2.0.2`, which is itself within the vulnerable range `<=2.0.2`; the patched range `>=2.0.3` has no published release. Metro `0.87.0`, the current latest, still declares `image-size: ^1.0.2`, so no Metro or Expo release can resolve a fixed version. There is no compatible fix to adopt, and forcing a major override across Metro's asset pipeline is not a verified-safe change.
-
-Exposure is build-time only, inside Metro asset parsing. Velora's Mobile build consumes repository-controlled and dependency-controlled assets exclusively; no user-supplied, remote, or otherwise untrusted asset enters the Metro pipeline. The advisories are denial of service, not code execution, and the affected work happens on a developer or CI build host, never in a deployed runtime.
-
-Enforcement of that claim is exact: every reported dependency path must pass through `metro>image-size`, and `@velora/mobile` must be the only workspace from which `image-size` is reachable in the complete reverse-dependency graph. A path appearing under `@velora/api` or any other workspace fails the gate rather than inheriting this acceptance.
+VRA-2026-001 and VRA-2026-002 were removed on 2026-08-27, remediated rather than expired. Raising the `react-native` pin to 0.86.3 moved the Metro closure onto a version that no longer depends on `image-size` at all: the package is absent from `pnpm-lock.yaml` and from the installed graph, and `pnpm audit` reports neither GHSA-w3rx-r6r6-pgpr nor GHSA-5p2g-fcmc-qvqq. Both entries were deleted rather than archived, on the same principle the age register uses — the rules above are the durable part, and an acceptance describing a package the repository no longer installs has nothing left to govern.
 
 ### VRA-2026-003: Expo/Xcode `uuid`
 
@@ -129,72 +123,6 @@ This block is the enforced source of truth. Editing it changes CI behaviour and 
 {
   "registerVersion": 1,
   "acceptances": [
-    {
-      "id": "VRA-2026-001",
-      "risk": "expo-metro-image-size",
-      "package": "image-size",
-      "versions": ["1.2.1"],
-      "advisory": "GHSA-w3rx-r6r6-pgpr",
-      "severity": "high",
-      "dependencyPath": "metro>image-size",
-      "reachableWorkspaces": ["@velora/mobile"],
-      "reachability": "Build-time only. Metro parses repository-controlled and dependency-controlled assets during Mobile bundling. No user-controlled, remote, or otherwise untrusted asset enters the Metro pipeline, and no deployed Velora runtime executes this parser.",
-      "impact": "Denial of service through an infinite loop in the ICNS parser on a developer or CI build host. No code execution, no data exposure, no production runtime path.",
-      "compensatingControls": [
-        "Metro receives only trusted repository and dependency assets; remote or untrusted asset ingestion into the build pipeline requires reassessment before it is introduced.",
-        "The advisory remains visible in raw audit evidence on every CI run.",
-        "CI validates the exact package, version, advisory identifier, severity, every reported dependency path, and the independently computed set of workspaces that can reach the package; any drift fails the gate.",
-        "Acceptance expires automatically and new high or critical advisories still fail the gate."
-      ],
-      "owner": "Founder",
-      "decisionDate": "2026-08-13",
-      "expires": "2026-09-30",
-      "reviewTriggers": [
-        "any Expo update",
-        "any React Native update",
-        "any Metro update",
-        "any image-size update",
-        "an upstream patched compatible release becomes available",
-        "new exploit or reachability information is published",
-        "Velora begins ingesting untrusted build assets",
-        "before public beta or release"
-      ],
-      "remediation": "Adopt the first Expo/Metro release that resolves image-size >= 2.0.3. Do not force an unverified major override across Metro's asset pipeline.",
-      "status": "temporarily-accepted"
-    },
-    {
-      "id": "VRA-2026-002",
-      "risk": "expo-metro-image-size",
-      "package": "image-size",
-      "versions": ["1.2.1"],
-      "advisory": "GHSA-5p2g-fcmc-qvqq",
-      "severity": "high",
-      "dependencyPath": "metro>image-size",
-      "reachableWorkspaces": ["@velora/mobile"],
-      "reachability": "Build-time only. Metro parses repository-controlled and dependency-controlled assets during Mobile bundling. No user-controlled, remote, or otherwise untrusted asset enters the Metro pipeline, and no deployed Velora runtime executes this parser.",
-      "impact": "Denial of service through infinite loops in the JXL and HEIF parsers on a developer or CI build host. No code execution, no data exposure, no production runtime path.",
-      "compensatingControls": [
-        "Metro receives only trusted repository and dependency assets; remote or untrusted asset ingestion into the build pipeline requires reassessment before it is introduced.",
-        "The advisory remains visible in raw audit evidence on every CI run.",
-        "CI validates the exact package, version, advisory identifier, severity, every reported dependency path, and the independently computed set of workspaces that can reach the package; any drift fails the gate.",
-        "Acceptance expires automatically and new high or critical advisories still fail the gate."
-      ],
-      "owner": "Founder",
-      "decisionDate": "2026-08-13",
-      "expires": "2026-09-30",
-      "reviewTriggers": [
-        "any Expo update",
-        "any React Native update",
-        "any Metro update",
-        "any image-size update",
-        "an upstream patched compatible release becomes available",
-        "new exploit or reachability information is published",
-        "Velora begins ingesting untrusted build assets",
-        "before public beta or release"
-      ],
-      "remediation": "Adopt the first Expo/Metro release that resolves image-size >= 2.0.3. Do not force an unverified major override across Metro's asset pipeline.",
-      "status": "temporarily-accepted"
-    },
     {
       "id": "VRA-2026-003",
       "risk": "expo-xcode-uuid",
