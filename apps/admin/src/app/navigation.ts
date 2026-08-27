@@ -63,15 +63,18 @@ export function isCurrent(pathname: string, path: string): boolean {
  * and offering "back" from Identity to Media would dress a sideways move as a
  * return.
  */
+const ancestry: readonly {
+  readonly of: RegExp;
+  readonly parent: string;
+}[] = [{ of: /^\/queues\/[^/]+$/u, parent: '/queues' }];
+
 export function parentOf(pathname: string): string | undefined {
   if (pathname === accessPath) return undefined;
   if (destinations.some((destination) => destination.path === pathname)) {
     return undefined;
   }
   if (platformAreas.some((area) => area.path === pathname)) return undefined;
-  const separator = pathname.lastIndexOf('/');
-  if (separator <= 0) return undefined;
-  return pathname.slice(0, separator);
+  return ancestry.find((one) => one.of.test(pathname))?.parent;
 }
 
 /**

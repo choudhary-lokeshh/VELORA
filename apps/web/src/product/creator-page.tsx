@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type {
@@ -32,6 +33,7 @@ import {
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
+import { backTarget } from '../app/navigation';
 import { useApi, useSession, useToast } from '../app/providers';
 import { useAddressesFrom } from './imagery';
 import { useResource } from './resource';
@@ -99,9 +101,30 @@ export function CreatorPublicPage({
     [api],
   );
 
+  /*
+   * This page is public and sits outside the application shell, so it carries
+   * its own way back. It appears only for somebody who arrived from inside the
+   * product: a visitor who followed a creator's link from elsewhere has no
+   * VELORA page behind them, and offering them "back" to Discover would be
+   * inventing a history they never had.
+   */
+  const arrivedFrom = useSearchParams().get('from');
+  const back =
+    arrivedFrom === null ? undefined : backTarget(usePathname(), arrivedFrom);
+
   return (
     <div className="v-landing">
       <header className="v-landing__bar">
+        {back === undefined ? null : (
+          <Link
+            aria-label="Back"
+            className="v-icon-btn"
+            data-testid="topbar-back"
+            href={back}
+          >
+            <Icon name="arrowLeft" size="md" />
+          </Link>
+        )}
         <Link className="v-wordmark" href="/">
           <Icon name="sparkle" size="md" />
           VELORA

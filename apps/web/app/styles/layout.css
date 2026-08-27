@@ -275,6 +275,34 @@
   }
 
   .v-topbar {
+    background: transparent;
+    backdrop-filter: none;
+    border-bottom: 0;
+    box-shadow: none;
+    padding-inline: var(--space-6);
+    position: static;
+  }
+
+  /*
+   * Nothing to go back to means nothing to say: the sidebar already names the
+   * destination, and a bar repeating it would put the same word twice above
+   * every page.
+   */
+  .v-topbar--bare {
+    display: none;
+  }
+
+  /*
+   * On the pages that keep the bar, it keeps only the way back. The page's own
+   * heading is directly beneath it, and printing the same words twice is not a
+   * second piece of information.
+   */
+  .v-topbar__title {
+    display: none;
+  }
+
+  /* The account is in the sidebar's foot at this width, and once is enough. */
+  .v-topbar > .v-icon-btn:last-child {
     display: none;
   }
 

@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { youPath } from '../../src/frame/links';
+import { leave } from '../../src/frame/navigation';
 import { Screen } from '../../src/frame/shell';
 import { Button, EmptyState } from '../../src/design/primitives';
 import {
@@ -21,8 +22,7 @@ import { AccountScreen } from '../../src/product/you';
 export default function YouSection() {
   const { section } = useLocalSearchParams<{ section: string }>();
   const onBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace(youPath);
+    leave(router, youPath);
   };
 
   switch (section) {

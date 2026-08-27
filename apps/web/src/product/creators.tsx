@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -18,6 +19,7 @@ import {
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
+import { addressOf, nestedHref } from '../app/navigation';
 import { useAddressesFrom } from './imagery';
 import { useResource, useSingleFlight } from './resource';
 
@@ -75,6 +77,11 @@ export function CreatorDirectory({
       }),
     [api],
   );
+
+  // Where a creator page returns to. Discover keeps which section is being
+  // browsed in the address, so carrying it is the difference between coming
+  // back to Creators and coming back to People.
+  const from = addressOf(usePathname(), useSearchParams());
 
   const [extra, setExtra] = useState<readonly PublicCreatorSummary[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -170,7 +177,7 @@ export function CreatorDirectory({
             <Link
               className="v-creator-card"
               data-testid={`creator-${creator.handle}`}
-              href={`/c/${creator.handle}`}
+              href={nestedHref(`/c/${creator.handle}`, from)}
             >
               <Avatar
                 displayName={creator.displayName}

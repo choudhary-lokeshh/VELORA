@@ -62,3 +62,41 @@ export const signalCeiling = 9;
 export function signalLabel(count: number): string {
   return count > signalCeiling ? `${String(signalCeiling)}+` : String(count);
 }
+
+/**
+ * The part of the router leaving a screen needs.
+ *
+ * Declared as an interface rather than taken from `expo-router` so the rule
+ * below can be exercised against a stack that is not a real one. What a test
+ * has to be able to arrange is a screen with nothing behind it, and there is no
+ * way to arrange that against a router that has already been mounted.
+ */
+export interface Stack {
+  back(): void;
+  canGoBack(): boolean;
+  replace(path: string): void;
+}
+
+/**
+ * Leaving a screen that was pushed.
+ *
+ * A phone has a system Back as well as the one on screen, and both have to end
+ * up in the same place. Popping the stack is that place whenever there is a
+ * stack to pop: it returns to the exact screen underneath, scrolled where it
+ * was, which is what the hardware button does and what somebody expects the
+ * arrow to do.
+ *
+ * There is not always a stack. A notification, a `velora://` link, and a cold
+ * start on a deep link each put somebody on a pushed screen with nothing behind
+ * it, and `back()` on an empty stack leaves the application — which on Android
+ * means the screen somebody was reading disappears. So the fallback is an
+ * explicit product parent, and `replace` rather than `push` so the screen being
+ * left does not stay behind the one being entered.
+ */
+export function leave(stack: Stack, parent: string): void {
+  if (stack.canGoBack()) {
+    stack.back();
+    return;
+  }
+  stack.replace(parent);
+}

@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { messagesPath } from '../../src/frame/links';
+import { leave } from '../../src/frame/navigation';
 import { ConversationScreen } from '../../src/product/conversation';
 
 /**
@@ -20,8 +21,7 @@ export default function Conversation() {
     <ConversationScreen
       conversationId={conversationId}
       onBack={() => {
-        if (router.canGoBack()) router.back();
-        else router.replace(messagesPath);
+        leave(router, messagesPath);
       }}
     />
   );

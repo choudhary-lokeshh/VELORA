@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ApiResult, DiscoveryCandidate } from '@velora/consumer-client';
@@ -17,6 +18,7 @@ import {
   initialsOf,
   toneOf,
 } from '../design/primitives';
+import { addressOf, nestedHref } from '../app/navigation';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { PersonSafetyMenu } from './safety-actions';
@@ -354,6 +356,9 @@ function CandidateCard({
   readonly portrait: string | undefined;
 }) {
   const region = regionName(candidate.region);
+  // The feed this person was opened from, so leaving them returns to it rather
+  // than to whatever Discover happens to show on a fresh visit.
+  const from = addressOf(usePathname(), useSearchParams());
   return (
     <article className="v-person" data-testid={`candidate-${candidate.id}`}>
       <Link
@@ -362,7 +367,7 @@ function CandidateCard({
           toneOf(candidate.id),
         )}`}
         data-testid={`candidate-open-${candidate.id}`}
-        href={`/people/${candidate.id}`}
+        href={nestedHref(`/people/${candidate.id}`, from)}
       >
         {portrait === undefined ? (
           <span aria-hidden="true" className="v-person__portrait-mark">

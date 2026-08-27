@@ -58,6 +58,81 @@ export function isCurrent(pathname: string, path: string): boolean {
 }
 
 /**
+ * Where each page that can be navigated into is navigated into *from*.
+ *
+ * Declared rather than derived. Removing the last segment of an address looks
+ * like the same thing and is not: a person is opened from Discover and there is
+ * no `/people` listing, so truncation offers a Back that lands on an address
+ * this product does not serve. The same is true of `/c/<handle>`. A nested
+ * route missing from this table gets no Back at all, which is a visible gap
+ * rather than a link into nothing.
+ *
+ * Each parent is a literal address the application serves, so a Back built from
+ * one cannot 404 however the page was reached.
+ */
+const ancestry: readonly {
+  readonly of: RegExp;
+  readonly parent: string;
+}[] = [
+  { of: /^\/messages\/[^/]+$/u, parent: '/messages' },
+  { of: /^\/people\/[^/]+$/u, parent: '/discover' },
+  { of: /^\/c\/[^/]+$/u, parent: '/discover' },
+  { of: /^\/you\/[^/]+$/u, parent: '/you' },
+];
+
+/** The destination one level up, when this page has one. */
+export function parentOf(pathname: string): string | undefined {
+  return ancestry.find((one) => one.of.test(pathname))?.parent;
+}
+
+/** This page's own address, query and all, as somewhere to come back to. */
+export function addressOf(
+  pathname: string,
+  parameters: URLSearchParams,
+): string {
+  const query = parameters.toString();
+  return query === '' ? pathname : `${pathname}?${query}`;
+}
+
+/**
+ * A link into a nested page that remembers where it was followed from.
+ *
+ * Only the address is carried, and only this origin's. What it buys is the
+ * difference between returning to Discover and returning to the part of
+ * Discover somebody was actually reading.
+ */
+export function nestedHref(href: string, from: string): string {
+  return `${href}?from=${encodeURIComponent(from)}`;
+}
+
+/**
+ * Where Back goes, given what the page was opened from.
+ *
+ * The parent alone is correct but forgetful: Discover keeps which section is
+ * being browsed in the address, so returning to the bare parent from a creator
+ * lands on People after somebody was reading Creators. A link into a nested
+ * page therefore carries where it was followed from, and this restores it.
+ *
+ * What arrives in `from` is somebody else's string — it comes off the address —
+ * so it is not trusted to be a destination. It is accepted only when it is this
+ * origin's own path *and* is the declared parent, optionally carrying a query.
+ * Anything else falls back to the parent, so the worst a crafted `from` can do
+ * is send somebody one level up, which is where Back was going anyway.
+ */
+export function backTarget(
+  pathname: string,
+  from: string | null,
+): string | undefined {
+  const parent = parentOf(pathname);
+  if (parent === undefined) return undefined;
+  const requested = safeReturnPath(from);
+  if (requested === undefined) return parent;
+  return requested === parent || requested.startsWith(`${parent}?`)
+    ? requested
+    : parent;
+}
+
+/**
  * Whether a deep link may be followed after authentication.
  *
  * Only a path on this origin. A value starting with two slashes or a scheme is

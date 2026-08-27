@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { Icon } from '../design/icons';
 import { Avatar } from '../design/primitives';
-import { destinations, isCurrent } from './navigation';
+import { backTarget, destinations, isCurrent } from './navigation';
 import { useAccount, useFeeds, useToast } from './providers';
 
 /**
@@ -36,22 +36,6 @@ const signalLabels: Readonly<
   notifications: 'unread notices',
 };
 
-/**
- * The destination one level up, when there is one.
- *
- * Only the five top-level destinations are roots. Everything under one of them
- * is a page somebody navigated into and has to be able to leave.
- */
-function parentOf(pathname: string): string | undefined {
-  const root = destinations.find(
-    (destination) => destination.path === pathname,
-  );
-  if (root !== undefined) return undefined;
-  const separator = pathname.lastIndexOf('/');
-  if (separator <= 0) return undefined;
-  return pathname.slice(0, separator);
-}
-
 export function AppShell({
   children,
   narrow = false,
@@ -64,10 +48,11 @@ export function AppShell({
   readonly title: string;
 }) {
   const pathname = usePathname();
+  const parameters = useSearchParams();
   const account = useAccount();
   const feeds = useFeeds();
   const displayName = account.profile.value?.displayName ?? 'Your account';
-  const parent = parentOf(pathname);
+  const back = backTarget(pathname, parameters.get('from'));
 
   const signalCount = (
     signal: 'conversations' | 'notifications' | undefined,
@@ -133,19 +118,28 @@ export function AppShell({
       </nav>
 
       <div className="v-shell__main">
-        <header className="v-topbar">
+        {/*
+          The bar carries the way back, so it is only bare on a page there is
+          no way back from. A wide window hides the bare one — the sidebar
+          already names the destination and a bar repeating it would be a second
+          title above the first — and keeps the one holding the Back, because a
+          page opened from somewhere has to be leavable at every width rather
+          than only on a phone.
+        */}
+        <header
+          className={`v-topbar${back === undefined ? ' v-topbar--bare' : ''}`}
+        >
           {/*
-            A phone shows one destination at a time, so a page underneath one
-            needs a way back that is visible. The browser's own Back still
-            works; this is for the hand holding the phone, which is nowhere near
-            it.
+            The browser's own Back still works; this is for the hand holding the
+            phone, which is nowhere near it, and for the window where nothing
+            else on screen leads out of this page.
           */}
-          {parent === undefined ? null : (
+          {back === undefined ? null : (
             <Link
               aria-label="Back"
               className="v-icon-btn"
               data-testid="topbar-back"
-              href={parent}
+              href={back}
             >
               <Icon name="arrowLeft" size="md" />
             </Link>

@@ -39,6 +39,28 @@ export function isCurrent(pathname: string, path: string): boolean {
 }
 
 /**
+ * Where each page a creator navigates into is navigated into *from*.
+ *
+ * Declared rather than derived. Removing the last segment of an address happens
+ * to be right for every page this workspace serves today, and it is right by
+ * accident: it depends on every nested page sitting under a listing that also
+ * exists. The moment one does not — as `/people/<id>` did on Consumer Web,
+ * where it produced a Back to the not-found page — truncation starts pointing
+ * at addresses nothing serves. Naming the parents makes that structural instead
+ * of lucky, and a nested page missing from this table gets no Back rather than
+ * a link into nothing.
+ */
+const ancestry: readonly {
+  readonly of: RegExp;
+  readonly parent: string;
+}[] = [
+  { of: /^\/catalog\/[^/]+$/u, parent: '/catalog' },
+  { of: /^\/clubs\/[^/]+$/u, parent: '/clubs' },
+  { of: /^\/money\/[^/]+$/u, parent: '/money' },
+  { of: /^\/profile\/[^/]+$/u, parent: '/profile' },
+];
+
+/**
  * The destination one level up, when there is one.
  *
  * Only the five roots and the account area are places somebody arrives at.
@@ -51,9 +73,7 @@ export function parentOf(pathname: string): string | undefined {
   if (destinations.some((destination) => destination.path === pathname)) {
     return undefined;
   }
-  const separator = pathname.lastIndexOf('/');
-  if (separator <= 0) return undefined;
-  return pathname.slice(0, separator);
+  return ancestry.find((one) => one.of.test(pathname))?.parent;
 }
 
 /**
