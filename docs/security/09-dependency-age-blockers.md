@@ -40,10 +40,24 @@ Nothing in this register's authority changed. `minimumReleaseAge` is still 1440,
 
 ## Current blockers
 
-None, and `minimumReleaseAgeExclude` now carries no Expo entry at all.
+None, and `minimumReleaseAgeExclude` is gone from `pnpm-workspace.yaml` entirely. `minimumReleaseAge` is still 1440; what is absent is the exemption list, not the policy.
 
 DAB-2026-002's ten exact-version exclusions were removed on 2026-08-21, under both conditions its entry stated. The first was satisfied on 2026-08-18T10:54:46Z. The second was proven by the resolution this change performed rather than asserted: the five Expo SDK 57 patch pins the mobile check required were raised with the exclusion list already deleted, and `pnpm install` completed against the unchanged 1440-minute policy without a single age violation. Nothing needed an exemption any more, which is exactly what an exact-version exclusion expiring on its own is supposed to look like.
 
 The lockfile delta was confined to the Expo SDK 57 train and its own closure. `expo-router@57.0.15` dropped its dependency on `@testing-library/jest-dom`, so that package and the packages only it pulled in — `@testing-library/dom`, `@adobe/css-tools`, `css.escape`, `aria-query@5.3.0`, `dom-accessibility-api@0.5.16` — left the tree with it; `@expo/cli` moved 57.0.16 to 57.0.17 and brought `agent-cli-detector@0.1.6`. No package outside that closure entered or left, `pnpm install --frozen-lockfile` verifies the result, and `pnpm mobile:doctor` reports 20/20 on its own terms.
 
-The `globals@17.11.0` exclusion is unrelated to any Expo entry and stays. The sixteen exclusions DAB-2026-001 authorized were removed on 2026-08-17, and that entry was deleted rather than archived — the register's rules are the durable part, and a cleared entry whose exclusions are gone has nothing left to govern. DAB-2026-002 is deleted on the same principle.
+The sixteen exclusions DAB-2026-001 authorized were removed on 2026-08-17, and that entry was deleted rather than archived — the register's rules are the durable part, and a cleared entry whose exclusions are gone has nothing left to govern. DAB-2026-002 is deleted on the same principle.
+
+## What happened on 2026-08-28
+
+The Expo SDK 57 patch train `pnpm mobile:doctor` had been reporting since 2026-08-26 was taken: twelve pins raised to the versions the check named, plus `expo-template-bare-minimum` to 57.0.19. Every one of those versions was published on 2026-08-26 and had aged past the 1440-minute window before the upgrade was attempted, so this is not a blocker and gets no entry above. `pnpm install` resolved the whole train against the unchanged policy with the exclusion list already empty, and no version was refused.
+
+Two standing dependency-policy entries were retired in the same change, both because they had stopped authorizing anything.
+
+The first is not this register's business but is recorded here because it was load-bearing for the Expo graph: the `overrides: react-native: 0.86.3` entry added on 2026-08-27. It existed only because `expo-template-bare-minimum@57.0.17` pinned react-native `0.86.2` exactly and so held a second copy of the runtime, and every Expo package resolving against it, in the tree. Template `57.0.19` pins `0.86.3` — the version the catalog already carries — so the duplication has no source any more. The override was deleted rather than kept as insurance, and the result was proven rather than assumed: after a clean reinstall the virtual store holds exactly one `react-native@` and one `expo@` directory, the lockfile contains no reference to `0.86.2`, the duplicate `@expo/config-plugins`, `@expo/config`, and `@expo/require-utils` copies collapsed to one each, and `pnpm mobile:doctor` reports 20/20.
+
+The second is this register's business: the `globals@17.11.0` exclusion, the last entry in `minimumReleaseAgeExclude`, carried over from the foundation commit. `globals@17.11.0` was published 2026-08-12T11:07:59Z, so by 2026-08-13 it satisfied the policy on its own and the exclusion had been exempting a version that needed no exemption for a fortnight. That is precisely the self-expiry the rules above describe, and a dead exemption left in place is a standing hole nobody is watching.
+
+It was removed and the removal proven by resolution rather than by arithmetic, with a control. Under pnpm 11.21.0 and `minimumReleaseAge: 1440` with no exclusion list at all, a package published inside the window is still refused by name — `typescript@7.1.0-dev.20260827.1` and its seven platform packages were rejected with `within the minimumReleaseAge cutoff` — while `globals@17.11.0` resolves without comment. The policy is intact and enforcing; the exclusion was simply no longer part of why the install worked.
+
+`minimumReleaseAgeExclude` is therefore absent rather than empty. Nothing about the rules above changes: the next genuine blocker adds the key back with exactly the exact-version entries a named owner authorizes, and nothing else.

@@ -113,6 +113,8 @@ Expo's iOS project generation reaches `uuid@7.0.3` through `@expo/config-plugins
 
 The observed caller uses `uuid.v4()` without a caller-provided buffer, which is not the vulnerable shape. Exposure is limited to iOS project generation on a build host.
 
+Reassessed on 2026-08-28, because the Expo SDK 57 patch upgrade of that date fired this record's "any Expo update" and "any @expo/config-plugins update" triggers. Nothing upstream had moved: `xcode` is still `3.0.1` at `latest`, its nightly line still declares `uuid: ^7.0.3`, and `@expo/config-plugins` `57.0.9` — now both the installed version and `latest` — and the `58.x` canary line still declare `xcode: ^3.0.1`. The patched `uuid` is `14.0.2` at `latest` and remains outside every declared range in that path. The upgrade also collapsed the duplicate `@expo/config-plugins` copies the tree carried, so `57.0.9` is now the only one, and the audit still reports the same package, version, advisory, severity, and chain. The reassessment therefore changes nothing about the record: this is not a renewal, and the decision date and expiry are unchanged.
+
 Every reported dependency path must pass through `xcode>uuid`, and `@velora/mobile` must be the only workspace from which `uuid` is reachable.
 
 ## Machine-readable acceptance records

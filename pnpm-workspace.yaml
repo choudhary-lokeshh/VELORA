@@ -5,7 +5,7 @@ packages:
 catalog:
   '@eslint/js': 9.39.5
   '@expo-google-fonts/ibm-plex-sans': 0.4.1
-  '@expo/metro-runtime': 57.0.13
+  '@expo/metro-runtime': 57.0.14
   '@types/bun': 1.3.14
   '@opentelemetry/api': 1.9.1
   '@playwright/test': 1.62.1
@@ -22,28 +22,28 @@ catalog:
   drizzle-kit: 0.31.10
   drizzle-orm: 0.45.2
   eslint: 9.39.5
-  expo: 57.0.16
-  expo-build-properties: 57.0.14
-  expo-constants: 57.0.14
+  expo: 57.0.17
+  expo-build-properties: 57.0.15
+  expo-constants: 57.0.15
   expo-crypto: 57.0.2
-  expo-dev-client: 57.0.15
+  expo-dev-client: 57.0.16
   expo-doctor: 1.20.1
   expo-font: 57.0.1
-  expo-image-picker: 57.0.13
-  expo-linking: 57.0.7
-  expo-notifications: 57.0.14
-  expo-router: 57.0.16
-  expo-secure-store: 57.0.1
+  expo-image-picker: 57.0.14
+  expo-linking: 57.0.8
+  expo-notifications: 57.0.15
+  expo-router: 57.0.17
+  expo-secure-store: 57.0.2
   expo-splash-screen: 57.0.8
   expo-status-bar: 57.0.1
-  expo-system-ui: 57.0.2
-  expo-template-bare-minimum: 57.0.17
+  expo-system-ui: 57.0.3
+  expo-template-bare-minimum: 57.0.19
   bullmq: 5.81.3
   elysia: 1.4.29
   globals: 17.11.0
   ioredis: 5.11.1
   jest: 29.7.0
-  jest-expo: 57.0.4
+  jest-expo: 57.0.5
   jsdom: 30.0.1
   next: 16.3.0
   openapi-fetch: 0.17.0
@@ -72,18 +72,6 @@ engineStrict: true
 saveExact: true
 strictPeerDependencies: true
 minimumReleaseAge: 1440
-minimumReleaseAgeExclude:
-  - globals@17.11.0
-
-# `expo-template-bare-minimum` pins react-native exactly, and the template
-# publishes behind the runtime it pins: 57.0.17 still asks for 0.86.2 after
-# 0.86.3 shipped. Left alone that pin holds a second copy of react-native — and
-# with it a second copy of every Expo package that resolves against it — in the
-# tree, which is what `expo-doctor` reports as a corrupted install. The template
-# is repacked from the installed package rather than downloaded, so the whole
-# graph resolving on one runtime is what the Android build already assumes.
-overrides:
-  react-native: 0.86.3
 
 allowBuilds:
   cpu-features: false
