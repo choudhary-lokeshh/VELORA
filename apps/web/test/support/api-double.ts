@@ -249,6 +249,8 @@ export interface ApiDoubleState {
     step: string;
   } | null;
   profile: {
+    /** Optional exactly as the contract has it: a profile need not carry one. */
+    bio?: string;
     complete: boolean;
     discoverable: boolean;
     displayName?: string;

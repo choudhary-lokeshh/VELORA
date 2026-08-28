@@ -68,6 +68,42 @@ function textOf(testId: string): string | null {
   return screen.getByTestId(testId).textContent;
 }
 
+/**
+ * The same double, with every request for one path held unanswered.
+ *
+ * Both profile forms are offered before the profile read has necessarily
+ * answered, so "form opened, person typed, answer arrived" is an order the
+ * product really produces. Holding the request rather than waiting on a timer
+ * makes it the only order these tests can produce.
+ */
+function holdingRequests(
+  double: ApiDouble,
+  path: string,
+): { readonly double: ApiDouble; readonly release: () => void } {
+  let settle: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    settle = () => {
+      resolve();
+    };
+  });
+  const fetchImplementation: typeof globalThis.fetch = async (input, init) => {
+    const target =
+      input instanceof Request
+        ? input.url
+        : input instanceof URL
+          ? input.href
+          : input;
+    if (target.includes(path)) await held;
+    return double.fetch(input, init);
+  };
+  return {
+    double: { ...double, fetch: fetchImplementation },
+    release: () => {
+      settle?.();
+    },
+  };
+}
+
 /* ============================== session ============================== */
 
 describe('session', () => {
@@ -361,6 +397,61 @@ describe('admission', () => {
         (saveCalls[0]?.body as { expectedVersion?: number }).expectedVersion,
       ).toBe(1);
     });
+  });
+
+  it('keeps what somebody typed on the profile step when the profile answers afterwards', async () => {
+    const double = createApiDouble({
+      ...emptyState(),
+      account: {
+        createdAt: '2026-08-14T12:00:00.000Z',
+        id: ownAccountId,
+        status: 'pending_profile',
+      },
+      onboarding: {
+        adultAssurance: 'self_declared',
+        adultAssuranceRefused: false,
+        outstandingPolicies: [],
+        outstandingProfile: ['ready_media'],
+        step: 'profile',
+      },
+      profile: {
+        complete: false,
+        discoverable: false,
+        displayName: 'Alex Initial',
+        languages: ['en'],
+        media: [],
+        outstandingRequirements: ['ready_media'],
+        preferencesVersion: 1,
+        version: 1,
+      },
+      session: admittedState().session,
+    });
+    const held = holdingRequests(double, '/v1/users/me/profile');
+
+    renderProduct(
+      <WelcomeGate>
+        <Welcome />
+      </WelcomeGate>,
+      held.double,
+      { pathname: '/welcome' },
+    );
+
+    // The step is reached from the onboarding read, which answers whether or
+    // not the profile has.
+    fireEvent.change(await screen.findByTestId('onboarding-bio'), {
+      target: { value: 'weekend gardener' },
+    });
+
+    held.release();
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLInputElement>('onboarding-display-name').value,
+      ).toBe('Alex Initial');
+    });
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>('onboarding-bio').value,
+    ).toBe('weekend gardener');
   });
 
   it('renders conflict error when a stale profile edit is submitted', async () => {
@@ -1177,6 +1268,72 @@ describe('profile', () => {
           call.path === '/v1/users/me/profile' && call.method === 'POST',
       ),
     ).toBe(false);
+  });
+
+  it('keeps what somebody typed when the profile answer arrives afterwards', async () => {
+    const double = createApiDouble(admittedState());
+    const held = holdingRequests(double, '/v1/users/me/profile');
+    renderProduct(<You />, held.double, { pathname: '/you' });
+
+    // The form is reachable before the read has answered, which is the whole
+    // reason this ordering exists.
+    await click('profile-edit');
+    fireEvent.change(await screen.findByTestId('profile-bio-input'), {
+      target: { value: 'weekend gardener' },
+    });
+    expect(
+      screen.getByTestId<HTMLInputElement>('profile-display-name').value,
+    ).toBe('');
+
+    held.release();
+
+    // Waiting on the untouched field is waiting on the answer itself: nothing
+    // else can put the server's name in it.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLInputElement>('profile-display-name').value,
+      ).toBe('Alex');
+    });
+    expect(screen.getByTestId('language-remove-es')).toBeTruthy();
+    // What the person wrote, still theirs.
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>('profile-bio-input').value,
+    ).toBe('weekend gardener');
+
+    // And what the assistant is given is that same draft, rather than the
+    // empty bio the server still believes in.
+    await click('profile-ai-generate');
+    expect(
+      (await screen.findByTestId<HTMLTextAreaElement>('profile-ai-suggestion'))
+        .value,
+    ).toBe('Refined: weekend gardener');
+    const asked = double.calls.find(
+      (call) => call.path === '/v1/ai/suggestions' && call.method === 'POST',
+    );
+    expect((asked?.body as { draft: string }).draft).toBe('weekend gardener');
+  });
+
+  it('fills the form from the profile when it answers before anybody types', async () => {
+    const state = admittedState();
+    const profile = state.profile;
+    if (profile === null) throw new Error('fixture needs a profile');
+    const double = createApiDouble({
+      ...state,
+      profile: { ...profile, bio: 'A gardener, mostly.' },
+    });
+    renderProduct(<You />, double, { pathname: '/you' });
+
+    await screen.findByTestId('profile-bio');
+    await click('profile-edit');
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLInputElement>('profile-display-name').value,
+      ).toBe('Alex');
+    });
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>('profile-bio-input').value,
+    ).toBe('A gardener, mostly.');
+    expect(screen.getByTestId('language-remove-es')).toBeTruthy();
   });
 
   it('reports honestly that no photo storage exists yet', async () => {

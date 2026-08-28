@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import {
   maximumBioLength,
@@ -29,7 +29,7 @@ import {
 import { LanguagePicker } from './language-picker';
 import { ProfilePhotos } from './media';
 import { regionName } from './locale';
-import { useSingleFlight } from './resource';
+import { useSeededField, useSingleFlight } from './resource';
 
 /**
  * Admission, one step at a time.
@@ -397,28 +397,24 @@ function ProfileStep({
   readonly outstanding: readonly string[];
   readonly profile?: ConsumerProfile | undefined;
 }) {
-  const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
-  const [bio, setBio] = useState(profile?.bio ?? '');
-  const [languages, setLanguages] = useState<readonly string[]>(
-    profile?.languages ?? [],
-  );
   const [touched, setTouched] = useState(false);
+  // This step renders as soon as the server says admission is at the profile,
+  // which can be before the profile itself has been read. Each field therefore
+  // follows the server only until somebody types in it: a late answer fills in
+  // what is untouched and leaves the rest alone.
+  const version = profile?.version;
+  const displayName = useSeededField(profile?.displayName ?? '', version);
+  const bio = useSeededField(profile?.bio ?? '', version);
+  const languages = useSeededField<readonly string[]>(
+    profile?.languages ?? [],
+    version,
+  );
 
-  const seededVersion = useRef<number | undefined>(profile?.version);
-
-  useEffect(() => {
-    if (profile === undefined) return;
-    if (seededVersion.current === profile.version) return;
-    seededVersion.current = profile.version;
-    setDisplayName(profile.displayName ?? '');
-    setBio(profile.bio ?? '');
-    setLanguages(profile.languages);
-  }, [profile]);
-
+  const enteredName = displayName.value.trim();
   const nameValid =
-    displayName.trim().length >= minimumDisplayNameLength &&
-    displayName.trim().length <= maximumDisplayNameLength;
-  const languagesValid = languages.length > 0;
+    enteredName.length >= minimumDisplayNameLength &&
+    enteredName.length <= maximumDisplayNameLength;
+  const languagesValid = languages.value.length > 0;
   const needsPhoto = outstanding.includes('ready_media');
 
   return (
@@ -432,20 +428,17 @@ function ProfileStep({
           event.preventDefault();
           setTouched(true);
           if (!nameValid || !languagesValid) return;
-          seededVersion.current = (profile?.version ?? 0) + 1;
           onSave({
-            ...(bio.trim().length === 0 ? {} : { bio: bio.trim() }),
-            displayName: displayName.trim(),
-            ...(profile?.version === undefined
-              ? {}
-              : { expectedVersion: profile.version }),
-            languages: [...languages],
+            ...(bio.value.trim().length === 0 ? {} : { bio: bio.value.trim() }),
+            displayName: enteredName,
+            ...(version === undefined ? {} : { expectedVersion: version }),
+            languages: [...languages.value],
           });
         }}
       >
         <Field
           count={{
-            length: displayName.length,
+            length: displayName.value.length,
             maximum: maximumDisplayNameLength,
           }}
           error={
@@ -465,9 +458,9 @@ function ProfileStep({
               maxLength={maximumDisplayNameLength}
               name="displayName"
               onChange={(event) => {
-                setDisplayName(event.target.value);
+                displayName.set(event.target.value);
               }}
-              value={displayName}
+              value={displayName.value}
             />
           )}
         </Field>
@@ -478,12 +471,12 @@ function ProfileStep({
               ? 'Add at least one language.'
               : undefined
           }
-          onChange={setLanguages}
-          value={languages}
+          onChange={languages.set}
+          value={languages.value}
         />
 
         <Field
-          count={{ length: bio.length, maximum: maximumBioLength }}
+          count={{ length: bio.value.length, maximum: maximumBioLength }}
           hint="A couple of sentences is plenty. What you are into, what you are looking for."
           label="About you"
           optional
@@ -495,10 +488,10 @@ function ProfileStep({
               maxLength={maximumBioLength}
               name="bio"
               onChange={(event) => {
-                setBio(event.target.value);
+                bio.set(event.target.value);
               }}
               rows={4}
-              value={bio}
+              value={bio.value}
             />
           )}
         </Field>

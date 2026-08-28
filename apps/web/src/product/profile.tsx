@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import {
   maximumBioLength,
@@ -33,7 +33,7 @@ import { ConsumerAiAssist } from './ai-assist';
 import { LanguagePicker } from './language-picker';
 import { languageName, regionName } from './locale';
 import { ProfilePhotos } from './media';
-import { useSingleFlight } from './resource';
+import { useSeededField, useSingleFlight } from './resource';
 
 /**
  * Your profile, and the controls that decide who sees it.
@@ -91,7 +91,21 @@ export function You() {
       ) : null}
 
       <div className="v-stack v-stack--6">
-        {account.profile.loading && profile === undefined ? (
+        {editing ? (
+          /*
+            Asked for before the placeholder, deliberately. This screen is
+            pressable before the profile read has answered — it has to be, or
+            somebody arriving with a cold session would be looking at a
+            spinner — and swapping an open form for a skeleton the moment that
+            read starts would take away whatever they had already typed. The
+            form fills itself in as the answer lands instead.
+          */
+          <ProfileForm
+            onDone={() => {
+              setEditing(false);
+            }}
+          />
+        ) : account.profile.loading && profile === undefined ? (
           <Card>
             <div className="v-profile-hero">
               <Skeleton circle height={88} width={88} />
@@ -101,12 +115,6 @@ export function You() {
               </div>
             </div>
           </Card>
-        ) : editing ? (
-          <ProfileForm
-            onDone={() => {
-              setEditing(false);
-            }}
-          />
         ) : (
           <Card testId="profile-view">
             <div className="v-profile-hero">
@@ -319,29 +327,26 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
   const account = useAccount();
   const toast = useToast();
   const profile = account.profile.value;
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [languages, setLanguages] = useState<readonly string[]>([]);
   const [message, setMessage] = useState<string | undefined>(undefined);
   const [touched, setTouched] = useState(false);
   const { busy, run } = useSingleFlight();
-  // The form is seeded from the server once, and re-seeded whenever a newer
-  // version arrives. Anything else would fight the person as they type.
-  const seededVersion = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (profile === undefined) return;
-    if (seededVersion.current === profile.version) return;
-    seededVersion.current = profile.version;
-    setDisplayName(profile.displayName ?? '');
-    setBio(profile.bio ?? '');
-    setLanguages(profile.languages);
-  }, [profile]);
-
+  // Every field follows the server until somebody types in it, and is theirs
+  // after that. The form opens before the profile read has necessarily
+  // answered — the screen offers it as soon as it can — so an answer arriving
+  // afterwards must fill in what is still untouched without taking back what
+  // is not.
+  const version = profile?.version;
+  const displayName = useSeededField(profile?.displayName ?? '', version);
+  const bio = useSeededField(profile?.bio ?? '', version);
+  const languages = useSeededField<readonly string[]>(
+    profile?.languages ?? [],
+    version,
+  );
+  const enteredName = displayName.value.trim();
   const nameValid =
-    displayName.trim().length >= minimumDisplayNameLength &&
-    displayName.trim().length <= maximumDisplayNameLength;
-  const languagesValid = languages.length > 0;
+    enteredName.length >= minimumDisplayNameLength &&
+    enteredName.length <= maximumDisplayNameLength;
+  const languagesValid = languages.value.length > 0;
 
   const submit = (work: () => Promise<ApiResult<unknown>>) => {
     run(async () => {
@@ -369,12 +374,12 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
           if (!nameValid || !languagesValid) return;
           submit(async () =>
             api.saveProfile({
-              ...(bio.trim().length === 0 ? {} : { bio: bio.trim() }),
-              displayName: displayName.trim(),
-              ...(profile?.version === undefined
+              ...(bio.value.trim().length === 0
                 ? {}
-                : { expectedVersion: profile.version }),
-              languages: [...languages],
+                : { bio: bio.value.trim() }),
+              displayName: enteredName,
+              ...(version === undefined ? {} : { expectedVersion: version }),
+              languages: [...languages.value],
             }),
           );
         }}
@@ -383,7 +388,7 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
 
         <Field
           count={{
-            length: displayName.length,
+            length: displayName.value.length,
             maximum: maximumDisplayNameLength,
           }}
           error={
@@ -403,9 +408,9 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
               maxLength={maximumDisplayNameLength}
               name="displayName"
               onChange={(event) => {
-                setDisplayName(event.target.value);
+                displayName.set(event.target.value);
               }}
-              value={displayName}
+              value={displayName.value}
             />
           )}
         </Field>
@@ -416,12 +421,12 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
               ? 'Add at least one language.'
               : undefined
           }
-          onChange={setLanguages}
-          value={languages}
+          onChange={languages.set}
+          value={languages.value}
         />
 
         <Field
-          count={{ length: bio.length, maximum: maximumBioLength }}
+          count={{ length: bio.value.length, maximum: maximumBioLength }}
           hint="Other people read this before deciding whether to say yes."
           label="About you"
           optional
@@ -433,18 +438,18 @@ function ProfileForm({ onDone }: { readonly onDone: () => void }) {
               maxLength={maximumBioLength}
               name="bio"
               onChange={(event) => {
-                setBio(event.target.value);
+                bio.set(event.target.value);
               }}
               rows={4}
-              value={bio}
+              value={bio.value}
             />
           )}
         </Field>
 
         <ConsumerAiAssist
           capability="consumer_profile_bio"
-          draft={bio}
-          onReplace={setBio}
+          draft={bio.value}
+          onReplace={bio.set}
           testId="profile-ai"
         />
 

@@ -147,6 +147,51 @@ export function useRevalidateOnFocus(revalidate: () => void): void {
 }
 
 /**
+ * One form field whose starting value belongs to the server.
+ *
+ * Seeding a form from a read that is still in flight is a race the person can
+ * lose. Surfaces here offer the form as soon as they can render it rather than
+ * holding it back behind a spinner, so somebody can be typing before the first
+ * answer arrives — and an answer landing then would replace what they wrote
+ * with what the server still believed. Seeding only once does not fix it
+ * either: a form opened before the read settles would then never be filled in
+ * at all, and every field would start empty.
+ *
+ * The rule is therefore per field. A field nobody has touched follows the
+ * server, including an answer that arrives late and a later version that
+ * arrives after that. A field somebody has typed into is theirs, and no
+ * server answer overwrites it for as long as the form is open.
+ *
+ * `version` identifies the answer `seed` was taken from; while it is undefined
+ * the server has not answered yet and there is nothing to seed from.
+ */
+export function useSeededField<T>(
+  seed: T,
+  version: number | undefined,
+): { readonly set: (next: T) => void; readonly value: T } {
+  const [value, setValue] = useState<T>(seed);
+  // Written synchronously, because an edit and a seed can land in the same
+  // commit and a flag held only in state would still read as untouched.
+  const edited = useRef(false);
+  const seededVersion = useRef(version);
+
+  useEffect(() => {
+    if (version === undefined) return;
+    if (seededVersion.current === version) return;
+    seededVersion.current = version;
+    if (edited.current) return;
+    setValue(seed);
+  }, [seed, version]);
+
+  const set = useCallback((next: T) => {
+    edited.current = true;
+    setValue(next);
+  }, []);
+
+  return { set, value };
+}
+
+/**
  * Runs one action at a time, whatever a fast pointer does.
  *
  * A guard held in component state is not a guard: two clicks in the same frame
