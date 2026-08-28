@@ -11,6 +11,7 @@ import {
   connectDatabase,
   execute,
   provisionDatabase,
+  refused,
   rowsOf,
   type TestDatabase,
 } from '../support/database.js';
@@ -307,6 +308,113 @@ describe('USERS consumer account persistence', () => {
       }
       expect(rejected, scenario.label).toBe(true);
     }
+  });
+
+  /**
+   * Clock skew, simulated rather than caused.
+   *
+   * `users_accounts_status_changed_after_creation_check` compares two columns
+   * the application writes, so it holds only while both come from one clock.
+   * The tests below offset the application clock from PostgreSQL's own `now()`
+   * by an hour in each direction — which is what a drifted container looks like
+   * from inside the API process — without touching a host clock, a container
+   * clock, or the session `TimeZone`. Nothing sleeps and nothing races: the
+   * offset is read from the database and applied, so a run either proves the
+   * property or fails every time.
+   */
+  async function databaseClock(): Promise<Date> {
+    const rows = await rowsOf<{ at: Date }>(database.sql`select now() as at`);
+    const at = rows[0]?.at;
+    if (at === undefined) throw new Error('the database returned no clock');
+    return at;
+  }
+
+  const skews = [
+    { label: 'an hour ahead of the database', offsetMilliseconds: 3_600_000 },
+    { label: 'an hour behind the database', offsetMilliseconds: -3_600_000 },
+  ] as const;
+
+  for (const skew of skews) {
+    it(`keeps a lifecycle coherent with the application clock ${skew.label}`, async () => {
+      const authAccountId = await authAccount();
+      const createdAt = new Date(
+        (await databaseClock()).getTime() + skew.offsetMilliseconds,
+      );
+      const changedAt = new Date(createdAt.getTime() + 1_000);
+
+      const account = await repository.insertIfAbsent(
+        repository.transactionless,
+        {
+          authAccountId,
+          now: createdAt,
+          status: 'pending_profile',
+          statusReason: 'onboarding_incomplete',
+        },
+      );
+
+      // Exact equality is the contract here rather than a precision accident:
+      // one read of the clock stamps both columns, so the row records a single
+      // instant. A JS millisecond survives a PostgreSQL microsecond column
+      // unchanged, which is why this is safe to assert on the nose.
+      expect(account?.createdAt.getTime()).toBe(createdAt.getTime());
+      expect(account?.statusChangedAt.getTime()).toBe(createdAt.getTime());
+
+      const moved = await repository.transitionAccountStatus(
+        repository.transactionless,
+        {
+          expectedStatus: 'pending_profile',
+          now: changedAt,
+          status: 'active',
+          statusReason: null,
+          userId: account?.id ?? '',
+        },
+      );
+
+      expect(moved?.status).toBe('active');
+      expect(moved?.statusChangedAt.getTime()).toBe(changedAt.getTime());
+      expect(moved?.createdAt.getTime()).toBe(createdAt.getTime());
+      // The invariant the constraint exists for, stated as an ordering rather
+      // than as an equality, because that is all it claims.
+      expect(moved?.statusChangedAt.getTime()).toBeGreaterThanOrEqual(
+        moved?.createdAt.getTime() ?? Number.POSITIVE_INFINITY,
+      );
+    });
+  }
+
+  it('refuses a status change stamped from the database clock on a row the application clock created', async () => {
+    const authAccountId = await authAccount();
+    const createdAt = new Date((await databaseClock()).getTime() + 3_600_000);
+    const account = await repository.insertIfAbsent(
+      repository.transactionless,
+      {
+        authAccountId,
+        now: createdAt,
+        status: 'pending_profile',
+        statusReason: 'onboarding_incomplete',
+      },
+    );
+
+    // The defect this file guards against, reproduced without moving a clock:
+    // a writer that stamps `status_changed_at` from PostgreSQL while the row
+    // was created from the application clock is writing across two clocks, and
+    // the database refuses it the moment they disagree by more than the gap
+    // between the two statements. A production writer cannot reach this — every
+    // one of them takes both timestamps from the injected clock — which is why
+    // the fix belonged in the fixture that did.
+    expect(
+      await refused(() =>
+        execute(
+          database.sql`update users_accounts
+            set status_changed_at = now()
+            where id = ${account?.id ?? ''}`,
+        ),
+      ),
+    ).toBe(true);
+
+    const rows = await rowsOf<{ status_changed_at: Date }>(
+      database.sql`select status_changed_at from users_accounts where id = ${account?.id ?? ''}`,
+    );
+    expect(rows[0]?.status_changed_at.getTime()).toBe(createdAt.getTime());
   });
 });
 

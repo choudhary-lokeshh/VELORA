@@ -80,12 +80,26 @@ const mediaRuntime = testMediaRuntime({
   database: database.drizzle,
   logger,
 });
+/**
+ * The clock USERS is composed with, and so the clock that stamps `created_at`
+ * and `status_changed_at` on every `users_accounts` row this suite creates.
+ *
+ * Named rather than left to the default because one fixture below has to reach
+ * past the routes to force a lifecycle state, and a timestamp it wrote from
+ * PostgreSQL's `now()` would be a second clock. The two disagree by however far
+ * the container running PostgreSQL has drifted from this host, and
+ * `users_accounts_status_changed_after_creation_check` rejects the write when
+ * the drift runs the wrong way. Stamping from here keeps the fixture on the
+ * clock the domain itself uses.
+ */
+const applicationClock = (): Date => new Date();
 const users = createUsersRuntime({
   caller: auth.caller,
   config,
   database: database.drizzle,
   logger,
   media: mediaRuntime.service,
+  now: applicationClock,
 });
 const product = testProductRuntimes({
   caller: auth.caller,
@@ -1193,10 +1207,16 @@ describe('the membership product under attack', () => {
       await handle(signed('/v1/users/me', buyer, testConsumerOrigin))
     ).json()) as { id: string };
 
+    // Stamped from `applicationClock`, which is what wrote this row's
+    // `created_at`. PostgreSQL's `now()` is a different clock, and a status
+    // change stamped there lands before the creation it followed whenever the
+    // database host trails this one. Trust & Safety writes this transition
+    // through `ConsumerEnforcement`, which takes both timestamps from the same
+    // application clock; only a fixture could mix them.
     await execute(
       database.sql`update users_accounts
         set status = 'restricted', status_reason = 'safety_enforcement',
-            status_changed_at = now()
+            status_changed_at = ${applicationClock()}
         where id = ${account.id}`,
     );
 
