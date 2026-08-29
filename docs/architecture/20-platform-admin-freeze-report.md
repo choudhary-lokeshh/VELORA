@@ -4,6 +4,7 @@
 - Freeze SHA: `ac166519080fb9a22b8a819d64dfbc71896c0ed0`
 - Freeze date: 2026-08-23
 - Interface authority: [ADR-0029](../decisions/ADR-0029-platform-admin-product-interface.md)
+- Amended 2026-08-29 by [ADR-0036](../decisions/ADR-0036-platform-admin-operations-console.md), which added seven operator reads, six destinations with addressed areas, and browser coverage of every screen behind the gate. Sections marked **Amended** below are superseded by it; everything else stands.
 
 ## What this work owns
 
@@ -18,9 +19,9 @@ A working engineering scaffold: a session read, a handful of module-shaped panel
 - **CLEAR PULSE**, in `apps/admin/app/styles/`: 100 semantic token declarations across a cool neutral surface ladder, three foreground weights, three border weights, four status hues, a squarer radius scale, three elevations, a type scale, and motion timing. IBM Plex Sans with Noto fallbacks; IBM Plex Mono for opaque identifiers; no editorial serif. Controls at 36 px and rows at 40 px, restored to comfortable targets under `pointer: coarse`.
 - **A component layer** — panels, a horizontal scroller, a table, fact lists, badges, chips, notices, metrics, fields, selects, acknowledgements, skeletons, and four distinct states (empty, error, blocked, unreachable) — plus a focus-trapping dialog and a 27-mark icon set drawn at the approved 1.75 px stroke.
 - **A responsive shell** with three arrangements: a bottom bar below 768 px, an icon rail from 768 px, a labelled sidebar at the widest breakpoint.
-- **Eleven addressed routes**: the access door, four destinations, appeals, one case, three platform areas, and a not-found page. Every one is a real address, so Back, a bookmark, a second tab, and a deep link all behave normally.
-- **A contract client** in `apps/admin/src/api/`: types derived from the generated `paths`, one `createAdminApi` with eighteen operations, CSRF on every write, keyset paging, and a failure mapper that separates a refusal from an outage.
-- **Ten console screens**: queues, one case, appeals, creators, one creator, money, and four platform health areas — plus the decision and refund dialogs.
+- **Eleven addressed routes**: the access door, four destinations, appeals, one case, three platform areas, and a not-found page. Every one is a real address, so Back, a bookmark, a second tab, and a deep link all behave normally. **Amended:** twenty-one addresses, six destinations, and ten areas as of ADR-0036.
+- **A contract client** in `apps/admin/src/api/`: types derived from the generated `paths`, one `createAdminApi` with eighteen operations, CSRF on every write, keyset paging, and a failure mapper that separates a refusal from an outage. **Amended:** twenty-seven operations, of which every addition is a read.
+- **Ten console screens**: queues, one case, appeals, creators, one creator, money, and four platform health areas — plus the decision and refund dialogs. **Amended:** eighteen screens, adding the overview, accounts, clubs, one club, payments, one payment, payouts, disputes, decisions, and platform security.
 
 ## The rule everything was built to
 
@@ -28,7 +29,7 @@ A working engineering scaffold: a session read, a handful of module-shaped panel
 
 - **Colour is only ever the server's own published judgement.** `breached` on a backlog, a case's priority, a creator's status, an appeal's state. Every other `state` arrives as an open string in the owning domain's vocabulary, is humanised rather than mapped — `provider_pending` becomes "Provider pending" — and is printed in plain ink. A state added upstream tomorrow reads correctly today, and nothing is toned on a guess about what a word means.
 - **No name, handle, contact detail, consumer account, object key, digest, asset identifier, payout recipient, bank detail, identity document, or secret** appears anywhere. A case target is a type and an opaque reference, and the screen says so.
-- **No list and no search over private material.** The contract offers exact-reference reads of a media asset, an RTC call, and an identity subject to a tool that already holds an identifier. This console offers none of them, and says so on the screen. The one search that exists is over public creator handles.
+- **No list and no search over private material.** The contract offers exact-reference reads of a media asset, an RTC call, an identity subject, and one notification delivery to a tool that already holds an identifier. This console offers none of them, and says so on each screen that would otherwise be the place to put a lookup field. The one search that exists is over public creator handles. The accounts screen ADR-0036 adds is bounded by the platform's own enforcement decisions rather than by a search box, and publishes no name, handle, contact detail, profile, or locale.
 - **No cross-currency total**, because adding a euro to a yen produces a number with no meaning that somebody would act on. Amounts render against each currency's own published minor-unit exponent, with the code beside the digits.
 - **Every backlog carries the age of its oldest owed item against the age its owner calls late**, and every class is shown every time — a panel listing only what is wrong cannot tell "nothing is owed" from "the signal stopped arriving".
 - **The console never claims a state the owning domain has not confirmed**, and every decision carries the version the operator was looking at.
@@ -52,14 +53,17 @@ A refused write, a stale version, an unreachable platform, a truncated case, a c
 
 The door and the not-found page are asserted in a real browser at 320, 360, 390, 430, 768, 820, 1024, 1280, 1440, and 1728 px, and again at 200 % text size, with no element and no document overflowing at any of them.
 
-The ten console screens were driven at the same ten widths against a scratchpad stub, because no committed browser assertion can reach them. **That is a weaker guarantee than the other two surfaces have, and it is stated rather than dressed up.** It becomes a browser assertion the day a privileged authenticator is approved.
+**Amended by ADR-0036, and this is the paragraph it closes.** The ten screens were originally driven at the same ten widths against a scratchpad stub, because no committed browser assertion could reach them, and that was recorded here as a weaker guarantee than the other two surfaces have. It is no longer: `e2e/admin-console.spec.ts` signs in through the ADR-0034 development panel and drives every destination in a real browser at all ten widths and again at 200 % text size, with no element and no document overflowing at any of them.
+
+That assertion found one defect on its first run and it is fixed at the cause: a grid item's automatic minimum is its content, so the bottom navigation stopped being equal-columns at six destinations and twice the text size and took the page sideways with it. `min-width: 0` is what lets the ellipsis that was already there apply.
 
 One `<h1>` per page, one named `main` landmark, a skip link, labelled navigation, `aria-current` on the current destination, focus trapped and restored by the dialog, the approved 2 px focus treatment applied once to everything, and every interactive element reachable and operable from the keyboard alone. Every text and icon pair was measured against its surface before it was written down.
 
 ## Tests
 
-- **39 unit assertions** over the console screens, run against a `fetch`-level double answering real contract paths — the version carried into a decision, the refusal when the platform has replaced it, the reason that must be chosen, the scope asked for only when the action enforces something, the claim, the triage, the refund acknowledgement, the paging, and the honesty rules.
-- **28 browser assertions** across chromium, firefox, and webkit over the reachable surface: that every console address redirects to the door carrying where it was going, that the door explains both conditions, that it offers nothing to type, that it reads nothing privileged before refusing, that it carries no capability from another surface, and that it is a finished page at every width and on a keyboard.
+- **39 unit assertions** over the console screens, run against a `fetch`-level double answering real contract paths — the version carried into a decision, the refusal when the platform has replaced it, the reason that must be chosen, the scope asked for only when the action enforces something, the claim, the triage, the refund acknowledgement, the paging, and the honesty rules. **Amended:** 81, adding the overview, accounts, payments, payouts, clubs, and both audit records, plus the navigation module's own suite.
+- **28 browser assertions** across chromium, firefox, and webkit over the reachable surface: that every console address redirects to the door carrying where it was going, that the door explains both conditions, that it offers nothing to type, that it reads nothing privileged before refusing, that it carries no capability from another surface, and that it is a finished page at every width and on a keyboard. **Amended:** the door assertions are unchanged and still pass against the same stack; ADR-0036 adds thirteen more that go through the door and drive the console itself.
+- **23 integration assertions** over the seven operator reads ADR-0036 added, against real PostgreSQL: who may reach them, what they publish as exact key sets, what they refuse, and that a page boundary neither repeats nor skips.
 - The full gate — `pnpm ci:verify`, twenty steps from toolchain through dependency security — is green.
 
 ## What is frozen
@@ -73,7 +77,7 @@ One `<h1>` per page, one named `main` landmark, a skip link, labelled navigation
 - **No media asset lookup, no RTC call lookup, and no identity subject lookup**, although the contract publishes all three. Each is an exact-reference read for a tool that already holds an identifier; putting a field beside a dashboard is where a browsing surface over private material begins.
 - **No bulk action anywhere.** Every operation names one target. A bulk control that weakened individual authorization or audit is forbidden by the surface document, and one that did not would just be a loop with a progress bar.
 - **No legal hold.** MEDIA implements it and the database enforces it; no route exposes it, deliberately, because an operator placing a hold with no enforcement record behind it is an unaudited action on evidence.
-- **No analytics, no configuration editing, no country or feature flag control, and no audit browser.** None is published by the contract today.
+- **No analytics, no configuration editing, and no country or feature flag control.** None is published by the contract today. **Amended:** the two audit records the platform does keep — AUTH's security events and TRUST & SAFETY's settled decisions — are read as of ADR-0036, each under the destination that owns it rather than under a bucket called "Audit". There is still no analytics of any kind, and no chart, rate, trend, or derived score anywhere on the surface.
 
 ## Live capability
 
@@ -90,7 +94,7 @@ In local and test environments, `POST /v1/auth/local/admin-sessions` issues a `p
 | Reaching any console screen in a production browser | Production phishing-resistant WebAuthn provider, plus production session issuance path — in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md) (Local development unblocked by ADR-0034) |
 | Role-filtered navigation and operations | Admin permission/approval matrix |
 | Approval, dual control, break-glass | Break-glass implementation, on the locked ADR-0017 semantics |
-| A browser assertion over the console screens | The access decisions above; the screens themselves need no change |
+| ~~A browser assertion over the console screens~~ | Delivered by ADR-0036 in local and test; a *production* browser assertion still waits on the access decisions above |
 | Any identity manual review or override | Identity manual review or override decision; current capability is exact-reference read-only by design |
 
 ## Cross-references

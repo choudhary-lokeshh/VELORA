@@ -14,6 +14,8 @@ Admin does not expose plaintext passwords, raw card data, encryption keys, secre
 
 Expected areas are work queues, global scoped search, users, creators/clubs/content, moderation/reports/appeals, support, billing/refunds/disputes, payouts/holds, country/features/configuration, analytics, audit review, incidents, and platform health. Navigation is role- and scope-filtered; hidden navigation does not replace server authorization.
 
+**As built** ([ADR-0036](../decisions/ADR-0036-platform-admin-operations-console.md)): six destinations — Overview, Queues, Creators, Accounts, Money, Platform — each with areas that are peers of one another and addresses in their own right. A record returns to the area it was found in rather than to the destination root, because that is where the operator's filter and position still are. Nothing in the navigation is a permission: the server refuses at every route regardless of what is on the screen.
+
 Screen/workflow authority comes from owning domain and operations documents. Exact information architecture, dense table patterns, dashboards, keyboard workflows, and visual design are `DESIGN REQUIRED`.
 
 ## Domains and cross-domain dependencies
@@ -96,14 +98,48 @@ Four peer areas — media, notifications, calling, identity — each answering o
 
 Each reports the adapters the process actually composed rather than what a configuration file asked for, because "off" and "off because nobody has approved a provider" are different situations. Each reports counts by state, and where a domain publishes owed work it reports the **age of the oldest owed item against the age its owner calls late** — a count alone cannot separate a busy platform from a stuck one. Every class is shown every time, healthy ones included, because a panel listing only what is wrong cannot tell "nothing is owed" from "the signal stopped arriving".
 
-None of it identifies anybody, and none of it can be searched. The contract offers exact-reference reads of a media asset, an RTC call, and an identity subject to a tool that already holds an identifier; this console offers none of them, and says so on the screen, because a lookup field beside a dashboard is where a browsing surface over private material begins.
+A fifth area reads AUTH's own security event log — every authentication, session, and recovery event the platform recorded, with an enumerated type and an enumerated reason. It sits here rather than under a destination called "Audit" because every other subsystem's operational record is read here, and the platform's other audit record, its settled moderation decisions, sits with the work that produced it under Queues.
 
-## Implemented: the access door, and why it is the whole product today
+None of it identifies anybody, and none of it can be searched. The contract offers exact-reference reads of a media asset, an RTC call, an identity subject, and one notification delivery to a tool that already holds an identifier; this console offers none of them, and says so on each screen that would otherwise be the place to put a lookup field, because a field beside a dashboard is where a browsing surface over private material begins. The security log carries no account for the same reason: a console that joined one would be an account browser wearing an audit label.
 
-No browser reaches any of the above, in any environment. [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md) requires a `platform_admin` audience at recent phishing-resistant assurance. `/v1/auth/local/web-sessions` admits `consumer_web` and `creator_studio` and nothing else, so the audience cannot be issued; and the only privileged verifier the platform composes refuses every assertion, because no phishing-resistant implementation is approved and hand-rolling one would be a fabricated control.
+## Implemented: what needs a person
+
+The address an operator lands on, and the one screen here that answers a question rather than describing a subsystem: unclaimed and open cases, appeals awaiting an answer, commercial records needing somebody, live cardholder claims, payouts awaiting a provider answer, creators under suspension, and accounts under restriction — each a total the platform computed over a whole table, each a link to the work it counts.
+
+Every figure comes from the platform rather than from the console adding up a page it happened to read. That distinction is the reason the route exists: on the one screen where an operator decides what to work on next, being approximately right is the wrong kind of wrong. A zero is shown rather than hidden, because "nothing is waiting" and "the signal stopped arriving" are different answers.
+
+There is **no chart, no rate, no trend, no comparison with a previous period, and no score.** Not one of them is published by the platform, and each would be this console inventing a fact about the business on the screen most likely to be believed.
+
+## Implemented: consumer accounts
+
+Not a directory of everybody. With no standing chosen, the platform answers with the accounts **it has itself decided are not in good standing** — restricted, awaiting deletion, deactivated, erased — which is an enforcement work list bounded by the platform's own decisions rather than by whatever somebody types into a box. Choosing a standing widens it to that standing, and the whole population counted by standing sits beside the list so an empty work list can never read as an empty platform.
+
+An account carries its lifecycle, the coarse reason USERS publishes for it, and its region. No name, no handle, no contact detail, no profile, no photograph, no locale — none is in the response shape at all. Region is there because it is jurisdiction, and an operator deciding whether a restriction may be lifted needs it. The finding behind a safety restriction stays with the enforcement record and reaches an operator through the case that produced it, beside the evidence it rests on.
+
+**No operation on a consumer account appears on the screen.** Restricting one and letting it back in are decisions that carry a case, a reason, an appeal path, and a record, so they are taken on the case that produced them and nowhere else.
+
+## Implemented: the commercial record
+
+Payments, payouts, and claims as records rather than as counts. A payment carries its amount against its own currency, what was sold, the state BILLING published, the closed failure code where there is one, and the reference its provider quotes; opening one shows every reversal and every claim recorded against it, because the question in front of a payment is whether money has already gone back and whether somebody's bank is taking it.
+
+**A payment carries no payer and a payout carries no destination.** A payments list keyed by who paid would be a purchase history for every person on the platform whatever the screen was called; a payout with a recipient reference, a bank detail, or an account name is forbidden in an operational view and helps with nothing. A payout names its creator by the same opaque identifier the creator directory already publishes, because a payout is *to* somebody and an operator answering for one has to know whose book it left.
+
+Nothing on any of these screens moves money. There is no release, no retry, and no cancellation of a payout, because the platform publishes none. The one financial operation an operator has remains issuing a reversal, on the money summary, with its reason, its acknowledgement, and its idempotency key.
+
+## Implemented: clubs and memberships
+
+The clubs creators sell, with how many memberships each holds by state, and — for one club at a time — those memberships by their own identifiers.
+
+This exists to close a dead end rather than to add a surface. The console has always been able to revoke a club membership and asked an operator to paste an identifier it could not show them: a capability that was real in the API and unreachable in the product. **A membership is published by its identifier and its state and never by who holds it** — a club that listed its members would be a console publishing who pays whom, and knowing who holds one changes nothing an operator may decide about it. The revocation itself stays on the creator's screen, so the operation has one home and one set of words.
+
+## Implemented: the access door, and what it refuses
+
+No browser reaches any of the above **in a deployed environment**. [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md) requires a `platform_admin` audience at recent phishing-resistant assurance. In staging and production `/v1/auth/local/web-sessions` admits `consumer_web` and `creator_studio` and nothing else, so the audience cannot be issued; and the privileged verifier the platform composes there refuses every assertion, because no phishing-resistant implementation is approved and hand-rolling one would be a fabricated control.
+
+In local and test, [ADR-0034](../decisions/ADR-0034-local-test-admin-authenticator.md) admits a deterministic `local-test-privileged` adapter, on the same terms as every other deferred provider: configuration refuses it in staging and production at schema parse time, so the API does not start rather than starting with a weakened verifier. That is what makes the screens above reachable for development, manual review, and the browser suite that now drives every one of them.
 
 The access page therefore is the surface rather than a placeholder. It states both conditions separately, because an operator whose audience is wrong and one whose assurance is stale have different problems. It reports what the browser actually holds in the server's own words. It distinguishes "this browser holds no session" from "this console could not reach the platform", because an origin the deployment has not admitted is the likelier state and reading a refused request as "signed out" would be stating something the console does not know.
 
-It offers **no sign-in form**. No route would accept one, a form that always fails is worse than an explanation, and on this surface it would be a control inviting somebody to try to get in. The one control it offers is signing out, which is real: somebody may be carrying a consumer session on this origin and be better off without it.
+In a deployed environment it offers **no sign-in form**. No route would accept one, a form that always fails is worse than an explanation, and on this surface it would be a control inviting somebody to try to get in. The one control it offers there is signing out, which is real: somebody may be carrying a consumer session on this origin and be better off without it. In local and test a clearly labelled development panel appears beside the refusal rather than in place of it, and it collects an identity subject rather than a credential.
 
 Both conditions are recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md) as a privileged authenticator provider choice and an approval policy, alongside the role and scope matrix the console asserts nothing about.

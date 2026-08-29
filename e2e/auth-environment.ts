@@ -151,6 +151,20 @@ export async function startAuthEnvironment(): Promise<void> {
      */
     AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN: platformAdminOrigin,
     /*
+     * The deterministic privileged verifier from ADR-0034, on exactly the same
+     * terms as every other local-test adapter above.
+     *
+     * Without it the console's ten screens have no browser coverage at all —
+     * the freeze report says so in as many words, and calls it a weaker
+     * guarantee than the other two surfaces have. `packages/config/src/server.ts`
+     * refuses this value in staging and production at schema parse time, so the
+     * API does not start rather than starting with a weakened verifier, and
+     * that refusal has its own suite. Nothing here is evidence that a real
+     * phishing-resistant provider exists: the adapter name is what stops a
+     * passing browser test from reading as though one did.
+     */
+    AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER: 'local-test-privileged',
+    /*
      * The deterministic commerce adapters, on the same terms as the media, RTC,
      * notification, and AI ones above.
      *
