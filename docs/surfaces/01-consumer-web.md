@@ -31,6 +31,24 @@ A person is an address of their own, reached from the portrait on a card. It sho
 
 Clubs appear in neither section, and that is a rule rather than an omission: Creator Private Clubs stay separate from Social Discovery, so a club is reached from the page of the creator who runs it, and the access somebody already holds is under You.
 
+### As built, after ADR-0037
+
+[ADR-0037](../decisions/ADR-0037-consumer-web-experience-refinements.md) refines how the surface presents itself without changing what it is. Its information architecture, its route ancestry, its commerce semantics, and its admission gates are all as above.
+
+A page names itself once. On a phone the shell's bar keeps a page's name only while that page's own heading is out of view, so the two are never printed a few pixels apart; the wide window already refused this, and the phone now does too. Where the bar carries a Back and the navigation has a word for its target, that control says the word — "Back to You" above Sent gifts — and where the navigation has no word for the target it says only "Back", because a Back labelled with a guess is worse than an arrow.
+
+Which introductions are being read is a query parameter on `/introductions`, exactly as which section of Discover is being browsed is one, so a link, a bookmark, a reload, and Back behave the way they behave everywhere else. Which group opens by default is decided by where the work is rather than by a fixed order.
+
+The section switch is a real tablist on the keyboard: one Tab stop, arrow keys that move and wrap, Home and End at the ends. It wraps to a second line on a narrow viewport rather than scrolling its last option off its own edge.
+
+Sent gifts draws the silhouette somebody chose, links the creator by the handle BILLING publishes, and gives every state a tone and a sentence saying what it means for the sender — a gift that failed does not look like one that was returned. Nothing about a gift is counted, ranked, or totalled.
+
+A refusal names its reason wherever it is made: the club destination lists the shut commerce gate in the same words the creator page and the join page use.
+
+An unsent message lives in one place. A failed send clears the composer, leaving the words in the unsent message with a retry that presents the same client identifier — the one that is safe against a request which committed before its answer was lost — and an explicit Edit for somebody who wants to change it first.
+
+The writing assist is folded away inside a conversation and open on the profile form. It remains draft-only on both, and neither ever saves or sends on somebody's behalf.
+
 Exact visual specification remains `DESIGN REQUIRED` in Figma. What exists in code is the approved Master Visual Language filled in for the Consumer expression under ADR-0027, which records both the values and the bound on them. Public creator pages remain separate from Social Discovery. The canonical public creator address is `/c/{handle}`, resolved against the explicitly public projection CREATORS publishes; an unknown handle, an unpublished profile, and a creator who is not active are one indistinguishable answer. Its public profile/catalog reads require no session. Separately, an authenticated Consumer Web session may ask BILLING for the creator's virtual-gift catalog under [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md), review an immutable price, and send support through local/test commerce. That control widens neither the public creator projection nor club access, and it is unavailable in production while provider and commercial gates remain closed. Published clubs remain metadata only — a name and a description — with no member count, no member list, and no control implying a gift or payment joins one.
 
 ### Calling
