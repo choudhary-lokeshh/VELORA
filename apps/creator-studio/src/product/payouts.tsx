@@ -48,6 +48,10 @@ import { useResource, useSingleFlight } from './resource';
  * field, no document upload, and no identity form — not disabled, absent —
  * because the provider collects, verifies, and keeps all of it, and VELORA
  * holds a reference to the record and nothing more.
+ *
+ * That reference is the one thing from the provider a creator is shown, on the
+ * payouts it belongs to, because chasing a payout means naming it. It appears
+ * when the provider has actually given one and not before.
  */
 
 interface Withdrawal {
@@ -314,6 +318,23 @@ export function Payouts() {
                       <span className="s-caption s-quiet">
                         {payoutFailureLabels[payout.failureReason] ??
                           'Your payout provider could not complete it.'}
+                      </span>
+                    )}
+                    {/*
+                      Shown only once the provider has given one. It is here so
+                      a creator chasing a payout can quote it; VELORA never
+                      makes one up, so an instruction with no answer yet simply
+                      has no line rather than an empty one.
+                    */}
+                    {payout.providerReference === undefined ? null : (
+                      <span
+                        className="s-caption s-quiet"
+                        data-testid={`payouts-entry-${payout.id}-reference`}
+                      >
+                        Your provider’s reference:{' '}
+                        <span className="s-numeric">
+                          {payout.providerReference}
+                        </span>
                       </span>
                     )}
                   </ListRow>

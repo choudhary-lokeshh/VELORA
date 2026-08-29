@@ -369,6 +369,11 @@ interface EarningsBody {
     readonly payable: string;
     readonly platform: string;
     readonly reversed: string;
+    readonly sources: {
+      readonly gross: string;
+      readonly reversed: string;
+      readonly source: string;
+    }[];
     readonly tax: string;
   }[];
   readonly readiness: { readonly enabled: boolean };
@@ -391,6 +396,53 @@ async function ledgerPayable(currency: string): Promise<string> {
       where a.category = 'creator_payable' and a.currency = ${currency}`,
   );
   return row?.balance ?? '0';
+}
+
+/** The local-test gift catalogue, published for a creator who already exists. */
+async function giftCatalogFor(studio: Session): Promise<void> {
+  const response = await handle(
+    signed('/v1/creator/gifts/catalog/provision', studio, testCreatorOrigin, {
+      method: 'POST',
+    }),
+  );
+  expect(response.status).toBe(200);
+}
+
+/** A settled virtual gift, returning what it cost. */
+async function sentGift(input: {
+  readonly buyer: string;
+  readonly handle: string;
+  readonly key: string;
+}): Promise<string> {
+  const consumer = await consumerSession(input.buyer);
+  const catalogue = (await (
+    await handle(
+      signed(
+        `/v1/billing/gifts/catalog?handle=${input.handle}&currency=USD`,
+        consumer,
+        testConsumerOrigin,
+      ),
+    )
+  ).json()) as { items: { id: string; price: { amountMinor: string } }[] };
+  const item = catalogue.items[0];
+  if (item === undefined) throw new Error('the gift catalogue is empty');
+  const sent = await handle(
+    signed('/v1/billing/gifts', consumer, testConsumerOrigin, {
+      body: {
+        context: { type: 'creator_profile' },
+        currency: 'USD',
+        giftItemId: item.id,
+        handle: input.handle,
+      },
+      idempotencyKey: input.key,
+      method: 'POST',
+    }),
+  );
+  expect(sent.status).toBe(201);
+  expect(((await sent.json()) as { gift: { state: string } }).gift.state).toBe(
+    'sent',
+  );
+  return item.price.amountMinor;
 }
 
 describe('what a creator has earned', () => {
@@ -431,6 +483,9 @@ describe('what a creator has earned', () => {
         payable: '1200',
         platform: '300',
         reversed: '0',
+        // The whole gross again, attributed to the only thing this creator
+        // sells. It is a split of `gross` rather than money on top of it.
+        sources: [{ gross: '1500', reversed: '0', source: 'club' }],
         // Zero because no tax authority is configured, which is a statement
         // about what Velora withheld rather than about what anybody owes.
         tax: '0',
@@ -509,6 +564,7 @@ describe('what a creator has earned', () => {
         payable: '800',
         platform: '200',
         reversed: '500',
+        sources: [{ gross: '1500', reversed: '500', source: 'club' }],
         tax: '0',
       },
     ]);
@@ -565,6 +621,7 @@ describe('what a creator has earned', () => {
         payable: '0',
         platform: '0',
         reversed: '1500',
+        sources: [{ gross: '1500', reversed: '1500', source: 'club' }],
         tax: '0',
       },
     ]);
@@ -652,10 +709,184 @@ describe('what a creator has earned', () => {
         payable: '0',
         platform: '0',
         reversed: '1500',
+        sources: [{ gross: '1500', reversed: '1500', source: 'club' }],
         tax: '0',
       },
     ]);
     expect(await ledgerPayable('USD')).toBe('0');
+  });
+});
+
+/**
+ * The same money, told apart by what was sold.
+ *
+ * A creator selling club memberships and receiving gifts is running two
+ * businesses through one ledger, and "how much of this came from gifts" is a
+ * question the records can answer exactly: every payment names the offer it
+ * paid for, and every offer names what it sells. What the records cannot
+ * answer is how the platform's share or the payable divide between the two,
+ * because each of those is one position per creator and currency — so neither
+ * is split, here or anywhere.
+ */
+describe('where a creator’s money came from', () => {
+  it('splits one currency between club memberships and gifts', async () => {
+    const sold = await seller({
+      amountMinor: '1500',
+      currencies: ['USD'],
+      slug: 'twosources',
+      subject: 'twosources@velora.test',
+    });
+    await giftCatalogFor(sold.studio);
+    await settledPurchase({
+      buyer: 'twosourcesmember@velora.test',
+      currency: 'USD',
+      key: 'earnings-key-sources-club',
+      offerId: sold.offerId,
+    });
+    const giftMinor = await sentGift({
+      buyer: 'twosourcesgifter@velora.test',
+      handle: 'twosources',
+      key: 'earnings-key-sources-gift',
+    });
+
+    const body = await earnings(sold.studio);
+    const [row] = body.currencies;
+    if (row === undefined) throw new Error('the creator has earned nothing');
+    expect(row.sources).toEqual([
+      { gross: '1500', reversed: '0', source: 'club' },
+      { gross: giftMinor, reversed: '0', source: 'gift' },
+    ]);
+    // The split is a reading of `gross` rather than an addition to it. If these
+    // ever disagree, the surface is showing a creator two different totals for
+    // the same money.
+    expect(
+      row.sources
+        .reduce((sum, entry) => sum + BigInt(entry.gross), 0n)
+        .toString(),
+    ).toBe(row.gross);
+    expect(row.gross).toBe((1500n + BigInt(giftMinor)).toString());
+    // And nothing else grew a split. The platform's share and the payable are
+    // one position each, and apportioning them would be an inference that stops
+    // being true the moment a payout moves the payable.
+    expect(Object.keys(row).sort()).toEqual([
+      'currency',
+      'disputed',
+      'gross',
+      'payable',
+      'platform',
+      'reversed',
+      'sources',
+      'tax',
+    ]);
+  });
+
+  it('attributes a reversal to the thing that was returned', async () => {
+    const sold = await seller({
+      amountMinor: '1500',
+      currencies: ['USD'],
+      slug: 'returnedsource',
+      subject: 'returnedsource@velora.test',
+    });
+    await giftCatalogFor(sold.studio);
+    const paymentId = await settledPurchase({
+      buyer: 'returnedmember@velora.test',
+      currency: 'USD',
+      key: 'earnings-key-return-club',
+      offerId: sold.offerId,
+    });
+    const giftMinor = await sentGift({
+      buyer: 'returnedgifter@velora.test',
+      handle: 'returnedsource',
+      key: 'earnings-key-return-gift',
+    });
+    const operator = await adminSession();
+    await handle(
+      signed('/v1/admin/billing/refunds', operator, testAdminOrigin, {
+        body: {
+          amountMinor: '500',
+          currency: 'USD',
+          paymentId,
+          reasonCode: 'not_delivered',
+        },
+        idempotencyKey: 'earnings-key-return-refund',
+        method: 'POST',
+      }),
+    );
+
+    const body = await earnings(sold.studio);
+    const [row] = body.currencies;
+    if (row === undefined) throw new Error('the creator has earned nothing');
+    // The refund landed against the membership, so only the membership shows
+    // it. A reversal spread across sources would tell a creator gifts were
+    // returned that nobody returned.
+    expect(row.sources).toEqual([
+      { gross: '1500', reversed: '500', source: 'club' },
+      { gross: giftMinor, reversed: '0', source: 'gift' },
+    ]);
+    expect(row.reversed).toBe('500');
+  });
+
+  it('omits a source a creator has no history in', async () => {
+    const sold = await seller({
+      amountMinor: '1500',
+      currencies: ['USD'],
+      slug: 'clubonly',
+      subject: 'clubonly@velora.test',
+    });
+    await settledPurchase({
+      buyer: 'clubonlybuyer@velora.test',
+      currency: 'USD',
+      key: 'earnings-key-clubonly',
+      offerId: sold.offerId,
+    });
+
+    const [row] = (await earnings(sold.studio)).currencies;
+    // Absent rather than zero, for the same reason a currency nobody has
+    // transacted in is absent: this creator has not "earned nothing from
+    // gifts", they have no gift history.
+    expect(row?.sources).toEqual([
+      { gross: '1500', reversed: '0', source: 'club' },
+    ]);
+  });
+
+  it('names what was sold on every row of the history', async () => {
+    const sold = await seller({
+      amountMinor: '1500',
+      currencies: ['USD'],
+      slug: 'sourcedstory',
+      subject: 'sourcedstory@velora.test',
+    });
+    await giftCatalogFor(sold.studio);
+    await settledPurchase({
+      buyer: 'sourcedmember@velora.test',
+      currency: 'USD',
+      key: 'earnings-key-story-club',
+      offerId: sold.offerId,
+    });
+    await sentGift({
+      buyer: 'sourcedgifter@velora.test',
+      handle: 'sourcedstory',
+      key: 'earnings-key-story-gift',
+    });
+
+    const response = await handle(
+      signed(
+        '/v1/creator/earnings/history?currency=USD',
+        sold.studio,
+        testCreatorOrigin,
+      ),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      entries: { kind: string; source: string }[];
+    };
+    // The offer identifier is already on every row and is a UUID, which tells
+    // the creator reading their own history nothing.
+    expect(body.entries.map((entry) => entry.source).sort()).toEqual([
+      'club',
+      'gift',
+    ]);
+    expect(body.entries.every((entry) => entry.kind === 'capture')).toBe(true);
   });
 });
 

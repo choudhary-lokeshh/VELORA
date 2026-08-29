@@ -2618,6 +2618,8 @@ export interface components {
                 occurredAt: string;
                 /** Format: uuid */
                 offerId: string;
+                /** @enum {string} */
+                source: "club" | "gift";
                 state: string;
             }[];
             nextCursor?: string;
@@ -2631,6 +2633,12 @@ export interface components {
                 payable: string;
                 platform: string;
                 reversed: string;
+                sources: {
+                    gross: string;
+                    reversed: string;
+                    /** @enum {string} */
+                    source: "club" | "gift";
+                }[];
                 tax: string;
             }[];
             readiness: {
@@ -2654,6 +2662,7 @@ export interface components {
                 failureReason?: "recipient_not_ready" | "declined" | "provider_error";
                 /** Format: uuid */
                 id: string;
+                providerReference?: string;
                 /** @enum {string} */
                 state: "requested" | "reserved" | "submitted" | "paid" | "failed" | "cancelled" | "reversed";
                 /** Format: date-time */
@@ -2703,6 +2712,7 @@ export interface components {
                 failureReason?: "recipient_not_ready" | "declined" | "provider_error";
                 /** Format: uuid */
                 id: string;
+                providerReference?: string;
                 /** @enum {string} */
                 state: "requested" | "reserved" | "submitted" | "paid" | "failed" | "cancelled" | "reversed";
                 /** Format: date-time */

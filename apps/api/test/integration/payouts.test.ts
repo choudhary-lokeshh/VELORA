@@ -576,8 +576,27 @@ describe('what a creator may ask for', () => {
       'payout-key-pay-1',
     );
     expect(response.status).toBe(201);
-    const body = (await response.json()) as { payout: { state: string } };
+    const body = (await response.json()) as {
+      payout: { providerReference?: string; state: string };
+    };
     expect(body.payout.state).toBe('paid');
+
+    // The provider's own reference travels to the creator, because chasing a
+    // payout means naming it. It is the reference the provider actually gave
+    // rather than anything Velora composed, so it matches the stored row.
+    const [stored] = await rowsOf<{ provider_reference: string }>(
+      database.sql`select provider_reference from payouts_instructions`,
+    );
+    expect(stored?.provider_reference).toBeString();
+    expect(body.payout.providerReference).toBe(stored?.provider_reference);
+    const listed = await handle(
+      signed('/v1/creator/payouts', sold.studio, testCreatorOrigin),
+    );
+    expect(listed.status).toBe(200);
+    expect(
+      ((await listed.json()) as { payouts: { providerReference?: string }[] })
+        .payouts[0]?.providerReference,
+    ).toBe(stored?.provider_reference);
 
     // The reservation and the disbursement are both in the book, and the
     // creator is owed nothing further.

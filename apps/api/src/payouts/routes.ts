@@ -67,6 +67,12 @@ function instructionBody(instruction: PayoutInstructionRow) {
       ? {}
       : { failureReason: instruction.failureReason }),
     id: instruction.id,
+    // Absent until the provider has given one, rather than empty. A creator
+    // chasing a payout quotes this to their provider, and a blank field would
+    // read as "there is no record" when it means "we have not been told yet".
+    ...(instruction.providerReference === null
+      ? {}
+      : { providerReference: instruction.providerReference }),
     state: instruction.state,
     updatedAt: instruction.updatedAt.toISOString(),
   };

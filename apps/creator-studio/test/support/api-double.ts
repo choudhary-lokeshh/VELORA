@@ -80,6 +80,8 @@ export interface CreatorApiDoubleState {
     payable: string;
     platform: string;
     reversed: string;
+    /** What the gross and the reversals split into, by what was sold. */
+    sources: { gross: string; reversed: string; source: 'club' | 'gift' }[];
     tax: string;
   }[];
   receivedGifts: {
@@ -156,6 +158,8 @@ export interface CreatorApiDoubleState {
     createdAt: string;
     failureReason?: string;
     id: string;
+    /** Present exactly when the provider has given one, as on the wire. */
+    providerReference?: string;
     state: string;
     updatedAt: string;
   }[];
@@ -165,6 +169,7 @@ export interface CreatorApiDoubleState {
     kind: 'capture' | 'dispute' | 'refund';
     occurredAt: string;
     offerId: string;
+    source: 'club' | 'gift';
     state: string;
   }[];
   content: {

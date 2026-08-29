@@ -726,18 +726,32 @@ export const disputeReasonCodeSchema = z.enum(disputeReasonCodeValues);
 export type DisputeReasonCodeValue = z.infer<typeof disputeReasonCodeSchema>;
 
 /**
- * One dispute, as an operator sees it.
+ * What one kind of thing sold amounted to, within one currency.
  *
- * The evidence deadline is present exactly when the provider gave one. Velora
- * never invents it: a deadline nobody published would be a date an operator
- * would plan around.
+ * Gross and reversals only. Both are attributable because every payment names
+ * the offer it paid for and every offer names what it sells; the platform's
+ * share and the payable are single ledger positions per creator and currency,
+ * and splitting either across sources would be an inference rather than a
+ * reading. A creator gets the part of the question the records can answer.
  */
+export const creatorRevenueSourceSchema = z
+  .object({
+    gross: minorUnitsSchema,
+    reversed: minorUnitsSchema,
+    source: commercialResourceTypeSchema,
+  })
+  .strict();
+export type CreatorRevenueSource = z.infer<typeof creatorRevenueSourceSchema>;
+
 /**
  * What one currency of a creator's earnings amounts to.
  *
  * Six figures, one currency, and no total. A creator who sold in euros and yen
  * has two of these and never a third that adds them up: a sum across currencies
  * is a number with no meaning that somebody would plan against.
+ *
+ * `sources` splits two of the six by what was sold. It adds no new money to the
+ * answer and is not a seventh figure.
  *
  * `payable` is the only authoritative figure — it is a balance derived from the
  * ledger on every read. The rest are projections over the commercial records
@@ -758,6 +772,14 @@ export const creatorCurrencyEarningsSchema = z
     platform: minorUnitsSchema,
     /** Returned to consumers, by refund or by a lost dispute. */
     reversed: minorUnitsSchema,
+    /**
+     * `gross` and `reversed` again, split by what was sold.
+     *
+     * A source with no history is absent rather than zero, and what is present
+     * sums exactly to the two totals above — the resource type is a closed,
+     * non-null enum, so no sale falls outside the split.
+     */
+    sources: z.array(creatorRevenueSourceSchema).max(8),
     /**
      * Withheld against a tax authority.
      *
@@ -806,6 +828,8 @@ export const creatorEarningsEntrySchema = z
     kind: creatorEarningsEntryKindSchema,
     occurredAt: z.iso.datetime(),
     offerId: offerIdSchema,
+    /** What was sold. Not who bought it, and not which club it was. */
+    source: commercialResourceTypeSchema,
     /** The lifecycle of the payment, refund, or dispute this describes. */
     state: z.string().min(1).max(32),
   })
@@ -823,6 +847,13 @@ export type CreatorEarningsHistoryResponse = z.infer<
   typeof creatorEarningsHistoryResponseSchema
 >;
 
+/**
+ * One dispute, as an operator sees it.
+ *
+ * The evidence deadline is present exactly when the provider gave one. Velora
+ * never invents it: a deadline nobody published would be a date an operator
+ * would plan around.
+ */
 export const disputeSchema = z
   .object({
     amount: moneySchema,
@@ -974,13 +1005,24 @@ export const payoutFailureReasonValues = [
 ] as const;
 export const payoutFailureReasonSchema = z.enum(payoutFailureReasonValues);
 
-/** One payout instruction, as the creator it belongs to may see it. */
+/**
+ * One payout instruction, as the creator it belongs to may see it.
+ *
+ * The provider's own reference is present exactly when the provider has given
+ * one, which is from the moment it accepted the instruction. It is published
+ * here because this is the creator's own payout and the reference is what they
+ * would have to quote to chase it — the same reason an operator answering a
+ * dispute is given the case reference and nothing else about it. Velora never
+ * invents one: an instruction the provider has not yet answered for carries no
+ * reference rather than a placeholder somebody would try to look up.
+ */
 export const creatorPayoutSchema = z
   .object({
     amount: moneySchema,
     createdAt: z.iso.datetime(),
     failureReason: payoutFailureReasonSchema.optional(),
     id: z.uuid(),
+    providerReference: z.string().min(1).max(200).optional(),
     state: payoutStateSchema,
     updatedAt: z.iso.datetime(),
   })

@@ -233,6 +233,19 @@ export const earningsKindLabels: Readonly<Record<string, string>> = {
   refund: 'Refund',
 };
 
+/**
+ * What was sold, named for the creator's side of it.
+ *
+ * A club offer is what somebody pays for to join a club, which a creator thinks
+ * of as a membership rather than as an offer against a resource. The mapping is
+ * one word wide on purpose: these appear beside amounts, and a sentence there
+ * would read as a caveat about the number.
+ */
+export const revenueSourceLabels: Readonly<Record<string, string>> = {
+  club: 'Club memberships',
+  gift: 'Gifts',
+};
+
 const offerState: Readonly<Record<string, StateLook>> = {
   active: { icon: 'check', label: 'On sale', tone: 'positive' },
   draft: { icon: 'draft', label: 'Draft', tone: 'caution' },

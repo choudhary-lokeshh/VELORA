@@ -363,6 +363,10 @@ describe('home', () => {
           payable: '3450',
           platform: '1550',
           reversed: '0',
+          sources: [
+            { gross: '4000', reversed: '0', source: 'club' },
+            { gross: '1000', reversed: '0', source: 'gift' },
+          ],
           tax: '0',
         },
       ],
@@ -1370,6 +1374,7 @@ describe('a creator whose capability may not operate', () => {
           payable: '4000',
           platform: '1000',
           reversed: '0',
+          sources: [{ gross: '5000', reversed: '0', source: 'club' }],
           tax: '0',
         },
       ],
@@ -1394,6 +1399,7 @@ describe('money', () => {
             payable: '4000',
             platform: '1000',
             reversed: '0',
+            sources: [{ gross: '5000', reversed: '0', source: 'club' }],
             tax: '0',
           },
           {
@@ -1403,6 +1409,7 @@ describe('money', () => {
             payable: '4000',
             platform: '1000',
             reversed: '0',
+            sources: [{ gross: '5000', reversed: '0', source: 'club' }],
             tax: '0',
           },
         ],
@@ -1653,6 +1660,144 @@ describe('money', () => {
       expect(screen.queryByTestId('payouts-withdraw-confirm')).toBeNull();
     });
     expect(double.state.payouts).toHaveLength(1);
+  });
+
+  it('splits what members paid by what was sold, and splits nothing else', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        earnings: [
+          {
+            currency: 'USD',
+            disputed: '0',
+            gross: '5000',
+            payable: '3450',
+            platform: '1550',
+            reversed: '1000',
+            sources: [
+              { gross: '4000', reversed: '1000', source: 'club' },
+              { gross: '1000', reversed: '0', source: 'gift' },
+            ],
+            tax: '0',
+          },
+        ],
+      }),
+    );
+    renderStudio(<Earnings />, double, { pathname: '/money' });
+
+    expect(
+      (await screen.findByTestId('earnings-USD-source-club')).textContent,
+    ).toContain('40.00 USD');
+    expect(textOf('earnings-USD-source-gift')).toContain('10.00 USD');
+    // The two add up to the gross the same screen shows. A split that did not
+    // would be two different totals for one pile of money.
+    expect(textOf('earnings-USD-gross')).toContain('50.00 USD');
+    // The refund is attributed to the membership it came out of and appears
+    // nowhere on the gift row.
+    const sources = screen.getByTestId('earnings-USD-sources');
+    expect(sources.textContent).toContain('10.00 USD returned');
+    // And nothing splits the platform's share or the payable: both are one
+    // ledger position each, and dividing them here would be this screen
+    // inventing an apportionment nobody posted.
+    expect(screen.queryByTestId('earnings-USD-source-platform')).toBeNull();
+    expect(screen.queryByTestId('earnings-USD-source-payable')).toBeNull();
+    expect(textOf('earnings-USD-payable')).toContain('34.50 USD');
+  });
+
+  it('names what was sold on every row of the history', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        earnings: [
+          {
+            currency: 'USD',
+            disputed: '0',
+            gross: '5000',
+            payable: '3450',
+            platform: '1550',
+            reversed: '0',
+            sources: [
+              { gross: '4000', reversed: '0', source: 'club' },
+              { gross: '1000', reversed: '0', source: 'gift' },
+            ],
+            tax: '0',
+          },
+        ],
+        earningsHistory: [
+          {
+            amount: { amountMinor: '4000', currency: 'USD' },
+            id: '33333333-3333-4333-8333-333333333333',
+            kind: 'capture',
+            occurredAt: '2026-08-16T12:00:00.000Z',
+            offerId: '44444444-4444-4444-8444-444444444444',
+            source: 'club',
+            state: 'succeeded',
+          },
+          {
+            amount: { amountMinor: '1000', currency: 'USD' },
+            id: '55555555-5555-4555-8555-555555555555',
+            kind: 'capture',
+            occurredAt: '2026-08-15T12:00:00.000Z',
+            offerId: '66666666-6666-4666-8666-666666666666',
+            source: 'gift',
+            state: 'succeeded',
+          },
+        ],
+      }),
+    );
+    renderStudio(<Earnings />, double, { pathname: '/money' });
+
+    // Two purchases of the same shape, told apart by what was bought. The
+    // offer identifier is already on the row and is a UUID, which tells a
+    // creator reading their own history nothing.
+    expect(
+      (
+        await screen.findByTestId(
+          'earnings-entry-33333333-3333-4333-8333-333333333333',
+        )
+      ).textContent,
+    ).toContain('Club memberships');
+    expect(
+      textOf('earnings-entry-55555555-5555-4555-8555-555555555555'),
+    ).toContain('Gifts');
+  });
+
+  it('shows a payout reference only once the provider has given one', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        payouts: [
+          {
+            amount: { amountMinor: '4000', currency: 'EUR' },
+            createdAt: '2026-08-16T12:00:00.000Z',
+            id: '77777777-7777-4777-8777-777777777777',
+            providerReference: 'lp_2f6c9a1b',
+            state: 'paid',
+            updatedAt: '2026-08-16T12:00:00.000Z',
+          },
+          {
+            amount: { amountMinor: '2000', currency: 'EUR' },
+            createdAt: '2026-08-15T12:00:00.000Z',
+            id: '88888888-8888-4888-8888-888888888888',
+            state: 'reserved',
+            updatedAt: '2026-08-15T12:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    renderStudio(<Payouts />, double, { pathname: '/money/payouts' });
+
+    expect(
+      (
+        await screen.findByTestId(
+          'payouts-entry-77777777-7777-4777-8777-777777777777-reference',
+        )
+      ).textContent,
+    ).toContain('lp_2f6c9a1b');
+    // An instruction the provider has not answered for carries no reference
+    // rather than a blank one, which would read as "there is no record".
+    expect(
+      screen.queryByTestId(
+        'payouts-entry-88888888-8888-4888-8888-888888888888-reference',
+      ),
+    ).toBeNull();
   });
 });
 

@@ -5,6 +5,10 @@ import type { JournalStore } from '../money/journal.js';
 import { money, type Money } from '../money/money.js';
 import type { OfferCursor } from './cursor.js';
 import {
+  commercialResourceTypes,
+  type CommercialResourceType,
+} from './offer-policy.js';
+import {
   creatorPayableAccount,
   platformRevenueAccount,
 } from './revenue-entries.js';
@@ -51,8 +55,34 @@ export interface CreatorCurrencyEarnings {
   readonly payable: Money;
   /** What has been returned to consumers out of this creator's sales. */
   readonly reversed: Money;
+  /**
+   * The same money again, split by what was sold.
+   *
+   * Two figures only, and deliberately not four. A sale's gross and its
+   * reversals are attributable to the thing that was sold, because every
+   * payment names the offer it paid for and every offer names its resource
+   * type. The platform's share and the payable are not: both are ledger
+   * positions held once per creator per currency, and apportioning them back
+   * across sources would be an inference that stops being true the moment a
+   * payout moves the payable. A creator asking "how much of this came from
+   * gifts" gets the answer the records support rather than a fuller-looking
+   * one nobody computed.
+   *
+   * A source with no history is absent rather than zero, for the same reason a
+   * currency with no history is. Whatever is present sums exactly to `gross`
+   * and `reversed`: the resource type is a closed, non-null enum, so nothing
+   * falls outside the split.
+   */
+  readonly sources: readonly CreatorRevenueSource[];
   /** Tax withheld against an authority. Zero while no tax engine is approved. */
   readonly tax: Money;
+}
+
+/** What one kind of thing sold amounted to, within one currency. */
+export interface CreatorRevenueSource {
+  readonly gross: Money;
+  readonly reversed: Money;
+  readonly source: CommercialResourceType;
 }
 
 /** One commercial event in a creator's history, as they may see it. */
@@ -63,6 +93,15 @@ export interface CreatorEarningsEntry {
   readonly occurredAt: Date;
   readonly offerId: string;
   readonly kind: 'capture' | 'dispute' | 'refund';
+  /**
+   * What was sold, carried from the offer the payment names.
+   *
+   * The offer identifier is already here and is a UUID, which tells a creator
+   * reading their own history nothing. This says which of their businesses a
+   * row belongs to without naming the buyer or the club, both of which are the
+   * consumer's side of the transaction.
+   */
+  readonly source: CommercialResourceType;
   readonly state: string;
 }
 
@@ -72,6 +111,7 @@ function entryOf(
     readonly id: string;
     readonly occurredAt: Date;
     readonly offerId: string;
+    readonly source: CommercialResourceType;
     readonly state: string;
   },
   kind: CreatorEarningsEntry['kind'],
@@ -83,8 +123,35 @@ function entryOf(
     kind,
     occurredAt: row.occurredAt,
     offerId: row.offerId,
+    source: row.source,
     state: row.state,
   };
+}
+
+/**
+ * Grouped sums keyed by what was sold.
+ *
+ * Rows from more than one read may name the same source — a refund and a lost
+ * dispute are both reversals of a club sale — so amounts accumulate rather than
+ * overwrite.
+ */
+function totalsBySource(
+  rows: readonly {
+    readonly source: CommercialResourceType;
+    readonly total: string;
+  }[],
+): ReadonlyMap<CommercialResourceType, bigint> {
+  const totals = new Map<CommercialResourceType, bigint>();
+  for (const row of rows) {
+    totals.set(row.source, (totals.get(row.source) ?? 0n) + BigInt(row.total));
+  }
+  return totals;
+}
+
+function sumOf(totals: ReadonlyMap<CommercialResourceType, bigint>): bigint {
+  let sum = 0n;
+  for (const amount of totals.values()) sum += amount;
+  return sum;
 }
 
 export class EarningsRepository {
@@ -134,9 +201,14 @@ export class EarningsRepository {
     executor: Executor,
     input: { readonly creatorId: string; readonly currency: string },
   ): Promise<CreatorCurrencyEarnings> {
-    const [captured] = await executor
+    // Grouped by what was sold rather than aggregated flat, and then summed
+    // here. One read answers both questions, so the split and the total cannot
+    // disagree the way two reads of a moving table could — and the query count
+    // is what it was before the split existed.
+    const captured = await executor
       .select({
-        gross: sql<string>`coalesce(sum(${billingPayments.amountMinor}), 0)::text`,
+        source: billingOffers.resourceType,
+        total: sql<string>`coalesce(sum(${billingPayments.amountMinor}), 0)::text`,
       })
       .from(billingPayments)
       .innerJoin(billingOffers, eq(billingPayments.offerId, billingOffers.id))
@@ -146,9 +218,11 @@ export class EarningsRepository {
           eq(billingPayments.currency, input.currency),
           eq(billingPayments.state, 'succeeded'),
         ),
-      );
-    const [refunded] = await executor
+      )
+      .groupBy(billingOffers.resourceType);
+    const refunded = await executor
       .select({
+        source: billingOffers.resourceType,
         total: sql<string>`coalesce(sum(${billingRefunds.amountMinor}), 0)::text`,
       })
       .from(billingRefunds)
@@ -163,9 +237,11 @@ export class EarningsRepository {
           eq(billingRefunds.currency, input.currency),
           eq(billingRefunds.state, 'succeeded'),
         ),
-      );
-    const [chargedBack] = await executor
+      )
+      .groupBy(billingOffers.resourceType);
+    const chargedBack = await executor
       .select({
+        source: billingOffers.resourceType,
         total: sql<string>`coalesce(sum(${billingDisputes.amountMinor}), 0)::text`,
       })
       .from(billingDisputes)
@@ -180,7 +256,8 @@ export class EarningsRepository {
           eq(billingDisputes.currency, input.currency),
           eq(billingDisputes.state, 'lost'),
         ),
-      );
+      )
+      .groupBy(billingOffers.resourceType);
     const [disputed] = await executor
       .select({
         total: sql<string>`coalesce(sum(${billingDisputes.amountMinor}), 0)::text`,
@@ -234,11 +311,10 @@ export class EarningsRepository {
         ),
       );
     const payable = money(-ledger.amountMinor, input.currency);
-    const gross = money(BigInt(captured?.gross ?? '0'), input.currency);
-    const reversedTotal = money(
-      BigInt(refunded?.total ?? '0') + BigInt(chargedBack?.total ?? '0'),
-      input.currency,
-    );
+    const grossBySource = totalsBySource(captured);
+    const reversedBySource = totalsBySource([...refunded, ...chargedBack]);
+    const gross = money(sumOf(grossBySource), input.currency);
+    const reversedTotal = money(sumOf(reversedBySource), input.currency);
     const tax = money(BigInt(assessed?.total ?? '0'), input.currency);
 
     return {
@@ -251,6 +327,16 @@ export class EarningsRepository {
       // right only until money moves is worse than one nobody computed.
       platform: money(-platformLedger.amountMinor, input.currency),
       reversed: reversedTotal,
+      // Ordered by the declared vocabulary rather than by whatever the grouped
+      // read happened to return, so two currencies list their sources the same
+      // way and a creator is never re-reading a reordered list.
+      sources: commercialResourceTypes
+        .filter((source) => (grossBySource.get(source) ?? 0n) > 0n)
+        .map((source) => ({
+          gross: money(grossBySource.get(source) ?? 0n, input.currency),
+          reversed: money(reversedBySource.get(source) ?? 0n, input.currency),
+          source,
+        })),
       // Nothing writes a tax position, because no tax authority is configured
       // and no policy in this repository computes one. Reporting zero here is a
       // statement about what the platform withheld, not about what is owed to
@@ -288,6 +374,7 @@ export class EarningsRepository {
         id: billingPayments.id,
         occurredAt: billingPayments.createdAt,
         offerId: billingPayments.offerId,
+        source: billingOffers.resourceType,
         state: billingPayments.state,
       })
       .from(billingPayments)
@@ -316,6 +403,7 @@ export class EarningsRepository {
         id: billingRefunds.id,
         occurredAt: billingRefunds.createdAt,
         offerId: billingPayments.offerId,
+        source: billingOffers.resourceType,
         state: billingRefunds.state,
       })
       .from(billingRefunds)
@@ -347,6 +435,7 @@ export class EarningsRepository {
         id: billingDisputes.id,
         occurredAt: billingDisputes.openedAt,
         offerId: billingPayments.offerId,
+        source: billingOffers.resourceType,
         state: billingDisputes.state,
       })
       .from(billingDisputes)

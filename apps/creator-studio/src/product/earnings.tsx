@@ -26,7 +26,11 @@ import {
   Segmented,
 } from '../design/primitives';
 import { useApi } from '../app/providers';
-import { earningsKindLabels, formatDateTime } from './format';
+import {
+  earningsKindLabels,
+  formatDateTime,
+  revenueSourceLabels,
+} from './format';
 import { MoneyNav } from './money-nav';
 import { useCollection, useResource } from './resource';
 
@@ -42,6 +46,12 @@ import { useCollection, useResource } from './resource';
  * Currencies are separate everywhere, including visually. Somebody paid in
  * euros and yen sees two blocks of figures and never a third that adds them
  * up, because the sum of a euro and a yen is not an amount.
+ *
+ * What money came from is shown where the server can attribute it and nowhere
+ * else. Club memberships and gifts each name the offer they were paid against,
+ * so those two split exactly; the platform's share and the payable are single
+ * ledger positions per currency and are not split at all, because dividing them
+ * up would be this screen inventing an apportionment nobody posted.
  *
  * The amounts are rendered against the published minor-unit exponent for their
  * own currency, so a yen shows no decimal places and a dinar shows three. No
@@ -180,10 +190,53 @@ function CurrencyBlock({
           />
         ))}
       </dl>
+      {earnings.sources.length === 0 ? null : (
+        <>
+          <p className="s-caption s-quiet">Where the money came from</p>
+          <dl
+            className="s-stack"
+            data-testid={`earnings-${earnings.currency}-sources`}
+          >
+            {earnings.sources.map((row) => (
+              <InfoRow
+                key={row.source}
+                term={
+                  <>
+                    {revenueSourceLabels[row.source] ?? 'Other sales'}
+                    {row.reversed === '0' ? null : (
+                      <>
+                        <br />
+                        <span className="s-caption s-quiet">
+                          {formatAmount(row.reversed, earnings.currency)}{' '}
+                          returned
+                        </span>
+                      </>
+                    )}
+                  </>
+                }
+                testId={`earnings-${earnings.currency}-source-${row.source}`}
+                value={
+                  <span className="s-numeric">
+                    {formatAmount(row.gross, earnings.currency)}
+                  </span>
+                }
+              />
+            ))}
+          </dl>
+        </>
+      )}
       <p className="s-caption s-quiet">
         Owed to you is what is left after VELORA’s share, refunds, disputes and
         tax. It is not the same as what you can withdraw.
       </p>
+      {earnings.sources.length === 0 ? null : (
+        <p className="s-caption s-quiet">
+          The split above divides what members paid and what was returned. It
+          does not divide VELORA’s share or what you are owed: those are held as
+          one figure each, and cutting them up here would be a number nobody
+          worked out.
+        </p>
+      )}
     </Card>
   );
 }
@@ -257,6 +310,7 @@ function HistoryCard({
                   {earningsKindLabels[entry.kind] ?? 'Activity'}
                 </span>
                 <span className="s-caption s-quiet">
+                  {revenueSourceLabels[entry.source] ?? 'Other sales'} ·{' '}
                   {formatDateTime(entry.occurredAt)}
                 </span>
               </ListRow>

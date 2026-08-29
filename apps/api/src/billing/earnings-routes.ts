@@ -58,6 +58,7 @@ function entryBody(entry: CreatorEarningsEntry) {
     kind: entry.kind,
     occurredAt: entry.occurredAt.toISOString(),
     offerId: entry.offerId,
+    source: entry.source,
     state: entry.state,
   };
 }
@@ -96,6 +97,11 @@ export class EarningsRoutes {
           payable: row.payable.amountMinor.toString(),
           platform: row.platform.amountMinor.toString(),
           reversed: row.reversed.amountMinor.toString(),
+          sources: row.sources.map((entry) => ({
+            gross: entry.gross.amountMinor.toString(),
+            reversed: entry.reversed.amountMinor.toString(),
+            source: entry.source,
+          })),
           tax: row.tax.amountMinor.toString(),
         })),
       );

@@ -31305,6 +31305,13 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "club",
+                    "gift"
+                  ]
+                },
                 "state": {
                   "type": "string",
                   "minLength": 1,
@@ -31317,6 +31324,7 @@
                 "kind",
                 "occurredAt",
                 "offerId",
+                "source",
                 "state"
               ],
               "additionalProperties": false
@@ -31407,6 +31415,36 @@
                   "type": "string",
                   "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
                 },
+                "sources": {
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "gross": {
+                        "type": "string",
+                        "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                      },
+                      "reversed": {
+                        "type": "string",
+                        "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": [
+                          "club",
+                          "gift"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "gross",
+                      "reversed",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "tax": {
                   "type": "string",
                   "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
@@ -31419,6 +31457,7 @@
                 "payable",
                 "platform",
                 "reversed",
+                "sources",
                 "tax"
               ],
               "additionalProperties": false
@@ -31604,6 +31643,11 @@
                   "type": "string",
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "providerReference": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
                 },
                 "state": {
                   "type": "string",
@@ -31931,6 +31975,11 @@
                 "type": "string",
                 "format": "uuid",
                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "providerReference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
               },
               "state": {
                 "type": "string",
