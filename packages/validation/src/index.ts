@@ -55,9 +55,17 @@ import {
   startCheckoutRequestSchema,
 } from './billing.js';
 import {
+  adminAccountListResponseSchema,
+  adminAuditResponseSchema,
+  adminAuditStreamSchema,
+  adminClubListResponseSchema,
   adminCreatorListResponseSchema,
   adminExactActionAuthorizationHeader,
   adminFinancialStateResponseSchema,
+  adminOverviewResponseSchema,
+  adminPaymentDetailResponseSchema,
+  adminPaymentListResponseSchema,
+  adminPayoutListResponseSchema,
   adminIdentityStateResponseSchema,
   adminIdentityOwnerDomainSchema,
   adminIdentitySubjectResponseSchema,
@@ -279,9 +287,14 @@ export const apiRoutePaths = {
   creatorOffers: '/v1/creator/offers',
   creatorOnboarding: '/v1/creator/onboarding',
   creatorPolicyAcknowledgements: '/v1/creator/onboarding/acknowledgements',
+  adminAccounts: '/v1/admin/accounts',
+  adminAudit: '/v1/admin/audit',
   adminBillingDisputes: '/v1/admin/billing/disputes',
+  adminBillingPayment: '/v1/admin/billing/payment',
+  adminBillingPayments: '/v1/admin/billing/payments',
   adminBillingRefunds: '/v1/admin/billing/refunds',
   adminBillingState: '/v1/admin/billing/state',
+  adminClubs: '/v1/admin/clubs',
   adminCreatorObjectRemoval: '/v1/admin/creators/object-removal',
   adminCreatorReinstatement: '/v1/admin/creators/reinstatement',
   adminCreatorSuspension: '/v1/admin/creators/suspension',
@@ -293,6 +306,8 @@ export const apiRoutePaths = {
   adminMediaState: '/v1/admin/media/state',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
   adminNotificationDelivery: '/v1/admin/notifications/delivery',
+  adminOverview: '/v1/admin/overview',
+  adminPayouts: '/v1/admin/payouts',
   adminNotificationState: '/v1/admin/notifications/state',
   adminRtcCall: '/v1/admin/rtc/call',
   adminRtcState: '/v1/admin/rtc/state',
@@ -472,8 +487,15 @@ export const apiSchemas = {
   CreateCommercialOfferRequest: createCommercialOfferRequestSchema,
   PublishCommercialPriceRequest: publishCommercialPriceRequestSchema,
   RetireCommercialPriceRequest: retireCommercialPriceRequestSchema,
+  AdminAccountListResponse: adminAccountListResponseSchema,
+  AdminAuditResponse: adminAuditResponseSchema,
+  AdminClubListResponse: adminClubListResponseSchema,
   AdminCreatorListResponse: adminCreatorListResponseSchema,
   AdminFinancialStateResponse: adminFinancialStateResponseSchema,
+  AdminOverviewResponse: adminOverviewResponseSchema,
+  AdminPaymentDetailResponse: adminPaymentDetailResponseSchema,
+  AdminPaymentListResponse: adminPaymentListResponseSchema,
+  AdminPayoutListResponse: adminPayoutListResponseSchema,
   AdminMediaAssetResponse: adminMediaAssetResponseSchema,
   AdminMediaPurgeRequest: adminMediaPurgeRequestSchema,
   AdminMediaPurgeResponse: adminMediaPurgeResponseSchema,
@@ -618,6 +640,18 @@ export const apiQueryParameters = {
   handle: creatorHandleSchema,
   pageSize: pageSizeSchema,
   paymentId: paymentIdSchema,
+  /** One consumer account by identifier, for an operator who holds one. */
+  accountId: z.uuid(),
+  creatorId: z.uuid(),
+  /**
+   * One record lifecycle state. The vocabulary is the owning domain's and is
+   * checked against it in the handler, so a value this schema admits and the
+   * domain does not is a refusal rather than a query that matches nothing.
+   */
+  state: z.string().min(1).max(32),
+  /** One account lifecycle status, on the same terms as `state`. */
+  status: z.string().min(1).max(32),
+  stream: adminAuditStreamSchema,
 } as const;
 export type ApiQueryParameterName = keyof typeof apiQueryParameters;
 
@@ -2950,6 +2984,194 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'The one media action an operator has, and it is safe in both directions: a purge asks a delivery layer to forget an address, destroys nothing, and denies nothing the origin was not already refusing. Asking twice owes it once. There is deliberately no deletion and no legal hold here \u2014 destroying bytes would destroy what an appeal needs, and a hold placed with no enforcement record behind it would be an unaudited action on evidence.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminOverview',
+    path: apiRoutePaths.adminOverview,
+    responses: {
+      '200': {
+        description:
+          'What is waiting for somebody right now, counted by the platform over whole tables rather than over a page: unclaimed and open cases, appeals awaiting an answer, creators under suspension, accounts under restriction, commercial records needing a person, live claims, and payouts awaiting a provider answer. Plus open cases by queue and by priority, and when the oldest unsettled case was opened.',
+        schemaName: 'AdminOverviewResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Every figure is a total over the whole table, which is the reason this route exists rather than the console adding up what a paged list happened to return. A zero is published rather than omitted, because "nothing is waiting" and "the signal stopped arriving" are different answers. There is no rate, no trend, no growth figure, and no derived metric anywhere in the response.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminAccounts',
+    path: apiRoutePaths.adminAccounts,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum accounts to return', name: 'pageSize' },
+      {
+        description:
+          'Restrict to one account lifecycle status; omit for every account not in good standing',
+        name: 'status',
+      },
+      {
+        description:
+          'One account by its exact identifier, for an operator who already holds one',
+        name: 'accountId',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Consumer accounts in operational terms, newest first, with the whole population counted by status. Lifecycle, the coarse reason USERS publishes for it, and region \u2014 no name, no handle, no contact detail, no profile, and no locale.',
+        schemaName: 'AdminAccountListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Not a people browser. With no status asked for, this returns only accounts the platform has itself decided are not in good standing \u2014 an enforcement work list bounded by the platform\u2019s own decisions rather than by a search box \u2014 and there is no search over anything a person wrote or is called. An operator who already holds an identifier may read that one account exactly.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminPayments',
+    path: apiRoutePaths.adminBillingPayments,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum payments to return', name: 'pageSize' },
+      { description: 'Restrict to one payment state', name: 'state' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Payments newest first, with amount, currency, state, what was sold, the provider that holds it, and the reference that provider quotes.',
+        schemaName: 'AdminPaymentListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'No payer. A payment list keyed by who paid would be a purchase history for every person on the platform; what an operator answering for a payment actually turns on is the payment\u2019s own identifier and the provider\u2019s reference.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminPayment',
+    path: apiRoutePaths.adminBillingPayment,
+    requestQuery: [{ description: 'The payment to read', name: 'paymentId' }],
+    responses: {
+      '200': {
+        description:
+          'One payment with every reversal and every claim recorded against it, so the money that came in and the money that went back are on one screen.',
+        schemaName: 'AdminPaymentDetailResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'An exact-reference read for an operator who already holds a payment identifier. It publishes provenance \u2014 what was charged, what went back, and what somebody\u2019s bank is claiming \u2014 and nothing about the payer.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminPayouts',
+    path: apiRoutePaths.adminPayouts,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      {
+        description: 'Maximum payout instructions to return',
+        name: 'pageSize',
+      },
+      { description: 'Restrict to one payout state', name: 'state' },
+      { description: 'Restrict to one creator', name: 'creatorId' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Payout instructions newest first, with amount, currency, state, the creator whose book they left, the provider holding them, and the reference that provider quotes.',
+        schemaName: 'AdminPayoutListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A read and only a read: nothing in this API releases, retries, or cancels a payout on an operator\u2019s word. No recipient reference, no bank detail, and no account name appears \u2014 all three are forbidden in an operational view and none of them helps answer why a payout is stuck.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminClubs',
+    path: apiRoutePaths.adminClubs,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum clubs to return', name: 'pageSize' },
+      { description: 'Restrict to one creator', name: 'creatorId' },
+      {
+        description:
+          'One club by identifier, which also returns that club\u2019s memberships',
+        name: 'clubId',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Clubs newest first, with the creator that owns each, its lifecycle, and how many memberships are in each state. Asking for one club by identifier also returns that club\u2019s memberships, by identifier and state.',
+        schemaName: 'AdminClubListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A membership is published by its own identifier and its state, and never by who holds it. This exists so the one membership operation an operator has has a target they can find: before it, the console asked for an identifier it could not show them, which is a capability that is real in the API and unreachable in the product.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminAudit',
+    path: apiRoutePaths.adminAudit,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this record',
+        name: 'cursor',
+      },
+      { description: 'Maximum entries to return', name: 'pageSize' },
+      {
+        description:
+          'Which record to read: security for AUTH\u2019s event log, decision for settled moderation decisions',
+        name: 'stream',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'What has happened, newest first, from one of the two records that keep such things: AUTH\u2019s enumerated security event log, or TRUST & SAFETY\u2019s settled decisions with the operator session that made each.',
+        schemaName: 'AdminAuditResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Append-only records, read only. A security event carries no account, because an operator reading an authentication trail does not need to know whose it is and a console that joined it would be an account browser. A decision carries the session that made it rather than a person\u2019s name.',
   },
   {
     method: 'get',

@@ -1401,6 +1401,34 @@ export function createApplication(
       admitted(async (input) => admin.mediaRoutes.purgeMediaAsset(input)),
     )
     .get(
+      apiRoutePaths.adminOverview,
+      admitted(async (input) => admin.operationsRoutes.getOverview(input)),
+    )
+    .get(
+      apiRoutePaths.adminAccounts,
+      admitted(async (input) => admin.operationsRoutes.listAccounts(input)),
+    )
+    .get(
+      apiRoutePaths.adminBillingPayments,
+      admitted(async (input) => admin.operationsRoutes.listPayments(input)),
+    )
+    .get(
+      apiRoutePaths.adminBillingPayment,
+      admitted(async (input) => admin.operationsRoutes.getPayment(input)),
+    )
+    .get(
+      apiRoutePaths.adminPayouts,
+      admitted(async (input) => admin.operationsRoutes.listPayouts(input)),
+    )
+    .get(
+      apiRoutePaths.adminClubs,
+      admitted(async (input) => admin.operationsRoutes.listClubs(input)),
+    )
+    .get(
+      apiRoutePaths.adminAudit,
+      admitted(async (input) => admin.operationsRoutes.listAudit(input)),
+    )
+    .get(
       apiRoutePaths.discoveryCandidates,
       admitted(async (input) => discovery.routes.getCandidates(input)),
     )

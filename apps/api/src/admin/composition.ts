@@ -24,6 +24,8 @@ import { AdminFinancialDirectory } from './financial-directory.js';
 import { AdminContextResolver } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
 import { AdminMediaRoutes } from './media-routes.js';
+import { AdminOperationsDirectory } from './operations-directory.js';
+import { AdminOperationsRoutes } from './operations-routes.js';
 import { AdminIdentityRoutes } from './identity-routes.js';
 import { AdminModerationRoutes } from './moderation-routes.js';
 import { AdminRoutes } from './routes.js';
@@ -42,6 +44,12 @@ export interface AdminRuntime {
   readonly rtcRoutes: AdminRtcRoutes;
   /** Operator moderation surface. Every route is an explicit command. */
   readonly moderationRoutes: AdminModerationRoutes;
+  /**
+   * The operator reads that are not one domain's health: what needs a person,
+   * accounts under enforcement, payments, payouts, clubs, and the two audit
+   * records. Every one is a GET, and the module has no service to write with.
+   */
+  readonly operationsRoutes: AdminOperationsRoutes;
   readonly routes: AdminRoutes;
   readonly service: AdminCreatorService;
 }
@@ -160,6 +168,13 @@ export function createAdminRuntime(input: {
       adminContext,
       appeals: input.appeals,
       moderation: input.moderation,
+    }),
+    operationsRoutes: new AdminOperationsRoutes({
+      adminContext,
+      operations: new AdminOperationsDirectory({
+        database: input.database,
+        now,
+      }),
     }),
     routes: new AdminRoutes({ adminContext, directory, service }),
     service,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { adminDisputeSchema } from './billing.js';
 import { creatorAccountStatusSchema, creatorHandleSchema } from './creator.js';
 import { currencyCodeSchema, minorUnitsSchema } from './money.js';
 import {
@@ -988,3 +989,362 @@ export type AdminNotificationStateResponse = z.infer<
 export type AdminNotificationDelivery = z.infer<
   typeof adminNotificationDeliverySchema
 >;
+
+/* ==================================================================== */
+/*                     ADMIN operations wire vocabulary                 */
+/* ==================================================================== */
+
+/**
+ * The reads an operations team works from, rather than the reads a domain
+ * needed to publish for its own sake.
+ *
+ * Everything below is a **read**. Not one of these shapes is a request body,
+ * and nothing here can be turned into one: the operations an operator has are
+ * the explicit commands declared above, and a console that could also edit a
+ * payment, an account, a club, or an audit row would be a console that could
+ * rewrite the record it exists to explain.
+ *
+ * The privacy rule the rest of this module holds to holds here too, and it is
+ * the reason several obvious fields are missing. A payment carries no payer, a
+ * payout carries no recipient or bank detail, a club membership carries no
+ * member, and a security event carries no account. An operator answering
+ * "why did this payment fail" or "who is stuck" needs the record's own state
+ * and the reference the provider quotes; none of them needs a person, and a
+ * field that exists is a field something eventually fills.
+ */
+
+/** One count against one state, the shape every operational read is made of. */
+export const adminOperationalCountSchema = z
+  .object({
+    count: z.number().int().min(0),
+    state: z.string().min(1).max(64),
+  })
+  .strict();
+
+/**
+ * What is waiting for somebody, counted by the platform rather than by a page.
+ *
+ * Every figure is a total the server computed over the whole table. That is the
+ * entire point of this route existing: a console that counted the rows on the
+ * first page of a paged list would be approximately right on the one screen
+ * where an operator decides what to work on next.
+ *
+ * A zero is published rather than omitted, because "nothing is waiting" and
+ * "the signal stopped arriving" are different answers and a missing row cannot
+ * tell them apart.
+ */
+export const adminAttentionSchema = z
+  .object({
+    accountsRestricted: z.number().int().min(0),
+    appealsAwaiting: z.number().int().min(0),
+    casesOpen: z.number().int().min(0),
+    casesUnclaimed: z.number().int().min(0),
+    creatorsSuspended: z.number().int().min(0),
+    disputesOpen: z.number().int().min(0),
+    financialRecordsNeedingPerson: z.number().int().min(0),
+    payoutsAwaitingConfirmation: z.number().int().min(0),
+  })
+  .strict();
+
+export const adminOverviewResponseSchema = z
+  .object({
+    attention: adminAttentionSchema,
+    casesByPriority: z.array(adminOperationalCountSchema).max(16),
+    casesByQueue: z.array(adminOperationalCountSchema).max(16),
+    /**
+     * When the oldest case nobody has settled was opened. Absent when there is
+     * no such case, which is not the same as an age of zero.
+     */
+    oldestOpenCaseAt: z.iso.datetime().optional(),
+    /** When the platform computed these figures, not when a page rendered. */
+    observedAt: z.iso.datetime(),
+  })
+  .strict();
+export type AdminOverviewResponse = z.infer<typeof adminOverviewResponseSchema>;
+
+/* ----------------------------- Accounts ----------------------------- */
+
+export const adminAccountStatusSchema = z.enum([
+  'pending_profile',
+  'active',
+  'restricted',
+  'deletion_pending',
+  'deactivated',
+  'erased',
+]);
+
+/**
+ * One consumer account in operational terms.
+ *
+ * No name, no handle, no contact detail, no profile, no photograph, and no
+ * locale. What is here is the account's own lifecycle, the coarse reason USERS
+ * publishes for it, and the region — which is jurisdiction, and an operator
+ * deciding whether a restriction may be lifted needs it.
+ *
+ * `statusReason` is the coarse vocabulary USERS publishes to every caller. The
+ * finding behind a safety restriction stays with TRUST & SAFETY's enforcement
+ * record and reaches an operator through the case that produced it, which is
+ * the only place it can be read beside the evidence it rests on.
+ */
+export const adminAccountSchema = z
+  .object({
+    createdAt: z.iso.datetime(),
+    deletionRequestedAt: z.iso.datetime().optional(),
+    id: z.uuid(),
+    region: z
+      .string()
+      .regex(/^[A-Z]{2}$/u)
+      .optional(),
+    status: adminAccountStatusSchema,
+    statusChangedAt: z.iso.datetime(),
+    statusReason: z.string().min(1).max(64).optional(),
+  })
+  .strict();
+export type AdminAccount = z.infer<typeof adminAccountSchema>;
+
+export const adminAccountListResponseSchema = z
+  .object({
+    accounts: z.array(adminAccountSchema),
+    nextCursor: z.string().min(1).max(512).optional(),
+    /** The whole population by status, so a work list has a denominator. */
+    statusCounts: z.array(adminOperationalCountSchema).max(16),
+  })
+  .strict();
+export type AdminAccountListResponse = z.infer<
+  typeof adminAccountListResponseSchema
+>;
+
+/* ----------------------------- Payments ----------------------------- */
+
+/**
+ * One payment, with the provenance an operator needs to answer for it.
+ *
+ * Deliberately without `consumerId`. A payment list keyed by payer would be a
+ * purchase history for every person on the platform, which is a browsing
+ * surface over private material rather than a financial operations tool. What
+ * an operator holds instead is the payment's own identifier and the reference
+ * the provider quotes, which is what a provider dispute, a bank enquiry, and a
+ * reconciliation all actually turn on.
+ *
+ * `resourceType` says what was sold — a club membership or a gift — because a
+ * refund decision differs between the two and it is already the vocabulary the
+ * creator's own earnings screen splits by.
+ */
+export const adminPaymentSchema = z
+  .object({
+    amountMinor: minorUnitsSchema,
+    createdAt: z.iso.datetime(),
+    currency: currencyCodeSchema,
+    /** A closed code BILLING published. Never a provider message. */
+    failureReason: z.string().min(1).max(64).optional(),
+    id: z.uuid(),
+    /** When the provider's own record was last read back. */
+    lastProviderSyncAt: z.iso.datetime().optional(),
+    provider: z.string().min(1).max(64),
+    providerReference: z.string().min(1).max(200).optional(),
+    resourceType: z.string().min(1).max(32).optional(),
+    state: z.string().min(1).max(32),
+    taxMinor: minorUnitsSchema.optional(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type AdminPayment = z.infer<typeof adminPaymentSchema>;
+
+export const adminPaymentListResponseSchema = z
+  .object({
+    nextCursor: z.string().min(1).max(512).optional(),
+    payments: z.array(adminPaymentSchema),
+  })
+  .strict();
+export type AdminPaymentListResponse = z.infer<
+  typeof adminPaymentListResponseSchema
+>;
+
+/** One reversal against one payment. */
+export const adminRefundSchema = z
+  .object({
+    amountMinor: minorUnitsSchema,
+    createdAt: z.iso.datetime(),
+    currency: currencyCodeSchema,
+    failureReason: z.string().min(1).max(64).optional(),
+    id: z.uuid(),
+    paymentId: z.uuid(),
+    provider: z.string().min(1).max(64),
+    providerReference: z.string().min(1).max(200).optional(),
+    reasonCode: z.string().min(1).max(64),
+    state: z.string().min(1).max(32),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type AdminRefund = z.infer<typeof adminRefundSchema>;
+
+/**
+ * One payment and everything the platform has recorded against it.
+ *
+ * The reversals and the claims together, because the question an operator has
+ * in front of a payment is never only about the payment: it is whether money
+ * has already gone back, and whether somebody else's bank is taking it.
+ */
+export const adminPaymentDetailResponseSchema = z
+  .object({
+    disputes: z.array(adminDisputeSchema).max(50),
+    payment: adminPaymentSchema,
+    refunds: z.array(adminRefundSchema).max(50),
+  })
+  .strict();
+export type AdminPaymentDetailResponse = z.infer<
+  typeof adminPaymentDetailResponseSchema
+>;
+
+/* ------------------------------ Payouts ----------------------------- */
+
+/**
+ * One payout instruction as the platform holds it.
+ *
+ * The creator is named by opaque identifier because a payout is *to* somebody
+ * and an operator answering for one has to know which creator's book it left —
+ * the same identifier the creator directory on this console already publishes.
+ * Nothing about the destination appears: no recipient reference, no bank
+ * detail, no account name. `docs/operations/03-finance-payout-operations.md`
+ * forbids all three in an operational view, and none of them helps.
+ *
+ * `requestedBy` is an opaque actor reference, which is how the platform records
+ * who asked. It is a session, never a person's name.
+ */
+export const adminPayoutSchema = z
+  .object({
+    amountMinor: minorUnitsSchema,
+    createdAt: z.iso.datetime(),
+    creatorId: z.uuid(),
+    currency: currencyCodeSchema,
+    failureReason: z.string().min(1).max(64).optional(),
+    id: z.uuid(),
+    lastProviderSyncAt: z.iso.datetime().optional(),
+    provider: z.string().min(1).max(64),
+    providerReference: z.string().min(1).max(200).optional(),
+    requestedBy: z.string().min(1).max(128),
+    state: z.string().min(1).max(32),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type AdminPayout = z.infer<typeof adminPayoutSchema>;
+
+export const adminPayoutListResponseSchema = z
+  .object({
+    nextCursor: z.string().min(1).max(512).optional(),
+    payouts: z.array(adminPayoutSchema),
+  })
+  .strict();
+export type AdminPayoutListResponse = z.infer<
+  typeof adminPayoutListResponseSchema
+>;
+
+/* ------------------------------- Clubs ------------------------------ */
+
+/**
+ * One club, with how many people are in it and how many have left.
+ *
+ * The counts are the club's, not a list of who. A console that could enumerate
+ * a creator's members would be a console that publishes who pays whom, and
+ * nothing on this surface may publish a person.
+ */
+export const adminClubSchema = z
+  .object({
+    closedAt: z.iso.datetime().optional(),
+    createdAt: z.iso.datetime(),
+    creatorId: z.uuid(),
+    handle: creatorHandleSchema.optional(),
+    id: z.uuid(),
+    lifecycle: z.string().min(1).max(32),
+    memberships: z.array(adminOperationalCountSchema).max(8),
+    name: z.string().min(1).max(120),
+    publishedAt: z.iso.datetime().optional(),
+    slug: z.string().min(1).max(120),
+  })
+  .strict();
+export type AdminClub = z.infer<typeof adminClubSchema>;
+
+/**
+ * One membership, named by its own identifier and nothing else.
+ *
+ * This exists so that the one membership operation an operator has — revoking
+ * one — has a target they can actually find. Before it, the console asked an
+ * operator to paste an identifier it could not show them, which is a capability
+ * that is real in the API and unreachable in the product.
+ *
+ * `memberId` is deliberately absent. Revoking a membership needs the membership
+ * and a reason; knowing who holds it changes nothing an operator may decide,
+ * and publishing it would turn a club into a member list.
+ */
+export const adminClubMembershipSchema = z
+  .object({
+    grantedAt: z.iso.datetime(),
+    id: z.uuid(),
+    revokedAt: z.iso.datetime().optional(),
+    source: z.string().min(1).max(32),
+    state: z.string().min(1).max(32),
+  })
+  .strict();
+export type AdminClubMembership = z.infer<typeof adminClubMembershipSchema>;
+
+export const adminClubListResponseSchema = z
+  .object({
+    clubs: z.array(adminClubSchema),
+    /** Present only when one club was asked for by identifier. */
+    memberships: z.array(adminClubMembershipSchema).max(50).optional(),
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+export type AdminClubListResponse = z.infer<typeof adminClubListResponseSchema>;
+
+/* ------------------------------- Audit ------------------------------ */
+
+/** Which record an audit row came out of. */
+export const adminAuditStreamSchema = z.enum(['security', 'decision']);
+export type AdminAuditStream = z.infer<typeof adminAuditStreamSchema>;
+
+/**
+ * One thing that happened, from one of the two records that keep such things.
+ *
+ * **Security** is AUTH's own event log: an enumerated event type, an enumerated
+ * reason, and the audience it happened under. There is no free-form payload in
+ * that table to leak into, and the account it belongs to is not published here
+ * — an operator reading an authentication trail does not need to know whose it
+ * is, and a console that joined it would be an account browser.
+ *
+ * **Decision** is TRUST & SAFETY's settled record: what an operator did, under
+ * which reason, against which kind of target, and which session did it. The
+ * actor is a session reference because that is what the platform records; it
+ * identifies the act deterministically without storing anybody's name.
+ *
+ * One flat shape covers both so that an operator reading "what has been
+ * happening" does not have to learn two tables. The stream says which record
+ * the row came from, and which fields it can therefore carry.
+ */
+export const adminAuditEntrySchema = z
+  .object({
+    /** The operator's session on a decision. Absent on a security event. */
+    actorReference: z.string().min(1).max(128).optional(),
+    audience: z.string().min(1).max(64).optional(),
+    correlationId: z.string().min(1).max(128).optional(),
+    id: z.string().min(1).max(64),
+    occurredAt: z.iso.datetime(),
+    /** The enumerated outcome or reason, where the record publishes one. */
+    outcome: z.string().min(1).max(64).optional(),
+    stream: adminAuditStreamSchema,
+    /** What kind of thing was acted on. Decisions only. */
+    subjectType: z.string().min(1).max(64).optional(),
+    /** The event type, or the decision action. Always present. */
+    what: z.string().min(1).max(64),
+  })
+  .strict();
+export type AdminAuditEntry = z.infer<typeof adminAuditEntrySchema>;
+
+export const adminAuditResponseSchema = z
+  .object({
+    entries: z.array(adminAuditEntrySchema),
+    nextCursor: z.string().min(1).max(512).optional(),
+    stream: adminAuditStreamSchema,
+  })
+  .strict();
+export type AdminAuditResponse = z.infer<typeof adminAuditResponseSchema>;
