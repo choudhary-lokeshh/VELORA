@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { giftShapes } from '../src/product/creator-page';
+import { giftShapes } from '../src/product/gift-art';
 
 /**
  * The gift silhouettes, checked as geometry rather than as strings.

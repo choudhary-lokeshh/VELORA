@@ -428,6 +428,21 @@ select.v-control {
   max-width: var(--measure-max);
 }
 
+/*
+ * A section's heading row.
+ *
+ * Wraps rather than compresses: a heading and the control beside it are two
+ * whole things, and squeezing one to keep them on a line is how a button ends
+ * up reading "Mark all as re…" on a phone.
+ */
+.v-section__head {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
 /* ============================ Identity ================================ */
 
 /*
@@ -786,11 +801,28 @@ select.v-control {
 
 /* ============================ Tabs ===================================== */
 
+/*
+ * The switch wraps rather than hiding an option off its own edge.
+ *
+ * This was a single scrolling line with its scrollbar hidden, because a 3 px
+ * trough under a pill control is noise. What that produced at 390 px was a
+ * third option cut through the middle of its own word with nothing to suggest
+ * it was there — and the option it cut was the one with work waiting in it.
+ *
+ * A second line is the honest answer: every option is on screen, at a full
+ * touch target, at any width and any text size. The container radius is the one
+ * that already matched a single row's height, so nothing about one line
+ * changes; two lines simply read as a group instead of as a stadium.
+ *
+ * `overflow-x` stays as the last resort for one label longer than the whole
+ * viewport, which wrapping cannot help with.
+ */
 .v-segmented {
   background: var(--surface-inset);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-lg);
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px;
   max-width: 100%;
   overflow-x: auto;
@@ -833,13 +865,29 @@ select.v-control {
 
 /* ============================ Rows ===================================== */
 
+/*
+ * `flex-wrap` is what keeps a row from pushing the page sideways.
+ *
+ * A row is a mark, a body, and something at the end — usually a badge, which is
+ * deliberately `flex: none` and unbreakable so a status never reads as two
+ * words on two lines. At a narrow width with text scaled up, the badge alone
+ * can be wider than the line has left, and an unwrappable row then overflows
+ * the viewport and takes the whole document with it. Wrapping puts the badge on
+ * its own line instead, which is a row that got taller rather than a page that
+ * moves under a thumb.
+ *
+ * The row gap is smaller than the column gap for the same reason: a wrapped
+ * line belongs to the row above it and should not read as a second row.
+ */
 .v-row {
   align-items: center;
   border-radius: var(--radius-md);
+  column-gap: var(--space-4);
   display: flex;
-  gap: var(--space-4);
+  flex-wrap: wrap;
   min-width: 0;
   padding: var(--space-3) var(--space-4);
+  row-gap: var(--space-2);
   text-align: left;
   transition: background-color var(--duration-fast) var(--ease-out);
   width: 100%;
@@ -866,6 +914,28 @@ a.v-notification {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+/*
+ * Inside a row, the body claims a readable measure before anything else wraps.
+ *
+ * `flex: 1` with a zero minimum means the body can always shrink, so a row
+ * never *needs* to wrap and a long badge beside it squeezes the words down to
+ * one letter per line instead. A floor makes the row wrap the badge onto its
+ * own line, which is what wrapping was for.
+ *
+ * `min()` is what keeps that floor safe: on a narrow phone, or with text scaled
+ * up, twelve of the reader's own `rem` can be wider than the row itself, and a
+ * fixed minimum there would push the page sideways again.
+ *
+ * Scoped to a direct child of a row, because the same body class is reused
+ * inside headers that are one line by design — an introduction's, a
+ * conversation's — and a floor in a line that cannot wrap is an overflow rather
+ * than a measure.
+ */
+.v-row > .v-row__body {
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
 }
 
 .v-row__title {

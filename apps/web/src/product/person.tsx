@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { ApiResult, DiscoveryPerson } from '@velora/consumer-client';
 import { failureMessage } from '@velora/consumer-client';
 
+import { usePageHeading } from '../app/page-heading';
 import { useApi, useToast } from '../app/providers';
 import {
   Button,
@@ -40,6 +41,11 @@ import { useResource, useSingleFlight } from './resource';
  */
 export function PersonPage({ personId }: { readonly personId: string }) {
   const api = useApi();
+  // This page's heading is a name laid over a photograph rather than a
+  // `PageHeader`, so it offers itself to the shell directly. Without that the
+  // bar would announce the page for the whole of it, over a hero already
+  // carrying the same person's name in display type.
+  const heading = usePageHeading();
   const toast = useToast();
   const router = useRouter();
   const decision = useSingleFlight();
@@ -134,7 +140,9 @@ export function PersonPage({ personId }: { readonly personId: string }) {
           />
         )}
         <div className="v-person__identity">
-          <h1 className="v-title v-wrap">{shown.displayName}</h1>
+          <h1 className="v-title v-wrap" ref={heading}>
+            {shown.displayName}
+          </h1>
           <div className="v-inline v-inline--tight">
             {region === undefined ? null : <Chip>{region}</Chip>}
             {shown.sharedLanguages.length === 0 ? null : (

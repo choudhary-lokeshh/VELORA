@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   ErrorMessage,
+  Section,
   Select,
   Skeleton,
   type Tone,
@@ -93,98 +94,92 @@ export function AvailabilityCard() {
   };
 
   return (
-    <section
-      aria-labelledby="availability-heading"
-      className="v-card"
-      data-testid="availability-card"
+    <Section
+      actions={
+        availability.loading && availability.value === undefined ? (
+          <Skeleton height={22} width={110} />
+        ) : (
+          <Badge testId="availability-state" tone={viewTone[view]}>
+            <Icon name="clock" size="sm" />
+            {viewLabel[view]}
+          </Badge>
+        )
+      }
+      raised
+      testId="availability-card"
+      title="Availability"
     >
-      <div className="v-stack v-stack--5">
-        <div className="v-inline v-inline--between">
-          <h2 className="v-subheading" id="availability-heading">
-            Availability
-          </h2>
-          {availability.loading && availability.value === undefined ? (
-            <Skeleton height={22} width={110} />
-          ) : (
-            <Badge testId="availability-state" tone={viewTone[view]}>
-              <Icon name="clock" size="sm" />
-              {viewLabel[view]}
-            </Badge>
-          )}
-        </div>
-
-        <p className="v-small v-muted">
-          {view === 'available' && until !== undefined ? (
-            <>
-              You are being shown to other people until{' '}
-              <time dateTime={until} data-testid="availability-until">
-                {formatDateTime(until)}
-              </time>
-              . It ends on its own — there is nothing to remember to switch off.
-            </>
-          ) : view === 'expired' ? (
-            <span data-testid="availability-expired">
-              Your window ended, so you are not being shown in discovery. Choose
-              a new one to be available again.
-            </span>
-          ) : (
-            'Nobody sees you in discovery while this is off, and you see nobody either. Availability is a window you choose, not a status anybody can watch.'
-          )}
-        </p>
-
-        {availability.error === undefined ? null : (
-          <ErrorMessage testId="availability-failed">
-            {availability.error}
-          </ErrorMessage>
+      <p className="v-small v-muted">
+        {view === 'available' && until !== undefined ? (
+          <>
+            You are being shown to other people until{' '}
+            <time dateTime={until} data-testid="availability-until">
+              {formatDateTime(until)}
+            </time>
+            . It ends on its own — there is nothing to remember to switch off.
+          </>
+        ) : view === 'expired' ? (
+          <span data-testid="availability-expired">
+            Your window ended, so you are not being shown in discovery. Choose a
+            new one to be available again.
+          </span>
+        ) : (
+          'Nobody sees you in discovery while this is off, and you see nobody either. Availability is a window you choose, not a status anybody can watch.'
         )}
-        {error === undefined ? null : (
-          <ErrorMessage testId="availability-error">{error}</ErrorMessage>
-        )}
+      </p>
 
-        <div className="v-inline">
-          <label className="v-field__label" htmlFor="availability-hours">
-            For
-          </label>
-          <div style={{ width: '140px' }}>
-            <Select
-              data-testid="availability-hours"
-              id="availability-hours"
-              name="hours"
-              onChange={(event) => {
-                setHours(Number(event.target.value));
-              }}
-              value={String(hours)}
-            >
-              {windowChoices.map((choice) => (
-                <option key={choice} value={String(choice)}>
-                  {choice} hour{choice === 1 ? '' : 's'}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <Button
-            busy={busy}
-            data-testid="availability-start"
-            onClick={() => {
-              save('available');
+      {availability.error === undefined ? null : (
+        <ErrorMessage testId="availability-failed">
+          {availability.error}
+        </ErrorMessage>
+      )}
+      {error === undefined ? null : (
+        <ErrorMessage testId="availability-error">{error}</ErrorMessage>
+      )}
+
+      <div className="v-inline">
+        <label className="v-field__label" htmlFor="availability-hours">
+          For
+        </label>
+        <div style={{ width: '140px' }}>
+          <Select
+            data-testid="availability-hours"
+            id="availability-hours"
+            name="hours"
+            onChange={(event) => {
+              setHours(Number(event.target.value));
             }}
-            tone="primary"
+            value={String(hours)}
           >
-            {view === 'available' ? 'Extend' : 'Become available'}
-          </Button>
-          {view === 'available' ? (
-            <Button
-              data-testid="availability-stop"
-              disabled={busy}
-              onClick={() => {
-                save('unavailable');
-              }}
-            >
-              Stop
-            </Button>
-          ) : null}
+            {windowChoices.map((choice) => (
+              <option key={choice} value={String(choice)}>
+                {choice} hour{choice === 1 ? '' : 's'}
+              </option>
+            ))}
+          </Select>
         </div>
+        <Button
+          busy={busy}
+          data-testid="availability-start"
+          onClick={() => {
+            save('available');
+          }}
+          tone="primary"
+        >
+          {view === 'available' ? 'Extend' : 'Become available'}
+        </Button>
+        {view === 'available' ? (
+          <Button
+            data-testid="availability-stop"
+            disabled={busy}
+            onClick={() => {
+              save('unavailable');
+            }}
+          >
+            Stop
+          </Button>
+        ) : null}
       </div>
-    </section>
+    </Section>
   );
 }

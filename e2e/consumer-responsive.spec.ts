@@ -19,6 +19,10 @@ const widths = viewportWidths;
 
 const routes = [
   '/discover',
+  // The creator section is its own layout — a grid of cards whose names and
+  // handles do not wrap — and it was the one that pushed the document sideways
+  // once the reader scaled their text up.
+  '/discover?show=creators',
   '/introductions',
   '/messages',
   '/notifications',
@@ -26,6 +30,7 @@ const routes = [
   '/you/settings',
   '/you/safety',
   '/you/memberships',
+  '/you/gifts',
 ] as const;
 
 test.describe('Consumer Web responsive behaviour', () => {
@@ -152,9 +157,17 @@ test.describe('Consumer Web responsive behaviour', () => {
     // Text scaling rather than page zoom: it is the case that breaks fixed
     // heights, and it is what somebody with low vision actually turns on.
     await page.addStyleTag({ content: 'html { font-size: 200% }' });
-    await page.goto(`${consumerWebOrigin}/you`);
 
-    await expect(page.getByRole('main')).toBeVisible();
-    expect(await overflowingElements(page)).toEqual([]);
+    // Every screen, not one. Two of these overflowed at this size while `/you`
+    // was clean: a card grid whose track had no floor, and a row whose status
+    // pill could not shrink and could not wrap.
+    for (const route of routes) {
+      await page.goto(`${consumerWebOrigin}${route}`);
+      await page.addStyleTag({ content: 'html { font-size: 200% }' });
+      await expect(page.getByRole('main')).toBeVisible();
+      expect(await overflowingElements(page), `${route} at 200% text`).toEqual(
+        [],
+      );
+    }
   });
 });

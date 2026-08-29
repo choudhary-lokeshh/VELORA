@@ -219,14 +219,38 @@ describe('the shell', () => {
     expect(screen.queryByTestId('topbar-back')).toBeNull();
   });
 
-  it('shows a way back from a person, pointing at Discover', async () => {
+  it('shows a way back from a person, pointing at Discover and naming it', async () => {
     shellAt('/people/person-1');
     await waitFor(() => {
       expect(screen.getByTestId('topbar-back')).toBeTruthy();
     });
     const back = screen.getByTestId('topbar-back');
     expect(back.getAttribute('href')).toBe('/discover');
-    expect(back.getAttribute('aria-label')).toBe('Back');
+    // The destination is one the navigation names, so the control says which
+    // one it is rather than leaving an arrow to be interpreted.
+    expect(back.getAttribute('aria-label')).toBe('Back to Discover');
+    expect(back.textContent).toContain('Discover');
+  });
+
+  it('says only "Back" when the parent is not a named destination', async () => {
+    // A club's way out is its creator's page, which the navigation has no word
+    // for. Inventing one here is how a Back ends up labelled with a guess.
+    shellAt('/you/gifts');
+    await waitFor(() => {
+      expect(screen.getByTestId('topbar-back')).toBeTruthy();
+    });
+    expect(screen.getByTestId('topbar-back').getAttribute('aria-label')).toBe(
+      'Back to You',
+    );
+
+    cleanup();
+    shellAt('/checkout/return');
+    await waitFor(() => {
+      expect(screen.getByTestId('topbar-back')).toBeTruthy();
+    });
+    const unnamed = screen.getByTestId('topbar-back');
+    expect(unnamed.getAttribute('href')).toBe('/you/memberships');
+    expect(unnamed.getAttribute('aria-label')).toBe('Back');
   });
 
   it('returns to the section that was being browsed when the link carried one', async () => {

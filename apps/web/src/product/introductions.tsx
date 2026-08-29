@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import type { ApiResult, Introduction } from '@velora/consumer-client';
@@ -37,9 +37,26 @@ import { useResource, useRevalidateOnFocus, useSingleFlight } from './resource';
  * Nothing here tells anybody who declined them, who withdrew, or who let a
  * signal lapse. A closed introduction stops being listed, which is the same
  * thing somebody sees when the other person was never there.
+ *
+ * The group is an address, for the reason Discover's section is one: Back, a
+ * reload, a second tab, and a link all have to behave the way they behave
+ * everywhere else on this surface, and a group held only in component state
+ * behaves that way in none of them. Which group opens by default is decided by
+ * where the work is — landing on an empty "Waiting on you" while an answer is
+ * waiting one tab over is a page that hid its own contents.
  */
 
 type Group = 'waiting-on-you' | 'you-reached-out' | 'mutual';
+
+const groups: readonly Group[] = [
+  'waiting-on-you',
+  'you-reached-out',
+  'mutual',
+];
+
+function isGroup(value: string | null): value is Group {
+  return groups.some((group) => group === value);
+}
 
 export function Introductions() {
   const api = useApi();
@@ -51,9 +68,11 @@ export function Introductions() {
     [api],
   );
   const introductions = useResource(load);
-  const [group, setGroup] = useState<Group>('waiting-on-you');
   const [pending, setPending] = useState<string | undefined>(undefined);
   const action = useSingleFlight();
+  const pathname = usePathname();
+  const parameters = useSearchParams();
+  const requested = parameters.get('show');
 
   useRevalidateOnFocus(introductions.reload);
 
@@ -65,6 +84,34 @@ export function Introductions() {
     (row) => row.state === 'pending' && row.role === 'initiator',
   );
   const mutual = rows.filter((row) => row.state === 'mutual');
+
+  /*
+   * The group being read. An address wins whenever it names one; otherwise the
+   * first group with anything in it does, and "waiting on you" when the page is
+   * genuinely empty everywhere.
+   *
+   * The default is computed rather than stored, so it stops being a default the
+   * moment somebody chooses — and a group that empties itself under somebody
+   * because they answered the last person in it does not move them.
+   */
+  const group: Group = isGroup(requested)
+    ? requested
+    : incoming.length > 0
+      ? 'waiting-on-you'
+      : mutual.length > 0
+        ? 'mutual'
+        : outgoing.length > 0
+          ? 'you-reached-out'
+          : 'waiting-on-you';
+
+  const showGroup = (next: Group) => {
+    // `replace` rather than `push`: switching a group changes what this page
+    // shows rather than going somewhere new, and a Back that walked through
+    // every group somebody tried would be a trap.
+    router.replace(
+      next === 'waiting-on-you' ? pathname : `${pathname}?show=${next}`,
+    );
+  };
 
   const act = (
     id: string,
@@ -136,7 +183,7 @@ export function Introductions() {
       <div className="v-lede-gap">
         <Segmented
           label="Which introductions"
-          onChange={setGroup}
+          onChange={showGroup}
           options={[
             {
               count: incoming.length,

@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import {
   useId,
+  useRef,
   type ButtonHTMLAttributes,
+  type KeyboardEvent,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -11,6 +13,7 @@ import {
 } from 'react';
 
 import { Icon, type IconName } from './icons';
+import { usePageHeading } from '../app/page-heading';
 
 /**
  * The Consumer primitives.
@@ -350,10 +353,16 @@ export function PageHeader({
   readonly lede?: ReactNode;
   readonly title: string;
 }) {
+  // Offered to whatever shell is above this page, which uses it to decide
+  // whether its own bar should be naming the page as well. Outside a shell the
+  // registration is a no-op.
+  const register = usePageHeading();
   return (
     <header className="v-page-header">
       <div className="v-page-header__row">
-        <h1 className="v-title">{title}</h1>
+        <h1 className="v-title" ref={register}>
+          {title}
+        </h1>
         {actions === undefined ? null : (
           <div className="v-inline v-inline--tight">{actions}</div>
         )}
@@ -362,6 +371,60 @@ export function PageHeader({
         <p className="v-page-header__lede">{lede}</p>
       )}
     </header>
+  );
+}
+
+/**
+ * A titled block of one page.
+ *
+ * The same four decisions were being made by hand everywhere a screen had more
+ * than one subject on it: the landmark, the heading level, the identifier that
+ * ties the two together, and the rhythm inside. Made once here they are the
+ * same on Memberships, Safety, Settings, and You — and the heading a screen
+ * reader announces for a region can no longer drift from the words above it,
+ * because there is only one place either is written.
+ *
+ * A section is not a card by default. Several of these are a heading over a
+ * list on the page's own ground, and putting every one of them inside a raised
+ * box is what turns a product into a wall of panels.
+ */
+export function Section({
+  actions,
+  children,
+  gap = 5,
+  raised = false,
+  testId,
+  title,
+}: {
+  /** Something the section as a whole offers, beside its heading. */
+  readonly actions?: ReactNode;
+  readonly children: ReactNode;
+  /** The rhythm between the heading and what follows it. */
+  readonly gap?: 4 | 5;
+  /** Drawn on its own surface, for a block that is a thing rather than a part. */
+  readonly raised?: boolean;
+  readonly testId?: string;
+  readonly title: string;
+}) {
+  const headingId = useId();
+  return (
+    <section
+      aria-labelledby={headingId}
+      className={raised ? 'v-card' : undefined}
+      data-testid={testId}
+    >
+      <div className={`v-stack v-stack--${String(gap)}`}>
+        <div className="v-section__head">
+          <h2 className="v-subheading" id={headingId}>
+            {title}
+          </h2>
+          {actions === undefined ? null : (
+            <div className="v-inline v-inline--tight">{actions}</div>
+          )}
+        </div>
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -677,6 +740,21 @@ export interface SegmentedOption<T extends string> {
   readonly value: T;
 }
 
+/**
+ * One choice out of a few, as a row of tabs.
+ *
+ * `role="tablist"` is a promise about the keyboard as much as about the name a
+ * screen reader reads: the arrow keys move between tabs, Home and End go to the
+ * ends, and the group is one stop on the Tab key rather than one stop per
+ * option. Claiming the role and leaving every tab separately tabbable is the
+ * version that reads correctly and behaves like nothing the reader was told to
+ * expect, so the keys are implemented here.
+ *
+ * The row scrolls sideways when it has to — three long labels do not fit a
+ * 320 px phone at any type size — and the stylesheet marks the edge it is
+ * scrolled away from, because an option cut off with no cue is an option
+ * nobody knows is there.
+ */
 export function Segmented<T extends string>({
   label,
   onChange,
@@ -688,26 +766,71 @@ export function Segmented<T extends string>({
   readonly options: readonly SegmentedOption<T>[];
   readonly value: T;
 }) {
+  const strip = useRef<HTMLDivElement>(null);
+
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? -1
+          : 0;
+    const current = options.findIndex((option) => option.value === value);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? options.length - 1
+          : step === 0
+            ? -1
+            : // Wraps, which is what a tablist does. A row of three where the
+              // last one cannot be reached from the first is a row that behaves
+              // differently depending on which end somebody started at.
+              (current + step + options.length) % options.length;
+    const chosen = options[next];
+    if (chosen === undefined) return;
+    event.preventDefault();
+    onChange(chosen.value);
+    // Focus follows selection, which is the pattern for a tablist whose panels
+    // are already on the page: moving the focus without moving the selection
+    // would leave somebody reading one section while another is highlighted.
+    const tabs =
+      strip.current?.querySelectorAll<HTMLButtonElement>('.v-segmented__item');
+    tabs?.item(next).focus();
+  };
+
   return (
-    <div aria-label={label} className="v-segmented" role="tablist">
-      {options.map((option) => (
-        <button
-          aria-selected={option.value === value}
-          className="v-segmented__item"
-          data-testid={`segment-${option.value}`}
-          key={option.value}
-          onClick={() => {
-            onChange(option.value);
-          }}
-          role="tab"
-          type="button"
-        >
-          {option.label}
-          {option.count === undefined ? null : (
-            <span className="v-segmented__count">{option.count}</span>
-          )}
-        </button>
-      ))}
+    <div
+      aria-label={label}
+      className="v-segmented"
+      onKeyDown={move}
+      ref={strip}
+      role="tablist"
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            aria-selected={selected}
+            className="v-segmented__item"
+            data-testid={`segment-${option.value}`}
+            key={option.value}
+            onClick={() => {
+              onChange(option.value);
+            }}
+            role="tab"
+            // One stop for the whole group. Everything inside it is reached
+            // with the arrow keys the role already promised.
+            tabIndex={selected ? 0 : -1}
+            type="button"
+          >
+            {option.label}
+            {option.count === undefined ? null : (
+              <span className="v-segmented__count">{option.count}</span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

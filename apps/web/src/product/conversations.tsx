@@ -442,6 +442,17 @@ function Thread({
         // safety change that closed this conversation will refuse forever.
         state: isRetryable(result) ? 'failed' : 'refused',
       });
+      /*
+        The words now live in the unsent message rather than in both places.
+
+        Leaving them in the box as well put the same sentence on screen twice
+        and, worse, left two ways to send it: "Try again", which presents the
+        identifier the first attempt presented and is therefore safe against a
+        request that committed before its answer was lost, and Send, which
+        generates a new one and would post the message a second time. Somebody
+        who wants to change it before trying again presses Edit.
+      */
+      setDraft('');
       if (!isRetryable(result)) onChanged();
     });
   };
@@ -594,15 +605,34 @@ function Thread({
                 style={{ justifyContent: 'flex-end' }}
               >
                 {pending.state === 'failed' ? (
-                  <Button
-                    data-testid="message-retry"
-                    onClick={() => {
-                      send(pending);
-                    }}
-                    size="sm"
-                  >
-                    Try again
-                  </Button>
+                  <>
+                    <Button
+                      data-testid="message-retry"
+                      onClick={() => {
+                        send(pending);
+                      }}
+                      size="sm"
+                    >
+                      Try again
+                    </Button>
+                    {/*
+                      Back into the box, where it can be changed. This is the
+                      only path that makes a second identifier, and it is one
+                      somebody chose knowing the first did not arrive.
+                    */}
+                    <Button
+                      data-testid="message-edit"
+                      onClick={() => {
+                        setDraft(pending.body);
+                        setPending(undefined);
+                        composer.current?.focus();
+                      }}
+                      size="sm"
+                      tone="ghost"
+                    >
+                      Edit
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     data-testid="message-discard"
@@ -693,6 +723,7 @@ function Thread({
           <ConsumerAiAssist
             capability="consumer_chat_reply"
             draft={draft}
+            folded
             onReplace={setDraft}
             testId="message-ai"
           />

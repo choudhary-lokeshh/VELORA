@@ -58,6 +58,24 @@ export function isCurrent(pathname: string, path: string): boolean {
 }
 
 /**
+ * What to call the place a Back control returns to, when it has a name.
+ *
+ * Only a destination the navigation already names, and only when the target is
+ * that destination itself rather than something inside it. Naming a page this
+ * table does not name would mean inventing a word for it here, and a Back
+ * labelled with a guess is worse than one labelled with an arrow.
+ *
+ * The query is dropped before matching: a Back that carries which section of
+ * Discover somebody was reading still returns to Discover, and that is what it
+ * should be called.
+ */
+export function destinationName(path: string): string | undefined {
+  const address = path.split('?')[0] ?? path;
+  return destinations.find((destination) => destination.path === address)
+    ?.label;
+}
+
+/**
  * Where each page that can be navigated into is navigated into *from*.
  *
  * Declared rather than derived. Removing the last segment of an address looks

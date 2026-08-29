@@ -2,11 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 
 import { Icon } from '../design/icons';
 import { Avatar } from '../design/primitives';
-import { backTarget, destinations, isCurrent } from './navigation';
+import { PageHeadingWatcher } from './page-heading';
+import {
+  backTarget,
+  destinationName,
+  destinations,
+  isCurrent,
+} from './navigation';
 import { useAccount, useFeeds, useToast } from './providers';
 
 /**
@@ -53,6 +59,18 @@ export function AppShell({
   const feeds = useFeeds();
   const displayName = account.profile.value?.displayName ?? 'Your account';
   const back = backTarget(pathname, parameters.get('from'));
+  const backName = back === undefined ? undefined : destinationName(back);
+  /*
+   * Whether the page's own heading is on screen. Undefined means the page did
+   * not offer one, and the bar then names the page for the whole of it, which
+   * is what every screen used to get.
+   */
+  const [headingVisible, setHeadingVisible] = useState<boolean | undefined>(
+    undefined,
+  );
+  const watchHeading = useCallback((visible: boolean | undefined) => {
+    setHeadingVisible(visible);
+  }, []);
 
   const signalCount = (
     signal: 'conversations' | 'notifications' | undefined,
@@ -135,23 +153,46 @@ export function AppShell({
             else on screen leads out of this page.
           */}
           {back === undefined ? null : (
+            /*
+              Named where the destination it returns to has a name. A bare arrow
+              is unambiguous on a phone, where the page it leaves is the whole
+              screen; on a wide window it is the only thing in an otherwise
+              empty bar, and an arrow alone above Sent gifts does not say that
+              Sent gifts is part of You.
+            */
             <Link
-              aria-label="Back"
-              className="v-icon-btn"
+              aria-label={
+                backName === undefined ? 'Back' : `Back to ${backName}`
+              }
+              className={
+                backName === undefined ? 'v-icon-btn' : 'v-topbar__back'
+              }
               data-testid="topbar-back"
               href={back}
             >
               <Icon name="arrowLeft" size="md" />
+              {backName === undefined ? null : (
+                <span className="v-topbar__back-label v-small">{backName}</span>
+              )}
             </Link>
           )}
-          <p className="v-topbar__title v-subheading v-truncate">{title}</p>
+          <p
+            className="v-topbar__title v-subheading v-truncate"
+            data-shown={headingVisible === true ? 'false' : 'true'}
+          >
+            {title}
+          </p>
           <Link aria-label="Your account" className="v-icon-btn" href="/you">
             <Avatar displayName={displayName} size="xs" />
           </Link>
         </header>
 
         <main className={`v-view${narrow ? ' v-view--narrow' : ''}`} id="main">
-          <div className="v-view__inner">{children}</div>
+          <div className="v-view__inner">
+            <PageHeadingWatcher onChange={watchHeading}>
+              {children}
+            </PageHeadingWatcher>
+          </div>
         </main>
       </div>
 

@@ -95,6 +95,24 @@ export function formatDay(value: string): string {
 }
 
 /**
+ * A whole date, for something that is not about how recently it happened.
+ *
+ * `formatDay` is the right answer for activity — it says "Today" and
+ * "Yesterday", which is what a reader wants for a message or a gift. It is the
+ * wrong answer for a date somebody is being told to act by, or for the day an
+ * account was opened: "Today" is not a deadline anybody can write down, and an
+ * account opened years ago should not lose its year. This says the month in
+ * full and never drops the year.
+ */
+export function formatFullDay(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
  * How long ago, said the way somebody would say it.
  *
  * Coarse on purpose. A notice that claimed "37 seconds ago" would be precise

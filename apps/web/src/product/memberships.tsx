@@ -22,6 +22,7 @@ import {
   Notice,
   PageHeader,
   RowSkeleton,
+  Section,
   TextInput,
 } from '../design/primitives';
 import {
@@ -142,55 +143,45 @@ function PaidMemberships({
   readonly rows: readonly ConsumerSubscription[];
 }) {
   return (
-    <section
-      aria-labelledby="paid-heading"
-      className="v-card"
-      data-testid="paid-memberships"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="paid-heading">
-          Paid memberships
-        </h2>
+    <Section raised testId="paid-memberships" title="Paid memberships">
+      {loading ? <RowSkeleton rows={2} /> : null}
 
-        {loading ? <RowSkeleton rows={2} /> : null}
+      {error === undefined ? null : (
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="memberships-failed">{error}</ErrorMessage>
+          {retry === undefined ? null : (
+            <div>
+              <Button onClick={retry}>Try again</Button>
+            </div>
+          )}
+        </div>
+      )}
 
-        {error === undefined ? null : (
-          <div className="v-stack v-stack--3">
-            <ErrorMessage testId="memberships-failed">{error}</ErrorMessage>
-            {retry === undefined ? null : (
-              <div>
-                <Button onClick={retry}>Try again</Button>
-              </div>
-            )}
-          </div>
-        )}
+      {!loading && error === undefined && rows.length === 0 ? (
+        <p className="v-small v-muted" data-testid="memberships-empty">
+          You are not paying for anything. A creator&apos;s page shows what they
+          sell, if they sell anything.
+        </p>
+      ) : null}
 
-        {!loading && error === undefined && rows.length === 0 ? (
-          <p className="v-small v-muted" data-testid="memberships-empty">
-            You are not paying for anything. A creator&apos;s page shows what
-            they sell, if they sell anything.
-          </p>
-        ) : null}
-
-        {rows.length === 0 ? null : (
-          <ul className="v-list v-list--divided" data-testid="memberships-list">
-            {rows.map((row) => (
-              <li data-testid={`membership-${row.id}`} key={row.id}>
-                <PaidMembership
-                  club={
-                    row.resource === undefined
-                      ? undefined
-                      : clubs.get(row.resource.id)
-                  }
-                  onChanged={onChanged}
-                  row={row}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
+      {rows.length === 0 ? null : (
+        <ul className="v-list v-list--divided" data-testid="memberships-list">
+          {rows.map((row) => (
+            <li data-testid={`membership-${row.id}`} key={row.id}>
+              <PaidMembership
+                club={
+                  row.resource === undefined
+                    ? undefined
+                    : clubs.get(row.resource.id)
+                }
+                onChanged={onChanged}
+                row={row}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   );
 }
 
@@ -343,47 +334,37 @@ function Invitations({
   readonly rows: readonly ClubAccess[];
 }) {
   return (
-    <section
-      aria-labelledby="clubs-heading"
-      className="v-card"
-      data-testid="club-access-card"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="clubs-heading">
-          Private clubs
-        </h2>
+    <Section raised testId="club-access-card" title="Private clubs">
+      {loading ? <RowSkeleton rows={2} /> : null}
 
-        {loading ? <RowSkeleton rows={2} /> : null}
+      {error === undefined ? null : (
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="club-access-failed">{error}</ErrorMessage>
+          {retry === undefined ? null : (
+            <div>
+              <Button onClick={retry}>Try again</Button>
+            </div>
+          )}
+        </div>
+      )}
 
-        {error === undefined ? null : (
-          <div className="v-stack v-stack--3">
-            <ErrorMessage testId="club-access-failed">{error}</ErrorMessage>
-            {retry === undefined ? null : (
-              <div>
-                <Button onClick={retry}>Try again</Button>
-              </div>
-            )}
-          </div>
-        )}
+      {!loading && error === undefined && rows.length === 0 ? (
+        <p className="v-small v-muted" data-testid="club-access-empty">
+          You are not in any private club by invitation. A creator lets somebody
+          in by sending them one directly; there is no way to ask.
+        </p>
+      ) : null}
 
-        {!loading && error === undefined && rows.length === 0 ? (
-          <p className="v-small v-muted" data-testid="club-access-empty">
-            You are not in any private club by invitation. A creator lets
-            somebody in by sending them one directly; there is no way to ask.
-          </p>
-        ) : null}
-
-        {rows.length === 0 ? null : (
-          <ul className="v-list v-list--divided" data-testid="club-access-list">
-            {rows.map((row) => (
-              <li data-testid={`club-access-${row.clubId}`} key={row.clubId}>
-                <Invitation onChanged={onChanged} row={row} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
+      {rows.length === 0 ? null : (
+        <ul className="v-list v-list--divided" data-testid="club-access-list">
+          {rows.map((row) => (
+            <li data-testid={`club-access-${row.clubId}`} key={row.clubId}>
+              <Invitation onChanged={onChanged} row={row} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   );
 }
 
@@ -501,61 +482,48 @@ function PastMemberships({
   if (rows.length === 0 && invitations.length === 0) return null;
 
   return (
-    <section
-      aria-labelledby="past-heading"
-      className="v-card"
-      data-testid="past-memberships"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="past-heading">
-          Ended
-        </h2>
-        <ul className="v-list v-list--divided">
-          {rows.map((row) => {
-            const club =
-              row.resource === undefined
-                ? undefined
-                : clubs.get(row.resource.id);
-            return (
-              <li data-testid={`past-membership-${row.id}`} key={row.id}>
-                <div className="v-row">
-                  <span className="v-row__body">
-                    <span className="v-subheading v-wrap">
-                      {club?.clubName ?? 'Membership'}
-                    </span>
-                    <span className="v-caption v-quiet">
-                      <span className="v-numeric">
-                        {formatPrice(row.amount)}
-                      </span>
-                      {row.cancelledAt === undefined
-                        ? null
-                        : ` · ended ${formatDay(row.cancelledAt)}`}
-                    </span>
-                  </span>
-                  <Badge tone="neutral">Ended</Badge>
-                </div>
-              </li>
-            );
-          })}
-          {invitations.map((row) => (
-            <li data-testid={`past-club-${row.clubId}`} key={row.clubId}>
+    <Section raised testId="past-memberships" title="Ended">
+      <ul className="v-list v-list--divided">
+        {rows.map((row) => {
+          const club =
+            row.resource === undefined ? undefined : clubs.get(row.resource.id);
+          return (
+            <li data-testid={`past-membership-${row.id}`} key={row.id}>
               <div className="v-row">
                 <span className="v-row__body">
-                  <span className="v-subheading v-wrap">{row.clubName}</span>
+                  <span className="v-subheading v-wrap">
+                    {club?.clubName ?? 'Membership'}
+                  </span>
                   <span className="v-caption v-quiet">
-                    @{row.creatorHandle}
-                    {row.endedAt === undefined
+                    <span className="v-numeric">{formatPrice(row.amount)}</span>
+                    {row.cancelledAt === undefined
                       ? null
-                      : ` · ended ${formatDay(row.endedAt)}`}
+                      : ` · ended ${formatDay(row.cancelledAt)}`}
                   </span>
                 </span>
                 <Badge tone="neutral">Ended</Badge>
               </div>
             </li>
-          ))}
-        </ul>
-      </div>
-    </section>
+          );
+        })}
+        {invitations.map((row) => (
+          <li data-testid={`past-club-${row.clubId}`} key={row.clubId}>
+            <div className="v-row">
+              <span className="v-row__body">
+                <span className="v-subheading v-wrap">{row.clubName}</span>
+                <span className="v-caption v-quiet">
+                  @{row.creatorHandle}
+                  {row.endedAt === undefined
+                    ? null
+                    : ` · ended ${formatDay(row.endedAt)}`}
+                </span>
+              </span>
+              <Badge tone="neutral">Ended</Badge>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
@@ -569,11 +537,7 @@ function RedeemInvitation({ onRedeemed }: { readonly onRedeemed: () => void }) {
   const { busy, run } = useSingleFlight();
 
   return (
-    <section
-      aria-labelledby="redeem-heading"
-      className="v-card"
-      data-testid="club-redeem-card"
-    >
+    <Section raised testId="club-redeem-card" title="Have an invitation?">
       <form
         className="v-stack v-stack--4"
         onSubmit={(event) => {
@@ -598,9 +562,6 @@ function RedeemInvitation({ onRedeemed }: { readonly onRedeemed: () => void }) {
           });
         }}
       >
-        <h2 className="v-subheading" id="redeem-heading">
-          Have an invitation?
-        </h2>
         <Field
           error={error}
           hint="A creator sends this to you directly. It works once, and you will not see it again after that."
@@ -633,7 +594,7 @@ function RedeemInvitation({ onRedeemed }: { readonly onRedeemed: () => void }) {
           </Button>
         </div>
       </form>
-    </section>
+    </Section>
   );
 }
 
@@ -663,61 +624,50 @@ function PaymentHistory({
   if (payments.value !== undefined && rows.length === 0) return null;
 
   return (
-    <section
-      aria-labelledby="payments-heading"
-      className="v-card"
-      data-testid="payment-history"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="payments-heading">
-          Payments
-        </h2>
-        {payments.value === undefined ? (
-          payments.error === undefined ? (
-            <RowSkeleton rows={2} />
-          ) : (
-            <ErrorMessage testId="payments-failed">
-              {payments.error}
-            </ErrorMessage>
-          )
+    <Section raised testId="payment-history" title="Payments">
+      {payments.value === undefined ? (
+        payments.error === undefined ? (
+          <RowSkeleton rows={2} />
         ) : (
-          <ul className="v-list v-list--divided">
-            {rows.map((row) => {
-              const look = paymentStateLook(row.state);
-              const club =
-                row.resource === undefined
-                  ? undefined
-                  : clubs.get(row.resource.id);
-              return (
-                <li data-testid={`payment-${row.id}`} key={row.id}>
-                  <div className="v-row">
-                    <span className="v-row__body">
-                      <span className="v-subheading v-numeric">
-                        {formatPrice(row.amount)}
-                      </span>
-                      <span className="v-caption v-quiet">
-                        {club?.clubName ?? 'VELORA'} ·{' '}
-                        <time dateTime={row.createdAt}>
-                          {formatDay(row.createdAt)}
-                        </time>
-                        {row.failureReason === undefined
-                          ? null
-                          : ` · ${paymentFailureLabels[row.failureReason] ?? ''}`}
-                      </span>
+          <ErrorMessage testId="payments-failed">{payments.error}</ErrorMessage>
+        )
+      ) : (
+        <ul className="v-list v-list--divided">
+          {rows.map((row) => {
+            const look = paymentStateLook(row.state);
+            const club =
+              row.resource === undefined
+                ? undefined
+                : clubs.get(row.resource.id);
+            return (
+              <li data-testid={`payment-${row.id}`} key={row.id}>
+                <div className="v-row">
+                  <span className="v-row__body">
+                    <span className="v-subheading v-numeric">
+                      {formatPrice(row.amount)}
                     </span>
-                    <Badge tone={look.tone}>{look.label}</Badge>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <Notice icon="info" testId="payments-not-receipts" tone="quiet">
-          This is a record of what was attempted, not a receipt. What a receipt
-          has to say is a commercial and tax question VELORA has not answered,
-          and it will not pretend otherwise.
-        </Notice>
-      </div>
-    </section>
+                    <span className="v-caption v-quiet">
+                      {club?.clubName ?? 'VELORA'} ·{' '}
+                      <time dateTime={row.createdAt}>
+                        {formatDay(row.createdAt)}
+                      </time>
+                      {row.failureReason === undefined
+                        ? null
+                        : ` · ${paymentFailureLabels[row.failureReason] ?? ''}`}
+                    </span>
+                  </span>
+                  <Badge tone={look.tone}>{look.label}</Badge>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Notice icon="info" testId="payments-not-receipts" tone="quiet">
+        This is a record of what was attempted, not a receipt. What a receipt
+        has to say is a commercial and tax question VELORA has not answered, and
+        it will not pretend otherwise.
+      </Notice>
+    </Section>
   );
 }

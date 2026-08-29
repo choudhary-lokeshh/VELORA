@@ -26,7 +26,12 @@ import {
 } from '../design/primitives';
 import { backTarget } from '../app/navigation';
 import { useApi, useSession } from '../app/providers';
-import { cadenceLabels, formatPrice, membershipSourceLabels } from './commerce';
+import {
+  cadenceLabels,
+  commerceGateLabels,
+  formatPrice,
+  membershipSourceLabels,
+} from './commerce';
 import { useAddressesFrom } from './imagery';
 import { formatDay } from './locale';
 import { useResource } from './resource';
@@ -351,10 +356,23 @@ function LockedClub({
           </>
         )}
         {signedIn && prices.length > 0 && gates.length > 0 ? (
-          <p className="v-caption v-quiet" data-testid="club-join-blocked">
-            You cannot join this today. Nothing about that is something you can
-            fix from here.
-          </p>
+          /*
+            Which gate is shut, in the same words the creator's page and the
+            join page use. This said only "you cannot join this today" before,
+            which is a refusal with the reason removed — and the reason is never
+            something the reader did, so there is nothing to spare them from.
+          */
+          <div className="v-stack v-stack--2" data-testid="club-join-blocked">
+            <p className="v-caption v-quiet">
+              VELORA cannot sell this to you today. Nothing about that is
+              something you can fix from here, and nothing has been charged.
+            </p>
+            <ul className="v-benefits">
+              {gates.map((gate) => (
+                <li key={gate}>{commerceGateLabels[gate] ?? gate}</li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
     </Card>

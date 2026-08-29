@@ -79,6 +79,67 @@
   min-width: 0;
 }
 
+/*
+ * The bar names the page only while the page does not name itself.
+ *
+ * A phone keeps this bar, and the page's own heading is directly beneath it, so
+ * at rest the two printed the same word twice a few pixels apart. The name now
+ * moves into the bar as the heading scrolls out from under it and moves back
+ * when it returns — which is the moment the bar is actually carrying
+ * information rather than repeating some.
+ *
+ * `visibility` rather than `display`, so the row keeps its shape and the
+ * controls either side of the title do not shift as it comes and goes.
+ */
+.v-topbar__title[data-shown='false'] {
+  opacity: 0;
+  transform: translateY(4px);
+  visibility: hidden;
+}
+
+.v-topbar__title[data-shown='true'] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+  visibility: visible;
+}
+
+/*
+ * A Back that says where it goes.
+ *
+ * Built on the icon button so the target and the focus treatment are the
+ * platform's own, with room for the word beside the arrow.
+ */
+.v-topbar__back {
+  align-items: center;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.v-topbar__back:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* On a phone the arrow alone is unambiguous, and the bar is already carrying a
+   title and an account control at 320 px. */
+@media (width < 768px) {
+  .v-topbar__back-label {
+    display: none;
+  }
+}
+
 .v-tabbar {
   background: color-mix(in srgb, var(--canvas) 92%, transparent);
   backdrop-filter: blur(16px);

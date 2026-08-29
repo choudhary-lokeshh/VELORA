@@ -90,24 +90,43 @@ export function Welcome() {
           <Icon name="sparkle" size="md" />
           VELORA
         </Link>
-        <ol className="v-steps" data-testid="welcome-progress">
-          {ladder.map((step, index) => (
-            <li
-              className={`v-steps__step${
-                index < position
-                  ? ' v-steps__step--done'
-                  : index === position
-                    ? ' v-steps__step--current'
-                    : ''
-              }`}
-              key={step}
-            >
-              <span className="v-visually-hidden">
-                Step {index + 1} of {ladder.length}
-              </span>
-            </li>
-          ))}
-        </ol>
+        {/*
+          Where somebody is on the server's ladder, said once and said in a way
+          that does not depend on colour.
+
+          Each bar used to carry the same hidden sentence as every other bar —
+          four readings of "Step N of 4" with nothing saying which one was the
+          current step — and the current step was marked by a fill colour alone.
+          The list is now named, the bar somebody is on is marked as the current
+          step, and the sentence is written once, visibly, where anybody can
+          read it.
+        */}
+        <div className="v-steps-line">
+          <ol
+            aria-label="Setting up your account"
+            className="v-steps"
+            data-testid="welcome-progress"
+          >
+            {ladder.map((step, index) => (
+              <li
+                aria-current={index === position ? 'step' : undefined}
+                className={`v-steps__step${
+                  index < position
+                    ? ' v-steps__step--done'
+                    : index === position
+                      ? ' v-steps__step--current'
+                      : ''
+                }`}
+                key={step}
+              />
+            ))}
+          </ol>
+          <p className="v-caption v-quiet" data-testid="welcome-step-count">
+            {position < 0
+              ? 'Getting your next step'
+              : `Step ${String(position + 1)} of ${String(ladder.length)}`}
+          </p>
+        </div>
       </header>
 
       <main className="v-stack v-stack--6" id="main">

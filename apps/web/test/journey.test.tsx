@@ -864,6 +864,9 @@ describe('messaging', () => {
   it('keeps an AI reply editable and separate from Send', async () => {
     const double = await openConversation();
     await type('Message Robin', 'coffee after work');
+    // The assistant is folded away in a conversation, so it is one control
+    // until somebody asks for it.
+    await click('message-ai-open');
     await click('message-ai-generate');
     await screen.findByTestId('message-ai-suggestion');
     await click('message-ai-replace');
@@ -985,6 +988,33 @@ describe('messaging', () => {
     });
     expect(screen.queryByTestId('message-retry')).toBeNull();
     expect(screen.getByTestId('message-discard')).toBeTruthy();
+  });
+
+  it('leaves an unsent message in one place, with one safe way to send it', async () => {
+    const double = await openConversation();
+
+    double.failNext('/v1/messaging/messages', 'POST');
+    await type('Message Robin', 'said once');
+    await click('message-send');
+    await screen.findByTestId('message-send-failed');
+
+    // The words are in the unsent message and nowhere else. Leaving them in the
+    // box as well offered Send beside Try again — and Send makes a second
+    // identifier, which is a second message if the first attempt committed
+    // before its answer was lost.
+    expect(screen.getByTestId<HTMLTextAreaElement>('message-body').value).toBe(
+      '',
+    );
+    expect(screen.getByTestId('message-pending').textContent).toContain(
+      'said once',
+    );
+
+    // Changing it before trying again is a deliberate second identifier.
+    await click('message-edit');
+    expect(screen.getByTestId<HTMLTextAreaElement>('message-body').value).toBe(
+      'said once',
+    );
+    expect(screen.queryByTestId('message-pending')).toBeNull();
   });
 
   it('closes the composer when the conversation is closed', async () => {

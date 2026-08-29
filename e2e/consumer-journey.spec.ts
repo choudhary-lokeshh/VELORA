@@ -297,6 +297,8 @@ test.describe('Consumer Web product journey', () => {
 
     const written = `A message written in a browser at ${String(Date.now())}`;
     await page.getByTestId('message-body').fill('coffee after work');
+    // Folded away until asked for: a conversation is not a workbench.
+    await page.getByTestId('message-ai-open').click();
     await page.getByTestId('message-ai-generate').click();
     const suggestion = page.getByTestId('message-ai-suggestion');
     await expect(suggestion).toHaveValue('Coffee after work.');

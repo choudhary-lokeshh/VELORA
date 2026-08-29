@@ -193,4 +193,77 @@ test.describe('Consumer Web navigation', () => {
     await page.getByTestId('topbar-back').click();
     await page.waitForURL(/\/you$/u);
   });
+
+  test('names the destination a desktop Back returns to', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort needs a person');
+
+    // On a wide window the bar holds nothing but this control, and an arrow on
+    // its own does not say that Sent gifts is part of You.
+    await page.setViewportSize({ height: 900, width: 1440 });
+    await signInAdmitted(page, person.subject);
+    await page.goto(`${consumerWebOrigin}/you/gifts`);
+
+    const back = page.getByTestId('topbar-back');
+    await expect(back).toBeVisible();
+    await expect(back).toHaveAttribute('aria-label', 'Back to You');
+    await expect(back).toContainText('You');
+  });
+
+  test('says a page name once, and says it in the bar only once the heading has gone', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort needs a person');
+
+    // A phone keeps the bar, and the page heading is directly under it. Both
+    // printing the same word is the state this replaced.
+    await page.setViewportSize({ height: 740, width: 390 });
+    await signInAdmitted(page, person.subject);
+
+    const heading = page.getByRole('heading', { level: 1, name: 'Discover' });
+    await expect(heading).toBeVisible();
+    const barTitle = page.locator('.v-topbar__title');
+    await expect(barTitle).toHaveAttribute('data-shown', 'false');
+    await expect(barTitle).toBeHidden();
+
+    // And it is not deleted: scrolling the heading away is exactly when the bar
+    // has something to say. The page is scrolled rather than the wheel turned,
+    // because a wheel event is delivered differently by each engine and the
+    // assertion here is about what the bar does at a scroll position, not about
+    // how somebody got there.
+    await page.evaluate(() => {
+      window.scrollTo(0, 900);
+    });
+    await expect(barTitle).toHaveAttribute('data-shown', 'true');
+    await expect(barTitle).toBeVisible();
+    await expect(barTitle).toHaveText('Discover');
+
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+    await expect(barTitle).toHaveAttribute('data-shown', 'false');
+  });
+
+  test('keeps which introductions are being read in the address', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort needs a person');
+
+    await signInAdmitted(page, person.subject);
+    await page.goto(`${consumerWebOrigin}/introductions`);
+    await page.getByTestId('segment-mutual').click();
+    await page.waitForURL(/\/introductions\?show=mutual$/u);
+
+    // A reload is the test: a group held only in component state comes back on
+    // the default one, and a link to it could never have been sent at all.
+    await page.reload();
+    await expect(page.getByTestId('segment-mutual')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
 });

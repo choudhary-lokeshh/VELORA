@@ -9,14 +9,14 @@ import { useAccount, useApi, useSession, useToast } from '../app/providers';
 import { ConfirmDialog } from '../design/dialog';
 import {
   Button,
-  Card,
   ErrorMessage,
   Notice,
   PageHeader,
+  Section,
   Skeleton,
   Switch,
 } from '../design/primitives';
-import { regionName } from './locale';
+import { formatFullDay, regionName } from './locale';
 import { useResource, useSingleFlight } from './resource';
 
 /**
@@ -100,79 +100,67 @@ function NotificationPreferences() {
   };
 
   return (
-    <section
-      aria-labelledby="notices-heading"
-      className="v-card"
-      data-testid="notice-preferences"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="notices-heading">
-          Notices
-        </h2>
+    <Section raised testId="notice-preferences" title="Notices">
+      <Notice
+        icon="lock"
+        testId="notice-delivery-blocked"
+        title="Nothing is sent outside VELORA yet"
+        tone="quiet"
+      >
+        No email or push provider is approved, and a website cannot be a push
+        destination in any case. These choices are stored and will apply the day
+        a channel exists; until then every notice waits for you on the Notices
+        page.
+      </Notice>
 
-        <Notice
-          icon="lock"
-          testId="notice-delivery-blocked"
-          title="Nothing is sent outside VELORA yet"
-          tone="quiet"
-        >
-          No email or push provider is approved, and a website cannot be a push
-          destination in any case. These choices are stored and will apply the
-          day a channel exists; until then every notice waits for you on the
-          Notices page.
-        </Notice>
-
-        {preferences.loading && preferences.value === undefined ? (
-          <div className="v-stack v-stack--3">
-            <Skeleton height={20} />
-            <Skeleton height={20} />
-          </div>
-        ) : null}
-
-        {preferences.error === undefined ? null : (
-          <div className="v-stack v-stack--3">
-            <ErrorMessage testId="notice-preferences-failed">
-              {preferences.error}
-            </ErrorMessage>
-            {preferences.retryable ? (
-              <div>
-                <Button onClick={preferences.reload}>Try again</Button>
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {!preferences.loading &&
-        preferences.error === undefined &&
-        rows.length === 0 ? (
-          <p className="v-small v-quiet" data-testid="notice-preferences-empty">
-            There is nothing to decide yet. Notices you cannot switch off —
-            account security, safety, and legal — are never offered as a choice.
-          </p>
-        ) : null}
-
-        <div className="v-stack v-stack--2">
-          {rows.map((preference) => {
-            const key = preferenceKey(preference);
-            return (
-              <Switch
-                checked={preference.enabled}
-                description={`Reach me ${channelLabels[preference.channel] ?? preference.channel}.`}
-                disabled={saving !== undefined}
-                key={key}
-                label={
-                  categoryLabels[preference.category] ?? preference.category
-                }
-                onChange={(next) => {
-                  set(preference, next);
-                }}
-                testId={`notice-${key}`}
-              />
-            );
-          })}
+      {preferences.loading && preferences.value === undefined ? (
+        <div className="v-stack v-stack--3">
+          <Skeleton height={20} />
+          <Skeleton height={20} />
         </div>
+      ) : null}
+
+      {preferences.error === undefined ? null : (
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="notice-preferences-failed">
+            {preferences.error}
+          </ErrorMessage>
+          {preferences.retryable ? (
+            <div>
+              <Button onClick={preferences.reload}>Try again</Button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {!preferences.loading &&
+      preferences.error === undefined &&
+      rows.length === 0 ? (
+        <p className="v-small v-quiet" data-testid="notice-preferences-empty">
+          There is nothing to decide yet. Notices you cannot switch off —
+          account security, safety, and legal — are never offered as a choice.
+        </p>
+      ) : null}
+
+      <div className="v-stack v-stack--2">
+        {rows.map((preference) => {
+          const key = preferenceKey(preference);
+          return (
+            <Switch
+              checked={preference.enabled}
+              description={`Reach me ${channelLabels[preference.channel] ?? preference.channel}.`}
+              disabled={saving !== undefined}
+              key={key}
+              label={categoryLabels[preference.category] ?? preference.category}
+              onChange={(next) => {
+                set(preference, next);
+              }}
+              testId={`notice-${key}`}
+            />
+          );
+        })}
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -182,40 +170,33 @@ function AccountCard() {
   const region = regionName(current?.region);
 
   return (
-    <Card testId="account-card">
-      <div className="v-stack v-stack--4">
-        <h2 className="v-subheading">Account</h2>
-        <dl className="v-stack v-stack--3">
+    <Section gap={4} raised testId="account-card" title="Account">
+      <dl className="v-stack v-stack--3">
+        <div className="v-inline v-inline--between">
+          <dt className="v-small v-muted">Member since</dt>
+          <dd className="v-small">
+            {current === undefined ? (
+              <Skeleton height={14} width={90} />
+            ) : (
+              <time dateTime={current.createdAt}>
+                {formatFullDay(current.createdAt)}
+              </time>
+            )}
+          </dd>
+        </div>
+        {region === undefined ? null : (
           <div className="v-inline v-inline--between">
-            <dt className="v-small v-muted">Member since</dt>
-            <dd className="v-small">
-              {current === undefined ? (
-                <Skeleton height={14} width={90} />
-              ) : (
-                <time dateTime={current.createdAt}>
-                  {new Date(current.createdAt).toLocaleDateString(undefined, {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </time>
-              )}
-            </dd>
+            <dt className="v-small v-muted">Country</dt>
+            <dd className="v-small">{region}</dd>
           </div>
-          {region === undefined ? null : (
-            <div className="v-inline v-inline--between">
-              <dt className="v-small v-muted">Country</dt>
-              <dd className="v-small">{region}</dd>
-            </div>
-          )}
-        </dl>
-        <p className="v-caption v-quiet">
-          Closing your account is not something this page can do yet. Deletion
-          reaches every domain that holds anything about you, and that path is
-          not finished.
-        </p>
-      </div>
-    </Card>
+        )}
+      </dl>
+      <p className="v-caption v-quiet">
+        Closing your account is not something this page can do yet. Deletion
+        reaches every domain that holds anything about you, and that path is not
+        finished.
+      </p>
+    </Section>
   );
 }
 
@@ -225,33 +206,30 @@ function SessionCard() {
   const { busy, run } = useSingleFlight();
 
   return (
-    <Card testId="session-card">
-      <div className="v-stack v-stack--4">
-        <h2 className="v-subheading">This device</h2>
-        <p className="v-small v-muted">
-          Signing out here ends this browser&apos;s session. Signing out
-          everywhere ends every session on every device you are signed in on.
-        </p>
-        <div className="v-inline">
-          <Button
-            busy={session.busy}
-            data-testid="auth-sign-out"
-            icon="logOut"
-            onClick={session.signOut}
-          >
-            Sign out
-          </Button>
-          <Button
-            data-testid="auth-sign-out-everywhere"
-            disabled={session.busy || busy}
-            onClick={() => {
-              setConfirming(true);
-            }}
-            tone="ghost"
-          >
-            Sign out everywhere
-          </Button>
-        </div>
+    <Section gap={4} raised testId="session-card" title="This device">
+      <p className="v-small v-muted">
+        Signing out here ends this browser&apos;s session. Signing out
+        everywhere ends every session on every device you are signed in on.
+      </p>
+      <div className="v-inline">
+        <Button
+          busy={session.busy}
+          data-testid="auth-sign-out"
+          icon="logOut"
+          onClick={session.signOut}
+        >
+          Sign out
+        </Button>
+        <Button
+          data-testid="auth-sign-out-everywhere"
+          disabled={session.busy || busy}
+          onClick={() => {
+            setConfirming(true);
+          }}
+          tone="ghost"
+        >
+          Sign out everywhere
+        </Button>
       </div>
 
       {confirming ? (
@@ -277,6 +255,6 @@ function SessionCard() {
           </p>
         </ConfirmDialog>
       ) : null}
-    </Card>
+    </Section>
   );
 }

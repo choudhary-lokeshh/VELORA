@@ -16,11 +16,12 @@ import {
   Notice,
   PageHeader,
   RowSkeleton,
+  Section,
   TextArea,
   type Tone,
   toneOf,
 } from '../design/primitives';
-import { formatRelative } from './locale';
+import { formatFullDay, formatRelative } from './locale';
 import { useResource, useSingleFlight } from './resource';
 
 /**
@@ -146,113 +147,103 @@ function StandingCard() {
   };
 
   return (
-    <section
-      aria-labelledby="standing-heading"
-      className="v-card"
-      data-testid="standing-card"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="standing-heading">
-          Decisions about your account
-        </h2>
+    <Section raised testId="standing-card" title="Decisions about your account">
+      {standing.loading && standing.value === undefined ? (
+        <RowSkeleton rows={1} />
+      ) : null}
+      {standing.error === undefined ? null : (
+        <ErrorMessage testId="standing-failed">{standing.error}</ErrorMessage>
+      )}
 
-        {standing.loading && standing.value === undefined ? (
-          <RowSkeleton rows={1} />
-        ) : null}
-        {standing.error === undefined ? null : (
-          <ErrorMessage testId="standing-failed">{standing.error}</ErrorMessage>
-        )}
+      {!standing.loading &&
+      standing.error === undefined &&
+      statements.length === 0 ? (
+        <p className="v-small v-muted" data-testid="standing-empty">
+          Nothing is restricted on your account.
+        </p>
+      ) : null}
 
-        {!standing.loading &&
-        standing.error === undefined &&
-        statements.length === 0 ? (
-          <p className="v-small v-muted" data-testid="standing-empty">
-            Nothing is restricted on your account.
-          </p>
-        ) : null}
-
-        {statements.length === 0 ? null : (
-          <ul className="v-list v-list--divided" data-testid="standing-list">
-            {statements.map((statement) => (
-              <li key={statement.decisionId}>
-                <div className="v-row" style={{ alignItems: 'flex-start' }}>
-                  <span className="v-notification__mark">
-                    <Icon name="alert" size="md" />
+      {statements.length === 0 ? null : (
+        <ul className="v-list v-list--divided" data-testid="standing-list">
+          {statements.map((statement) => (
+            <li key={statement.decisionId}>
+              <div className="v-row" style={{ alignItems: 'flex-start' }}>
+                <span className="v-notification__mark">
+                  <Icon name="alert" size="md" />
+                </span>
+                <span className="v-row__body">
+                  <span className="v-subheading">
+                    {denialLabels[statement.reasonCode] ??
+                      'A decision was made about your account.'}
                   </span>
-                  <span className="v-row__body">
-                    <span className="v-subheading">
-                      {denialLabels[statement.reasonCode] ??
-                        'A decision was made about your account.'}
+                  <span className="v-caption v-quiet">
+                    {scopeLabels[statement.scope] ?? ''}{' '}
+                    {statement.appealWindowClosesAt === undefined
+                      ? ''
+                      : `You can ask us to look again until ${formatFullDay(
+                          statement.appealWindowClosesAt,
+                        )}.`}
+                  </span>
+                  {statement.appealable ? (
+                    <span style={{ marginTop: 'var(--space-2)' }}>
+                      <Button
+                        data-testid={`appeal-${statement.decisionId}`}
+                        disabled={busy}
+                        onClick={() => {
+                          setAppealing(statement);
+                        }}
+                        size="sm"
+                      >
+                        Ask us to look again
+                      </Button>
                     </span>
-                    <span className="v-caption v-quiet">
-                      {scopeLabels[statement.scope] ?? ''}{' '}
-                      {statement.appealWindowClosesAt === undefined
-                        ? ''
-                        : `You can ask us to look again until ${new Date(
-                            statement.appealWindowClosesAt,
-                          ).toLocaleDateString()}.`}
-                    </span>
-                    {statement.appealable ? (
-                      <span style={{ marginTop: 'var(--space-2)' }}>
-                        <Button
-                          data-testid={`appeal-${statement.decisionId}`}
-                          disabled={busy}
-                          onClick={() => {
-                            setAppealing(statement);
-                          }}
-                          size="sm"
-                        >
-                          Ask us to look again
-                        </Button>
+                  ) : null}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {complaints.length === 0 ? null : (
+        <>
+          <h3 className="v-label v-quiet">Your requests</h3>
+          <ul className="v-list v-list--divided" data-testid="appeal-list">
+            {complaints.map((appeal) => {
+              const shown = appealLabels[appeal.state] ?? {
+                label: 'Recorded',
+                tone: 'neutral' as Tone,
+              };
+              return (
+                <li key={appeal.id}>
+                  <div className="v-row">
+                    <span className="v-row__body">
+                      <Badge tone={shown.tone}>{shown.label}</Badge>
+                      <span className="v-caption v-quiet">
+                        Sent {formatRelative(appeal.submittedAt)}
                       </span>
+                    </span>
+                    {appeal.state === 'received' ||
+                    appeal.state === 'under_review' ? (
+                      <Button
+                        data-testid={`withdraw-${appeal.id}`}
+                        disabled={busy}
+                        onClick={() => {
+                          setWithdrawing(appeal.id);
+                        }}
+                        size="sm"
+                        tone="ghost"
+                      >
+                        Withdraw
+                      </Button>
                     ) : null}
-                  </span>
-                </div>
-              </li>
-            ))}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
-        )}
-
-        {complaints.length === 0 ? null : (
-          <>
-            <h3 className="v-label v-quiet">Your requests</h3>
-            <ul className="v-list v-list--divided" data-testid="appeal-list">
-              {complaints.map((appeal) => {
-                const shown = appealLabels[appeal.state] ?? {
-                  label: 'Recorded',
-                  tone: 'neutral' as Tone,
-                };
-                return (
-                  <li key={appeal.id}>
-                    <div className="v-row">
-                      <span className="v-row__body">
-                        <Badge tone={shown.tone}>{shown.label}</Badge>
-                        <span className="v-caption v-quiet">
-                          Sent {formatRelative(appeal.submittedAt)}
-                        </span>
-                      </span>
-                      {appeal.state === 'received' ||
-                      appeal.state === 'under_review' ? (
-                        <Button
-                          data-testid={`withdraw-${appeal.id}`}
-                          disabled={busy}
-                          onClick={() => {
-                            setWithdrawing(appeal.id);
-                          }}
-                          size="sm"
-                          tone="ghost"
-                        >
-                          Withdraw
-                        </Button>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </>
-        )}
-      </div>
+        </>
+      )}
 
       {appealing === undefined ? null : (
         <AppealDialog
@@ -298,7 +289,7 @@ function StandingCard() {
           </p>
         </ConfirmDialog>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -378,75 +369,63 @@ function BlockedCard() {
   const blocked = blocks.value?.blocks ?? [];
 
   return (
-    <section
-      aria-labelledby="blocked-heading"
-      className="v-card"
-      data-testid="blocked-card"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="blocked-heading">
-          People you have blocked
-        </h2>
+    <Section raised testId="blocked-card" title="People you have blocked">
+      {blocks.loading && blocks.value === undefined ? (
+        <RowSkeleton rows={2} />
+      ) : null}
+      {blocks.error === undefined ? null : (
+        <ErrorMessage testId="blocks-failed">{blocks.error}</ErrorMessage>
+      )}
 
-        {blocks.loading && blocks.value === undefined ? (
-          <RowSkeleton rows={2} />
-        ) : null}
-        {blocks.error === undefined ? null : (
-          <ErrorMessage testId="blocks-failed">{blocks.error}</ErrorMessage>
-        )}
+      {!blocks.loading && blocks.error === undefined && blocked.length === 0 ? (
+        <p className="v-small v-muted" data-testid="blocks-empty">
+          You have not blocked anybody. You can block or report somebody from
+          anywhere they appear.
+        </p>
+      ) : null}
 
-        {!blocks.loading &&
-        blocks.error === undefined &&
-        blocked.length === 0 ? (
-          <p className="v-small v-muted" data-testid="blocks-empty">
-            You have not blocked anybody. You can block or report somebody from
-            anywhere they appear.
-          </p>
-        ) : null}
-
-        {blocked.length === 0 ? null : (
-          <>
-            <Notice tone="quiet">
-              VELORA does not keep a name against a block, so this list shows
-              when you blocked somebody rather than who. Unblocking lets them
-              see you in discovery again; neither blocking nor unblocking tells
-              them anything.
-            </Notice>
-            <ul className="v-list v-list--divided" data-testid="block-list">
-              {blocked.map((block) => (
-                <li key={block.blockedId}>
-                  <div className="v-row">
-                    <span
-                      aria-hidden="true"
-                      className={`v-avatar v-avatar--sm v-avatar--tone-${String(
-                        toneOf(block.blockedId),
-                      )}`}
-                    >
-                      <Icon name="ban" size="sm" />
+      {blocked.length === 0 ? null : (
+        <>
+          <Notice tone="quiet">
+            VELORA does not keep a name against a block, so this list shows when
+            you blocked somebody rather than who. Unblocking lets them see you
+            in discovery again; neither blocking nor unblocking tells them
+            anything.
+          </Notice>
+          <ul className="v-list v-list--divided" data-testid="block-list">
+            {blocked.map((block) => (
+              <li key={block.blockedId}>
+                <div className="v-row">
+                  <span
+                    aria-hidden="true"
+                    className={`v-avatar v-avatar--sm v-avatar--tone-${String(
+                      toneOf(block.blockedId),
+                    )}`}
+                  >
+                    <Icon name="ban" size="sm" />
+                  </span>
+                  <span className="v-row__body">
+                    <span>Blocked person</span>
+                    <span className="v-caption v-quiet">
+                      Blocked {formatRelative(block.createdAt)}
                     </span>
-                    <span className="v-row__body">
-                      <span>Blocked person</span>
-                      <span className="v-caption v-quiet">
-                        Blocked {formatRelative(block.createdAt)}
-                      </span>
-                    </span>
-                    <Button
-                      data-testid={`unblock-${block.blockedId}`}
-                      disabled={busy}
-                      onClick={() => {
-                        setUnblocking(block.blockedId);
-                      }}
-                      size="sm"
-                    >
-                      Unblock
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
+                  </span>
+                  <Button
+                    data-testid={`unblock-${block.blockedId}`}
+                    disabled={busy}
+                    onClick={() => {
+                      setUnblocking(block.blockedId);
+                    }}
+                    size="sm"
+                  >
+                    Unblock
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {unblocking === undefined ? null : (
         <ConfirmDialog
@@ -478,7 +457,7 @@ function BlockedCard() {
           </p>
         </ConfirmDialog>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -494,70 +473,58 @@ function ReportsCard() {
   const rows = reports.value?.reports ?? [];
 
   return (
-    <section
-      aria-labelledby="reports-heading"
-      className="v-card"
-      data-testid="reports-card"
-    >
-      <div className="v-stack v-stack--5">
-        <h2 className="v-subheading" id="reports-heading">
-          Reports you have made
-        </h2>
+    <Section raised testId="reports-card" title="Reports you have made">
+      {reports.loading && reports.value === undefined ? (
+        <RowSkeleton rows={2} />
+      ) : null}
+      {reports.error === undefined ? null : (
+        <ErrorMessage testId="reports-failed">{reports.error}</ErrorMessage>
+      )}
 
-        {reports.loading && reports.value === undefined ? (
-          <RowSkeleton rows={2} />
-        ) : null}
-        {reports.error === undefined ? null : (
-          <ErrorMessage testId="reports-failed">{reports.error}</ErrorMessage>
-        )}
-
-        {/*
+      {/*
           A sentence rather than a full empty state: this is one section among
           three on a page, and three centred illustrations stacked down it would
           make an ordinary, unremarkable account look like a series of failures.
         */}
-        {!reports.loading &&
-        reports.error === undefined &&
-        rows.length === 0 ? (
-          <p className="v-small v-muted" data-testid="reports-empty">
-            You have not reported anybody. You can report somebody from anywhere
-            they appear, and they are never told who reported them.
-          </p>
-        ) : null}
+      {!reports.loading && reports.error === undefined && rows.length === 0 ? (
+        <p className="v-small v-muted" data-testid="reports-empty">
+          You have not reported anybody. You can report somebody from anywhere
+          they appear, and they are never told who reported them.
+        </p>
+      ) : null}
 
-        {rows.length === 0 ? null : (
-          <>
-            <ul className="v-list v-list--divided" data-testid="report-list">
-              {rows.map((report) => {
-                const state = reportStateLabels[report.state] ?? {
-                  label: 'Recorded',
-                  tone: 'neutral' as Tone,
-                };
-                return (
-                  <li key={report.id}>
-                    <div className="v-row">
-                      <span className="v-row__body">
-                        <span>
-                          {reportReasonLabels[report.reasonCode] ??
-                            report.reasonCode.replaceAll('_', ' ')}
-                        </span>
-                        <span className="v-caption v-quiet">
-                          Sent {formatRelative(report.createdAt)}
-                        </span>
+      {rows.length === 0 ? null : (
+        <>
+          <ul className="v-list v-list--divided" data-testid="report-list">
+            {rows.map((report) => {
+              const state = reportStateLabels[report.state] ?? {
+                label: 'Recorded',
+                tone: 'neutral' as Tone,
+              };
+              return (
+                <li key={report.id}>
+                  <div className="v-row">
+                    <span className="v-row__body">
+                      <span>
+                        {reportReasonLabels[report.reasonCode] ??
+                          report.reasonCode.replaceAll('_', ' ')}
                       </span>
-                      <Badge tone={state.tone}>{state.label}</Badge>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="v-caption v-quiet">
-              You are not told what happened after a report. An outcome told to
-              a reporter is an outcome the reported person can work out.
-            </p>
-          </>
-        )}
-      </div>
-    </section>
+                      <span className="v-caption v-quiet">
+                        Sent {formatRelative(report.createdAt)}
+                      </span>
+                    </span>
+                    <Badge tone={state.tone}>{state.label}</Badge>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="v-caption v-quiet">
+            You are not told what happened after a report. An outcome told to a
+            reporter is an outcome the reported person can work out.
+          </p>
+        </>
+      )}
+    </Section>
   );
 }

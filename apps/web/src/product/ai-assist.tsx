@@ -36,15 +36,24 @@ function isTone(value: string, tones: readonly UiTone[]): value is UiTone {
  * A suggestion workbench, not an action control. Text stays in React state
  * until its owner explicitly replaces the adjacent form draft, and the form's
  * existing Save or Send action remains a separate decision.
+ *
+ * `folded` is for the places where the workbench is not the work. A profile
+ * form is a bench already, and a panel among its fields belongs there; a
+ * conversation is two people talking, and a permanent assistant panel under the
+ * composer makes the quietest screen in the product the busiest one. Folded, it
+ * is one control until somebody asks for it — and it is the same panel, with
+ * the same words about what it has and has not done, once they do.
  */
 export function ConsumerAiAssist({
   capability,
   draft,
+  folded = false,
   onReplace,
   testId,
 }: {
   readonly capability: ConsumerAiCapability;
   readonly draft: string;
+  readonly folded?: boolean;
   readonly onReplace: (text: string) => void;
   readonly testId: string;
 }) {
@@ -57,6 +66,7 @@ export function ConsumerAiAssist({
   const [tone, setTone] = useState<UiTone>(
     capability === 'consumer_chat_reply' ? 'friendly' : 'warm',
   );
+  const [open, setOpen] = useState(!folded);
   const tones = capability === 'consumer_chat_reply' ? chatTones : profileTones;
 
   useEffect(
@@ -107,14 +117,47 @@ export function ConsumerAiAssist({
     void api.cancelAi(runId);
   };
 
+  if (folded && !open) {
+    return (
+      <div className="v-assist-fold">
+        <Button
+          data-testid={`${testId}-open`}
+          icon="sparkle"
+          onClick={() => {
+            setOpen(true);
+          }}
+          size="sm"
+          tone="ghost"
+        >
+          Writing assist
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <Card testId={testId}>
       <div className="v-stack v-stack--4">
-        <div className="v-stack v-stack--1">
-          <p className="v-subheading">Writing assist</p>
-          <p className="v-caption v-quiet">
-            AI suggestion only. Review and edit it before you use it.
-          </p>
+        <div className="v-inline v-inline--between">
+          <div className="v-stack v-stack--1">
+            <p className="v-subheading">Writing assist</p>
+            <p className="v-caption v-quiet">
+              AI suggestion only. Review and edit it before you use it.
+            </p>
+          </div>
+          {folded ? (
+            <Button
+              data-testid={`${testId}-close`}
+              onClick={() => {
+                cancel();
+                setOpen(false);
+              }}
+              size="sm"
+              tone="ghost"
+            >
+              Hide
+            </Button>
+          ) : null}
         </div>
 
         <label className="v-field__label" htmlFor={`${testId}-tone`}>

@@ -23,6 +23,7 @@ import {
   ListRow,
   Notice,
   PageHeader,
+  Section,
   Skeleton,
   Switch,
   TextArea,
@@ -67,6 +68,9 @@ export function You() {
 
   const standing = current === undefined ? undefined : accountStanding(current);
   const outstanding = profile?.outstandingRequirements ?? [];
+  // Nothing to draw yet, rather than "there is nothing". The two look identical
+  // in a value and are opposite things to show somebody.
+  const waiting = profile === undefined && !account.profile.settled;
 
   return (
     <>
@@ -105,50 +109,65 @@ export function You() {
               setEditing(false);
             }}
           />
-        ) : account.profile.loading && profile === undefined ? (
-          <Card>
-            <div className="v-profile-hero">
-              <Skeleton circle height={88} width={88} />
-              <div className="v-profile-hero__body" style={{ flex: 1 }}>
-                <Skeleton height={20} width="40%" />
-                <Skeleton height={12} width="70%" />
-              </div>
-            </div>
-          </Card>
         ) : (
+          /*
+            One card, whether the answer has arrived or not.
+
+            What is unknown is drawn as a placeholder and the control is not:
+            editing is something somebody may start before the server has
+            answered — that is the whole point of the seeded fields below — and a
+            button that appears, disappears under a reaching hand while the read
+            runs, and comes back is worse than either state on its own.
+          */
           <Card testId="profile-view">
             <div className="v-profile-hero">
-              <Avatar
-                displayName={profile?.displayName ?? 'You'}
-                seed={current?.id ?? profile?.displayName ?? 'you'}
-                size="lg"
-              />
+              {waiting ? (
+                <Skeleton circle height={88} width={88} />
+              ) : (
+                <Avatar
+                  displayName={profile?.displayName ?? 'You'}
+                  seed={current?.id ?? profile?.displayName ?? 'you'}
+                  size="lg"
+                />
+              )}
               <div className="v-profile-hero__body">
-                <h2 className="v-title v-wrap" data-testid="profile-name">
-                  {profile?.displayName ?? 'Your profile'}
-                </h2>
-                <div className="v-inline v-inline--tight">
-                  {regionName(profile?.region) === undefined ? null : (
-                    <Chip>
-                      <Icon name="globe" size="sm" />
-                      {regionName(profile?.region)}
-                    </Chip>
-                  )}
-                  {(profile?.languages ?? []).map((code) => (
-                    <Chip key={code}>{languageName(code)}</Chip>
-                  ))}
-                </div>
-                {profile?.bio === undefined || profile.bio.length === 0 ? (
-                  <p className="v-small v-quiet">
-                    No bio yet. A couple of sentences goes a long way.
-                  </p>
+                {waiting ? (
+                  <>
+                    <p className="v-visually-hidden" role="status">
+                      Loading your profile
+                    </p>
+                    <Skeleton height={20} width="40%" />
+                    <Skeleton height={12} width="70%" />
+                  </>
                 ) : (
-                  <p
-                    className="v-small v-muted v-wrap"
-                    data-testid="profile-bio"
-                  >
-                    {profile.bio}
-                  </p>
+                  <>
+                    <h2 className="v-title v-wrap" data-testid="profile-name">
+                      {profile?.displayName ?? 'Your profile'}
+                    </h2>
+                    <div className="v-inline v-inline--tight">
+                      {regionName(profile?.region) === undefined ? null : (
+                        <Chip>
+                          <Icon name="globe" size="sm" />
+                          {regionName(profile?.region)}
+                        </Chip>
+                      )}
+                      {(profile?.languages ?? []).map((code) => (
+                        <Chip key={code}>{languageName(code)}</Chip>
+                      ))}
+                    </div>
+                    {profile?.bio === undefined || profile.bio.length === 0 ? (
+                      <p className="v-small v-quiet">
+                        No bio yet. A couple of sentences goes a long way.
+                      </p>
+                    ) : (
+                      <p
+                        className="v-small v-muted v-wrap"
+                        data-testid="profile-bio"
+                      >
+                        {profile.bio}
+                      </p>
+                    )}
+                  </>
                 )}
                 <div>
                   <Button
@@ -182,18 +201,9 @@ export function You() {
 
         <AvailabilityCard />
 
-        <section
-          aria-labelledby="photos-heading"
-          className="v-card"
-          data-testid="photos-card"
-        >
-          <div className="v-stack v-stack--5">
-            <h2 className="v-subheading" id="photos-heading">
-              Photos
-            </h2>
-            <ProfilePhotos />
-          </div>
-        </section>
+        <Section raised testId="photos-card" title="Photos">
+          <ProfilePhotos />
+        </Section>
 
         <Card flush>
           <ul className="v-list v-list--divided">

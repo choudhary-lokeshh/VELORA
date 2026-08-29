@@ -240,6 +240,12 @@
   width: 100%;
 }
 
+.v-steps-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .v-steps {
   display: flex;
   gap: var(--space-2);
@@ -849,16 +855,28 @@
  * A card is a row rather than a tile, because a creator's page is chosen from a
  * name and a sentence rather than from a picture, and a grid of large images
  * would make this look like the people feed it is deliberately not.
+ *
+ * `minmax(0, 1fr)` and `min-width: 0`, for the reason recorded on `.v-split`. A
+ * grid item's default minimum is its content's, and this card's content is a
+ * display name and a handle drawn with `v-truncate` — which is `white-space:
+ * nowrap`, so its minimum is the whole string however long the string is. At
+ * 390 px with text scaled to 200% that made the track wider than the viewport
+ * and pushed the entire document sideways, which is the one thing this surface
+ * is not allowed to do. The floor is what lets the truncation truncate.
  */
 .v-creator-grid {
   display: grid;
   gap: var(--space-3);
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.v-creator-grid > li {
+  min-width: 0;
 }
 
 @media (width >= 640px) {
   .v-creator-grid {
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   }
 }
 
@@ -1089,14 +1107,41 @@
   }
 }
 
+/*
+ * A sent gift, at the size of a row.
+ *
+ * The same disc every other row mark uses, holding the gift's own silhouette
+ * rather than the first letter of its name. Somebody chose a rose; a row that
+ * answers "R" is a row that lost the thing it is reporting on.
+ */
 .v-gift-history-mark {
   align-items: center;
+  background: var(--surface-2);
+  border-radius: 50%;
   color: var(--ember);
   display: flex;
-  font-weight: 700;
-  height: 100%;
+  flex: none;
+  height: 40px;
   justify-content: center;
-  width: 100%;
+  width: 40px;
+}
+
+.v-gift-history-art {
+  height: 22px;
+  width: 22px;
+}
+
+/*
+ * The writing assist, folded away.
+ *
+ * One quiet control under the composer rather than a whole panel there. The
+ * panel is unchanged; this is only what stands in for it until somebody asks,
+ * so a conversation looks like a conversation until it is not.
+ */
+.v-assist-fold {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-4) var(--space-3);
 }
 
 /* ============================= Memberships =========================== */

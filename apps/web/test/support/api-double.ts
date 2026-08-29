@@ -29,6 +29,22 @@ export interface ApiDoubleState {
     resource?: { id: string; type: 'club' | 'gift' };
     state: string;
   }[];
+  /**
+   * Gifts this account has sent, as BILLING publishes them back.
+   *
+   * Held as the wire shape, including the fields the history screen had been
+   * throwing away: the silhouette somebody chose, the handle of the creator it
+   * went to, and the instant it actually settled.
+   */
+  sentGifts: {
+    createdAt: string;
+    creator: { displayName: string; handle: string };
+    gift: { id: string; name: string; visual: string };
+    id: string;
+    price: { amountMinor: string; currency: string };
+    sentAt?: string;
+    state: string;
+  }[];
   /** Charges and near-charges, as the payment history route publishes them. */
   payments: {
     amount: { amountMinor: string; currency: string };
@@ -323,6 +339,7 @@ export const ownAccountId = '11111111-1111-4111-8111-111111111111';
 export function emptyState(): ApiDoubleState {
   return {
     subscriptions: [],
+    sentGifts: [],
     payments: [],
     publicClubs: {},
     membershipOffers: {},
@@ -618,6 +635,9 @@ export function createApiDouble(
         cancelled: true,
         runId: (body as { runId: string }).runId,
       });
+    }
+    if (path === '/v1/billing/gifts' && method === 'GET') {
+      return json(200, { gifts: state.sentGifts.map((row) => ({ ...row })) });
     }
     if (path === '/v1/billing/payments' && method === 'GET') {
       return json(200, { payments: state.payments.map((row) => ({ ...row })) });
