@@ -133,3 +133,18 @@ export const membershipSourceLabels: Readonly<Record<string, string>> = {
   billing: 'Paid membership',
   creator_invite: 'Invitation from the creator',
 };
+
+/**
+ * The same provenance, short enough to be a pill.
+ *
+ * A badge is a word, not a sentence. "Invitation from the creator" set in a
+ * pill is twenty-six characters that cannot wrap and cannot shrink, and on a
+ * narrow phone with text scaled up it was wider than the line it sat on — which
+ * is how a status chip pushed a whole page sideways. The sentence still exists,
+ * above, for the places that are reading rather than labelling.
+ */
+export const membershipSourceBadges: Readonly<Record<string, string>> = {
+  admin_grant: 'VELORA',
+  billing: 'Paid',
+  creator_invite: 'Invitation',
+};

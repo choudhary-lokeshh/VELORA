@@ -28,7 +28,7 @@ import {
 import {
   cadenceLabels,
   formatPrice,
-  membershipSourceLabels,
+  membershipSourceBadges,
   paymentFailureLabels,
   paymentStateLook,
   subscriptionStateLook,
@@ -395,7 +395,7 @@ function Invitation({
           </span>
         </span>
         <Badge tone="neutral">
-          {membershipSourceLabels[row.source] ?? 'Access granted'}
+          {membershipSourceBadges[row.source] ?? 'Granted'}
         </Badge>
       </div>
 

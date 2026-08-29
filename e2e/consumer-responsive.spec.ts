@@ -152,7 +152,11 @@ test.describe('Consumer Web responsive behaviour', () => {
     const [person] = cohortFor(testInfo.project.name).people;
     if (person === undefined) throw new Error('the cohort has nobody in it');
 
-    await page.setViewportSize({ height: 740, width: 390 });
+    // The narrowest width this product supports, not a comfortable one. A
+    // status pill that pushed the page sideways cleared 390 px on one machine's
+    // font metrics and failed on another's by two pixels; at 320 px the margin
+    // is wide enough that the assertion answers the same on both.
+    await page.setViewportSize({ height: 740, width: 320 });
     await signInAdmitted(page, person.subject);
     // Text scaling rather than page zoom: it is the case that breaks fixed
     // heights, and it is what somebody with low vision actually turns on.

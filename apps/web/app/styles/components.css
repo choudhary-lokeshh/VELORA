@@ -30,7 +30,15 @@
     box-shadow var(--duration-fast) var(--ease-out),
     color var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
-  white-space: nowrap;
+  /*
+   * A label stays on one line while one line will hold it, and takes a second
+   * rather than taking the page. "Sign out everywhere" at 200 % text on a
+   * 320 px phone is wider than the screen, and `nowrap` alone made that the
+   * document's problem instead of the button's.
+   */
+  max-width: 100%;
+  text-wrap: balance;
+  white-space: normal;
 }
 
 .v-btn:active:not(:disabled) {
@@ -543,6 +551,17 @@ select.v-control {
 
 /* ============================ Status =================================== */
 
+/*
+ * A status, as a pill.
+ *
+ * `nowrap` is deliberate: a status that reads as two words on two lines is a
+ * status somebody has to reassemble. The bound beside it is the guarantee that
+ * comes with saying so — a pill that cannot wrap and cannot shrink is a pill
+ * that will push a page sideways the first time somebody gives it a sentence
+ * and a reader scales their text up, which is exactly what happened here. The
+ * label is what should be short; this is what makes being wrong about that a
+ * clipped word rather than a page that moves under a thumb.
+ */
 .v-badge {
   align-items: center;
   border: 1px solid transparent;
@@ -553,7 +572,11 @@ select.v-control {
   font-weight: 600;
   gap: var(--space-2);
   line-height: 1;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 5px var(--space-3);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
