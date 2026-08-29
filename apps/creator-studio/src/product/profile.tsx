@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type {
   CreatorProfile,
@@ -137,16 +137,24 @@ function ProfileEditor({
   );
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
-  // The server's values win whenever it answers. A local draft that survived a
-  // successful save would be a second opinion about what is stored.
-  const version = profile?.version;
-  useEffect(() => {
-    if (profile === undefined) return;
-    setHandle(profile.handle);
-    setDisplayName(profile.displayName);
-    setBio(profile.bio ?? '');
-    setLinks(profile.links.map((link) => draftLink(link)));
-  }, [profile, version]);
+
+  /*
+   * Seeded once per answer, by mounting rather than by an effect.
+   *
+   * The server's values still win whenever it answers something new: this
+   * editor is keyed on the profile's version, so a save — or any read that
+   * moves the version — replaces the component and the `useState` calls above
+   * seed it again from what came back. A local draft cannot outlive a
+   * successful save and become a second opinion about what is stored.
+   *
+   * An effect that re-seeded on the `profile` object instead did the same job
+   * for a version that changed, and something else entirely for one that did
+   * not: a re-read answering with the same bytes at the same version is a new
+   * object, so it ran, and it took back everything the creator had typed and
+   * every link row they had added. Nothing has to go wrong for that to happen —
+   * `useRevalidateOnFocus` re-reads whenever the window is focused, which is
+   * the moment somebody comes back to a form they left half-filled.
+   */
 
   const trimmedHandle = handle.trim();
   const trimmedName = displayName.trim();

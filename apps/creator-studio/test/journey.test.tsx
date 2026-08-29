@@ -533,6 +533,49 @@ describe('the public page', () => {
     });
   });
 
+  /**
+   * A read that answers with what is already on the screen must change nothing
+   * on the screen.
+   *
+   * The form re-reads the profile whenever the window is focused, which is
+   * exactly when somebody returns to a form they left half-filled. While the
+   * editor re-seeded itself from the `profile` object rather than from its
+   * version, that read took back every character typed and every link row
+   * added — for a response carrying the same bytes at the same version.
+   */
+  it('keeps a half-filled form when a re-read answers with the same version', async () => {
+    const double = createCreatorApiDouble(withProfile());
+    renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
+
+    fireEvent.click(await screen.findByTestId('creator-link-add'));
+    fireEvent.change(screen.getByTestId('creator-link-label-0'), {
+      target: { value: 'Shop' },
+    });
+    fireEvent.change(screen.getByTestId('creator-display-name'), {
+      target: { value: 'Ember V' },
+    });
+
+    const readsBefore = double.calls.filter(
+      (call) => call.path === '/v1/creator/profile' && call.method === 'GET',
+    ).length;
+    fireEvent.focus(window);
+    await waitFor(() => {
+      expect(
+        double.calls.filter(
+          (call) =>
+            call.path === '/v1/creator/profile' && call.method === 'GET',
+        ).length,
+      ).toBeGreaterThan(readsBefore);
+    });
+
+    expect(
+      screen.getByTestId<HTMLInputElement>('creator-display-name').value,
+    ).toBe('Ember V');
+    expect(
+      screen.getByTestId<HTMLInputElement>('creator-link-label-0').value,
+    ).toBe('Shop');
+  });
+
   it('refuses a stale edit rather than overwriting a newer one', async () => {
     const double = createCreatorApiDouble(withProfile());
     renderStudio(<ProfileScreen />, double, { pathname: '/profile' });
