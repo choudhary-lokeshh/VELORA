@@ -1,6 +1,10 @@
 import type { Page } from '@playwright/test';
 
-import { consumerWebOrigin, creatorStudioOrigin } from './auth-environment.js';
+import {
+  authApiBaseUrl,
+  consumerWebOrigin,
+  creatorStudioOrigin,
+} from './auth-environment.js';
 import { expect } from './fixtures.js';
 
 /**
@@ -121,4 +125,42 @@ export async function createClub(
   await page.getByTestId('club-slug').fill(slug);
   await page.getByTestId('club-create').click();
   await page.waitForURL(/\/clubs\/[0-9a-f-]+$/u, { timeout: 30_000 });
+}
+
+/**
+ * Provisions this creator's local gift catalog, from inside the browser.
+ *
+ * The one move in this file that is not a control somebody clicks, because
+ * there is no control: `POST /v1/creator/gifts/catalog/provision` exists only
+ * where the payment adapter is `local-test`, and a button that appears in
+ * development and is dead in production is exactly the fake capability
+ * `AGENTS.md` forbids. The seed provisions the same way for the same reason.
+ *
+ * It still goes through the browser rather than through Node's fetch. A custom
+ * request header makes a cross-origin POST preflighted, and the request that a
+ * preflight refuses is a request the browser never sends — which is how
+ * `x-velora-idempotency-key` stayed missing from the CORS allowlist while every
+ * jsdom suite passed. Issuing this from the page keeps even the arrangement
+ * step honest about the network the product actually runs on.
+ */
+export async function provisionGiftCatalog(page: Page): Promise<void> {
+  await page.goto(`${creatorStudioOrigin}/home`);
+  const status = await page.evaluate(async (apiBaseUrl) => {
+    const cookieName = '__Host-velora_creator_studio_csrf';
+    const token = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${cookieName}=`))
+      ?.slice(cookieName.length + 1);
+    const response = await fetch(
+      `${apiBaseUrl}/v1/creator/gifts/catalog/provision`,
+      {
+        credentials: 'include',
+        headers: token === undefined ? {} : { 'x-velora-csrf': token },
+        method: 'POST',
+      },
+    );
+    return response.status;
+  }, authApiBaseUrl);
+  expect(status).toBe(200);
 }
