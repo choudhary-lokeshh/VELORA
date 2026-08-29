@@ -1745,6 +1745,49 @@ describe('notification preferences', () => {
   });
 });
 
+/**
+ * One thrown value, and everything it was caused by, as one line.
+ *
+ * A driver wraps a database failure in an error naming the statement, so the
+ * useful part — the SQLSTATE and the constraint that refused — is always one
+ * or more `cause` links down. Anything the platform carries on the error is
+ * reported when present and skipped when not, so this stays readable for a
+ * plain `Error` as well.
+ */
+function describeThrown(thrown: unknown): string {
+  const parts: string[] = [];
+  let current = thrown;
+  for (let depth = 0; current !== undefined && depth < 5; depth += 1) {
+    if (!(current instanceof Error)) {
+      // Serialized rather than stringified: a thrown plain object renders as
+      // `[object Object]`, which is one word less useful than nothing.
+      parts.push(JSON.stringify(current));
+      break;
+    }
+    const carried = current as Error & {
+      readonly code?: unknown;
+      readonly constraint?: unknown;
+      readonly detail?: unknown;
+    };
+    const annotations = (
+      [
+        ['code', carried.code],
+        ['constraint', carried.constraint],
+        ['detail', carried.detail],
+      ] as const
+    )
+      .filter(([, value]) => value !== undefined)
+      .map(([label, value]) => `${label}=${String(value)}`);
+    parts.push(
+      `${current.name}: ${current.message}${
+        annotations.length === 0 ? '' : ` (${annotations.join(', ')})`
+      }`,
+    );
+    current = current.cause;
+  }
+  return parts.join(' <- caused by ');
+}
+
 describe('push device registration', () => {
   const token = 'a'.repeat(64);
   const installation = 'installation-0001';
@@ -1789,6 +1832,12 @@ describe('push device registration', () => {
    *
    * Read from a mark taken before the action rather than from the whole run,
    * so a record another test provoked cannot be reported as this one's cause.
+   *
+   * Reported down the whole cause chain, because the outermost error is a
+   * query wrapper: it names the statement and the parameters and says nothing
+   * about what the database objected to. The PostgreSQL error underneath
+   * carries the SQLSTATE and the constraint, which is the difference between
+   * "the insert failed" and knowing which index refused it.
    */
   function unhandledErrors(from: number): readonly string[] {
     return logs
@@ -1800,12 +1849,7 @@ describe('push device registration', () => {
           (entry as { message?: unknown }).message ===
             'unhandled request error',
       )
-      .map((entry) => {
-        const thrown = entry.fields.error;
-        return thrown instanceof Error
-          ? `${thrown.name}: ${thrown.message}`
-          : String(thrown);
-      });
+      .map((entry) => describeThrown(entry.fields.error));
   }
 
   async function liveDevices(recipientId: string) {
