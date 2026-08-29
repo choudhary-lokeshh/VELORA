@@ -25,6 +25,7 @@ export const iconNames = [
   'ban',
   'bell',
   'check',
+  'copy',
   'chevronDown',
   'chevronRight',
   'clock',
@@ -37,7 +38,9 @@ export const iconNames = [
   'ledger',
   'lock',
   'logOut',
+  'person',
   'phone',
+  'pulse',
   'queue',
   'refresh',
   'scale',
@@ -62,6 +65,10 @@ const paths: Readonly<Record<IconName, readonly string[]>> = {
   ],
   check: ['M20 6.5 9.5 17 4 11.5'],
   chevronDown: ['M6 9.5l6 6 6-6'],
+  copy: [
+    'M9 9.5a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5Z',
+    'M15 5.5A1.5 1.5 0 0 0 13.5 4h-8A1.5 1.5 0 0 0 4 5.5v8A1.5 1.5 0 0 0 5.5 15',
+  ],
   chevronRight: ['M9.5 6l6 6-6 6'],
   clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 7v5.2l3.4 2'],
   filter: ['M3.5 5.5h17', 'M6.5 12h11', 'M10 18.5h4'],
@@ -95,9 +102,14 @@ const paths: Readonly<Record<IconName, readonly string[]>> = {
     'M11 16l4-4-4-4',
     'M15 12H4',
   ],
+  person: [
+    'M12 12.2a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
+    'M4.5 20a7.5 7.5 0 0 1 15 0',
+  ],
   phone: [
     'M7.2 4h3l1.3 3.4-2 1.4a11 11 0 0 0 5.7 5.7l1.4-2L20 13.8v3A3.2 3.2 0 0 1 16.5 20 13.5 13.5 0 0 1 4 7.5 3.2 3.2 0 0 1 7.2 4Z',
   ],
+  pulse: ['M3 12h4l2.5-6 4.5 12 2.5-6H21'],
   queue: ['M4 6h10', 'M4 12h16', 'M4 18h7', 'M17.5 4.5v3.2', 'M16 6h3'],
   refresh: ['M20 12a8 8 0 1 1-2.6-5.9', 'M20 4v4.5h-4.5'],
   scale: [

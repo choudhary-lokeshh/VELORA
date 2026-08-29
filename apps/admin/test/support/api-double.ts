@@ -23,6 +23,119 @@
  */
 
 export interface AdminApiDoubleState {
+  /** Consumer accounts, and the whole population by standing beside them. */
+  accounts: {
+    createdAt: string;
+    deletionRequestedAt?: string;
+    id: string;
+    region?: string;
+    status:
+      | 'pending_profile'
+      | 'active'
+      | 'restricted'
+      | 'deletion_pending'
+      | 'deactivated'
+      | 'erased';
+    statusChangedAt: string;
+    statusReason?: string;
+  }[];
+  /** Both audit records, in the one flat shape the contract publishes. */
+  audit: {
+    actorReference?: string;
+    audience?: string;
+    correlationId?: string;
+    id: string;
+    occurredAt: string;
+    outcome?: string;
+    stream: 'security' | 'decision';
+    subjectType?: string;
+    what: string;
+  }[];
+  clubs: {
+    closedAt?: string;
+    createdAt: string;
+    creatorId: string;
+    handle?: string;
+    id: string;
+    lifecycle: string;
+    memberships: { count: number; state: string }[];
+    name: string;
+    publishedAt?: string;
+    slug: string;
+  }[];
+  /** Keyed by club, because they are published only for one club at a time. */
+  clubMemberships: Record<
+    string,
+    {
+      grantedAt: string;
+      id: string;
+      revokedAt?: string;
+      source: string;
+      state: string;
+    }[]
+  >;
+  /** What the platform says is waiting, counted over whole tables. */
+  overview: {
+    attention: {
+      accountsRestricted: number;
+      appealsAwaiting: number;
+      casesOpen: number;
+      casesUnclaimed: number;
+      creatorsSuspended: number;
+      disputesOpen: number;
+      financialRecordsNeedingPerson: number;
+      payoutsAwaitingConfirmation: number;
+    };
+    casesByPriority: { count: number; state: string }[];
+    casesByQueue: { count: number; state: string }[];
+    observedAt: string;
+    oldestOpenCaseAt?: string;
+  };
+  payments: {
+    amountMinor: string;
+    createdAt: string;
+    currency: string;
+    failureReason?: string;
+    id: string;
+    lastProviderSyncAt?: string;
+    provider: string;
+    providerReference?: string;
+    resourceType?: string;
+    state: string;
+    taxMinor?: string;
+    updatedAt: string;
+  }[];
+  /** Reversals, keyed by the payment they are against. */
+  paymentRefunds: Record<
+    string,
+    {
+      amountMinor: string;
+      createdAt: string;
+      currency: string;
+      failureReason?: string;
+      id: string;
+      paymentId: string;
+      provider: string;
+      providerReference?: string;
+      reasonCode: string;
+      state: string;
+      updatedAt: string;
+    }[]
+  >;
+  payouts: {
+    amountMinor: string;
+    createdAt: string;
+    creatorId: string;
+    currency: string;
+    failureReason?: string;
+    id: string;
+    lastProviderSyncAt?: string;
+    provider: string;
+    providerReference?: string;
+    requestedBy: string;
+    state: string;
+    updatedAt: string;
+  }[];
   appeals: {
     appellantKind: 'subject' | 'notifier';
     decisionId: string;
@@ -224,8 +337,12 @@ export const operatorAccountId = '99999999-9999-4999-8999-999999999999';
 /** A browser holding nothing, which is what this origin normally sees. */
 export function anonymousState(): AdminApiDoubleState {
   return {
+    accounts: [],
     appeals: [],
+    audit: [],
     cases: [],
+    clubMemberships: {},
+    clubs: [],
     creators: [],
     disputeQueue: [],
     financial: {
@@ -264,6 +381,24 @@ export function anonymousState(): AdminApiDoubleState {
       objects: [],
       obligations: [],
     },
+    overview: {
+      attention: {
+        accountsRestricted: 0,
+        appealsAwaiting: 0,
+        casesOpen: 0,
+        casesUnclaimed: 0,
+        creatorsSuspended: 0,
+        disputesOpen: 0,
+        financialRecordsNeedingPerson: 0,
+        payoutsAwaitingConfirmation: 0,
+      },
+      casesByPriority: [],
+      casesByQueue: [],
+      observedAt: iso(),
+    },
+    paymentRefunds: {},
+    payments: [],
+    payouts: [],
     notifications: {
       adapters: { deliveryChannel: 'unavailable' },
       attempts: [],
@@ -450,6 +585,90 @@ export function createAdminApiDouble(
     }
 
     if (!path.startsWith('/v1/admin/')) return error(404, 'HTTP_404');
+
+    if (path === '/v1/admin/overview') {
+      return json(200, state.overview);
+    }
+
+    if (path === '/v1/admin/accounts') {
+      const asked = url.searchParams.get('status');
+      const attention = new Set([
+        'restricted',
+        'deletion_pending',
+        'deactivated',
+        'erased',
+      ]);
+      const counts = new Map<string, number>();
+      for (const account of state.accounts) {
+        counts.set(account.status, (counts.get(account.status) ?? 0) + 1);
+      }
+      return json(200, {
+        // With no status asked for, only what the platform has decided about:
+        // the same bound the server applies, so a test that passes here is a
+        // test about the screen rather than about the double.
+        accounts: state.accounts.filter((account) =>
+          asked === null
+            ? attention.has(account.status)
+            : account.status === asked,
+        ),
+        statusCounts: [...counts]
+          .map(([entry, count]) => ({ count, state: entry }))
+          .sort((first, second) => first.state.localeCompare(second.state)),
+      });
+    }
+
+    if (path === '/v1/admin/clubs') {
+      const clubId = url.searchParams.get('clubId');
+      const clubs =
+        clubId === null
+          ? state.clubs
+          : state.clubs.filter((club) => club.id === clubId);
+      return json(200, {
+        clubs,
+        ...(clubId === null
+          ? {}
+          : { memberships: state.clubMemberships[clubId] ?? [] }),
+      });
+    }
+
+    if (path === '/v1/admin/audit') {
+      const stream = url.searchParams.get('stream') ?? 'security';
+      return json(200, {
+        entries: state.audit.filter((entry) => entry.stream === stream),
+        stream,
+      });
+    }
+
+    if (path === '/v1/admin/billing/payments') {
+      const asked = url.searchParams.get('state');
+      return json(200, {
+        payments: state.payments.filter(
+          (payment) => asked === null || payment.state === asked,
+        ),
+      });
+    }
+
+    if (path === '/v1/admin/billing/payment') {
+      const paymentId = url.searchParams.get('paymentId') ?? '';
+      const payment = state.payments.find((row) => row.id === paymentId);
+      if (payment === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      return json(200, {
+        disputes: state.disputeQueue.filter(
+          (dispute) => dispute.paymentId === paymentId,
+        ),
+        payment,
+        refunds: state.paymentRefunds[paymentId] ?? [],
+      });
+    }
+
+    if (path === '/v1/admin/payouts') {
+      const asked = url.searchParams.get('state');
+      return json(200, {
+        payouts: state.payouts.filter(
+          (payout) => asked === null || payout.state === asked,
+        ),
+      });
+    }
 
     if (path === '/v1/admin/billing/disputes') {
       const openOnly = url.searchParams.get('open') === 'true';

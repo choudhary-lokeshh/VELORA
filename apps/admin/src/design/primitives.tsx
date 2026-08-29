@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {
   useId,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -758,6 +759,162 @@ export function PanelSkeleton({ rows = 3 }: { readonly rows?: number }) {
         />
       ))}
     </div>
+  );
+}
+
+/* ============================= Area navigation ======================= */
+
+/**
+ * The areas of one destination, as addresses rather than as tab state.
+ *
+ * Links rather than buttons because each area is a page an operator may
+ * bookmark, send to a colleague, or reach with the browser's Back — and a
+ * control that looked identical but lived in component state would take all
+ * three away.
+ *
+ * They are peers of each other. Nothing here offers a way "up" to the first of
+ * them, because moving between siblings is not a return.
+ */
+export function AreaNav({
+  areas,
+  current,
+  label,
+  testId,
+}: {
+  readonly areas: readonly { readonly label: string; readonly path: string }[];
+  readonly current: string;
+  readonly label: string;
+  readonly testId: string;
+}) {
+  return (
+    <nav aria-label={label} className="a-subnav" data-testid={testId}>
+      {areas.map((area) => (
+        <Link
+          aria-current={current === area.path ? 'page' : undefined}
+          className="a-subnav__item"
+          data-testid={`${testId}-${area.label.toLowerCase()}`}
+          href={area.path}
+          key={area.path}
+        >
+          {area.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/* ============================== References =========================== */
+
+/**
+ * An opaque identifier, in a face where an `l` and a `1` are different shapes.
+ *
+ * An operator carries these between this console and other systems — a provider
+ * dashboard, a bank enquiry, a colleague's message — so the whole value is
+ * selectable and the copy control puts it on the clipboard without a
+ * transcription step. Truncation is display only: what is copied is always the
+ * whole value, because a half-copied reference is worse than none.
+ *
+ * The clipboard is not assumed to exist. A browser that refuses it, or a
+ * context without it, leaves the text exactly as selectable as it already was
+ * rather than leaving a control that silently does nothing.
+ */
+export function Reference({
+  short,
+  testId,
+  value,
+}: {
+  /** What to show, when the whole value is longer than a column allows. */
+  readonly short?: string;
+  readonly testId?: string;
+  readonly value: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  // `navigator.clipboard` is typed as always present and is not: a browser on
+  // an insecure origin, and every server render, has no such object. Asking
+  // whether the key exists is the check that matches what actually happens.
+  const copyable = typeof navigator !== 'undefined' && 'clipboard' in navigator;
+
+  return (
+    <span className="a-reference">
+      <span className="a-mono" data-testid={testId} title={value}>
+        {short ?? value}
+      </span>
+      {copyable ? (
+        <button
+          aria-label={copied ? 'Copied' : `Copy ${value}`}
+          className="a-icon-btn a-icon-btn--sm"
+          data-testid={testId === undefined ? undefined : `${testId}-copy`}
+          onClick={() => {
+            void navigator.clipboard.writeText(value).then(
+              () => {
+                setCopied(true);
+              },
+              () => {
+                // A refused clipboard is not an error worth interrupting for.
+                // The value is still on the screen and still selectable.
+              },
+            );
+          }}
+          type="button"
+        >
+          <Icon name={copied ? 'check' : 'copy'} size="sm" />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
+/* =============================== Timeline ============================ */
+
+export interface TimelineEntry {
+  readonly detail?: ReactNode;
+  readonly id: string;
+  readonly meta?: ReactNode;
+  readonly title: ReactNode;
+  readonly when: string;
+}
+
+/**
+ * Things that happened, newest first.
+ *
+ * A list rather than a table, because what an operator reads down an audit
+ * trail is a sequence rather than a set of columns to compare. Every entry
+ * carries its instant, because an event with no time is not evidence.
+ *
+ * Nothing here is toned. A colour on an audit row would be this console
+ * deciding which of the platform's own records is the bad one, and the rule
+ * everywhere on this surface is that only a judgement the server published may
+ * carry a colour.
+ */
+export function Timeline({
+  entries,
+  testId,
+}: {
+  readonly entries: readonly TimelineEntry[];
+  readonly testId: string;
+}) {
+  return (
+    <ol className="a-timeline" data-testid={testId}>
+      {entries.map((entry) => (
+        <li
+          className="a-timeline__item"
+          data-testid={`${testId}-${entry.id}`}
+          key={entry.id}
+        >
+          <div className="a-timeline__mark" />
+          <div className="a-timeline__body">
+            <p className="a-timeline__title">{entry.title}</p>
+            {entry.detail === undefined ? null : (
+              <p className="a-caption a-quiet">{entry.detail}</p>
+            )}
+            <p className="a-caption a-quiet a-timeline__when">
+              <span className="a-numeric">{entry.when}</span>
+              {entry.meta === undefined ? null : <> · {entry.meta}</>}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 

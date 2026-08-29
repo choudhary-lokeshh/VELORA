@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import type { ModerationQueue, SafetyCase } from '../api/contract';
 import {
+  AreaNav,
   Badge,
   Button,
-  ButtonLink,
   EmptyState,
   ErrorState,
   Panel,
@@ -20,6 +21,7 @@ import {
   Table,
   Toolbar,
 } from '../design/primitives';
+import { queueAreas } from '../app/navigation';
 import { useApi } from '../app/providers';
 import {
   casePriorityLook,
@@ -63,6 +65,23 @@ const queueOptions: readonly { label: string; value: QueueFilter }[] = [
   { label: 'Creator identity', value: 'creator_identity' },
 ];
 
+/**
+ * The three faces of an operator's own work, as three addresses: the cases
+ * waiting, the appeals against decisions already made, and the record of the
+ * decisions themselves.
+ */
+export function QueueNav() {
+  const pathname = usePathname();
+  return (
+    <AreaNav
+      areas={queueAreas}
+      current={pathname}
+      label="Queues"
+      testId="queues-nav"
+    />
+  );
+}
+
 export function Queues() {
   const api = useApi();
   const [queue, setQueue] = useState<QueueFilter>('all');
@@ -90,6 +109,8 @@ export function Queues() {
 
   return (
     <>
+      <QueueNav />
+
       <Toolbar>
         <Segmented
           label="Filter by queue"
@@ -97,9 +118,6 @@ export function Queues() {
           options={queueOptions}
           value={queue}
         />
-        <ButtonLink data-testid="queues-appeals" href="/queues/appeals">
-          Appeals
-        </ButtonLink>
       </Toolbar>
 
       <Panel testId="case-list">

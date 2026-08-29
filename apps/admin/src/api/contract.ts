@@ -66,6 +66,25 @@ export interface Backlog {
   readonly thresholdSeconds: number;
 }
 
+/* =============================== Overview ============================ */
+
+/**
+ * What needs a person, counted by the platform over whole tables.
+ *
+ * The console renders these and adds nothing to them. It could total the rows
+ * of a paged list instead and would be approximately right on the one screen
+ * where an operator decides what to work on next, which is exactly the wrong
+ * place to be approximately right.
+ */
+export type AdminOverview = JsonBody<'/v1/admin/overview', 'get', 200>;
+export type AdminAttention = AdminOverview['attention'];
+
+/* =============================== Accounts ============================ */
+
+export type AdminAccountList = JsonBody<'/v1/admin/accounts', 'get', 200>;
+export type AdminAccount = AdminAccountList['accounts'][number];
+export type AdminAccountStatus = AdminAccount['status'];
+
 /* ================================ Money ============================== */
 
 export type FinancialState = JsonBody<'/v1/admin/billing/state', 'get', 200>;
@@ -86,6 +105,42 @@ export type IssuedRefund = JsonBody<
   201
 >['refund'];
 export type RefundReasonCode = IssueRefundBody['reasonCode'];
+
+/**
+ * The commercial record behind the totals.
+ *
+ * A payment carries no payer and a payout carries no destination. Both
+ * omissions are the contract's rather than this client's, and both are why a
+ * finance queue here cannot become a purchase history or a bank directory.
+ */
+export type AdminPaymentList = JsonBody<
+  '/v1/admin/billing/payments',
+  'get',
+  200
+>;
+export type AdminPayment = AdminPaymentList['payments'][number];
+export type AdminPaymentDetail = JsonBody<
+  '/v1/admin/billing/payment',
+  'get',
+  200
+>;
+export type AdminRefund = AdminPaymentDetail['refunds'][number];
+export type AdminPayoutList = JsonBody<'/v1/admin/payouts', 'get', 200>;
+export type AdminPayout = AdminPayoutList['payouts'][number];
+
+/* ================================ Clubs ============================== */
+
+export type AdminClubList = JsonBody<'/v1/admin/clubs', 'get', 200>;
+export type AdminClub = AdminClubList['clubs'][number];
+export type AdminClubMembership = NonNullable<
+  AdminClubList['memberships']
+>[number];
+
+/* ================================ Audit ============================== */
+
+export type AdminAuditPage = JsonBody<'/v1/admin/audit', 'get', 200>;
+export type AdminAuditEntry = AdminAuditPage['entries'][number];
+export type AdminAuditStream = AdminAuditPage['stream'];
 
 /* ================================ Media ============================== */
 

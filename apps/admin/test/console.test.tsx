@@ -12,7 +12,7 @@ import { Access } from '../src/product/access';
 import { Appeals } from '../src/product/appeals';
 import { CaseScreen } from '../src/product/case';
 import { Creators } from '../src/product/creators';
-import { Money } from '../src/product/money';
+import { Disputes, Money } from '../src/product/money';
 import {
   PlatformIdentity,
   PlatformMedia,
@@ -712,7 +712,7 @@ describe('money', () => {
 
   it('shows the claims an operator has to answer, and no way to answer them', async () => {
     const double = createAdminApiDouble(withDisputes());
-    renderConsole(<Money />, double, { pathname: '/money' });
+    renderConsole(<Disputes />, double, { pathname: '/money/disputes' });
 
     // Live claims only, until somebody asks for the history.
     await screen.findByTestId('dispute-dispute-1');
@@ -733,7 +733,7 @@ describe('money', () => {
 
   it('says a deadline is unpublished rather than inventing one', async () => {
     const double = createAdminApiDouble(withDisputes());
-    renderConsole(<Money />, double, { pathname: '/money' });
+    renderConsole(<Disputes />, double, { pathname: '/money/disputes' });
 
     // The scope control only exists once the first read has settled.
     await screen.findByTestId('dispute-dispute-1');

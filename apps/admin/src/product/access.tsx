@@ -19,6 +19,7 @@ import {
   TextInput,
 } from '../design/primitives';
 import { failureMessage } from '../api/messages';
+import { homePath, safeReturnPath } from '../app/navigation';
 import { useApi, useSession } from '../app/providers';
 import { DoorLayout } from '../app/shell';
 import { humanState } from './format';
@@ -46,12 +47,11 @@ function LocalDevSignIn() {
       const result = await api.createLocalAdminSession({ subject });
       if (result.kind === 'ok') {
         session.refresh();
-        const next = searchParams.get('next');
-        const destination =
-          next !== null && next.startsWith('/') && !next.startsWith('//')
-            ? next
-            : '/queues';
-        router.push(destination);
+        // The same guard the gate uses when it records where somebody was
+        // going. Written once, so an address this console will follow after
+        // authentication cannot be judged safe by one rule and unsafe by
+        // another.
+        router.push(safeReturnPath(searchParams.get('next')) ?? homePath);
       } else {
         setError(
           failureMessage(result) ??

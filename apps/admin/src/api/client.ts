@@ -5,7 +5,15 @@ import {
 } from '@velora/api-client';
 
 import type {
+  AdminAccountList,
+  AdminAuditPage,
+  AdminAuditStream,
+  AdminClubList,
   AdminCreatorList,
+  AdminOverview,
+  AdminPaymentDetail,
+  AdminPaymentList,
+  AdminPayoutList,
   AdminSession,
   AiSuggestion,
   AiSuggestionBody,
@@ -83,8 +91,49 @@ export interface AdminApi {
     ApiResult<{ readonly cancelled: boolean; readonly runId: string }>
   >;
 
+  /* --- Operations ---------------------------------------------------- */
+  /** What needs a person, counted by the platform rather than by a page. */
+  overview(): Promise<ApiResult<AdminOverview>>;
+  /**
+   * Consumer accounts. With no status asked for the platform answers with the
+   * accounts it has itself decided are not in good standing, which is what
+   * keeps this from being a directory of everybody.
+   */
+  accounts(query?: {
+    readonly accountId?: string | undefined;
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+    readonly status?: string | undefined;
+  }): Promise<ApiResult<AdminAccountList>>;
+  /** The clubs creators sell, and the memberships of one of them. */
+  clubs(query?: {
+    readonly clubId?: string | undefined;
+    readonly creatorId?: string | undefined;
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  }): Promise<ApiResult<AdminClubList>>;
+  /** What has happened, from whichever of the two records keeps it. */
+  audit(query?: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+    readonly stream?: AdminAuditStream | undefined;
+  }): Promise<ApiResult<AdminAuditPage>>;
+
   /* --- Money --------------------------------------------------------- */
   financialState(): Promise<ApiResult<FinancialState>>;
+  payments(query?: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+    readonly state?: string | undefined;
+  }): Promise<ApiResult<AdminPaymentList>>;
+  /** One payment with every reversal and claim recorded against it. */
+  payment(paymentId: string): Promise<ApiResult<AdminPaymentDetail>>;
+  payouts(query?: {
+    readonly creatorId?: string | undefined;
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+    readonly state?: string | undefined;
+  }): Promise<ApiResult<AdminPayoutList>>;
   /**
    * The dispute queue, newest claim first.
    *
@@ -143,6 +192,18 @@ export interface AdminApi {
     readonly pageSize?: number | undefined;
   }): Promise<ApiResult<SafetyCaseList>>;
   caseDetail(caseId: string): Promise<ApiResult<CaseDetail>>;
+  /**
+   * Records what an operator found, as evidence of the case's own kind.
+   *
+   * A note is evidence rather than a comment thread: it goes into the same
+   * append-only record a decision has to cite, it can never be edited or
+   * deleted, and the operator who wrote it is recorded. That is the difference
+   * between an investigation an appeal can be answered from and a chat log.
+   */
+  addCaseNote(input: {
+    readonly caseId: string;
+    readonly note: string;
+  }): Promise<ApiResult<SafetyCase>>;
   claimCase(caseId: string): Promise<ApiResult<SafetyCase>>;
   triageCase(body: TriageBody): Promise<ApiResult<SafetyCase>>;
   decideCase(body: DecisionBody): Promise<ApiResult<unknown>>;
@@ -210,6 +271,98 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
       );
     },
 
+    async accounts(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/accounts', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.accountId === undefined
+                ? {}
+                : { accountId: query.accountId }),
+              ...pageQuery(query),
+              ...(query?.status === undefined ? {} : { status: query.status }),
+            },
+          },
+        }),
+      );
+    },
+
+    async audit(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/audit', {
+          ...read(),
+          params: {
+            query: {
+              ...pageQuery(query),
+              ...(query?.stream === undefined ? {} : { stream: query.stream }),
+            },
+          },
+        }),
+      );
+    },
+
+    async clubs(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/clubs', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.clubId === undefined ? {} : { clubId: query.clubId }),
+              ...(query?.creatorId === undefined
+                ? {}
+                : { creatorId: query.creatorId }),
+              ...pageQuery(query),
+            },
+          },
+        }),
+      );
+    },
+
+    async overview() {
+      return attempt(async () => api.GET('/v1/admin/overview', read()));
+    },
+
+    async payment(paymentId) {
+      return attempt(async () =>
+        api.GET('/v1/admin/billing/payment', {
+          ...read(),
+          params: { query: { paymentId } },
+        }),
+      );
+    },
+
+    async payments(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/billing/payments', {
+          ...read(),
+          params: {
+            query: {
+              ...pageQuery(query),
+              ...(query?.state === undefined ? {} : { state: query.state }),
+            },
+          },
+        }),
+      );
+    },
+
+    async payouts(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/payouts', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.creatorId === undefined
+                ? {}
+                : { creatorId: query.creatorId }),
+              ...pageQuery(query),
+              ...(query?.state === undefined ? {} : { state: query.state }),
+            },
+          },
+        }),
+      );
+    },
+
     async appeals(query) {
       return attempt(async () =>
         api.GET('/v1/admin/safety/appeals', {
@@ -220,6 +373,15 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
           },
         }),
       );
+    },
+
+    async addCaseNote(input) {
+      const result = await attempt(async () =>
+        api.POST('/v1/admin/safety/cases/notes', { ...write(), body: input }),
+      );
+      return result.kind === 'ok'
+        ? { kind: 'ok' as const, value: result.value.case }
+        : result;
     },
 
     async caseDetail(caseId) {

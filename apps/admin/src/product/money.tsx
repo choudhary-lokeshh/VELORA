@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import {
@@ -19,6 +20,7 @@ import { failureMessage } from '../api/messages';
 import { Dialog } from '../design/dialog';
 import {
   Acknowledgement,
+  AreaNav,
   Badge,
   Button,
   EmptyState,
@@ -37,6 +39,7 @@ import {
   Table,
   TextInput,
 } from '../design/primitives';
+import { moneyAreas } from '../app/navigation';
 import { useApi, useToast } from '../app/providers';
 import { Adapters, StateCounts } from './readouts';
 import {
@@ -66,6 +69,25 @@ import { useResource, useSingleFlight } from './resource';
  * with no meaning, and an operator would act on it.
  */
 
+/**
+ * The four money areas, as four addresses.
+ *
+ * Rendered by each of them rather than by a shared layout, because a Next.js
+ * layout would keep this mounted across an area change and the current-page
+ * mark would be the one thing on the screen that had not moved.
+ */
+export function MoneyNav() {
+  const pathname = usePathname();
+  return (
+    <AreaNav
+      areas={moneyAreas}
+      current={pathname}
+      label="Money"
+      testId="money-nav"
+    />
+  );
+}
+
 export function Money() {
   const api = useApi();
   const load = useCallback(async () => api.financialState(), [api]);
@@ -91,6 +113,8 @@ export function Money() {
         lede="What the platform holds, counted by state. Every figure is BILLING's own; none is derived here."
         title="Money"
       />
+
+      <MoneyNav />
 
       {state.error !== undefined && value === undefined ? (
         <Panel>
@@ -172,8 +196,6 @@ export function Money() {
               what={['instruction', 'instructions']}
             />
           </div>
-
-          <DisputeQueue />
         </>
       )}
 
@@ -210,7 +232,7 @@ export function Money() {
  * Nothing here identifies the cardholder. A dispute is about a payment, and who
  * made that payment is not something a finance queue should be able to group by.
  */
-function DisputeQueue() {
+export function Disputes() {
   const api = useApi();
   const [openOnly, setOpenOnly] = useState(true);
   const load = useCallback(

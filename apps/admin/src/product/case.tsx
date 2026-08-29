@@ -179,6 +179,15 @@ function CaseDetailView({
         <div className="a-stack a-stack--5">
           <Reports detail={detail} />
           <Evidence detail={detail} />
+          {/*
+            Only while the case is still somebody's work. A closed case is one
+            nobody is going to look at any further, and adding to the record
+            behind a settled decision would be writing evidence for a review
+            that has already happened.
+          */}
+          {closed ? null : (
+            <CaseNote caseId={record.id} onRecorded={onChanged} />
+          )}
           <Decisions detail={detail} />
         </div>
 
@@ -543,6 +552,98 @@ function Evidence({ detail }: { readonly detail: CaseDetail }) {
           </Scroller>
         </PanelBody>
       )}
+    </Panel>
+  );
+}
+
+/**
+ * What an operator found, recorded where a decision can cite it.
+ *
+ * A note is evidence rather than a comment: it lands in the same append-only
+ * record the table above reads, the operator's session is recorded against it,
+ * and nothing in this product can edit or delete one afterwards. That is the
+ * whole reason it is worth having — an appeal is answered from the record, and a
+ * record somebody can tidy up is not one.
+ *
+ * The form says all three of those things before it takes anything, because an
+ * operator typing into a box that looks like a comment field and finding they
+ * have written permanent evidence is the wrong order to learn it in.
+ */
+function CaseNote({
+  caseId,
+  onRecorded,
+}: {
+  readonly caseId: string;
+  readonly onRecorded: () => void;
+}) {
+  const api = useApi();
+  const toast = useToast();
+  const { busy, run } = useSingleFlight();
+  const [note, setNote] = useState('');
+  const [message, setMessage] = useState<string | undefined>(undefined);
+  const trimmed = note.trim();
+
+  return (
+    <Panel testId="case-note">
+      <PanelHead
+        lede="Recorded against this case as evidence, with your session. It cannot be edited or removed afterwards."
+        title="Record what you found"
+      />
+      <PanelBody>
+        {message === undefined ? null : (
+          <ErrorMessage testId="case-note-error">{message}</ErrorMessage>
+        )}
+        <form
+          className="a-stack a-stack--3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (trimmed.length === 0 || busy) return;
+            run(async () => {
+              const failure = failureMessage(
+                await api.addCaseNote({ caseId, note: trimmed }),
+                {
+                  conflict:
+                    'This case changed since the page read it. Reload and look at the current state before adding to the record.',
+                },
+              );
+              setMessage(failure);
+              if (failure === undefined) {
+                setNote('');
+                toast.show('Recorded against the case.', 'positive');
+              }
+              onRecorded();
+            });
+          }}
+        >
+          <Field
+            hint="Two thousand characters at most. Write what you observed, not what you concluded — the conclusion is the decision, and it is recorded separately with its own reason."
+            label="Note"
+          >
+            {(control) => (
+              <TextArea
+                {...control}
+                data-testid="case-note-input"
+                disabled={busy}
+                maxLength={2_000}
+                onChange={(event) => {
+                  setNote(event.target.value);
+                }}
+                rows={4}
+                value={note}
+              />
+            )}
+          </Field>
+          <Button
+            busy={busy}
+            data-testid="case-note-submit"
+            disabled={trimmed.length === 0}
+            icon="check"
+            type="submit"
+          >
+            Add to the record
+          </Button>
+        </form>
+      </PanelBody>
     </Panel>
   );
 }

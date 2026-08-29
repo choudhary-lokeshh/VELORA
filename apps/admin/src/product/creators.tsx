@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import type { ApiResult } from '@velora/api-client';
@@ -13,6 +14,7 @@ import { failureMessage } from '../api/messages';
 import { Dialog } from '../design/dialog';
 import {
   Acknowledgement,
+  AreaNav,
   Badge,
   Button,
   EmptyState,
@@ -34,6 +36,7 @@ import {
   TextInput,
   Toolbar,
 } from '../design/primitives';
+import { creatorAreas } from '../app/navigation';
 import { useApi, useToast } from '../app/providers';
 import {
   creatorStatusLook,
@@ -68,6 +71,22 @@ import { useCollection, useSingleFlight } from './resource';
  */
 
 const creatorPageSize = 25;
+
+/**
+ * The two faces of a creator's business, as two addresses: the accounts
+ * themselves and the clubs they sell.
+ */
+export function CreatorNav() {
+  const pathname = usePathname();
+  return (
+    <AreaNav
+      areas={creatorAreas}
+      current={pathname}
+      label="Creators"
+      testId="creators-nav"
+    />
+  );
+}
 
 export function Creators({
   selectedId,
@@ -107,6 +126,8 @@ export function Creators({
         lede="Creator business accounts as CREATORS holds them. No consumer account, no name, and no contact detail reaches this console."
         title="Creators"
       />
+
+      <CreatorNav />
 
       <Toolbar>
         <form

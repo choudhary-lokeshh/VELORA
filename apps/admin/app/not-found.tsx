@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { homePath } from '../src/app/navigation';
+
 export const metadata: Metadata = { title: 'Page not found' };
 
 /**
@@ -19,7 +21,7 @@ export default function NotFound() {
           closed. Nothing was changed.
         </p>
         <p>
-          <Link className="a-btn a-btn--primary" href="/queues">
+          <Link className="a-btn a-btn--primary" href={homePath}>
             Back to the console
           </Link>
         </p>

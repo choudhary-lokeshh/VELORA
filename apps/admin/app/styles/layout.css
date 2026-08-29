@@ -116,6 +116,15 @@
   gap: var(--space-1);
   justify-content: center;
   min-height: var(--tabbar-height);
+  /*
+   * A grid item's automatic minimum is its content, so an equal-columns bar
+   * stops being equal the moment a label is wider than its share — the columns
+   * grow instead, and the bar takes the page sideways with it. That is invisible
+   * with four destinations at ordinary text size and unmissable with six at
+   * twice it, which is exactly the case somebody with low vision has turned on.
+   * Overriding the minimum is what lets the ellipsis below actually apply.
+   */
+  min-width: 0;
   padding: var(--space-2) var(--space-1);
   position: relative;
   text-decoration: none;

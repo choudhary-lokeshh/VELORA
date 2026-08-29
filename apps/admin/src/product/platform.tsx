@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -11,6 +10,7 @@ import type {
   RtcState,
 } from '../api/contract';
 import {
+  AreaNav,
   ErrorState,
   Metric,
   PageHeader,
@@ -23,6 +23,7 @@ import {
 } from '../design/primitives';
 import { platformAreas } from '../app/navigation';
 import { useApi } from '../app/providers';
+import { Audit } from './audit';
 import { Adapters, Availability, Backlogs, StateCounts } from './readouts';
 import { humanState, identityPurposeLabels, plural, totalOf } from './format';
 import { useResource } from './resource';
@@ -53,19 +54,12 @@ import { useResource } from './resource';
 export function PlatformNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Platform" className="a-subnav">
-      {platformAreas.map((area) => (
-        <Link
-          aria-current={pathname === area.path ? 'page' : undefined}
-          className="a-subnav__item"
-          data-testid={`platform-nav-${area.label.toLowerCase()}`}
-          href={area.path}
-          key={area.path}
-        >
-          {area.label}
-        </Link>
-      ))}
-    </nav>
+    <AreaNav
+      areas={platformAreas}
+      current={pathname}
+      label="Platform"
+      testId="platform-nav"
+    />
   );
 }
 
@@ -271,6 +265,22 @@ export function PlatformNotifications() {
               what={['event', 'events']}
             />
           </div>
+
+          <Panel testId="notifications-no-lookup">
+            <PanelHead title="There is no notice lookup here" />
+            <PanelBody>
+              <p className="a-small a-muted a-measure">
+                The platform publishes one exact-reference read of a single
+                delivery, for a tool that already holds its identifier, and this
+                screen deliberately offers no way to reach it. Every notice
+                belongs to somebody, so a field beside a dashboard that accepted
+                an identifier would be where a browsing surface over what the
+                platform has sent people begins. What an operator can act on is
+                here already: how much is undelivered, how old the oldest of it
+                is, and which class of failure or suppression it fell into.
+              </p>
+            </PanelBody>
+          </Panel>
         </>
       )}
     </Health>
@@ -488,5 +498,38 @@ export function PlatformIdentity() {
         </>
       )}
     </Health>
+  );
+}
+
+/* =============================== Security ============================ */
+
+/**
+ * AUTH's own operational record, read as an area of Platform rather than as an
+ * "Audit" destination of its own.
+ *
+ * Every other subsystem's operational record is read here, and this is one:
+ * what the authentication layer has seen. Putting it beside Media,
+ * Notifications, Calling, and Identity keeps the console organised by the
+ * domain that owns each record rather than by how serious the word on the tab
+ * sounds — and it is why the platform's settled moderation decisions sit under
+ * Queues, with the work that produced them, instead of being pulled here to
+ * make one bucket called audit.
+ */
+export function PlatformSecurity() {
+  return (
+    <>
+      <PageHeader
+        lede="Every authentication, session, and recovery event AUTH recorded, newest first. No account, no address, and no device appears."
+        title="Platform"
+      />
+      <PlatformNav />
+      <Audit
+        emptyBody="AUTH has recorded no event in this environment."
+        emptyTitle="Nothing recorded"
+        lede="An enumerated event type and an enumerated reason. There is no free-form payload in this record to leak into."
+        stream="security"
+        title="Authentication and session events"
+      />
+    </>
   );
 }

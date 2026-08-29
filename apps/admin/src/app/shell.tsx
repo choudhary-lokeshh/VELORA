@@ -5,7 +5,13 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { Icon } from '../design/icons';
-import { accessPath, destinations, isCurrent, parentOf } from './navigation';
+import {
+  accessPath,
+  destinations,
+  homePath,
+  isCurrent,
+  parentOf,
+} from './navigation';
 import { useSession, useToast } from './providers';
 
 /**
@@ -46,7 +52,7 @@ export function AdminShell({
       </a>
 
       <nav aria-label="Console" className="a-sidebar">
-        <Link className="a-sidebar__brand" href="/queues">
+        <Link className="a-sidebar__brand" href={homePath}>
           <Icon name="sparkle" size="md" />
           <span className="a-sidebar__brand-text">VELORA</span>
         </Link>
@@ -95,7 +101,7 @@ export function AdminShell({
           className={`a-topbar${parent === undefined ? ' a-topbar--bare' : ''}`}
         >
           {parent === undefined ? (
-            <Link className="a-topbar__brand" href="/queues">
+            <Link className="a-topbar__brand" href={homePath}>
               <Icon name="sparkle" size="md" />
               <span className="a-topbar__wordmark">VELORA</span>
             </Link>

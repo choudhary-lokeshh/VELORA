@@ -23,6 +23,7 @@ import {
   Table,
 } from '../design/primitives';
 import { useApi, useToast } from '../app/providers';
+import { QueueNav } from './queues';
 import {
   appealStateLook,
   formatDateTime,
@@ -71,6 +72,8 @@ export function Appeals() {
         lede="Every appeal the platform is holding. An appeal contests one decision and is decided on its own record."
         title="Appeals"
       />
+
+      <QueueNav />
 
       <Panel testId="appeal-list">
         <PanelHead

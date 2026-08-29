@@ -175,6 +175,84 @@ export function creatorStatusLook(status: string): StateLook {
   );
 }
 
+/**
+ * A consumer account's standing, which USERS publishes as a closed enum.
+ *
+ * Toned because it is the platform's own judgement about the account and the
+ * whole reason an operator is reading the row. `pending_profile` is toned
+ * neutral rather than as a problem: somebody part-way through joining is not a
+ * case, and colouring them as one would put ordinary sign-ups in a work queue.
+ */
+const accountStatus: Readonly<Record<string, StateLook>> = {
+  active: { icon: 'check', label: 'Active', tone: 'positive' },
+  deactivated: { icon: 'lock', label: 'Deactivated', tone: 'neutral' },
+  deletion_pending: {
+    icon: 'clock',
+    label: 'Deletion pending',
+    tone: 'caution',
+  },
+  erased: { icon: 'lock', label: 'Erased', tone: 'neutral' },
+  pending_profile: { icon: 'clock', label: 'Pending profile', tone: 'neutral' },
+  restricted: { icon: 'ban', label: 'Restricted', tone: 'critical' },
+};
+
+export function accountStatusLook(status: string): StateLook {
+  return (
+    accountStatus[status] ?? {
+      icon: 'info',
+      label: humanState(status),
+      tone: 'neutral',
+    }
+  );
+}
+
+/**
+ * Why an account is not active, in USERS' own coarse vocabulary.
+ *
+ * Deliberately coarse and never expanded here. The finding behind a safety
+ * restriction lives with the enforcement record in TRUST & SAFETY and reaches
+ * an operator through the case that produced it, beside the evidence it rests
+ * on — which is the only place it can honestly be read.
+ */
+export const accountStatusReasonLabels: Readonly<Record<string, string>> = {
+  eligibility_failed: 'Eligibility failed',
+  onboarding_incomplete: 'Onboarding incomplete',
+  safety_enforcement: 'Safety enforcement',
+  user_requested: 'Requested by the account holder',
+};
+
+/** What a club is doing, in PRIVATE CLUBS' own vocabulary. */
+export const clubLifecycleLabels: Readonly<Record<string, string>> = {
+  closed: 'Closed',
+  draft: 'Draft',
+  published: 'Published',
+};
+
+/** How somebody came to hold a membership. */
+export const membershipSourceLabels: Readonly<Record<string, string>> = {
+  admin_grant: 'Granted by an operator',
+  billing: 'Bought',
+  creator_invite: 'Invited by the creator',
+};
+
+/** What a payment bought, in the vocabulary the creator's earnings split by. */
+export const resourceTypeLabels: Readonly<Record<string, string>> = {
+  club: 'Club membership',
+  gift: 'Gift',
+};
+
+/**
+ * Which of the two records an audit row came out of.
+ *
+ * Named for the record rather than for a severity, because neither record is
+ * more serious than the other and one of them is simply everything AUTH has
+ * seen.
+ */
+export const auditStreamLabels: Readonly<Record<string, string>> = {
+  decision: 'Moderation decisions',
+  security: 'Authentication and session events',
+};
+
 const appealState: Readonly<Record<string, StateLook>> = {
   received: { icon: 'queue', label: 'Received', tone: 'info' },
   refused: { icon: 'x', label: 'Refused', tone: 'neutral' },
