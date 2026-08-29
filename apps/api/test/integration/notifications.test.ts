@@ -1780,6 +1780,34 @@ describe('push device registration', () => {
     return { devices: parsed.devices ?? [], status: response.status };
   }
 
+  /**
+   * What the API's own error handler recorded, if anything.
+   *
+   * `application.ts` logs `unhandled request error` with the thrown value
+   * whenever a request answers 500. The suite's logger keeps every record, so
+   * the exception is already in this process — it was simply never read.
+   *
+   * Read from a mark taken before the action rather than from the whole run,
+   * so a record another test provoked cannot be reported as this one's cause.
+   */
+  function unhandledErrors(from: number): readonly string[] {
+    return logs
+      .slice(from)
+      .filter(
+        (entry): entry is { fields: { error?: unknown }; message: string } =>
+          typeof entry === 'object' &&
+          entry !== null &&
+          (entry as { message?: unknown }).message ===
+            'unhandled request error',
+      )
+      .map((entry) => {
+        const thrown = entry.fields.error;
+        return thrown instanceof Error
+          ? `${thrown.name}: ${thrown.message}`
+          : String(thrown);
+      });
+  }
+
   async function liveDevices(recipientId: string) {
     return rowsOf<{
       disable_reason: string | null;
@@ -1944,6 +1972,7 @@ describe('push device registration', () => {
 
   it('leaves exactly one live registration under fifty concurrent registrations', async () => {
     const recipient = await deviceOwner();
+    const logMark = logs.length;
 
     // The same device registering fifty times at once, which is what a retry
     // storm or a reconnecting app actually looks like.
@@ -1980,7 +2009,15 @@ describe('push device registration', () => {
           .filter((status) => status !== 200 && status !== 503),
       ),
     ];
-    expect(unexpected).toEqual([]);
+    // And carried with the server's own account of why. A 500 answers with a
+    // correlation identifier and nothing else, by design, so the response body
+    // cannot say what went wrong; the record the error handler wrote is the
+    // only thing that can. This failure has cost two full runs to see and none
+    // to explain, and a run here is twelve minutes.
+    expect({ statuses: unexpected, why: unhandledErrors(logMark) }).toEqual({
+      statuses: [],
+      why: [],
+    });
     expect(results.some((result) => result.status === 200)).toBe(true);
     expect(await liveDevices(recipient.id)).toHaveLength(1);
   });
