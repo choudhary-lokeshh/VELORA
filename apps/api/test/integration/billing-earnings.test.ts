@@ -729,6 +729,84 @@ describe('what a creator has earned', () => {
  * is split, here or anywhere.
  */
 describe('where a creator’s money came from', () => {
+  it('marks a gift partly returned, and reversed only once the whole capture is', async () => {
+    /*
+     * The state three surfaces render and nothing produced.
+     *
+     * `partially_reversed` is in the gift policy, in a CHECK constraint on the
+     * table, and in both the refund and dispute services; Consumer Web,
+     * Consumer Mobile and Creator Studio each give it its own words — "Part of
+     * this was returned. The creator keeps the rest." Until this test it
+     * appeared nowhere in the suite at all, so nothing proved the transition
+     * happened, and nothing would have noticed if the boundary between "partly"
+     * and "wholly" moved by one minor unit.
+     *
+     * One unit back and then the remainder, rather than halves, because the
+     * property under test is the threshold — `settledReversalTotal` accumulating
+     * across separate reversals and only reaching `reversed` when it covers the
+     * capture — and a single split hides whether the total is accumulated or
+     * the last reversal is simply compared on its own.
+     */
+    const sold = await seller({
+      amountMinor: '1500',
+      currencies: ['USD'],
+      slug: 'partlyback',
+      subject: 'partlyback@velora.test',
+    });
+    await giftCatalogFor(sold.studio);
+    const price = await sentGift({
+      buyer: 'partlybackgiver@velora.test',
+      handle: 'partlyback',
+      key: 'earnings-key-gift-partial',
+    });
+
+    const [payment] = await rowsOf<{ id: string }>(
+      database.sql`select p.id from billing_payments p join billing_gifts g on g.payment_id = p.id`,
+    );
+    const paymentId = payment?.id;
+    if (paymentId === undefined) throw new Error('the gift has no payment');
+
+    const giftState = async () => {
+      const [row] = await rowsOf<{ state: string }>(
+        database.sql`select state from billing_gifts`,
+      );
+      return row?.state;
+    };
+    expect(await giftState()).toBe('sent');
+
+    const refund = async (amountMinor: string, key: string) => {
+      const operator = await adminSession();
+      const response = await handle(
+        signed('/v1/admin/billing/refunds', operator, testAdminOrigin, {
+          body: {
+            amountMinor,
+            currency: 'USD',
+            paymentId,
+            reasonCode: 'not_delivered',
+          },
+          idempotencyKey: key,
+          method: 'POST',
+        }),
+      );
+      expect(response.status, `refund of ${amountMinor}`).toBe(201);
+      await drain();
+    };
+
+    await refund('1', 'earnings-key-gift-partial-1');
+    // One minor unit is not the capture, so the gesture still stands and the
+    // creator keeps the rest of it.
+    expect(await giftState()).toBe('partially_reversed');
+    expect(BigInt(await ledgerPayable('USD'))).toBeGreaterThan(0n);
+
+    await refund(
+      (BigInt(price) - 1n).toString(),
+      'earnings-key-gift-partial-2',
+    );
+    // The two together cover the capture, so nothing of it was received.
+    expect(await giftState()).toBe('reversed');
+    expect(await ledgerPayable('USD')).toBe('0');
+  });
+
   it('splits one currency between club memberships and gifts', async () => {
     const sold = await seller({
       amountMinor: '1500',
