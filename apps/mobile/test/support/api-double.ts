@@ -104,6 +104,16 @@ export interface MobileApiState {
       };
     }
   >;
+  /** Gifts this person has sent, newest first, as `GET /v1/billing/gifts` answers. */
+  gifts: {
+    createdAt: string;
+    creator: { displayName: string; handle: string };
+    gift: { id: string; name: string; visual: string };
+    id: string;
+    price: { amountMinor: string; currency: string };
+    sentAt?: string;
+    state: string;
+  }[];
   payments: {
     amount: { amountMinor: string; currency: string };
     createdAt: string;
@@ -362,6 +372,7 @@ export function admittedState(): MobileApiState {
     clubAccess: [],
     clubDetails: {},
     clubInvites: [],
+    gifts: [],
     membershipOffers: {},
     payments: [],
     publicClubs: {},
@@ -1006,6 +1017,9 @@ export function createMobileApiDouble(
         },
         subscriptions: state.subscriptions,
       });
+    }
+    if (path === '/v1/billing/gifts' && method === 'GET') {
+      return json(200, { gifts: state.gifts });
     }
     if (path === '/v1/billing/subscriptions' && method === 'GET') {
       return json(200, { subscriptions: state.subscriptions });

@@ -9,11 +9,26 @@
  * made.
  *
  * An unknown or malformed code comes back as itself rather than as an error.
- * That fallback is doing more work here than on the web: Hermes ships Intl, but
- * `DisplayNames` is not guaranteed on every platform and version this
- * application runs on. Where it is missing, a person sees `ES` rather than
- * "Spain" — which is worse than the web and much better than a blank screen or
- * a hand-written country list.
+ *
+ * On Android that fallback is not the exception, which is what this comment
+ * used to imply. Hermes ships `Intl` — dates and times format correctly on a
+ * device, and the screens prove it — but not `Intl.DisplayNames`, so every
+ * region and language on this surface renders as its wire subtag: `NG` where
+ * Consumer Web says "Nigeria", and "Both speak en" where it says "Both speak
+ * English". Measured on an Android 36 device on 2026-08-30.
+ *
+ * Nothing here is fabricated by that: a subtag is the code the contract
+ * carries, not an invented name, and no country list is hand-written — which
+ * is the reason it was written this way and still is. But it is worse than the
+ * web for every reader, and closing it means either bundling CLDR data or
+ * reaching the platform's own names through a native module. Both are choices
+ * with a bundle-size and dependency cost that nobody has made, so it is open
+ * as "Country and language names on Android" in
+ * `docs/decisions/DECISIONS_REQUIRED.md` rather than settled quietly here.
+ *
+ * No test can catch this. Node ships full ICU, so `DisplayNames` works under
+ * Jest and the same code renders "Spain" — the device is the only place the
+ * difference exists.
  */
 
 function displayName(
@@ -57,6 +72,23 @@ export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, {
     day: 'numeric',
     month: 'short',
+  });
+}
+
+/**
+ * A date whose year is part of the fact.
+ *
+ * `formatDate` drops the year, which is right for a message or a gift — those
+ * are recent, and "Aug 25" is how somebody would say it. It is wrong for the
+ * day an account was opened, where the year is most of the information. That
+ * line was the one place in the product printing a raw `toLocaleDateString()`,
+ * so it read "8/25/2026" among prose dates on every other screen.
+ */
+export function formatFullDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
   });
 }
 

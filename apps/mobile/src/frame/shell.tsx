@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import {
+  PixelRatio,
   Platform,
   Pressable,
   RefreshControl,
@@ -11,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Icon } from '../design/icons';
+import { largeTextScale } from '../design/text-scale';
 import { IconButton, Text, type TextTone } from '../design/primitives';
 import {
   color,
@@ -35,6 +37,33 @@ import { useToast, type ToastTone } from './providers';
  */
 
 /* =============================== Screen ============================== */
+
+/**
+ * Whether a tab bar is drawn under this screen.
+ *
+ * A phone reserves the bottom of its window for the system's own gesture
+ * handle, and something has to keep the product's last line out of it. On the
+ * five destinations the tab bar does, because it pads itself by the inset. A
+ * pushed screen has no tab bar, and nothing was doing it: the conversation's
+ * "Not end-to-end encrypted" ran into the gesture band, and at 200 % text three
+ * lines of it did.
+ *
+ * A context rather than a prop, because the answer belongs to the layout and
+ * not to the screen — every pushed screen would otherwise have to remember to
+ * say so, and the one that forgot would be the one nobody looked at. It is
+ * false by default, which is the safe direction: a screen that wrongly thinks
+ * it has no bar below leaves a little extra room, and one that wrongly thinks
+ * it has leaves none.
+ */
+const TabBarBelow = createContext(false);
+
+export function WithTabBarBelow({
+  children,
+}: {
+  readonly children: ReactNode;
+}) {
+  return <TabBarBelow.Provider value>{children}</TabBarBelow.Provider>;
+}
 
 export function Screen({
   children,
@@ -65,6 +94,20 @@ export function Screen({
   readonly trailing?: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const tabBarBelow = useContext(TabBarBelow);
+  /*
+   * A header that clips is a header that lies.
+   *
+   * One line for the title and two for the subtitle is right at the ordinary
+   * text size and wrong above it: at 200 % a device rendered "Gifts you have
+   * sent to creators, and what happ.." and stopped, and a person's name in a
+   * pushed screen's title has the same problem the longer the name. Past the
+   * ceiling the tab bar uses, both are allowed to run on and the header grows
+   * — it has a `minHeight` rather than a height, and the body scrolls beneath
+   * it. A tall header costs somebody a little room; a truncated one costs them
+   * the sentence.
+   */
+  const large = PixelRatio.getFontScale() > largeTextScale;
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + space[2] }]}>
@@ -80,14 +123,18 @@ export function Screen({
         <View style={styles.headerTitles}>
           <Text
             accessibilityRole="header"
-            numberOfLines={1}
+            numberOfLines={large ? 2 : 1}
             variant="title"
             weight="semibold"
           >
             {title}
           </Text>
           {subtitle === undefined ? null : (
-            <Text numberOfLines={2} tone="secondary" variant="small">
+            <Text
+              tone="secondary"
+              variant="small"
+              {...(large ? {} : { numberOfLines: 2 })}
+            >
               {subtitle}
             </Text>
           )}
@@ -98,7 +145,8 @@ export function Screen({
   );
 
   const padding = {
-    paddingBottom: space[10],
+    // The tab bar already holds the gesture band open where there is one.
+    paddingBottom: space[10] + (tabBarBelow ? 0 : insets.bottom),
     paddingHorizontal: space[4],
   };
 
@@ -166,6 +214,25 @@ export function PlainScreen({
 }
 
 /**
+ * The alpha a wash token carries, which `stopColor` on its own throws away.
+ *
+ * `react-native-svg` hands `stopColor` to the platform's colour parser, which
+ * keeps the three channels and discards the fourth. A stop given
+ * `rgba(225, 122, 102, 0.22)` therefore paints at full strength, and on a
+ * device that is not a subtle difference: the ember wash rendered at about
+ * four and a half times its approved value and the neutral at seven, so a
+ * sparse screen was two saturated fields rather than a dark one and tertiary
+ * text sat on top of them. Nothing in a browser-rendered walk could show it,
+ * because Web draws the same washes through CSS, which honours the alpha.
+ *
+ * Read back out of the token rather than written down again, so the value the
+ * design-parity gate holds the two surfaces to stays the only place it lives.
+ */
+function washOpacity(token: string): string {
+  return /,\s*([\d.]+)\s*\)$/u.exec(token)?.[1] ?? '1';
+}
+
+/**
  * Native NIGHT CURRENT atmosphere, drawn from the same existing semantic
  * washes as Web. The SVG dependency already draws every product icon; using it
  * here adds no native module. The light stays behind every control, so it adds
@@ -182,7 +249,11 @@ function Atmosphere() {
       <Svg height="100%" width="100%">
         <Defs>
           <RadialGradient cx="88%" cy="0%" id="shell-ember" r="64%">
-            <Stop offset="0" stopColor={color.emberWashStrong} />
+            <Stop
+              offset="0"
+              stopColor={color.emberWashStrong}
+              stopOpacity={washOpacity(color.emberWashStrong)}
+            />
             <Stop
               offset="1"
               stopColor={color.emberWashStrong}
@@ -190,7 +261,11 @@ function Atmosphere() {
             />
           </RadialGradient>
           <RadialGradient cx="12%" cy="100%" id="shell-neutral" r="58%">
-            <Stop offset="0" stopColor={color.statusNeutralWash} />
+            <Stop
+              offset="0"
+              stopColor={color.statusNeutralWash}
+              stopOpacity={washOpacity(color.statusNeutralWash)}
+            />
             <Stop
               offset="1"
               stopColor={color.statusNeutralWash}
@@ -236,9 +311,6 @@ export function Wordmark() {
 }
 
 /* =============================== Tab bar ============================= */
-
-/** How far a tab label may grow before five of them stop fitting. */
-const tabLabelScaleCap = 1.3;
 
 export interface TabSignals {
   readonly conversations?: number;
@@ -337,7 +409,7 @@ export function TabBar({
                * words; the icon above it does not scale at all and carries the
                * meaning either way.
                */
-              scaleCapOverride={tabLabelScaleCap}
+              scaleCapOverride={largeTextScale}
               tone={active ? 'accent' : 'tertiary'}
               variant="micro"
               weight={active ? 'semibold' : 'regular'}

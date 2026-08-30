@@ -1,4 +1,5 @@
 import { linkSegments, resolveDeepLink } from '../src/frame/deep-links';
+import { youSections } from '../src/frame/links';
 import {
   resolvePushDestination,
   routablePushTemplateKeys,
@@ -17,6 +18,7 @@ import { notificationChannels } from '../src/push/channels';
  */
 
 const conversationId = '33333333-3333-4333-8333-333333333333';
+const personId = '44444444-4444-4444-8444-444444444444';
 
 describe('a deep link', () => {
   it('accepts every address the application publishes', () => {
@@ -40,13 +42,23 @@ describe('a deep link', () => {
       kind: 'route',
       path: '/you',
     });
-    expect(resolveDeepLink('velora://you/safety')).toEqual({
-      kind: 'route',
-      path: '/you/safety',
-    });
+    // Every section, walked from the list the router reads, rather than one
+    // named by hand. The hand-named version of this stayed green while
+    // `velora://you/memberships` was refused: a test that lists a sample of
+    // what it is checking can only ever prove the sample.
+    for (const section of youSections) {
+      expect(resolveDeepLink(`velora://you/${section}`)).toEqual({
+        kind: 'route',
+        path: `/you/${section}`,
+      });
+    }
     expect(resolveDeepLink(`velora://messages/${conversationId}`)).toEqual({
       kind: 'route',
       path: `/messages/${conversationId}`,
+    });
+    expect(resolveDeepLink(`velora://people/${personId}`)).toEqual({
+      kind: 'route',
+      path: `/people/${personId}`,
     });
   });
 
@@ -92,7 +104,11 @@ describe('a deep link', () => {
     ]) {
       const resolved = resolveDeepLink(`velora://messages/${suffix}`);
       expect(resolved.kind).toBe('refused');
+      expect(resolveDeepLink(`velora://people/${suffix}`).kind).toBe('refused');
     }
+    // There is no listing of people, so the bare address leads nowhere and is
+    // refused rather than quietly sent somewhere it was not addressed to.
+    expect(resolveDeepLink('velora://people').kind).toBe('refused');
   });
 
   it('never assembles a path out of what arrived', () => {

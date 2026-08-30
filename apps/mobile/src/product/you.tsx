@@ -4,7 +4,9 @@ import {
 } from '@velora/consumer-client';
 import { StyleSheet, View } from 'react-native';
 
-import { useSession } from '../frame/providers';
+import { useMediaAddressBook, useSession } from '../frame/providers';
+import { portraitReferences, useMediaAddresses } from './imagery';
+import { formatFullDate } from './locale';
 import { Screen } from '../frame/shell';
 import {
   Avatar,
@@ -63,6 +65,12 @@ const entries: readonly Entry[] = [
     label: 'Memberships',
   },
   {
+    caption: 'Gifts you have sent to creators, and what happened to each one.',
+    icon: 'sparkle',
+    id: 'gifts',
+    label: 'Gifts',
+  },
+  {
     caption: 'What VELORA tells you about, and where.',
     icon: 'bell',
     id: 'notices',
@@ -93,6 +101,44 @@ export function YouScreen({
   const person = profile.value;
   const answered = !account.loading || current !== undefined;
 
+  /*
+   * The person's own photograph, asked for the same way every other card in
+   * the product asks for somebody else's. Without this a person saw their
+   * initials here while everybody in Discover had a face, which reads as
+   * something being wrong with their account rather than as a design.
+   */
+  const book = useMediaAddressBook();
+  /*
+   * The first slot that is actually ready, not simply the first slot. A
+   * person's own profile carries everything they have added, including one
+   * still being checked and one that was refused, and asking for an address
+   * for either mints a credential for an image nothing is going to render.
+   */
+  const ready = (person?.media ?? []).filter((item) => item.state === 'ready');
+  const portraits = useMediaAddresses(
+    portraitReferences(ready.length === 0 ? [] : [{ media: ready }]),
+    'avatar_large',
+  );
+  const portrait = [...portraits.values()][0];
+  const mediaState = profileMediaState(person);
+  /*
+   * Only once an exchange has actually happened, and only when there is
+   * something it could have delivered. The same rule the photo screen uses,
+   * for the same reason: before that, the honest state is "nothing to say
+   * yet" rather than either claim.
+   */
+  const undeliverable = mediaState === 'ready' && book.deliveryUnavailable();
+  /*
+   * The contract's media labels are written for different slots: three end a
+   * sentence ("Upload another.", "Checking the photo…") and three are a
+   * fragment ("Image ready"). Ending one that already ends gives "Upload
+   * another.." and "Checking the photo….", which read as a typo rather than
+   * as a state.
+   */
+  const stated = /[.!?…]$/u.test(profileMediaLabels[mediaState])
+    ? profileMediaLabels[mediaState]
+    : `${profileMediaLabels[mediaState]}.`;
+
   return (
     <Screen
       onRefresh={session.account.reloadAll}
@@ -121,6 +167,8 @@ export function YouScreen({
                 displayName={person?.displayName ?? 'You'}
                 seed={current?.id ?? 'you'}
                 size="large"
+                source={portrait}
+                testID="you-portrait"
               />
               <View style={styles.identityText}>
                 <Text
@@ -149,15 +197,19 @@ export function YouScreen({
         )}
 
         {/*
-          Stated on the surface rather than only in a document. There is no
-          route by which an image could be delivered to anybody, so no screen
-          offers to add one and this says why — and it also reports what the
-          server says about whatever is already stored, because "we hold an
-          image and cannot show it" and "there is no image" are different
-          situations and a person is entitled to know which is theirs.
+          What the server says about this person's own photograph, and nothing
+          more than that. This used to assert that "nobody sees a photograph
+          anywhere in the product" on every build, which is false wherever
+          delivery is configured — the photograph was on the card above it and
+          on every face in Discover while the sentence claimed otherwise. The
+          platform-wide claim now appears only when the last exchange actually
+          refused for that reason, which is the one condition under which it is
+          true.
         */}
-        <Notice testID="profile-media-state" title="Photos are not shown yet">
-          {`VELORA has no approved way to deliver an image, so nobody sees a photograph anywhere in the product. ${profileMediaLabels[profileMediaState(person)]}.`}
+        <Notice testID="profile-media-state" title="Your photo">
+          {undeliverable
+            ? `${stated} This environment has no approved way to deliver an image, so it is stored and checked and shown nowhere — not yours and not anybody else's.`
+            : stated}
         </Notice>
 
         <Card padded={false} testID="you-menu">
@@ -226,7 +278,7 @@ export function AccountScreen({ onBack }: { readonly onBack: () => void }) {
             </Text>
             {current === undefined ? null : (
               <Text testID="account-created" tone="tertiary" variant="caption">
-                {`Account opened ${new Date(current.createdAt).toLocaleDateString()}`}
+                {`Account opened ${formatFullDate(current.createdAt)}`}
               </Text>
             )}
           </Stack>

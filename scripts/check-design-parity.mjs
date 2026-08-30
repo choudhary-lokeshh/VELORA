@@ -317,6 +317,83 @@ for (const name of mobileMarks.keys()) {
   }
 }
 
+/* ============================== Gift marks =========================== */
+
+/**
+ * The eight gift silhouettes, which three surfaces now draw.
+ *
+ * Consumer Web offers them on a creator's page, Creator Studio reads them back
+ * in the money history, and Consumer Mobile reads them back under You. None of
+ * the three may import another's source, so each holds the geometry — and
+ * three copies of eight paths is precisely the shape of thing that drifts the
+ * first time somebody adjusts a curve. The icon table above is held together
+ * for the same reason; these were not, until a phone started drawing them.
+ */
+const giftArtFiles = [
+  'apps/web/src/product/gift-art.tsx',
+  'apps/creator-studio/src/product/gift-art.tsx',
+  'apps/mobile/src/product/gift-art.tsx',
+];
+
+/**
+ * The gift table out of a surface's source.
+ *
+ * The values are concatenations of quoted fragments, so each shape is read as
+ * the list of its pieces and compared piece by piece — a path split across
+ * lines for legibility on one surface and written flat on another is the same
+ * geometry, and this must not call that a difference.
+ */
+function giftTable(source, path) {
+  const shapes = new Map();
+  const table = /export const giftShapes[^=]*=\s*\{([\s\S]*?)\n\};/u.exec(
+    source,
+  );
+  if (table === null) {
+    fail(`${path} no longer holds a gift table in the expected shape`);
+    return shapes;
+  }
+  // Sliced between one key and the next rather than matched as a whole entry,
+  // because `rose` is written as five quoted fragments over five lines on
+  // every surface and a single-line pattern silently skips it — which is a
+  // check that passes while proving one shape less than it claims.
+  const body = table[1];
+  const keys = [...body.matchAll(/^ {2}(\w+):/gmu)];
+  for (const [at, key] of keys.entries()) {
+    const from = (key.index ?? 0) + key[0].length;
+    const to = keys[at + 1]?.index ?? body.length;
+    shapes.set(
+      key[1],
+      [...body.slice(from, to).matchAll(/'([^']*)'/gu)]
+        .map((quoted) => quoted[1])
+        .join(''),
+    );
+  }
+  return shapes;
+}
+
+const [firstGiftFile, ...otherGiftFiles] = giftArtFiles;
+const firstGifts = giftTable(read(firstGiftFile), firstGiftFile);
+
+if (firstGifts.size < 8) {
+  fail(`${firstGiftFile} yielded only ${firstGifts.size} gift shapes`);
+}
+for (const path of otherGiftFiles) {
+  const held = giftTable(read(path), path);
+  for (const [name, shape] of firstGifts) {
+    const other = held.get(name);
+    if (other === undefined) {
+      fail(`${firstGiftFile} draws the ${name} gift and ${path} does not`);
+    } else if (other !== shape) {
+      fail(`the ${name} gift is drawn differently in ${path}`);
+    }
+  }
+  for (const name of held.keys()) {
+    if (!firstGifts.has(name)) {
+      fail(`${path} draws the ${name} gift and ${firstGiftFile} does not`);
+    }
+  }
+}
+
 /* ================================ Result ============================= */
 
 if (failures.length > 0) {
@@ -328,5 +405,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `NIGHT CURRENT matches across Consumer Web and Consumer Mobile: ${String(colorNames.size)} colours, ${String(space.size)} spacing steps, ${String(webMarks.size)} icon marks.\n`,
+  `NIGHT CURRENT matches across Consumer Web and Consumer Mobile: ${String(colorNames.size)} colours, ${String(space.size)} spacing steps, ${String(webMarks.size)} icon marks, ${String(firstGifts.size)} gift marks across ${String(giftArtFiles.length)} surfaces.\n`,
 );

@@ -128,3 +128,19 @@ Bottom sheets rather than centred dialogs, so a confirming control lands under t
 **There is no simulator, no device, and no Xcode in the environment this was built in**, so the product was rendered through `react-native-web` in a real browser and walked at 320, 360, 390, 430, and 768 points across every screen, checking for element overflow, a document that scrolls sideways, and any tappable control under the minimum target.
 
 That proves layout, state, reachability, and target size. It does not prove native chrome — the real status bar, the real keyboard, the real safe-area insets, the platform's scroll physics, or how the typeface renders on a device. [The freeze report](../architecture/21-consumer-mobile-freeze-report.md) records that limitation alongside the defects the walk did find.
+
+## As built, after ADR-0039
+
+[ADR-0039](../decisions/ADR-0039-consumer-mobile-device-refinements.md) records what changed once the application could be run on a device rather than only rendered in a browser. The limitation above is closed: an Android 36 device now runs the real bundle, and the fixes below were each found and confirmed on it.
+
+**Two surfaces the phone did not have.** A person has an address — `/people/[personId]`, opened from a Discover card and reachable as `velora://people/<uuid>` — carrying every photograph the projection published rather than the one a card shows. Gifts sent have a history under You, with the gift's own silhouette, the amount the ledger posted, and what each state means for the person who sent it. **Sending is not offered and is not linked**: the API admits only `consumer_web`, and whether an application may point somebody at an outside payment page is unresolved store policy, so the screen says where sending happens and does nothing else.
+
+**Three things the surface was saying that were not true.** You and Profile no longer assert that no photograph is displayed anywhere in the product; You reports what the server says about this person's own image and adds the platform-wide sentence only when the last delivery exchange refused for that reason. The You identity card shows the person's own portrait, as every other card in the product shows everybody else's.
+
+**`velora://you/memberships` works.** The deep-link parser kept a second copy of the section list and had never gained the entry; `links.ts` owns the one list now, and the test walks all of it.
+
+**The atmosphere is the strength it was specified at.** `react-native-svg` discards the alpha in `stopColor`, so both washes had been painting at full opacity — four and a half times over for the ember, seven for the neutral.
+
+**Large text changes the layout rather than the words.** Past 1.3× a row of equal-weight controls becomes a column, a button drops its decorative mark before it costs the label a character, and a header stops counting lines instead of clipping a sentence. A screen with no tab bar under it holds the system gesture band open itself.
+
+**Country and language still read as wire subtags on Android** — `NG`, `Both speak en` — because Hermes ships `Intl` without `DisplayNames`. Nothing is invented by that and no country list is hand-written; closing it is a bundle-size and dependency decision, open in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).

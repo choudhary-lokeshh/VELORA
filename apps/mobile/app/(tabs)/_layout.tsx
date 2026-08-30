@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 
 import { destinations } from '../../src/frame/navigation';
-import { TabBar } from '../../src/frame/shell';
+import { TabBar, WithTabBarBelow } from '../../src/frame/shell';
 import { useTabSignals } from '../../src/frame/providers';
 import { color } from '../../src/design/tokens';
 
@@ -20,28 +20,30 @@ export default function TabLayout() {
   const signals = useTabSignals();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        sceneStyle: { backgroundColor: color.canvas },
-      }}
-      tabBar={({ navigation, state }) => (
-        <TabBar
-          current={state.routes[state.index]?.name ?? 'discover'}
-          onSelect={(name) => {
-            navigation.navigate(name);
-          }}
-          signals={signals}
-        />
-      )}
-    >
-      {destinations.map((destination) => (
-        <Tabs.Screen
-          key={destination.id}
-          name={destination.name}
-          options={{ title: destination.label }}
-        />
-      ))}
-    </Tabs>
+    <WithTabBarBelow>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: { backgroundColor: color.canvas },
+        }}
+        tabBar={({ navigation, state }) => (
+          <TabBar
+            current={state.routes[state.index]?.name ?? 'discover'}
+            onSelect={(name) => {
+              navigation.navigate(name);
+            }}
+            signals={signals}
+          />
+        )}
+      >
+        {destinations.map((destination) => (
+          <Tabs.Screen
+            key={destination.id}
+            name={destination.name}
+            options={{ title: destination.label }}
+          />
+        ))}
+      </Tabs>
+    </WithTabBarBelow>
   );
 }

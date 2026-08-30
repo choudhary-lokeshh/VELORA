@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { Children, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Image,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text as RNText,
@@ -15,6 +16,7 @@ import {
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { Icon, type IconName } from './icons';
+import { largeTextScale } from './text-scale';
 import {
   color,
   fontFamily,
@@ -247,6 +249,17 @@ export function Button({
    */
   const inkTone = disabled ? 'tertiary' : buttonInk[tone];
   const ink = toneColor[inkTone];
+  /*
+   * The mark goes before the word does.
+   *
+   * A button's icon is decorative — the label carries the meaning, which is why
+   * the icon has no name of its own — and the two share one line. At 200 % text
+   * on a device, "Interested" beside a heart in half a card's width came out as
+   * "Interes/ted" broken mid-word, so the mark was costing the label exactly
+   * where the label mattered most. Above this scale the icon is dropped and the
+   * word gets the whole control. The ceiling is the same one the tab bar uses.
+   */
+  const markFits = PixelRatio.getFontScale() <= largeTextScale;
 
   return (
     <Pressable
@@ -269,11 +282,20 @@ export function Button({
     >
       {busy ? (
         <ActivityIndicator color={ink} size="small" testID={`${testID}-busy`} />
-      ) : icon === undefined ? null : (
+      ) : icon === undefined || !markFits ? null : (
         <Icon color={ink} name={icon} size={size === 'small' ? 'sm' : 'md'} />
       )}
       <Text
-        numberOfLines={1}
+        /*
+         * Two lines, and allowed to shrink. On one line a device at 200 % text
+         * rendered the primary action of a decision as "Interest…", which is
+         * the one label on that card somebody has to be able to read — and the
+         * larger the text setting, the more certain the truncation, so it
+         * failed hardest for exactly the people who set it. The control grows
+         * instead; `minHeight` was already a floor rather than a height.
+         */
+        numberOfLines={2}
+        style={styles.buttonLabel}
         tone={inkTone}
         variant={size === 'small' ? 'small' : 'body'}
         weight="semibold"
@@ -1088,6 +1110,34 @@ export function ListRow({
 
 /* ================================ Layout ============================= */
 
+/**
+ * Two or three controls of equal weight, side by side — until they cannot be.
+ *
+ * Equal width is the point of the row: neither of "Pass" and "Interested" is
+ * the smaller decision, and sizing them to their words would say one of them
+ * is. What a row cannot do is hold two-word labels at a large system text
+ * size. At 200 % on a 1080-wide device "Interested" broke across two lines
+ * inside its own control and then broke mid-word, which is the layout telling
+ * somebody who needs large text that they may have it as long as they do not
+ * mind guessing. So past the same ceiling the tab bar uses, the row becomes a
+ * column: every control gets the full width and every label is whole.
+ *
+ * Order is preserved either way, so the primary action stays where it was
+ * relative to the others rather than moving under somebody's thumb.
+ */
+export function Actions({ children }: { readonly children: ReactNode }) {
+  const stacked = PixelRatio.getFontScale() > largeTextScale;
+  return (
+    <View style={stacked ? styles.actionsStacked : styles.actionsRow}>
+      {Children.map(children, (child) =>
+        child === null || child === undefined || child === false ? null : (
+          <View style={stacked ? undefined : styles.actionsShare}>{child}</View>
+        ),
+      )}
+    </View>
+  );
+}
+
 export function Stack({
   children,
   gap = 4,
@@ -1152,6 +1202,12 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface2,
     borderColor: color.borderHairline,
   },
+  // Shrinkable and centred: without the shrink the label keeps its full
+  // intrinsic width and pushes itself out of a button that is sharing a row.
+  buttonLabel: { flexShrink: 1, textAlign: 'center' },
+  actionsRow: { alignItems: 'center', flexDirection: 'row', gap: space[2] },
+  actionsShare: { flex: 1 },
+  actionsStacked: { gap: space[2] },
   buttonPressed: { opacity: 0.72 },
   buttonUnavailable: { opacity: 0.45 },
   card: {

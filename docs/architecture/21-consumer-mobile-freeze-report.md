@@ -185,9 +185,22 @@ configurable ones.
 | Native-chrome verification of these screens | A simulator or device in the environment that builds them |
 | A tablet layout | Approved Figma handoff for the tablet class |
 
+## Amendment: device evidence, 2026-08-30
+
+The row above reading "Native-chrome verification of these screens — blocked on a simulator or device in the environment that builds them" is closed. The environment has an Android 36 emulator, the development build installs and runs the real bundle on it, and the whole application was walked there.
+
+Getting to that point was itself a fix. Metro served 404 for every bundle: its server root is the workspace root when a pnpm workspace is detected, and the entry it advertised ran through a pnpm symlink its file map does not hold, with two further failures of the same class behind it. `EXPO_NO_METRO_WORKSPACE_ROOT=1` on the mobile `dev` and `start` scripts — Expo's own published escape hatch — resolves all three. `expo export` was correct throughout and is unchanged, so nothing about the packaged artifact was ever in question; what was missing was the ability to look at the product on the hardware it ships on.
+
+What the device then showed is recorded in [ADR-0039](../decisions/ADR-0039-consumer-mobile-device-refinements.md): an atmosphere painting four to seven times too strong because `react-native-svg` discards the alpha in `stopColor`; two screens asserting that no photograph is displayed anywhere while the product displayed them; a real address refused by the deep-link parser; a primary action unreadable at 200% text; a pushed screen's last line inside the system gesture band; and two surfaces Consumer Web has that the phone did not — a person, and a history of gifts sent.
+
+Verified on the device after the fixes: every destination and every screen under You; `velora://you/memberships`, `velora://people/<uuid>` and a refused link, which lands on Notices and says so; the system Back leaving a pushed screen for its parent and closing a sheet without leaving the screen behind it; and the whole application again at 200% text.
+
+Still blocked, unchanged: real call media, live push delivery, membership purchase, gift sending, payout transfer, distribution to either store, and a tablet layout. Country and language names read as wire subtags on Android, which is a new open decision rather than a provider block.
+
 ## Cross-references
 
 [Consumer Mobile surface](../surfaces/02-consumer-mobile.md),
+[ADR-0039](../decisions/ADR-0039-consumer-mobile-device-refinements.md),
 [ADR-0030](../decisions/ADR-0030-consumer-mobile-product-interface.md),
 [ADR-0027](../decisions/ADR-0027-consumer-web-product-interface.md),
 [design principles](../design/01-design-principles.md),

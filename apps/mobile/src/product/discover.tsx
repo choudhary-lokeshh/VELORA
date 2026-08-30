@@ -1,11 +1,12 @@
 import type { ApiResult, DiscoveryCandidate } from '@velora/consumer-client';
 import { failureMessage, isRetryable } from '@velora/consumer-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { useApi, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
+  Actions,
   Avatar,
   Button,
   Card,
@@ -61,7 +62,12 @@ const emptyFeed: Feed = {
   exhausted: false,
 };
 
-export function DiscoverScreen() {
+export function DiscoverScreen({
+  onOpenPerson,
+}: {
+  /** Opening one person, at their own address. The route owns the router. */
+  readonly onOpenPerson: (personId: string) => void;
+}) {
   const api = useApi();
   const toast = useToast();
   const [feed, setFeed] = useState<Feed>(emptyFeed);
@@ -242,6 +248,9 @@ export function DiscoverScreen() {
               onBlocked={() => {
                 drop(item.id);
               }}
+              onOpen={() => {
+                onOpenPerson(item.id);
+              }}
               onPass={() => {
                 decide(
                   item.id,
@@ -270,6 +279,7 @@ function CandidateCard({
   busy,
   candidate,
   onBlocked,
+  onOpen,
   onPass,
   onSignal,
   portrait,
@@ -277,6 +287,8 @@ function CandidateCard({
   readonly busy: boolean;
   readonly candidate: DiscoveryCandidate;
   readonly onBlocked: () => void;
+  /** Opening the person, to look properly before deciding. */
+  readonly onOpen: () => void;
   readonly onPass: () => void;
   readonly onSignal: () => void;
   /** A short-lived address, or nothing to show. Never explained either way. */
@@ -287,30 +299,48 @@ function CandidateCard({
     <Card testID={`candidate-${candidate.id}`}>
       <Stack gap={4}>
         <View style={styles.identity}>
-          <Avatar
-            displayName={candidate.displayName}
-            seed={candidate.id}
-            size="large"
-            source={portrait}
-            testID={`candidate-portrait-${candidate.id}`}
-          />
-          <View style={styles.identityText}>
-            <Text
-              accessibilityRole="header"
-              variant="heading"
-              weight="semibold"
-            >
-              {candidate.displayName}
-            </Text>
-            <Inline gap={2} wrap>
-              {region === undefined ? null : <Chip>{region}</Chip>}
-              {candidate.sharedLanguages.length === 0 ? null : (
-                <Chip>
-                  {`Both speak ${languageNames(candidate.sharedLanguages)}`}
-                </Chip>
-              )}
-            </Inline>
-          </View>
+          {/*
+            The person, and the way into them. A card carries one photograph
+            and the decision; somebody who wants to look properly before
+            deciding opens the person, where the rest of what the projection
+            already published is. The safety control stays outside this,
+            because it acts on the person rather than opening them.
+          */}
+          <Pressable
+            accessibilityLabel={`Open ${candidate.displayName}`}
+            accessibilityRole="button"
+            onPress={onOpen}
+            style={({ pressed }) => [
+              styles.open,
+              pressed ? styles.openPressed : undefined,
+            ]}
+            testID={`candidate-open-${candidate.id}`}
+          >
+            <Avatar
+              displayName={candidate.displayName}
+              seed={candidate.id}
+              size="large"
+              source={portrait}
+              testID={`candidate-portrait-${candidate.id}`}
+            />
+            <View style={styles.identityText}>
+              <Text
+                accessibilityRole="header"
+                variant="heading"
+                weight="semibold"
+              >
+                {candidate.displayName}
+              </Text>
+              <Inline gap={2} wrap>
+                {region === undefined ? null : <Chip>{region}</Chip>}
+                {candidate.sharedLanguages.length === 0 ? null : (
+                  <Chip>
+                    {`Both speak ${languageNames(candidate.sharedLanguages)}`}
+                  </Chip>
+                )}
+              </Inline>
+            </View>
+          </Pressable>
           {/*
             Safety sits with the person rather than in the row of decisions.
             Beside Pass and Interested it competed for the same width and cost
@@ -335,7 +365,7 @@ function CandidateCard({
         )}
 
         <View style={styles.actions}>
-          <View style={styles.action}>
+          <Actions>
             <Button
               disabled={busy}
               onPress={onPass}
@@ -345,8 +375,6 @@ function CandidateCard({
             >
               Pass
             </Button>
-          </View>
-          <View style={styles.action}>
             <Button
               disabled={busy}
               icon="heart"
@@ -357,7 +385,7 @@ function CandidateCard({
             >
               Interested
             </Button>
-          </View>
+          </Actions>
         </View>
       </Stack>
     </Card>
@@ -365,13 +393,9 @@ function CandidateCard({
 }
 
 const styles = StyleSheet.create({
-  action: { flex: 1 },
   actions: {
-    alignItems: 'center',
     borderTopColor: color.borderHairline,
     borderTopWidth: 1,
-    flexDirection: 'row',
-    gap: space[2],
     paddingTop: space[4],
   },
   identity: {
@@ -381,4 +405,11 @@ const styles = StyleSheet.create({
   },
   identityText: { flex: 1, gap: space[2] },
   list: { gap: space[4], paddingBottom: space[6] },
+  open: {
+    alignItems: 'flex-start',
+    flex: 1,
+    flexDirection: 'row',
+    gap: space[4],
+  },
+  openPressed: { opacity: 0.6 },
 });

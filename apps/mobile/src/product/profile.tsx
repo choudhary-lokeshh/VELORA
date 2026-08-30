@@ -73,7 +73,15 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
   return (
     <Screen
       onBack={onBack}
-      subtitle="What other people see. A photograph can be added; none is displayed anywhere yet."
+      /*
+        No claim about delivery here. This screen used to say a photograph
+        "is displayed nowhere yet" as a flat fact, and on a build where
+        delivery is configured that is simply false — the photograph is on
+        the card below it and on every other person's card in Discover. The
+        Photos section carries the real answer, and carries it conditionally,
+        from what the last exchange actually said.
+      */
+      subtitle="What other people see."
       testID="profile-screen"
       title="Profile"
     >

@@ -9,6 +9,7 @@ import {
   NoticePreferencesScreen,
   ProfileScreen,
 } from '../../src/product/profile';
+import { SentGiftsScreen } from '../../src/product/gifts';
 import { MembershipsScreen } from '../../src/product/memberships';
 import { SafetyScreen } from '../../src/product/safety';
 import { AccountScreen } from '../../src/product/you';
@@ -32,6 +33,9 @@ export default function YouSection() {
     }
     case 'availability': {
       return <AvailabilityScreen onBack={onBack} />;
+    }
+    case 'gifts': {
+      return <SentGiftsScreen onBack={onBack} />;
     }
     case 'memberships': {
       return (

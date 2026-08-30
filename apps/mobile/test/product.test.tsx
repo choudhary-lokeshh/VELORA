@@ -4,6 +4,9 @@ import { maximumNotificationReadBatch } from '@velora/validation/notifications-b
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { ConversationScreen } from '../src/product/conversation';
 import { DiscoverScreen } from '../src/product/discover';
+import { SentGiftsScreen } from '../src/product/gifts';
+import { YouScreen } from '../src/product/you';
+import { PersonScreen } from '../src/product/person';
 import { IntroductionsScreen } from '../src/product/introductions';
 import { CreatorScreen, ClubScreen } from '../src/product/creator';
 import { MembershipsScreen } from '../src/product/memberships';
@@ -89,7 +92,10 @@ function withCandidates(): MobileApiState {
 
 describe('discover', () => {
   it('shows a person with what the contract publishes, photograph included', async () => {
-    const { view } = await mount(<DiscoverScreen />, withCandidates());
+    const { view } = await mount(
+      <DiscoverScreen onOpenPerson={() => undefined} />,
+      withCandidates(),
+    );
 
     await waitFor(() => {
       expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
@@ -109,10 +115,13 @@ describe('discover', () => {
   });
 
   it('draws an identity mark, and says nothing, when no address is granted', async () => {
-    const { view } = await mount(<DiscoverScreen />, {
-      ...withCandidates(),
-      mediaDelivery: 'declined',
-    });
+    const { view } = await mount(
+      <DiscoverScreen onOpenPerson={() => undefined} />,
+      {
+        ...withCandidates(),
+        mediaDelivery: 'declined',
+      },
+    );
 
     await waitFor(() => {
       expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
@@ -129,7 +138,10 @@ describe('discover', () => {
   });
 
   it('takes a person off the feed once interest is sent', async () => {
-    const { double, view } = await mount(<DiscoverScreen />, withCandidates());
+    const { double, view } = await mount(
+      <DiscoverScreen onOpenPerson={() => undefined} />,
+      withCandidates(),
+    );
     await waitFor(() => {
       expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
     });
@@ -152,7 +164,10 @@ describe('discover', () => {
   it('says nobody is available rather than showing an empty list', async () => {
     const state = admittedState();
     state.candidates = [];
-    const { view } = await mount(<DiscoverScreen />, state);
+    const { view } = await mount(
+      <DiscoverScreen onOpenPerson={() => undefined} />,
+      state,
+    );
 
     await waitFor(() => {
       expect(view.getByTestId('discovery-empty')).toBeTruthy();
@@ -163,7 +178,10 @@ describe('discover', () => {
   });
 
   it('keeps the person on the feed when the decision is refused', async () => {
-    const { double, view } = await mount(<DiscoverScreen />, withCandidates());
+    const { double, view } = await mount(
+      <DiscoverScreen onOpenPerson={() => undefined} />,
+      withCandidates(),
+    );
     await waitFor(() => {
       expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
     });
@@ -181,7 +199,10 @@ describe('discover', () => {
   });
 
   it('offers safety beside the person rather than on a screen somebody has to find', async () => {
-    const { view } = await mount(<DiscoverScreen />, withCandidates());
+    const { view } = await mount(
+      <DiscoverScreen onOpenPerson={() => undefined} />,
+      withCandidates(),
+    );
     await waitFor(() => {
       expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
     });
@@ -1162,5 +1183,190 @@ describe('a creator page on a phone', () => {
     });
     expect(view.getByText('The first letter')).toBeTruthy();
     expect(view.getByText('Only members read this.')).toBeTruthy();
+  });
+});
+
+describe('a person at their own address', () => {
+  /** A second image, so there is a gallery and not only a portrait. */
+  const secondImageId = '66666666-6666-4666-8666-666666666666';
+
+  function withPhotographs(): MobileApiState {
+    const state = withCandidates();
+    const candidate = state.candidates[0];
+    if (candidate !== undefined) {
+      candidate.media = [
+        { id: candidateImageId, position: 0 },
+        { id: secondImageId, position: 1 },
+      ];
+    }
+    return state;
+  }
+
+  it('shows every photograph, which is the reason to open it', async () => {
+    const { view } = await mount(
+      <PersonScreen
+        onBack={nothing}
+        onLeave={nothing}
+        personId={otherPersonId}
+      />,
+      withPhotographs(),
+    );
+
+    // Hidden elements included deliberately: a photograph is removed from the
+    // accessibility tree because the person's name is text beside it, so a
+    // default query would never see it however well it renders.
+    await waitFor(() => {
+      expect(
+        view.getByTestId('person-portrait', { includeHiddenElements: true }),
+      ).toBeTruthy();
+    });
+    // The card shows the first. This shows the rest, which is the whole
+    // difference between a decision surface and a look.
+    expect(view.getByTestId('person-gallery')).toBeTruthy();
+    expect(view.getByTestId('person-bio')).toBeTruthy();
+  });
+
+  it('says the same nothing for somebody gone as for somebody withheld', async () => {
+    const { view } = await mount(
+      <PersonScreen
+        onBack={nothing}
+        onLeave={nothing}
+        personId="99999999-9999-4999-8999-999999999999"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('person-missing')).toBeTruthy();
+    });
+  });
+
+  it('opens from a card in Discover', async () => {
+    const opened: string[] = [];
+    const { view } = await mount(
+      <DiscoverScreen
+        onOpenPerson={(personId) => {
+          opened.push(personId);
+        }}
+      />,
+      withCandidates(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId(`candidate-open-${otherPersonId}`)).toBeTruthy();
+    });
+    await fireEvent.press(view.getByTestId(`candidate-open-${otherPersonId}`));
+    expect(opened).toEqual([otherPersonId]);
+  });
+});
+
+describe('gifts sent', () => {
+  function withGifts(): MobileApiState {
+    const state = admittedState();
+    state.gifts = [
+      {
+        createdAt: '2026-08-20T10:00:00.000Z',
+        creator: { displayName: 'Ember Vale Ceramics', handle: 'ember_vale' },
+        gift: { id: 'gift-rose', name: 'Rose', visual: 'rose' },
+        id: 'aaaaaaa1-0000-4000-8000-000000000001',
+        price: { amountMinor: '100', currency: 'USD' },
+        sentAt: '2026-08-20T10:00:05.000Z',
+        state: 'sent',
+      },
+      {
+        createdAt: '2026-08-19T10:00:00.000Z',
+        creator: { displayName: 'Iron Press', handle: 'iron_press' },
+        gift: { id: 'gift-star', name: 'Star', visual: 'star' },
+        id: 'aaaaaaa1-0000-4000-8000-000000000002',
+        price: { amountMinor: '2500', currency: 'USD' },
+        state: 'failed',
+      },
+    ];
+    return state;
+  }
+
+  it('reads back what was sent, and what happened to each one', async () => {
+    const { view } = await mount(
+      <SentGiftsScreen onBack={nothing} />,
+      withGifts(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('sent-gifts-list')).toBeTruthy();
+    });
+    expect(view.getByText('Rose')).toBeTruthy();
+    // The consequence, not only the state word. Somebody whose payment failed
+    // needs to know nothing was charged.
+    expect(
+      view.getByTestId(
+        'sent-gift-meaning-aaaaaaa1-0000-4000-8000-000000000002',
+      ),
+    ).toBeTruthy();
+    expect(
+      view.getByText(
+        'The payment was refused. Nothing was charged and nothing was sent.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('offers no way to send one, and says where sending happens', async () => {
+    const { view } = await mount(
+      <SentGiftsScreen onBack={nothing} />,
+      withGifts(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('sent-gifts-list')).toBeTruthy();
+    });
+    // The API refuses `POST /v1/billing/gifts` for this audience, so a control
+    // here could only ever produce a 403. The boundary is stated instead.
+    expect(view.getByTestId('gift-send-elsewhere')).toBeTruthy();
+    expect(view.queryByText('Send a gift')).toBeNull();
+  });
+
+  it('says nothing was sent rather than showing an empty frame', async () => {
+    const { view } = await mount(<SentGiftsScreen onBack={nothing} />);
+
+    await waitFor(() => {
+      expect(view.getByTestId('sent-gifts-empty')).toBeTruthy();
+    });
+  });
+});
+
+describe('you', () => {
+  it('shows this person their own photograph, as every card shows everybody else', async () => {
+    const { view } = await mount(<YouScreen onOpen={nothing} />);
+
+    // Hidden from assistive technology, like every other portrait, because the
+    // person's name is already text beside it.
+    await waitFor(() => {
+      expect(
+        view.getByTestId('you-portrait', { includeHiddenElements: true }),
+      ).toBeTruthy();
+    });
+  });
+
+  it('does not claim a photograph is shown nowhere while it is showing one', async () => {
+    const { view } = await mount(<YouScreen onOpen={nothing} />);
+
+    await waitFor(() => {
+      expect(view.getByTestId('profile-media-state')).toBeTruthy();
+    });
+    // The state of this person's own image, and nothing about the platform.
+    // The unconditional version of this sentence was false on every build
+    // where delivery works — which is the build the screen above it proves.
+    expect(view.getByText('Image ready.')).toBeTruthy();
+    expect(view.queryByText(/no approved way to deliver an image/u)).toBeNull();
+  });
+
+  it('says delivery is unavailable exactly when the platform said so', async () => {
+    const state = admittedState();
+    state.mediaDelivery = 'unavailable';
+    const { view } = await mount(<YouScreen onOpen={nothing} />, state);
+
+    await waitFor(() => {
+      expect(
+        view.getByText(/no approved way to deliver an image/u),
+      ).toBeTruthy();
+    });
   });
 });

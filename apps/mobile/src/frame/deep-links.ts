@@ -4,8 +4,10 @@ import {
   introductionsPath,
   messagesPath,
   noticesPath,
+  personPath,
   youPath,
   youSectionPath,
+  youSections,
   type YouSection,
 } from './links';
 
@@ -85,13 +87,17 @@ const foreignAddresses: Readonly<Record<string, string>> = {
   expo: 'the development client',
 };
 
-const youSections: readonly YouSection[] = [
-  'account',
-  'availability',
-  'notices',
-  'profile',
-  'safety',
-];
+/**
+ * The leaves under You, read from the module that names them.
+ *
+ * Kept as a second list here for as long as anybody can remember, and that is
+ * exactly what went wrong: `memberships` was added to the routes and to
+ * `links.ts` and never added to the copy, so a screen somebody could reach by
+ * tapping was refused when they arrived by link. There is one list now.
+ */
+function youSectionOf(segment: string): YouSection | undefined {
+  return youSections.find((candidate) => candidate === segment);
+}
 
 function refused(reason: string): ResolvedLink {
   return { kind: 'refused', path: noticesPath, reason };
@@ -181,9 +187,21 @@ export function resolveDeepLink(url: string): ResolvedLink {
         ? { kind: 'route', path: noticesPath }
         : refused('That link does not lead anywhere here.');
 
+    /*
+     * One person. There is no listing of people, so `velora://people` alone
+     * leads nowhere and is refused rather than quietly sent to Discover —
+     * which would be a different address than the one somebody was given.
+     */
+    case 'people': {
+      if (second === undefined || !uuidPattern.test(second)) {
+        return refused('That link does not lead anywhere here.');
+      }
+      return { kind: 'route', path: personPath(second) };
+    }
+
     case 'you': {
       if (second === undefined) return { kind: 'route', path: youPath };
-      const section = youSections.find((candidate) => candidate === second);
+      const section = youSectionOf(second);
       if (section === undefined) {
         return refused('That link does not lead anywhere here.');
       }

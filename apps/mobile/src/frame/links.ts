@@ -27,12 +27,42 @@ export function conversationPath(conversationId: string): string {
   return `${messagesPath}/${encodeURIComponent(conversationId)}`;
 }
 
-/** The leaves under You, named so a typo is a compile error. */
-export type YouSection =
-  'account' | 'availability' | 'memberships' | 'notices' | 'profile' | 'safety';
+/**
+ * The leaves under You, named so a typo is a compile error.
+ *
+ * A list first and a type second, rather than a type alone. Everything that
+ * has to agree about the set — the router, the deep-link parser, and the tests
+ * for both — reads this one array, so a section cannot exist for somebody
+ * tapping through the application and not exist for somebody arriving by link.
+ * That is not hypothetical: `memberships` arrived on 2026-08-28 and was a real
+ * screen the parser refused from that day until this one, because the parser
+ * kept a second copy of this list.
+ */
+export const youSections = [
+  'account',
+  'availability',
+  'gifts',
+  'memberships',
+  'notices',
+  'profile',
+  'safety',
+] as const;
+
+export type YouSection = (typeof youSections)[number];
 
 export function youSectionPath(section: YouSection): string {
   return `${youPath}/${section}`;
+}
+
+/**
+ * One person, at their own address.
+ *
+ * By identifier rather than by handle, because a person in Discover has no
+ * handle — only a creator does. Possession grants nothing: the server decides
+ * on every request whether this reader may be shown anything behind it.
+ */
+export function personPath(personId: string): string {
+  return `/people/${encodeURIComponent(personId)}`;
 }
 
 /**

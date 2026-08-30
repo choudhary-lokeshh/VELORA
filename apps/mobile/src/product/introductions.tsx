@@ -11,6 +11,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 import { useApi, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
+  Actions,
   Avatar,
   Badge,
   Button,
@@ -394,34 +395,30 @@ function IntroductionCard({
               would make the more exposing option the default for somebody who
               never chose it.
             */}
-            <Inline gap={2}>
-              <View style={styles.half}>
-                <Button
-                  disabled={busy || placing}
-                  icon="phone"
-                  onPress={() => {
-                    onCall('voice');
-                  }}
-                  testID={`call-voice-${introduction.id}`}
-                  wide
-                >
-                  Voice
-                </Button>
-              </View>
-              <View style={styles.half}>
-                <Button
-                  disabled={busy || placing}
-                  icon="video"
-                  onPress={() => {
-                    onCall('video');
-                  }}
-                  testID={`call-video-${introduction.id}`}
-                  wide
-                >
-                  Video
-                </Button>
-              </View>
-            </Inline>
+            <Actions>
+              <Button
+                disabled={busy || placing}
+                icon="phone"
+                onPress={() => {
+                  onCall('voice');
+                }}
+                testID={`call-voice-${introduction.id}`}
+                wide
+              >
+                Voice
+              </Button>
+              <Button
+                disabled={busy || placing}
+                icon="video"
+                onPress={() => {
+                  onCall('video');
+                }}
+                testID={`call-video-${introduction.id}`}
+                wide
+              >
+                Video
+              </Button>
+            </Actions>
           </Stack>
         ) : introduction.role === 'recipient' ? (
           <Button
@@ -522,31 +519,27 @@ export function CurrentCall({
 
         <Stack gap={2}>
           {ringing && call.role === 'recipient' ? (
-            <Inline gap={2}>
-              <View style={styles.half}>
-                <Button
-                  disabled={pending}
-                  onPress={onReject}
-                  testID="call-reject"
-                  tone="danger"
-                  wide
-                >
-                  Decline
-                </Button>
-              </View>
-              <View style={styles.half}>
-                <Button
-                  disabled={pending}
-                  icon="phone"
-                  onPress={onAccept}
-                  testID="call-accept"
-                  tone="primary"
-                  wide
-                >
-                  Answer
-                </Button>
-              </View>
-            </Inline>
+            <Actions>
+              <Button
+                disabled={pending}
+                onPress={onReject}
+                testID="call-reject"
+                tone="danger"
+                wide
+              >
+                Decline
+              </Button>
+              <Button
+                disabled={pending}
+                icon="phone"
+                onPress={onAccept}
+                testID="call-accept"
+                tone="primary"
+                wide
+              >
+                Answer
+              </Button>
+            </Actions>
           ) : null}
 
           {ringing && call.role === 'caller' ? (
@@ -610,7 +603,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingBottom: space[4],
   },
-  half: { flex: 1 },
   mediaNotice: { paddingTop: space[4] },
   identity: {
     alignItems: 'flex-start',
