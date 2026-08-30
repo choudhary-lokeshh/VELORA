@@ -226,6 +226,42 @@ export const payoutFailureLabels: Readonly<Record<string, string>> = {
   recipient_not_ready: 'Your payout details were not ready.',
 };
 
+/**
+ * Where a received gift actually stands, and what that means for the money.
+ *
+ * The screen used to paint everything that was not `sent` in the same quiet
+ * neutral, so a gift that failed and a gift that was reversed looked exactly
+ * like one still settling. A creator reading a list of earnings needs the three
+ * told apart, because only one of them is going to arrive.
+ *
+ * The meaning is stated as well as the tone, because a colour is a hint and the
+ * question a creator is asking — "is this money mine?" — deserves a sentence.
+ */
+const giftState: Readonly<Record<string, StateLook>> = {
+  failed: { icon: 'alert', label: 'Did not go through', tone: 'critical' },
+  partially_reversed: {
+    icon: 'alert',
+    label: 'Partly reversed',
+    tone: 'caution',
+  },
+  pending: { icon: 'clock', label: 'Settling', tone: 'caution' },
+  reversed: { icon: 'x', label: 'Reversed', tone: 'neutral' },
+  sent: { icon: 'check', label: 'Settled', tone: 'positive' },
+};
+
+export function giftStateLook(state: string): StateLook {
+  return look(giftState, state);
+}
+
+export const giftStateMeaning: Readonly<Record<string, string>> = {
+  failed: 'The payment did not complete. Nothing was posted to your ledger.',
+  partially_reversed: 'Part of this was returned to the sender.',
+  pending:
+    'The payment has not settled, so nothing is posted to your ledger yet.',
+  reversed: 'This was returned to the sender, and taken back off your ledger.',
+  sent: 'Settled and posted to your ledger.',
+};
+
 /** One commercial event, described without naming who was on the other side. */
 export const earningsKindLabels: Readonly<Record<string, string>> = {
   capture: 'Purchase',

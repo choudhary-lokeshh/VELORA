@@ -39,6 +39,20 @@ export function isCurrent(pathname: string, path: string): boolean {
 }
 
 /**
+ * What the navigation calls a destination, when it calls it anything.
+ *
+ * Used to label a Back with where it actually goes. Only the five destinations
+ * are named, because those are the only addresses this table has a word for —
+ * a Back labelled with a word invented here would be worse than an arrow, and
+ * a page reached from somewhere unnamed keeps the arrow.
+ */
+export function destinationName(path: string): string | undefined {
+  const address = path.split('?')[0] ?? path;
+  return destinations.find((destination) => destination.path === address)
+    ?.label;
+}
+
+/**
  * Where each page a creator navigates into is navigated into *from*.
  *
  * Declared rather than derived. Removing the last segment of an address happens

@@ -104,14 +104,22 @@
   justify-content: center;
   line-height: 1;
   min-height: var(--control-height);
+  /*
+   * A label is allowed to take a second line; it is not allowed to take the
+   * page. "See what visitors see" measured 340 px at 200% text and pushed the
+   * document sideways on a 320 px phone, because a control that may not break
+   * and may not shrink can only grow.
+   */
+  max-width: 100%;
   padding-inline: var(--space-5);
   text-decoration: none;
+  text-wrap: balance;
   transition:
     background-color var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .s-btn:disabled {
@@ -702,6 +710,13 @@
 
 /* =============================== Status ============================== */
 
+/*
+ * A badge stays on one line, and stays inside the page.
+ *
+ * "Members only" ran 13 px past a 390 px viewport at 200% text: the pill may
+ * not break, so without a ceiling it simply left the screen. The ellipsis is
+ * the honest end of that — the state is also named in the row beside it.
+ */
 .s-badge {
   align-items: center;
   border: 1px solid transparent;
@@ -711,7 +726,11 @@
   font-weight: 600;
   gap: var(--space-1);
   line-height: 1;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: var(--space-2) var(--space-3);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -968,13 +987,23 @@
   flex-direction: column;
 }
 
+/*
+ * A row that wraps rather than one that overflows.
+ *
+ * The aside holds things that are deliberately unbreakable — a badge, a
+ * timestamp — so at 200% text "Aug 27, 2026, 04:21 PM" beside a title pushed
+ * the whole document sideways. Wrapping gives the aside its own line at that
+ * size and changes nothing at any size where both fit.
+ */
 .s-row {
   align-items: center;
   border-top: 1px solid var(--border-hairline);
   color: inherit;
+  column-gap: var(--space-4);
   display: flex;
-  gap: var(--space-4);
+  flex-wrap: wrap;
   padding: var(--space-4) var(--space-6);
+  row-gap: var(--space-2);
   text-align: start;
   text-decoration: none;
   width: 100%;
@@ -983,6 +1012,20 @@
 .s-list > *:first-child .s-row,
 .s-list > .s-row:first-child {
   border-top: 0;
+}
+
+/*
+ * The floor is what makes the wrap useful. Without it the body shrinks to its
+ * longest word and the aside stays alongside, which is a column of single
+ * letters rather than two readable lines. Scoped to a direct child, because the
+ * same class is used inside single-line headers where a floor is the overflow.
+ */
+.s-row > .s-row__body {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: min(100%, 12rem);
 }
 
 .s-row__body {

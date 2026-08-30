@@ -3,13 +3,16 @@
 import Link from 'next/link';
 import {
   useId,
+  useRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
+  type KeyboardEvent,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
 
+import { usePageHeading } from '../app/page-heading';
 import { Icon, type IconName } from './icons';
 
 /**
@@ -327,12 +330,15 @@ export function ChoiceCard({
 export function Card({
   children,
   flush = false,
+  id,
   testId,
   tone,
 }: {
   readonly children: ReactNode;
   /** No padding, for a card whose whole body is a list. */
   readonly flush?: boolean;
+  /** Present when something elsewhere on the page has to point at this. */
+  readonly id?: string;
   readonly testId?: string;
   readonly tone?: 'accent';
 }) {
@@ -344,7 +350,7 @@ export function Card({
     .filter((value) => value !== undefined)
     .join(' ');
   return (
-    <section className={className} data-testid={testId}>
+    <section className={className} data-testid={testId} id={id}>
       {children}
     </section>
   );
@@ -391,6 +397,13 @@ export function SectionHead({
   );
 }
 
+/**
+ * The page's own name, offered to the bar above it.
+ *
+ * The heading registers itself so the shell can carry the name only while this
+ * is out of view. Outside a shell — a test render, the entry surface — the
+ * registration is a no-op, and the header is exactly what it was.
+ */
 export function PageHeader({
   actions,
   eyebrow,
@@ -402,13 +415,16 @@ export function PageHeader({
   readonly lede?: ReactNode;
   readonly title: string;
 }) {
+  const register = usePageHeading();
   return (
     <header className="s-page-header">
       {eyebrow === undefined ? null : (
         <p className="s-label s-quiet">{eyebrow}</p>
       )}
       <div className="s-page-header__row">
-        <h1 className="s-title">{title}</h1>
+        <h1 className="s-title" ref={register}>
+          {title}
+        </h1>
         {actions === undefined ? null : (
           <div className="s-inline s-inline--tight">{actions}</div>
         )}
@@ -859,37 +875,100 @@ export interface SegmentedOption<T extends string> {
   readonly value: T;
 }
 
+/**
+ * One choice out of a small set, with the keyboard its role promises.
+ *
+ * `role="tablist"` is a claim about the keyboard as much as about the name, and
+ * this made it while behaving like four ordinary buttons: four Tab stops, and
+ * arrow keys that did nothing. A creator moving through the catalog filter with
+ * a keyboard had to walk past every option to leave the strip.
+ *
+ * So: one Tab stop with a roving `tabindex`, arrows that move and wrap, Home
+ * and End for the ends. Selection follows focus because the thing being
+ * filtered is already on the page — there is nothing to fetch and nothing to
+ * wait for, so moving focus without selecting would be a second press for no
+ * reason. `controls` names what the strip actually changes, which is what makes
+ * the relationship real rather than asserted.
+ */
 export function Segmented<T extends string>({
+  controls,
   label,
   onChange,
   options,
   value,
 }: {
+  /** The `id` of the region this strip filters, when the caller has one. */
+  readonly controls?: string;
   readonly label: string;
   readonly onChange: (next: T) => void;
   readonly options: readonly SegmentedOption<T>[];
   readonly value: T;
 }) {
+  const strip = useRef<HTMLDivElement>(null);
+
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = options.findIndex((option) => option.value === value);
+    if (current < 0) return;
+    const last = options.length - 1;
+    const next =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? current === last
+          ? 0
+          : current + 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? current === 0
+            ? last
+            : current - 1
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : current;
+    if (next === current) return;
+    event.preventDefault();
+    const chosen = options[next];
+    if (chosen === undefined) return;
+    onChange(chosen.value);
+    const tabs =
+      strip.current?.querySelectorAll<HTMLButtonElement>('.s-segmented__item');
+    tabs?.item(next).focus();
+  };
+
   return (
-    <div aria-label={label} className="s-segmented" role="tablist">
-      {options.map((option) => (
-        <button
-          aria-selected={option.value === value}
-          className="s-segmented__item"
-          data-testid={`segment-${option.value}`}
-          key={option.value}
-          onClick={() => {
-            onChange(option.value);
-          }}
-          role="tab"
-          type="button"
-        >
-          {option.label}
-          {option.count === undefined ? null : (
-            <span className="s-segmented__count s-numeric">{option.count}</span>
-          )}
-        </button>
-      ))}
+    <div
+      aria-label={label}
+      className="s-segmented"
+      onKeyDown={move}
+      ref={strip}
+      role="tablist"
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            aria-selected={selected}
+            className="s-segmented__item"
+            data-testid={`segment-${option.value}`}
+            key={option.value}
+            onClick={() => {
+              onChange(option.value);
+            }}
+            role="tab"
+            // One stop for the whole strip: Tab reaches the selected option and
+            // the next Tab leaves, rather than walking every choice.
+            tabIndex={selected ? 0 : -1}
+            type="button"
+            {...(controls === undefined ? {} : { 'aria-controls': controls })}
+          >
+            {option.label}
+            {option.count === undefined ? null : (
+              <span className="s-segmented__count s-numeric">
+                {option.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

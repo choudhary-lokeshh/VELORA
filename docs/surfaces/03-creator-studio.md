@@ -58,6 +58,18 @@ Handles are claimed once and are not renameable in this milestone, so no rename 
 
 Creator-owned profile and catalog imagery uses the published creator media reservation, upload, completion, removal, and delivery contracts. Studio shows lifecycle truth for each upload, reserves stable image geometry while addresses resolve, and public preview renders only ready references returned by the anonymous public creator and catalog projections. Provider activation remains separate from those product contracts and follows the media boundary. Two capabilities remain deliberately absent and say so in their own words: there is no notification control anywhere because the notification contract refuses a Creator Studio credential outright, and mature content is refused for four reasons attributed to somebody other than the creator reading them. Both remain recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
+### As built, after ADR-0038
+
+[ADR-0038](../decisions/ADR-0038-creator-studio-workspace-refinements.md) refines how the workspace presents itself without changing what it is. Its information architecture, its declared route ancestry, its commerce semantics, its admission ladder, and every honesty rule above are all as stated.
+
+Nothing pushes the page sideways at 200 % text, and the navigation least of all: the bottom bar's five columns keep every destination on a 320 px screen, where they previously measured 399 px and put Money entirely off it. A button label takes a second line rather than the page, a badge is bounded, and a row wraps so an unbreakable timestamp drops beneath the title instead of past the edge.
+
+A page names itself once. On a phone the bar keeps a page's name only while that page's own heading is out of view, so the two are never printed a few pixels apart; the tablet and desktop already refused this, and the phone now does too. Where the bar carries a Back and the navigation has a word for its target, that control says the word — "Back to Catalog" above a draft — and where it does not, it says only "Back".
+
+Which slice of the catalog is being read is a query parameter on `/catalog`, so a link, a bookmark, a reload, a second tab, and the browser's Back all keep it, and a value the product does not serve falls back to the whole catalog. The filter strip is a real tablist on the keyboard — one Tab stop, arrows that move and wrap, Home and End at the ends — and names the region it changes.
+
+Received gifts draws the silhouette BILLING publishes rather than the first letter of the gift's name, writes its date the way every other date in the workspace is written, prefers the settlement instant to the creation one, and gives every state a tone and a sentence saying what it means for the ledger — a gift that failed does not look like one still settling. Nothing about a gift is counted, ranked, or totalled, and the sender remains withheld.
+
 ## Security, phase, and authority
 
 Follow [Creator Private Clubs](../product/03-creator-private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [media security](../security/04-media-upload-delivery.md), and [creator compliance gates](../compliance/03-creator-content-gates.md). Phase 2 is web-first creator/club pilot; analytics, payouts, and creator AI are Phase 3. Mature/explicit content remains Conditional / Compliance-Gated.

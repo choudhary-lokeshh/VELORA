@@ -2,11 +2,18 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 
 import { Icon } from '../design/icons';
 import { CreatorAvatar } from '../design/primitives';
-import { accountPath, destinations, isCurrent, parentOf } from './navigation';
+import {
+  accountPath,
+  destinationName,
+  destinations,
+  isCurrent,
+  parentOf,
+} from './navigation';
+import { PageHeadingWatcher } from './page-heading';
 import { useCreator, useToast } from './providers';
 
 /**
@@ -43,6 +50,17 @@ export function StudioShell({
   const displayName = creator.profile.value?.displayName ?? 'Your account';
   const handle = creator.profile.value?.handle;
   const parent = parentOf(pathname);
+  const parentName = parent === undefined ? undefined : destinationName(parent);
+  /*
+   * Whether the page's own heading is on screen — `undefined` while no page has
+   * offered one, which is not the same as one having scrolled away.
+   */
+  const [headingVisible, setHeadingVisible] = useState<boolean | undefined>(
+    undefined,
+  );
+  const watchHeading = useCallback((visible: boolean | undefined) => {
+    setHeadingVisible(visible);
+  }, []);
 
   return (
     <div className="s-shell">
@@ -115,16 +133,41 @@ export function StudioShell({
               <span className="s-topbar__wordmark">VELORA</span>
             </Link>
           ) : (
+            /*
+             * From the tablet up this bar holds nothing but this control, and
+             * an arrow alone above a club does not say that clubs are where it
+             * goes. It is labelled with the destination's own name whenever the
+             * navigation has one, and with "Back" when it does not.
+             */
             <Link
-              aria-label="Back"
-              className="s-icon-btn"
+              aria-label={
+                parentName === undefined ? 'Back' : `Back to ${parentName}`
+              }
+              className={
+                parentName === undefined ? 's-icon-btn' : 's-topbar__back'
+              }
               data-testid="topbar-back"
               href={parent}
             >
               <Icon name="arrowLeft" size="md" />
+              {parentName === undefined ? null : (
+                <span className="s-topbar__back-label s-small">
+                  {parentName}
+                </span>
+              )}
             </Link>
           )}
-          <p className="s-topbar__title s-subheading s-truncate">{title}</p>
+          {/*
+            The name is carried here exactly while the page is not carrying it
+            itself. See `page-heading.tsx`: a screen that registers no heading
+            leaves this naming it throughout, which is what every screen had.
+          */}
+          <p
+            className="s-topbar__title s-subheading s-truncate"
+            data-shown={headingVisible === true ? 'false' : 'true'}
+          >
+            {title}
+          </p>
           <Link
             aria-label="Your account"
             className="s-icon-btn s-topbar__account"
@@ -139,7 +182,11 @@ export function StudioShell({
         </header>
 
         <main className={`s-view${narrow ? ' s-view--narrow' : ''}`} id="main">
-          <div className="s-view__inner">{children}</div>
+          <div className="s-view__inner">
+            <PageHeadingWatcher onChange={watchHeading}>
+              {children}
+            </PageHeadingWatcher>
+          </div>
         </main>
       </div>
 

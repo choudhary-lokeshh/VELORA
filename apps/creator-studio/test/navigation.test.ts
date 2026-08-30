@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { accountPath, destinations, parentOf } from '../src/app/navigation';
+import {
+  accountPath,
+  destinationName,
+  destinations,
+  parentOf,
+} from '../src/app/navigation';
 
 /**
  * Leaving a page a creator navigated into.
@@ -89,5 +94,37 @@ describe('where Back goes in the workspace', () => {
     // into the not-found page on Consumer Web.
     expect(parentOf('/catalog/content-1/media')).toBeUndefined();
     expect(parentOf('/invented')).toBeUndefined();
+  });
+});
+
+/**
+ * A Back with a word beside it.
+ *
+ * From the tablet up the bar carries nothing else — the wordmark, the title and
+ * the account control are all hidden there — so the arrow was the only thing on
+ * screen saying how to leave a club, and it did not say where to. The word is
+ * taken from the navigation's own table and never invented, because a Back
+ * labelled with a guess is worse than an unlabelled one.
+ */
+describe('what a Back is called', () => {
+  it("uses the destination's own name for every parent it points at", () => {
+    for (const route of nestedRoutes) {
+      const parent = parentOf(route);
+      expect(parent).toBeDefined();
+      const name = destinationName(parent ?? '');
+      expect(name).toBeDefined();
+      expect(destinations.some((one) => one.label === name)).toBe(true);
+    }
+  });
+
+  it('says nothing about an address the navigation has no word for', () => {
+    expect(destinationName('/account')).toBeUndefined();
+    expect(destinationName('/catalog/content-1')).toBeUndefined();
+    expect(destinationName('/start')).toBeUndefined();
+    expect(destinationName('/nowhere')).toBeUndefined();
+  });
+
+  it('reads the address rather than the query attached to it', () => {
+    expect(destinationName('/catalog?show=draft')).toBe('Catalog');
   });
 });

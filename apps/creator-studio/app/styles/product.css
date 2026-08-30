@@ -455,17 +455,28 @@
   gap: var(--space-4);
   min-width: 0;
 }
+/*
+ * The gift somebody actually sent.
+ *
+ * A disc holding the silhouette the contract names, rather than the first
+ * letter of the gift's name — which is what stood here, and made a rose read as
+ * "R" to the person it was sent to.
+ */
 .s-gift-mark {
   align-items: center;
   background: var(--surface-2);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   color: var(--ember-ink);
   display: flex;
   flex: 0 0 44px;
-  font-weight: 700;
   height: 44px;
   justify-content: center;
+}
+
+.s-gift-art {
+  height: 24px;
+  width: 24px;
 }
 
 /* ============================== Benefits ============================= */

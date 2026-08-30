@@ -11,86 +11,114 @@ import { useApi } from '../app/providers';
 import {
   Badge,
   Card,
+  CardHead,
   CardSkeleton,
   EmptyState,
   ErrorState,
   PageHeader,
 } from '../design/primitives';
+import { formatDate, giftStateLook, giftStateMeaning } from './format';
+import { GiftArt } from './gift-art';
 import { MoneyNav } from './money-nav';
 import { useResource } from './resource';
 
-const stateLabel = {
-  failed: 'Failed',
-  partially_reversed: 'Partly reversed',
-  pending: 'Pending',
-  reversed: 'Reversed',
-  sent: 'Settled',
-} as const;
-
+/**
+ * Gifts somebody sent, from the receiving side.
+ *
+ * Everything here is a figure the ledger posted: the gross the sender paid and
+ * the share credited to the creator, each in its own currency, never summed.
+ * Nothing counts: there is no total received, no best month, no top sender, and
+ * no rank — none of those is computed anywhere and a number with nothing behind
+ * it is the first fabricated thing on a money screen.
+ *
+ * The sender is not named and never has been. The contract publishes
+ * `senderVisibility: 'withheld'` and nothing else about them, so the screen says
+ * so plainly rather than leaving a gap somebody reads as a loading failure.
+ */
 export function ReceivedGifts() {
   const api = useApi();
   const load = useCallback(async () => api.receivedGifts(), [api]);
   const history = useResource<CreatorReceivedGiftList>(load);
   const rows = history.value?.gifts ?? [];
+
   return (
     <>
       <PageHeader
-        lede="Virtual gifts received, with the exact gross payment and creator share posted by the ledger."
-        title="Received gifts"
+        lede="Virtual gifts received, with the exact gross payment and creator share the ledger posted."
+        title="Money"
       />
       <MoneyNav />
-      {history.error !== undefined ? (
-        <Card>
+
+      <Card flush testId="received-gifts">
+        <CardHead
+          lede="Each gift is shown in the currency it was paid in. VELORA does not add them together."
+          title="Received gifts"
+        />
+        {history.error !== undefined ? (
           <ErrorState
             body={history.error}
             onRetry={history.retryable ? history.reload : undefined}
             testId="received-gifts-error"
           />
-        </Card>
-      ) : history.loading && history.value === undefined ? (
-        <Card>
-          <CardSkeleton rows={4} />
-        </Card>
-      ) : rows.length === 0 ? (
-        <Card>
+        ) : history.loading && history.value === undefined ? (
+          <div className="s-card__pad">
+            <CardSkeleton rows={4} />
+          </div>
+        ) : rows.length === 0 ? (
           <EmptyState
-            body="Settled gifts appear here after somebody sends one from your public page."
+            body="A gift appears here once somebody sends one from your public page."
             icon="sparkle"
             testId="received-gifts-empty"
             title="No gifts received"
           />
-        </Card>
-      ) : (
-        <Card flush>
+        ) : (
           <ul className="s-list" data-testid="received-gifts-list">
-            {rows.map((row) => (
-              <li className="s-row" key={row.id}>
-                <span aria-hidden="true" className="s-gift-mark">
-                  {row.gift.name.slice(0, 1)}
-                </span>
-                <span className="s-row__body">
-                  <span className="s-subheading">{row.gift.name}</span>
-                  <span className="s-caption s-quiet">
-                    Gross {formatMoney(row.gross)} · Your ledger share{' '}
-                    {formatMoney(row.earning)}
+            {rows.map((row) => {
+              const state = giftStateLook(row.state);
+              return (
+                <li className="s-row" key={row.id}>
+                  <span className="s-gift-mark">
+                    <GiftArt className="s-gift-art" visual={row.gift.visual} />
                   </span>
-                  <span className="s-caption s-quiet">
-                    Sender identity withheld ·{' '}
-                    <time dateTime={row.createdAt}>
-                      {new Date(row.createdAt).toLocaleDateString()}
-                    </time>
+                  <span className="s-row__body">
+                    <span className="s-subheading s-wrap">{row.gift.name}</span>
+                    <span className="s-caption s-quiet s-wrap">
+                      Gross{' '}
+                      <span className="s-numeric">
+                        {formatMoney(row.gross)}
+                      </span>{' '}
+                      · Your ledger share{' '}
+                      <span className="s-numeric">
+                        {formatMoney(row.earning)}
+                      </span>
+                    </span>
+                    <span className="s-caption s-quiet s-wrap">
+                      {giftStateMeaning[row.state] ??
+                        'VELORA cannot say where this one stands.'}
+                    </span>
+                    <span className="s-caption s-quiet s-wrap">
+                      Sender identity withheld ·{' '}
+                      <time dateTime={row.sentAt ?? row.createdAt}>
+                        {formatDate(row.sentAt ?? row.createdAt)}
+                      </time>
+                    </span>
                   </span>
-                </span>
-                <span className="s-row__aside">
-                  <Badge tone={row.state === 'sent' ? 'positive' : 'neutral'}>
-                    {stateLabel[row.state]}
-                  </Badge>
-                </span>
-              </li>
-            ))}
+                  <span className="s-row__aside">
+                    <Badge
+                      icon={state.icon}
+                      testId={`received-gift-state-${row.id}`}
+                      tone={state.tone}
+                    >
+                      {state.label}
+                    </Badge>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-        </Card>
-      )}
+        )}
+      </Card>
+
       <p className="s-caption s-quiet">
         Payout transfer remains unavailable until an approved payout provider
         and channel are configured. This page does not imply funds were

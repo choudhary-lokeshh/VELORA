@@ -30,6 +30,7 @@ const routes = [
   '/catalog/new',
   '/clubs',
   '/money',
+  '/money/gifts',
   '/money/payouts',
   '/money/selling',
   '/account',
@@ -149,20 +150,70 @@ test.describe('Creator Studio responsive behaviour', () => {
   });
 
   test('survives a page zoomed to twice its text size', async ({ page }) => {
+    test.setTimeout(180_000);
     const subject = uniqueSubject('zoom');
     const handle = uniqueHandle('z');
     await declareAdult(page, subject);
-    await page.setViewportSize({ height: 740, width: 390 });
+    // The narrowest width the workspace supports rather than a typical one:
+    // this is where a control that cannot shrink runs out of room first, and a
+    // margin measured at 390 px on one machine's font metrics is not a margin.
+    await page.setViewportSize({ height: 740, width: 320 });
     await activateCreator(page, subject);
     await claimHandle(page, handle);
+    await createClub(page);
+    const clubAddress = page.url();
 
-    // Text scaling rather than page zoom: it is the case that breaks fixed
-    // heights, and it is what somebody with low vision actually turns on.
-    await page.addStyleTag({ content: 'html { font-size: 200% }' });
-    for (const route of ['/home', '/profile', '/catalog', '/account']) {
-      await page.goto(`${creatorStudioOrigin}${route}`);
+    // Every screen, not four. The style tag has to be re-applied after each
+    // navigation, because a `goto` discards it — which is how this assertion
+    // measured ordinary 16 px text on every route it claimed to zoom, and how
+    // a tab bar that lost its last destination at 200% text got past it.
+    for (const route of [...routes, clubAddress]) {
+      await page.goto(
+        route.startsWith('http') ? route : `${creatorStudioOrigin}${route}`,
+      );
+      // Text scaling rather than page zoom: it is the case that breaks fixed
+      // heights, and it is what somebody with low vision actually turns on.
+      await page.addStyleTag({ content: 'html { font-size: 200% }' });
       await expect(page.getByRole('main')).toBeVisible();
-      expect(await overflowingElements(page), route).toEqual([]);
+      expect(await overflowingElements(page), `${route} at 200% text`).toEqual(
+        [],
+      );
+    }
+  });
+
+  /**
+   * The navigation is the last thing allowed to break at a large text size.
+   *
+   * Five columns sized by their own content came to 399 px on a 320 px phone,
+   * which put Money entirely off the screen and clipped Clubs: the workspace
+   * lost a destination to a font size, on every route, with nothing else on the
+   * page overflowing to give it away.
+   */
+  test('keeps every destination on the screen at twice the text size', async ({
+    page,
+  }) => {
+    const subject = uniqueSubject('tabbar');
+    await declareAdult(page, subject);
+    await page.setViewportSize({ height: 740, width: 320 });
+    await activateCreator(page, subject);
+
+    await page.goto(`${creatorStudioOrigin}/home`);
+    await page.addStyleTag({ content: 'html { font-size: 200% }' });
+    await expect(page.getByTestId('tab-money')).toBeVisible();
+
+    const limit = await page.evaluate(
+      () => document.documentElement.clientWidth,
+    );
+    for (const id of ['home', 'profile', 'catalog', 'clubs', 'money']) {
+      const box = await page.getByTestId(`tab-${id}`).boundingBox();
+      expect(box, id).not.toBeNull();
+      expect(box?.x ?? -1, `${id} starts on screen`).toBeGreaterThanOrEqual(
+        -0.5,
+      );
+      expect(
+        (box?.x ?? 0) + (box?.width ?? 0),
+        `${id} ends on screen`,
+      ).toBeLessThanOrEqual(limit + 0.5);
     }
   });
 });

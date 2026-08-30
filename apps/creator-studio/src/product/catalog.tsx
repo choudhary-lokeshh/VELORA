@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import type { CreatorClubList, CreatorContent } from '@velora/creator-client';
@@ -48,13 +49,37 @@ import { useCollection, useResource, useSingleFlight } from './resource';
 
 const catalogPageSize = 25;
 
-type Filter = 'all' | 'draft' | 'published' | 'archived';
+const filters = ['all', 'draft', 'published', 'archived'] as const;
+type Filter = (typeof filters)[number];
+
+function isFilter(value: string | null): value is Filter {
+  return filters.some((filter) => filter === value);
+}
+
+/** The region the filter strip actually changes, named so it can be pointed at. */
+const catalogListId = 'creator-catalog-list';
 
 export function Catalog() {
   const api = useApi();
   const creator = useCreator();
   const toast = useToast();
-  const [filter, setFilter] = useState<Filter>('all');
+  /*
+   * Which slice is being read is an address, not component state.
+   *
+   * A creator works through drafts one at a time: filter, open, edit, come
+   * back. Held in state, that Back landed on the whole catalog at the top with
+   * the filter forgotten, and there was no way to bookmark or send "my
+   * drafts". Replaced rather than pushed, so choosing a filter is not a Back
+   * step of its own — the reason Discover keeps its section this way too.
+   */
+  const parameters = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const requested = parameters.get('show');
+  const filter: Filter = isFilter(requested) ? requested : 'all';
+  const setFilter = (next: Filter) => {
+    router.replace(next === 'all' ? pathname : `${pathname}?show=${next}`);
+  };
   const [message, setMessage] = useState<string | undefined>(undefined);
   const [confirming, setConfirming] = useState<CreatorContent | undefined>(
     undefined,
@@ -166,6 +191,7 @@ export function Catalog() {
 
       <Toolbar>
         <Segmented
+          controls={catalogListId}
           label="Filter the catalog"
           onChange={setFilter}
           options={[
@@ -184,7 +210,7 @@ export function Catalog() {
         ) : null}
       </Toolbar>
 
-      <Card flush testId="creator-content-list">
+      <Card flush id={catalogListId} testId="creator-content-list">
         {catalog.error !== undefined && catalog.items.length === 0 ? (
           <ErrorState
             body={catalog.error}
