@@ -31,6 +31,7 @@ import {
   OutboxRelay,
   outboxRelayIntervalMilliseconds,
 } from './events/relay.js';
+import { reportDrainCycle } from './jobs/drain-report.js';
 import { Poller } from './jobs/poller.js';
 import { JobRegistry } from './jobs/registry.js';
 import { createQueue, createWorkerRuntime } from './jobs/runtime.js';
@@ -402,7 +403,14 @@ export function createWorkerComposition(input: {
   registerNotificationJobs(registry, notifications.delivery, admit);
 
   const relayPoller = new Poller({
-    cycle: async () => admit(async () => relay.dispatchOnce()),
+    cycle: async () =>
+      admit(async () => {
+        reportDrainCycle(
+          input.logger,
+          'outbox-relay',
+          await relay.dispatchOnce(),
+        );
+      }),
     intervalMilliseconds: outboxRelayIntervalMilliseconds,
     logger: input.logger,
     name: 'outbox-relay',
@@ -411,13 +419,27 @@ export function createWorkerComposition(input: {
   // received them. A webhook endpoint that did business work would be slow, and
   // a slow endpoint is how one provider event becomes five.
   const providerEventDrain = new Poller({
-    cycle: async () => admit(async () => billing.webhooks.processOnce()),
+    cycle: async () =>
+      admit(async () => {
+        reportDrainCycle(
+          input.logger,
+          'billing-provider-events',
+          await billing.webhooks.processOnce(),
+        );
+      }),
     intervalMilliseconds: outboxRelayIntervalMilliseconds,
     logger: input.logger,
     name: 'billing-provider-events',
   });
   const identityProviderEventDrain = new Poller({
-    cycle: async () => admit(async () => identity.providerEvents.processOnce()),
+    cycle: async () =>
+      admit(async () => {
+        reportDrainCycle(
+          input.logger,
+          'identity-provider-events',
+          await identity.providerEvents.processOnce(),
+        );
+      }),
     intervalMilliseconds: outboxRelayIntervalMilliseconds,
     logger: input.logger,
     name: 'identity-provider-events',
