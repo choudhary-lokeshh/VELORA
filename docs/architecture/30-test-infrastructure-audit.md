@@ -12,7 +12,7 @@ Not every red gate is a code bug, and treating them alike is how a fixture defec
 | Cross-clock fixture writes | **B** — test fixture defect | Two suites converted; the rest ratcheted |
 | Connection ceiling formula | **C** — CI infrastructure defect | Fixed |
 | Expo override drift | **C** — CI infrastructure defect | Guarded |
-| Push registration 500 | **A** — production defect | Root cause **not** proven; one adjacent invariant now pinned |
+| Push registration 500 | **C** — CI infrastructure defect | Reclassified same day: the diagnostics named a mid-run Redis restart, not the SQL. See the addendum |
 | Dangling Docker volumes | **D** — local environment hazard | Cause identified, not remediable within the safety rules |
 | Long integration stalls | **A** — production defect | Fixed previously at `ea53fa1` |
 
@@ -53,7 +53,21 @@ What was established:
 - Through the service it cannot happen, and **not because the statement is safe**: `register` retires this installation's other tokens immediately before the upsert, so there is never a second live row to collide with. The safety is in the ordering of three statements, and nothing said so or tested it. It does now.
 - The observed 500 was **not** reproduced. `register` takes two advisory transaction locks — one on the token, one on `(recipient, installation)` — in sorted order before it reads anything, which fully serialises the fifty-way case the failing test drives. Under that serialisation the installation index cannot fire, so the proven path above is not an explanation for the observed failure.
 
-So the classification stands at **A, root cause unproven**. The diagnostics that will name it are already in place from the earlier investigation: the test carries the server's own error record into the assertion, unwrapped down the `cause` chain. Guessing past that would be inventing a fix for a defect nobody has seen the SQLSTATE of.
+### Addendum, same day: the diagnostics named something else
+
+Hosted run `33339223502` failed on this exact test, and the runner's own container diagnostics printed the reason:
+
+```
+redis: started=22:44:11.884  finished=22:44:11.706
+published 6379/tcp: now=32771  handed-to-tests=32769
+NOTE: the published host port changed after the tests started.
+```
+
+**Redis restarted mid-run and Docker re-allocated its published port.** Every suite still holding the URL captured at startup was addressing a port nothing was listening on, and this test failed seven minutes later. That is hazard 7 on this phase's own list — the Redis restart seen in hosted tests — and it accounts for every property the 500 has that the arbitration hypothesis does not: load-dependent, absent from an isolated run, latent rather than introduced by whatever commit happened to be red.
+
+The classification therefore moves from **A, production defect with unproven cause** to **C, CI infrastructure defect**, with the arbitration finding above standing on its own as a real but separate hazard that this test cannot reach.
+
+Two things follow, and neither is done here. The runner should re-read each container's published port rather than trusting the URL it captured at startup, and it should fail loudly when one moves rather than letting a suite time out against a dead socket. Both belong to the runner and to their own commit; recording the evidence while it is in hand is what this addendum is for.
 
 ### Dangling Docker volumes
 
