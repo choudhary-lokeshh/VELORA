@@ -198,6 +198,8 @@ export interface ApiDoubleState {
     };
     state: 'active' | 'closed';
   }[];
+  /** Whether the introductions read answers with a cursor to another page. */
+  moreIntroductions?: boolean;
   introductions: {
     counterpart: {
       displayName: string;
@@ -898,7 +900,12 @@ export function createApiDouble(
       return json(200, { suppressedUntil: iso(86_400_000) });
     }
     if (path === '/v1/discovery/introductions' && method === 'GET') {
-      return json(200, { introductions: state.introductions });
+      return json(200, {
+        introductions: state.introductions,
+        // The real route publishes a cursor whenever there is another page,
+        // and a surface that counts these rows has to be able to see one.
+        ...(state.moreIntroductions ? { nextCursor: 'next' } : {}),
+      });
     }
     if (path === '/v1/discovery/introductions' && method === 'POST') {
       const input = body as { candidateId: string };

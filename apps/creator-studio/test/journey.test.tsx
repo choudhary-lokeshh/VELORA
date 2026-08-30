@@ -311,7 +311,14 @@ describe('home', () => {
     );
     expect(textOf('home-published')).toContain('1');
     expect(textOf('home-clubs')).toContain('1');
+    // Memberships, not people. Clubs are not a partition of anybody, so this
+    // sum counts somebody in two clubs twice — which is why the caption beside
+    // it says memberships and does not claim a number of people.
     expect(textOf('home-members')).toContain('3');
+    // Memberships, not people. Clubs are not a partition of anybody, so this
+    // sum counts somebody in two clubs twice — which is why the caption beside
+    // it says memberships and does not claim a number of people.
+    expect(screen.getByText('club memberships held now')).toBeTruthy();
     // The page is a draft, which is the most useful thing to say next. It
     // appears once both reads have answered, which is a moment after the counts.
     await waitFor(() => {

@@ -2,6 +2,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { Accounts } from '../src/product/accounts';
+import { Appeals } from '../src/product/appeals';
 import { Audit } from '../src/product/audit';
 import { Clubs, ClubScreen } from '../src/product/clubs';
 import { Overview } from '../src/product/overview';
@@ -620,5 +621,53 @@ describe('the two audit records', () => {
     // One domain's "terminated" is another's ordinary logout. Colouring it
     // would be this console deciding which of the platform's records is bad.
     expect(entry.querySelector('.a-badge')).toBeNull();
+  });
+});
+
+describe('a capped queue read', () => {
+  /** The console asks for this many and the API's own ceiling is the same. */
+  const appealPageSize = 50;
+
+  function appealsOf(count: number) {
+    return Array.from({ length: count }, (_unused, index) => ({
+      appellantKind: 'subject' as const,
+      decisionId: `decision-${String(index)}`,
+      id: `appeal-${String(index)}`,
+      state: 'received' as const,
+      submittedAt: '2026-08-20T10:00:00.000Z',
+      version: 1,
+    }));
+  }
+
+  it('says "at least" when the page came back full', async () => {
+    const state = privilegedState();
+    state.appeals = appealsOf(appealPageSize);
+    const double = createAdminApiDouble(state);
+    renderConsole(<Appeals />, double, { pathname: '/queues/appeals' });
+
+    /*
+     * A full page means the queue may be larger and this read cannot say by
+     * how much: `openAppeals` is capped at the same number and publishes no
+     * cursor. Printing the page's own length would make an unbounded backlog
+     * look bounded, and would look exactly like the truth.
+     */
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          `at least ${String(appealPageSize)} awaiting an outcome`,
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it('states the number plainly when the queue fits in one read', async () => {
+    const state = privilegedState();
+    state.appeals = appealsOf(3);
+    const double = createAdminApiDouble(state);
+    renderConsole(<Appeals />, double, { pathname: '/queues/appeals' });
+
+    await waitFor(() => {
+      expect(screen.getByText('3 awaiting an outcome')).toBeTruthy();
+    });
   });
 });

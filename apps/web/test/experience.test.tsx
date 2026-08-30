@@ -63,6 +63,47 @@ describe('introductions keep the group in the address', () => {
     ).toBe('true');
   });
 
+  it('does not present a page of counts as a total', async () => {
+    const state = admittedState();
+    state.moreIntroductions = true;
+    state.introductions = [
+      {
+        counterpart: {
+          displayName: 'Rae Adeyemi',
+          id: otherPersonId,
+          media: [],
+          sharedLanguages: ['en'],
+        },
+        createdAt: new Date().toISOString(),
+        id: '33333333-3333-4333-8333-333333333333',
+        role: 'initiator',
+        state: 'pending',
+      },
+    ];
+    anyRender(<Introductions />, state);
+
+    // The three numbers beside the group names are counted from one page. A
+    // count is the one thing on a partial list that reads as a total, so the
+    // page says which it is rather than leaving somebody to assume.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/These counts describe what has been loaded so far/u),
+      ).toBeTruthy();
+    });
+  });
+
+  it('says nothing about loading when the server sent everything', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<Introductions />, double, { pathname: '/introductions' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('segment-mutual')).toBeTruthy();
+    });
+    expect(
+      screen.queryByText(/These counts describe what has been loaded so far/u),
+    ).toBeNull();
+  });
+
   it('puts the chosen group in the address, and reads it back', async () => {
     const double = createApiDouble(admittedState());
     renderProduct(<Introductions />, double, { pathname: '/introductions' });

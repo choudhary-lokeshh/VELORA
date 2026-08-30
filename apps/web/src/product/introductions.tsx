@@ -84,6 +84,17 @@ export function Introductions() {
     (row) => row.state === 'pending' && row.role === 'initiator',
   );
   const mutual = rows.filter((row) => row.state === 'mutual');
+  /*
+   * Whether the server said there is more than this.
+   *
+   * The three numbers beside the group names are counted from the rows this
+   * one read returned, and this read asks for one page. A person with more
+   * introductions than a page holds would otherwise read three numbers that
+   * are each quietly short, with nothing on the screen saying so — a count is
+   * the one thing on a partial list that reads as a total. Creator Studio's
+   * overview draws the same distinction in the same words for the same reason.
+   */
+  const partial = introductions.value?.nextCursor !== undefined;
 
   /*
    * The group being read. An address wins whenever it names one; otherwise the
@@ -176,7 +187,11 @@ export function Introductions() {
   return (
     <>
       <PageHeader
-        lede="An introduction happens when two people both say yes. Until then nobody is told anything."
+        lede={
+          partial
+            ? 'An introduction happens when two people both say yes. Until then nobody is told anything. These counts describe what has been loaded so far, not a total.'
+            : 'An introduction happens when two people both say yes. Until then nobody is told anything.'
+        }
         title="Introductions"
       />
 

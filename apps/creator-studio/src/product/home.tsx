@@ -87,9 +87,20 @@ export function Home() {
   const publishedClubs = rooms.filter(
     (club) => club.lifecycle === 'published',
   ).length;
-  // A real count of people who currently hold access, summed from live
-  // entitlements the server counted per club.
-  const members = rooms.reduce((total, club) => total + club.memberCount, 0);
+  /*
+   * Memberships held, not people holding them.
+   *
+   * Each club's own count is a real count of live entitlements the server
+   * computed for that club. Adding them is arithmetic on real figures and is
+   * still not a number of people: clubs are not a partition of anybody, so
+   * somebody in two of them is in this total twice. The caption says
+   * memberships for that reason. Counting distinct people would be a different
+   * question, and the server is the only thing that could answer it.
+   */
+  const memberships = rooms.reduce(
+    (total, club) => total + club.memberCount,
+    0,
+  );
   const partial =
     content.value?.nextCursor !== undefined ||
     clubs.value?.nextCursor !== undefined;
@@ -234,9 +245,9 @@ export function Home() {
                 value={publishedClubs}
               />
               <Metric
-                caption="people who hold club access now"
+                caption="club memberships held now"
                 testId="home-members"
-                value={members}
+                value={memberships}
               />
             </div>
           )}

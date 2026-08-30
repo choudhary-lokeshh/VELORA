@@ -64,6 +64,18 @@ export function Appeals() {
   const open = rows.filter(
     (appeal) => appeal.state === 'received' || appeal.state === 'under_review',
   );
+  /*
+   * Whether this read hit the ceiling.
+   *
+   * `openAppeals` is capped at the same 50 this asks for and publishes no
+   * cursor, so a full page means the queue may be larger and the console has
+   * no way to learn by how much. Printing the page's own length as "50
+   * awaiting an outcome" would be the worst kind of wrong number on an
+   * operations console: it makes an unbounded backlog look bounded, and it
+   * looks exactly like the truth. "At least" is what this read actually
+   * supports.
+   */
+  const capped = rows.length >= appealPageSize;
 
   return (
     <>
@@ -80,7 +92,9 @@ export function Appeals() {
           actions={
             rows.length === 0 ? undefined : (
               <span className="a-caption a-quiet a-numeric">
-                {open.length} awaiting an outcome
+                {capped
+                  ? `at least ${String(open.length)} awaiting an outcome`
+                  : `${String(open.length)} awaiting an outcome`}
               </span>
             )
           }
