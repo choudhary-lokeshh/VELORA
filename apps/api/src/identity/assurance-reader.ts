@@ -103,17 +103,18 @@ export class IdentityAdultAssuranceReader implements IdentityAdultAssuranceReade
     });
     if (subject === undefined) return undefined;
 
-    const [attempt, evidence] = await Promise.all([
-      this.repository.findLatestAttempt(input.executor, {
-        purpose: 'adult_assurance',
-        subjectId: subject.id,
-      }),
-      this.repository.findCurrentEvidence(
-        input.executor,
-        subject.id,
-        'adult_threshold',
-      ),
-    ]);
+    // Sequential, because `executor` may be a transaction and a transaction is
+    // one connection. See `users/standing.ts`, which reaches this read inside
+    // one.
+    const attempt = await this.repository.findLatestAttempt(input.executor, {
+      purpose: 'adult_assurance',
+      subjectId: subject.id,
+    });
+    const evidence = await this.repository.findCurrentEvidence(
+      input.executor,
+      subject.id,
+      'adult_threshold',
+    );
     return currentDecision(attempt, evidence, input.now);
   }
 }

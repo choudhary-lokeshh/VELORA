@@ -70,18 +70,33 @@ export class GiftService {
     }
     return gifts.transaction(async (executor) => {
       const now = this.dependencies.now();
-      const [standing, recipient] = await Promise.all([
-        consumers.standingForUser({
-          executor,
-          now,
-          userId: input.senderUserId,
-        }),
-        giftRecipientFor({
-          executor,
-          handle: input.handle,
-          now,
-        }),
-      ]);
+      /*
+       * One at a time, because these share one connection.
+       *
+       * `executor` is a transaction, which is a single PostgreSQL connection,
+       * and a connection carries one statement at a time. Reading the sender's
+       * standing and resolving the recipient are independent, so they were
+       * started together — but issuing both at once hands the same connection
+       * two conversations, and the driver has to serialise or interleave them.
+       * On a slower machine that ended with the connection left `idle in
+       * transaction` after the sender's account read, the request never
+       * returning, and every later `TRUNCATE` in the suite blocking behind it.
+       *
+       * Where the same pair genuinely may run at once — `membership-service`
+       * asking the same two questions — the executor is the pool, and each
+       * query takes its own connection. That is the distinction, and it is why
+       * this reads sequentially rather than moving off the transaction.
+       */
+      const standing = await consumers.standingForUser({
+        executor,
+        now,
+        userId: input.senderUserId,
+      });
+      const recipient = await giftRecipientFor({
+        executor,
+        handle: input.handle,
+        now,
+      });
       if (recipient === undefined)
         return { kind: 'refused', reason: 'not_found' };
       if (
@@ -154,15 +169,19 @@ export class GiftService {
           catalog.recipient.userId,
         );
         const now = this.dependencies.now();
-        const [mayInteract, currentRecipient] = await Promise.all([
-          safety.mayInteract({
-            executor,
-            first: input.senderUserId,
-            now,
-            second: catalog.recipient.userId,
-          }),
-          giftRecipientFor({ executor, handle: input.handle, now }),
-        ]);
+        // Sequential for the reason the catalog read is: this executor is one
+        // connection, and it is already holding the pair lock taken above.
+        const mayInteract = await safety.mayInteract({
+          executor,
+          first: input.senderUserId,
+          now,
+          second: catalog.recipient.userId,
+        });
+        const currentRecipient = await giftRecipientFor({
+          executor,
+          handle: input.handle,
+          now,
+        });
         if (
           !mayInteract ||
           currentRecipient?.creatorId !== catalog.recipient.creatorId ||

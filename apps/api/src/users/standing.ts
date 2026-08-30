@@ -191,14 +191,24 @@ export class ConsumerAdultStandingDirectory implements ConsumerAdultStandingPort
     // Read from the assurance evidence rather than inferred from account
     // status, which can be stale relative to an assurance that expired without
     // any write happening.
-    const [declaration, identity] = await Promise.all([
-      this.repository.findLatestAdultDeclaration(executor, account.id),
-      this.identityAdultAssurance.currentForAuthAccount({
-        authAccountId: account.authAccountId,
-        executor,
-        now,
-      }),
-    ]);
+    //
+    // One at a time. `executor` may be a transaction, which is a single
+    // connection, and a connection carries one statement at a time. Asking it
+    // two questions at once leaves the driver to serialise or interleave them,
+    // and under load that ended with the connection abandoned `idle in
+    // transaction` — the request never returning, and every later statement
+    // against that database blocking behind it. These two reads are
+    // independent, so running them in order costs a round trip and nothing
+    // else.
+    const declaration = await this.repository.findLatestAdultDeclaration(
+      executor,
+      account.id,
+    );
+    const identity = await this.identityAdultAssurance.currentForAuthAccount({
+      authAccountId: account.authAccountId,
+      executor,
+      now,
+    });
     const decision = adultAssuranceDecisionOf(declaration, identity);
     return {
       adultAssurance: decision.adultAssurance,

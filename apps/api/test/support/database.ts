@@ -182,6 +182,65 @@ const truncationRoots = [
  */
 export const testHarnessApplicationName = 'velora-test-harness';
 
+/**
+ * How long a truncation may wait for its locks before it reports who has them.
+ *
+ * Generous by design: every truncation this harness performs finishes in
+ * milliseconds, so a wait this long means a connection is holding a
+ * transaction open rather than that the statement is slow.
+ */
+const truncateLockTimeoutMs = 20_000;
+
+/**
+ * Who is holding the locks a truncation could not take.
+ *
+ * A stalled `beforeEach` is the least informative failure a suite can produce:
+ * every later test fails on the same hook timeout and none of them says why.
+ * This turns that into a sentence naming the backend, how long its transaction
+ * has been open, and the statement it stopped on.
+ */
+async function lockHolders(sql: Bun.SQL): Promise<string> {
+  try {
+    // The driver types this as `any`; `rowsOf` is the one place this file
+    // narrows such a result, so it is used here too.
+    const rows = await rowsOf<{
+      pid: number;
+      query: string;
+      state: string;
+      transaction_seconds: number;
+      wait_event_type: string;
+    }>(
+      sql.unsafe(`
+      select pid,
+             state,
+             coalesce(extract(epoch from (now() - xact_start))::int, -1) as transaction_seconds,
+             coalesce(wait_event_type, '') as wait_event_type,
+             left(regexp_replace(coalesce(query, ''), '\\s+', ' ', 'g'), 200) as query
+        from pg_stat_activity
+       where datname = current_database()
+         and pid <> pg_backend_pid()
+         and xact_start is not null
+       order by xact_start
+       limit 10
+    `),
+    );
+    const described = rows.map(
+      (row) =>
+        `    pid ${String(row.pid)} ${row.state} for ${String(row.transaction_seconds)}s` +
+        `${row.wait_event_type === '' ? '' : ` waiting on ${row.wait_event_type}`}: ${row.query}`,
+    );
+    return [
+      `TRUNCATE could not take its locks within ${String(truncateLockTimeoutMs)}ms.`,
+      'A connection is holding a transaction open against a database this suite owns.',
+      described.length === 0
+        ? '    (no other transaction was open when this was asked)'
+        : described.join('\n'),
+    ].join('\n');
+  } catch (error) {
+    return `TRUNCATE could not take its locks, and the holders could not be read: ${String(error)}`;
+  }
+}
+
 export function connectDatabase(
   url: string,
   options: { readonly max?: number } = {},
@@ -228,12 +287,35 @@ export function connectDatabase(
       // against a database a test believes it owns, and that should fail.
       for (let attempt = 0; ; attempt += 1) {
         try {
-          await sql.unsafe(
-            `truncate table ${truncationRoots.join(', ')} restart identity cascade`,
-          );
+          // A bounded wait rather than an unbounded one, on one connection.
+          //
+          // Without the bound, a single connection left `idle in transaction`
+          // by the previous test makes this statement wait forever: every test
+          // after it fails on the same hook timeout, minutes apart, naming
+          // nothing. The bound is far above any truncation this suite performs
+          // — they complete in milliseconds — so it fires only when something
+          // is genuinely holding a lock, and then it says who.
+          //
+          // Inside one transaction because `lock_timeout` is a session
+          // setting: issued against the pool it can land on a different
+          // connection than the truncation it was meant to bound, which leaves
+          // the setting where nothing is truncating and the truncation itself
+          // unbounded. `SET LOCAL` also expires with the transaction, so no
+          // pooled connection carries it afterwards.
+          await sql.begin(async (transaction: Bun.SQL) => {
+            await transaction.unsafe(
+              `set local lock_timeout = '${String(truncateLockTimeoutMs)}ms'`,
+            );
+            await transaction.unsafe(
+              `truncate table ${truncationRoots.join(', ')} restart identity cascade`,
+            );
+          });
           return;
         } catch (error) {
           const code = (error as { errno?: string }).errno;
+          // 55P03 is `lock_not_available`: somebody else holds a lock on a
+          // table this suite believes it owns. Name them rather than retrying.
+          if (code === '55P03') throw new Error(await lockHolders(sql));
           if (attempt >= 1 || code !== '40P01') throw error;
         }
       }
