@@ -1805,6 +1805,61 @@ describe('push device registration', () => {
     return consumer(`device-owner-${String(deviceSubject)}@velora.test`);
   }
 
+  it('rests on the two retirements that precede it, and says so in SQLSTATE', async () => {
+    /*
+     * What actually keeps the upsert safe.
+     *
+     * `notification_push_devices` carries two partial unique indexes — one on
+     * the token fingerprint, one on `(recipient, installation)`, both `where
+     * disabled_at is null` — and `upsertPushDevice` arbitrates on the token
+     * index alone. A conflict raised by the installation index has no `do
+     * update` to land on, so it leaves the repository as a unique violation and
+     * the request answers 500.
+     *
+     * Through the service that cannot happen, and not because the statement is
+     * safe: `register` retires this installation's other tokens immediately
+     * before the upsert, so there is never a second live row to collide with.
+     * The safety is in the ordering of three statements, and nothing said so.
+     *
+     * This calls the repository directly, which is the only way to see the
+     * statement without the retirement in front of it, and records the SQLSTATE
+     * rather than asserting that "it throws" — a unique violation and a check
+     * violation both throw, and only one of them is this.
+     */
+    const owner = await deviceOwner();
+    expect((await register(owner)).status).toBe(200);
+
+    const raised = await notifications.repository
+      .upsertPushDevice(notifications.repository.transactionless, {
+        installationId: installation,
+        now: new Date(),
+        platform: 'ios',
+        recipientId: owner.id,
+        // A different token on the same installation: the token index does not
+        // conflict, so arbitration misses and the installation index fires.
+        tokenFingerprint: 'b'.repeat(64),
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(raised).toBeDefined();
+    const sqlState = ((): string | undefined => {
+      let cause: unknown = raised;
+      for (let depth = 0; depth < 6 && cause !== undefined; depth += 1) {
+        const errno = (cause as { errno?: unknown }).errno;
+        if (typeof errno === 'string') return errno;
+        cause = (cause as { cause?: unknown }).cause;
+      }
+      return undefined;
+    })();
+    // 23505, from `notifications_push_devices_installation_uk`. If this ever
+    // stops being a unique violation the arbitration changed, and the ordering
+    // this depends on is worth looking at again.
+    expect(sqlState).toBe('23505');
+  });
+
   async function register(
     actor: Credentials,
     body: Record<string, unknown> = {},

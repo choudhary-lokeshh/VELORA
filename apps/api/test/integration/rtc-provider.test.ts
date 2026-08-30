@@ -115,17 +115,36 @@ async function acceptedSession(): Promise<string> {
   const id = crypto.randomUUID();
   const low = '11111111-1111-4111-8111-111111111111';
   const high = '22222222-2222-4222-8222-222222222222';
+  /*
+   * One clock, and it is the suite's own.
+   *
+   * These rows used PostgreSQL's `now()` while the production path under test
+   * writes `ended_at` from the application clock this suite declares above.
+   * `realtime_sessions_ended_order_check` requires `ended_at >= created_at`, so
+   * whenever the application clock trailed the container's — 8.8 ms was enough,
+   * once — the write was refused and RTC looked broken on a commit that had not
+   * touched it. `created_at` has no database default here, so nothing but a
+   * fixture can produce the mixture.
+   *
+   * This is the defect fixed once already in the billing lifecycle fixture at
+   * a572ea1, in a second table. `accepted_at` and `state_entered_at` take the
+   * same stamp because `realtime_sessions_accepted_order_check` has the same
+   * shape, and the participants below take it too so nothing in one call is
+   * timed by two clocks.
+   */
+  const stamp = now();
+  const expiresAt = new Date(stamp.getTime() + 60_000);
   await execute(
     database.sql`insert into realtime_sessions
       (authorization_generation, accepted_at, created_at, id, initiator_id,
        invitation_expires_at, medium, origin_introduction_id,
        pair_high_id, pair_low_id, state, state_entered_at, updated_at)
-     values (1, now(), now(), ${id}, ${low}, now() + interval '1 minute',
-       'voice', ${crypto.randomUUID()}, ${high}, ${low}, 'accepted', now(), now())`,
+     values (1, ${stamp}, ${stamp}, ${id}, ${low}, ${expiresAt},
+       'voice', ${crypto.randomUUID()}, ${high}, ${low}, 'accepted', ${stamp}, ${stamp})`,
   );
   await execute(
     database.sql`insert into realtime_participants (invited_at, accepted_at, role, session_id, user_id)
-      values (now(), now(), 'caller', ${id}, ${low}), (now(), now(), 'recipient', ${id}, ${high})`,
+      values (${stamp}, ${stamp}, 'caller', ${id}, ${low}), (${stamp}, ${stamp}, 'recipient', ${id}, ${high})`,
   );
   return id;
 }

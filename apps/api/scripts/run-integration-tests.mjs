@@ -150,17 +150,32 @@ function failedTestsFromReport() {
  * `beforeEach` hook timing out with `Connection closed`, which reads like a
  * flaky test rather than like a limit being reached.
  *
- * Deriving it from the suite count keeps that from recurring. The multiplier is
- * the per-suite pool size in `test/support/database.ts`; the addition is
- * headroom for the migration connection, the diagnostics connection, and
- * PostgreSQL's own superuser reservation.
+ * Deriving it from the suites keeps that from recurring — but only if it counts
+ * what they actually ask for. This multiplied the suite count by the default
+ * pool size, and seven suites raise theirs to 60, so the figure it produced was
+ * a description of a repository that does not exist: 1700 against a demand of
+ * 1980. It was never binding in practice, because the suites do not all peak at
+ * once, and a ceiling that is wrong in the safe direction is still a ceiling
+ * nobody can reason about.
+ *
+ * So each suite is read for the pool size it declares, and the default is used
+ * for the ones that declare none. The addition is headroom for the migration
+ * connection, the diagnostics connection, and PostgreSQL's own superuser
+ * reservation.
  */
 const applicationRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const integrationSuiteCount = readdirSync(
-  join(applicationRoot, 'test', 'integration'),
-).filter((entry) => entry.endsWith('.test.ts')).length;
-const perSuitePoolSize = 20;
-const maximumConnections = integrationSuiteCount * perSuitePoolSize + 40;
+const integrationDirectory = join(applicationRoot, 'test', 'integration');
+const defaultPoolSize = 20;
+const declaredPoolSizes = readdirSync(integrationDirectory)
+  .filter((entry) => entry.endsWith('.test.ts'))
+  .map((entry) => {
+    const declared = /connectDatabase\([^)]*\bmax:\s*(\d+)/u.exec(
+      readFileSync(join(integrationDirectory, entry), 'utf8'),
+    );
+    return declared === null ? defaultPoolSize : Number(declared[1]);
+  });
+const maximumConnections =
+  declaredPoolSizes.reduce((total, size) => total + size, 0) + 40;
 const requestedSuites = process.argv.slice(2);
 
 const [postgres, redis] = await Promise.all([

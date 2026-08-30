@@ -117,18 +117,34 @@ beforeEach(async () => {
 /** A call that has been answered and bound to a provider room. */
 async function joinableSession(): Promise<string> {
   const id = crypto.randomUUID();
+  /*
+   * One clock for the whole call, and it is the suite's own.
+   *
+   * `realtime_sessions` and `realtime_participants` carry ordering checks —
+   * `ended_at >= created_at`, `accepted_at >= invited_at` and their siblings —
+   * and the production paths under test write the later side from the
+   * application clock. A fixture that created the row from PostgreSQL's `now()`
+   * mixed two clocks in one lifecycle, so whenever the application clock
+   * trailed the container's the write was refused and RTC looked broken on a
+   * commit that had not touched it. Eight milliseconds was enough, once.
+   */
+  const stamp = now();
+  // Computed here rather than as `${expiresAt}`: an untyped
+  // parameter beside an interval resolves to `interval + interval`, which
+  // PostgreSQL refuses against a timestamptz column.
+  const expiresAt = new Date(stamp.getTime() + 60_000);
   await execute(
     database.sql`insert into realtime_sessions
       (authorization_generation, accepted_at, created_at, id, initiator_id,
        invitation_expires_at, medium, origin_introduction_id,
        pair_high_id, pair_low_id, state, state_entered_at, updated_at)
-     values (1, now(), now(), ${id}, ${caller}, now() + interval '1 minute',
-       'video', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'accepted', now(), now())`,
+     values (1, ${stamp}, ${stamp}, ${id}, ${caller}, ${expiresAt},
+       'video', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'accepted', ${stamp}, ${stamp})`,
   );
   await execute(
     database.sql`insert into realtime_participants (invited_at, accepted_at, role, session_id, user_id)
-      values (now(), now(), 'caller', ${id}, ${caller}),
-             (now(), now(), 'recipient', ${id}, ${recipient})`,
+      values (${stamp}, ${stamp}, 'caller', ${id}, ${caller}),
+             (${stamp}, ${stamp}, 'recipient', ${id}, ${recipient})`,
   );
   await realtime.service.establishProviderSession(id);
   return id;
@@ -238,17 +254,19 @@ describe('a credential is short-lived and never stored', () => {
 describe('only a live, answered call admits anybody', () => {
   it('refuses an invitation nobody has accepted', async () => {
     const id = crypto.randomUUID();
+    const stamp = now();
+    const expiresAt = new Date(stamp.getTime() + 60_000);
     await execute(
       database.sql`insert into realtime_sessions
         (authorization_generation, created_at, id, initiator_id,
          invitation_expires_at, medium, origin_introduction_id,
          pair_high_id, pair_low_id, state, state_entered_at, updated_at)
-       values (1, now(), ${id}, ${caller}, now() + interval '1 minute',
-         'voice', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'invited', now(), now())`,
+       values (1, ${stamp}, ${id}, ${caller}, ${expiresAt},
+         'voice', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'invited', ${stamp}, ${stamp})`,
     );
     await execute(
       database.sql`insert into realtime_participants (invited_at, role, session_id, user_id)
-        values (now(), 'caller', ${id}, ${caller}), (now(), 'recipient', ${id}, ${recipient})`,
+        values (${stamp}, 'caller', ${id}, ${caller}), (${stamp}, 'recipient', ${id}, ${recipient})`,
     );
     // Acceptance is what admits somebody, and it has not happened.
     expect(
@@ -261,7 +279,7 @@ describe('only a live, answered call admits anybody', () => {
     const id = await joinableSession();
     await execute(
       database.sql`update realtime_sessions
-        set state = 'ended', ended_at = now(), end_reason = 'hung_up',
+        set state = 'ended', ended_at = ${now()}, end_reason = 'hung_up',
             authorization_generation = authorization_generation + 1
         where id = ${id}`,
     );
@@ -273,17 +291,19 @@ describe('only a live, answered call admits anybody', () => {
 
   it('refuses a call that was never bound to a provider room', async () => {
     const id = crypto.randomUUID();
+    const stamp = now();
+    const expiresAt = new Date(stamp.getTime() + 60_000);
     await execute(
       database.sql`insert into realtime_sessions
         (authorization_generation, accepted_at, created_at, id, initiator_id,
          invitation_expires_at, medium, origin_introduction_id,
          pair_high_id, pair_low_id, state, state_entered_at, updated_at)
-       values (1, now(), now(), ${id}, ${caller}, now() + interval '1 minute',
-         'voice', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'accepted', now(), now())`,
+       values (1, ${stamp}, ${stamp}, ${id}, ${caller}, ${expiresAt},
+         'voice', ${crypto.randomUUID()}, ${recipient}, ${caller}, 'accepted', ${stamp}, ${stamp})`,
     );
     await execute(
       database.sql`insert into realtime_participants (invited_at, accepted_at, role, session_id, user_id)
-        values (now(), now(), 'caller', ${id}, ${caller}), (now(), now(), 'recipient', ${id}, ${recipient})`,
+        values (${stamp}, ${stamp}, 'caller', ${id}, ${caller}), (${stamp}, ${stamp}, 'recipient', ${id}, ${recipient})`,
     );
     expect(
       (await realtime.authorization.issue({ actorId: caller, sessionId: id }))
