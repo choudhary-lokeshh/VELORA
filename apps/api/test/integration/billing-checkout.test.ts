@@ -616,6 +616,70 @@ describe('checkout orchestration', () => {
   });
 });
 
+describe('one consumer never reads another consumer money', () => {
+  it('scopes every financial read to the account that made it', async () => {
+    /*
+     * Four reads, one boundary.
+     *
+     * Each of these is scoped to the caller's own account by construction —
+     * `listSent` takes the caller's user id, and the subscription, payment and
+     * club-access reads take theirs — so none of them has ever been able to
+     * answer with somebody else's row. What did not exist was a test that
+     * would notice if that stopped being true: the gifting test below proves a
+     * buyer sees their own gift, which is exactly the assertion that still
+     * passes on the day the scope is dropped.
+     *
+     * A stranger is signed in against the same live application, with the same
+     * origin and the same session shape, and asked all four questions. Every
+     * answer must be empty — not refused, because whether somebody else has
+     * bought anything is not a fact this account is entitled to learn either
+     * way, and a 403 here would answer it.
+     */
+    const recipient = await giftRecipient('isolated@velora.test', 'isolated');
+    expect(recipient.recipientUserId).toBeDefined();
+    const buyer = await consumer(live.runtime, 'spender@velora.test');
+    const stranger = await consumer(live.runtime, 'stranger@velora.test');
+
+    const catalog = (await (await giftCatalog(buyer, 'isolated')).json()) as {
+      items: { id: string }[];
+    };
+    const item = catalog.items[0];
+    if (item === undefined) throw new Error('gift item missing');
+    expect(
+      (await sendGift(buyer, 'isolated', item.id, 'gift-scope-1')).status,
+    ).toBe(201);
+
+    const read = async (actor: Session, path: string, key: string) => {
+      const response = await handle(signed(path, actor, testConsumerOrigin));
+      expect(response.status, path).toBe(200);
+      const body = (await response.json()) as Readonly<
+        Record<string, readonly unknown[] | undefined>
+      >;
+      return body[key] ?? [];
+    };
+
+    const reads: readonly (readonly [string, string])[] = [
+      ['/v1/billing/gifts', 'gifts'],
+      ['/v1/billing/payments', 'payments'],
+      ['/v1/billing/subscriptions', 'subscriptions'],
+      ['/v1/clubs/access', 'access'],
+    ];
+
+    // The buyer sees the one thing they did.
+    expect(await read(buyer, '/v1/billing/gifts', 'gifts')).toHaveLength(1);
+    expect(
+      (await read(buyer, '/v1/billing/payments', 'payments')).length,
+    ).toBeGreaterThan(0);
+
+    // The stranger sees none of it, on any of the four. Empty rather than
+    // refused: whether somebody else has bought anything is not a fact this
+    // account is entitled to learn either way, and a refusal would answer it.
+    for (const [path, key] of reads) {
+      expect(await read(stranger, path, key), path).toHaveLength(0);
+    }
+  });
+});
+
 describe('virtual gifting', () => {
   it('settles through the verified provider inbox and balanced journal without granting entitlement', async () => {
     const recipient = await giftRecipient('gifted@velora.test', 'gifted');

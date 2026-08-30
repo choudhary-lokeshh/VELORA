@@ -34,7 +34,7 @@
     "hygiene:check": "node scripts/check-hygiene.mjs",
     "whitespace:check": "git diff --check && pnpm hygiene:check",
     "contracts:generate": "pnpm --filter @velora/validation generate && pnpm --filter @velora/api-client generate",
-    "contracts:check": "pnpm --filter @velora/validation generate:check && pnpm --filter @velora/api-client generate:check",
+    "contracts:check": "pnpm --filter @velora/validation generate:check && pnpm --filter @velora/api-client generate:check && node scripts/check-cors-contract.mjs",
     "runtime:inventory:check": "node scripts/check-runtime-inventory.mjs",
     "runtime:inventory": "node scripts/check-runtime-inventory.mjs --live",
     "mobile:doctor": "node scripts/check-mobile-doctor.mjs",

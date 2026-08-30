@@ -8,6 +8,8 @@ import {
   moderationReportSchema,
 } from '@velora/validation';
 
+import contractDocument from '../../../../packages/validation/openapi/velora.v1.json' with { type: 'json' };
+
 import { createApplication } from '../../src/application.js';
 import { createAuthRuntime } from '../../src/auth/composition.js';
 import { InMemoryRateLimiter } from '../../src/auth/rate-limit.js';
@@ -270,6 +272,93 @@ describe('the operator surface exists and reaches nobody', () => {
     // Unauthenticated is 401 and wrong-audience is 403; neither is a way in.
     for (const response of responses) {
       expect([401, 403]).toContain(response.status);
+    }
+  });
+
+  /*
+   * Every admin address, taken from the contract rather than named here.
+   *
+   * The three sweeps above walk a list written by hand, and that list had eight
+   * of the thirty-two `/v1/admin` paths the contract publishes — so a test
+   * titled "the operator surface exists and reaches nobody" was speaking for a
+   * quarter of the surface. Four paths were not probed by any suite at all.
+   *
+   * The controls themselves were never wrong: every admin handler resolves an
+   * operator before it does anything. But a list somebody has to remember to
+   * extend is a list that eventually is not extended, and the failure is silent
+   * — the route works, the sweep stays green, and nothing says the new address
+   * was never asked the question.
+   *
+   * This reads the paths out of the OpenAPI document, so it covers the surface
+   * by construction and grows with it. `{}` is sent as the body of every write:
+   * a schema refusal instead of an authorization refusal would itself be the
+   * finding, because it would mean the route parsed a stranger's input before
+   * deciding whether the stranger was allowed to be there at all.
+   */
+  const declaredAdminOperations = Object.entries(contractDocument.paths)
+    .filter(([path]) => path.startsWith('/v1/admin'))
+    .flatMap(([path, methods]) =>
+      Object.keys(methods)
+        .filter((method) => method === 'get' || method === 'post')
+        .map((method) => ({ method: method.toUpperCase(), path })),
+    );
+
+  function probe(
+    operation: { readonly method: string; readonly path: string },
+    session: Session | undefined,
+    origin: string,
+  ): Request {
+    return new Request(`http://api.test${operation.path}`, {
+      ...(operation.method === 'GET' ? {} : { body: '{}', method: 'POST' }),
+      headers: {
+        'content-type': 'application/json',
+        origin,
+        ...(session === undefined
+          ? {}
+          : { cookie: session.cookie, 'x-velora-csrf': session.csrf }),
+      },
+    });
+  }
+
+  it('publishes every admin address the contract declares', () => {
+    const published = new Set(
+      application.app.routes.map(
+        (route) => `${route.method.toUpperCase()} ${route.path}`,
+      ),
+    );
+    expect(declaredAdminOperations.length).toBeGreaterThanOrEqual(32);
+    for (const operation of declaredAdminOperations) {
+      expect(
+        published.has(`${operation.method} ${operation.path}`),
+        `${operation.method} ${operation.path}`,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses every admin address to a consumer, a creator, and nobody', async () => {
+    const consumer = await signIn('sweep-consumer@velora.test', 'consumer_web');
+    const creator = await signIn('sweep-creator@velora.test', 'creator_studio');
+
+    for (const operation of declaredAdminOperations) {
+      const name = `${operation.method} ${operation.path}`;
+
+      // Audience before anything else. A consumer and a creator each get the
+      // same 403 whatever is behind the address, so probing teaches nothing
+      // about what exists.
+      expect(
+        (await handle(probe(operation, consumer, testConsumerOrigin))).status,
+        name,
+      ).toBe(403);
+      expect(
+        (await handle(probe(operation, creator, testCreatorOrigin))).status,
+        name,
+      ).toBe(403);
+
+      // Unauthenticated is 401 and wrong-audience is 403; neither is a way in,
+      // and neither is a 422 that would mean the body was read first.
+      expect([401, 403], name).toContain(
+        (await handle(probe(operation, undefined, testAdminOrigin))).status,
+      );
     }
   });
 
