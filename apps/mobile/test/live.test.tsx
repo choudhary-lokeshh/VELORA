@@ -76,6 +76,19 @@ async function press(testID: string): Promise<void> {
   await fireEvent.press(screen.getByTestId(testID));
 }
 
+/**
+ * Applies one local scenario.
+ *
+ * The panel is collapsed until somebody opens it, because it is a developer's
+ * tool sitting on the product's primary screen. Opening it is part of using it.
+ */
+async function scenario(name: string): Promise<void> {
+  if (screen.queryByTestId(`live-sim-${name}`) === null) {
+    await press('live-sim-toggle');
+  }
+  await press(`live-sim-${name}`);
+}
+
 describe('the door', () => {
   it('shows a door rather than a viewfinder', async () => {
     await mountLive(liveState());
@@ -103,7 +116,10 @@ describe('an encounter', () => {
 
     await screen.findByTestId('live-peer-name');
     expect(screen.getByTestId('live-peer-name')).toHaveTextContent(/Robin/u);
-    expect(screen.getByTestId('live-no-media')).toHaveTextContent(
+    // Awaited, because a match arrives rather than appearing: during the
+    // reveal the screen says the session is connecting, which is what the
+    // session state actually is.
+    expect(await screen.findByTestId('live-no-media')).toHaveTextContent(
       /no approved provider exists yet/u,
     );
   });
@@ -124,6 +140,10 @@ describe('an encounter', () => {
     await screen.findByTestId('live-door');
     await press('live-start-video');
 
+    // The chat is a sheet rather than a panel in a column, so it is opened
+    // the way a person opens it.
+    await screen.findByTestId('live-toggle-chat');
+    await press('live-toggle-chat');
     const chat = await screen.findByTestId('live-chat');
     expect(chat).toHaveTextContent(
       /does not go to your Inbox unless you both connect/u,
@@ -138,7 +158,7 @@ describe('searching', () => {
     await press('live-start-video');
 
     const searching = await screen.findByTestId('live-searching');
-    expect(searching).toHaveTextContent(/Finding someone/u);
+    expect(searching).toHaveTextContent(/looking/iu);
     // There is no presence projection behind this product, so a number here
     // would be one this screen invented.
     expect(searching).not.toHaveTextContent(/\d/u);
@@ -178,14 +198,14 @@ describe('connecting', () => {
         /Waiting for them/u,
       );
     });
-    await press('live-sim-peer_connect');
+    await scenario('peer_connect');
     await waitFor(() => {
       expect(screen.getByTestId('live-connection')).toHaveTextContent(
-        /You are connected/u,
+        /Connected/u,
       );
     });
 
-    await press('live-sim-peer_next');
+    await scenario('peer_next');
     await screen.findByTestId('live-ended-conversation');
     await press('live-ended-conversation');
     expect(opened).toEqual([liveConversationId]);
@@ -199,7 +219,7 @@ describe('when the other person moves on', () => {
     await press('live-start-video');
     await screen.findByTestId('live-peer-name');
 
-    await press('live-sim-peer_next');
+    await scenario('peer_next');
 
     const ended = await screen.findByTestId('live-ended');
     expect(ended).toHaveTextContent(/They moved on/u);

@@ -496,7 +496,9 @@ export function Live() {
         <ErrorMessage testId="live-message">{message}</ErrorMessage>
       )}
 
-      {state?.simulated === true ? <SimulationPanel onState={setState} /> : null}
+      {state?.simulated === true ? (
+        <SimulationPanel onState={setState} />
+      ) : null}
     </div>
   );
 }
@@ -611,15 +613,21 @@ function LiveDoor({
               <ul className="v-live__steps">
                 <li>
                   <Icon name="camera" size="sm" />
-                  <span>Your camera and microphone open when you press start.</span>
+                  <span>
+                    Your camera and microphone open when you press start.
+                  </span>
                 </li>
                 <li>
                   <Icon name="live" size="sm" />
-                  <span>VELORA finds somebody eligible. You never choose who.</span>
+                  <span>
+                    VELORA finds somebody eligible. You never choose who.
+                  </span>
                 </li>
                 <li>
                   <Icon name="link" size="sm" />
-                  <span>Connect only becomes a connection if you both press it.</span>
+                  <span>
+                    Connect only becomes a connection if you both press it.
+                  </span>
                 </li>
               </ul>
             )}
@@ -796,7 +804,10 @@ function ChoosePanel({
       {candidates === undefined ? (
         <p className="v-caption v-quiet">Loading people…</p>
       ) : candidates.length === 0 ? (
-        <p className="v-caption v-quiet v-measure" data-testid="live-choose-empty">
+        <p
+          className="v-caption v-quiet v-measure"
+          data-testid="live-choose-empty"
+        >
           Nobody to show right now. Instant still works — VELORA looks across
           everybody who is here rather than only the people it can show you.
         </p>
@@ -1044,7 +1055,8 @@ function LiveStage({
   // picture of yourself behind those words is a picture nobody can read them
   // over.
   const aboutSomebody =
-    showing || (serverState === 'ended' && encounter !== undefined && !movingOn);
+    showing ||
+    (serverState === 'ended' && encounter !== undefined && !movingOn);
 
   return (
     <div
@@ -1076,7 +1088,11 @@ function LiveStage({
         // One number for how long a reaction lives. The stylesheet animates it
         // and this schedules its removal; two durations for one effect is a
         // drift that ends with glyphs left on the stage.
-        style={{ '--live-burst-duration': `${String(reactionMilliseconds)}ms` } as CSSProperties}
+        style={
+          {
+            '--live-burst-duration': `${String(reactionMilliseconds)}ms`,
+          } as CSSProperties
+        }
       >
         {bursts.map((burst) => (
           <span
@@ -1136,7 +1152,6 @@ function LiveStage({
           open={chatOpen}
         />
       ) : null}
-
     </div>
   );
 }
@@ -1328,10 +1343,7 @@ function SearchingPane({
     preferences.region === 'same' || preferences.language !== undefined;
   const line =
     searchingLines[
-      Math.min(
-        searchingLines.length - 1,
-        Math.floor(waited / 8000),
-      )
+      Math.min(searchingLines.length - 1, Math.floor(waited / 8000))
     ] ?? searchingLines[0];
 
   return (

@@ -179,7 +179,6 @@ export const maximumLiveClientMessageIdCharacters = 128;
  */
 export const liveCandidateScanLimit = 20;
 
-
 /**
  * How wide a net the matcher casts, as the pool stores it.
  *

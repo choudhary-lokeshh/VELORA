@@ -283,12 +283,7 @@ export interface ApiDoubleState {
       medium: 'voice' | 'video';
       person: LivePersonBody;
       state:
-        | 'pending'
-        | 'accepted'
-        | 'met'
-        | 'declined'
-        | 'cancelled'
-        | 'expired';
+        'pending' | 'accepted' | 'met' | 'declined' | 'cancelled' | 'expired';
     }[];
     languageOptions: string[];
     medium?: 'voice' | 'video';

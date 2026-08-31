@@ -171,7 +171,10 @@ export class LiveRoutes {
   async invite(input: RouteRequest): Promise<RouteResult> {
     const resolved = await this.requireConsumer(input);
     if ('failure' in resolved) return resolved.failure;
-    const parsed = parseRouteBody(createLiveInvitationRequestSchema, input.body);
+    const parsed = parseRouteBody(
+      createLiveInvitationRequestSchema,
+      input.body,
+    );
     if (!parsed.ok) return this.invalid(input);
     return this.invitations(
       input,

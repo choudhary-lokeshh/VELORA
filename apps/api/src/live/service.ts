@@ -100,7 +100,10 @@ export interface LiveStateView {
 }
 
 export type LiveInvitationsOutcome =
-  | { readonly kind: 'invitations'; readonly views: readonly LiveInvitationView[] }
+  | {
+      readonly kind: 'invitations';
+      readonly views: readonly LiveInvitationView[];
+    }
   | { readonly kind: 'not_found' }
   | { readonly kind: 'not_permitted' }
   | { readonly kind: 'rate_limited' }
@@ -1146,7 +1149,12 @@ export class LiveService {
     // Two people who agreed to meet have already answered the question a
     // preference asks, and a filter that then kept them apart would be the
     // product overruling both of them.
-    const narrowed = await this.narrowPool(executor, actor, participation, pool);
+    const narrowed = await this.narrowPool(
+      executor,
+      actor,
+      participation,
+      pool,
+    );
     const candidates = [
       ...agreed,
       ...narrowed.filter((row) => !agreedIds.has(row.userId)),
@@ -1178,7 +1186,10 @@ export class LiveService {
       // meet: they named each other, and refusing them because they met an hour
       // ago would be suppression acting as a rule about people rather than
       // about randomness. A block still refuses them, above and below.
-      if (!agreedIds.has(candidate.userId) && recentlyMet.has(candidate.userId)) {
+      if (
+        !agreedIds.has(candidate.userId) &&
+        recentlyMet.has(candidate.userId)
+      ) {
         continue;
       }
 
@@ -1342,7 +1353,6 @@ export class LiveService {
     const eligibility = await this.dependencies.admission.evaluate(actor);
     return eligibility.step === 'completed';
   }
-
 
   /**
    * The subset of the pool this person asked the matcher to consider.
@@ -1607,8 +1617,9 @@ export class LiveService {
             return 'denied';
           }
         }
-        const applied =
-          await this.dependencies.repository.transitionInvitation(executor, {
+        const applied = await this.dependencies.repository.transitionInvitation(
+          executor,
+          {
             from: [...liveInvitationOpenStates],
             id: held.id,
             now,
@@ -1618,7 +1629,8 @@ export class LiveService {
                 : input.response === 'decline'
                   ? 'declined'
                   : 'cancelled',
-          });
+          },
+        );
         return applied === undefined ? 'denied' : 'applied';
       },
     );
@@ -1924,9 +1936,7 @@ function isInvitationParticipant(
   invitation: LiveInvitationRow,
   userId: string,
 ): boolean {
-  return (
-    invitation.pairLowId === userId || invitation.pairHighId === userId
-  );
+  return invitation.pairLowId === userId || invitation.pairHighId === userId;
 }
 
 function isInvitationOpen(invitation: LiveInvitationRow): boolean {
