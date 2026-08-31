@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 
 /**
- * Draws Consumer Web's browser icons from the mark the product already
+ * Draws each browser surface's icons from the mark that surface already
  * publishes.
  *
  * A browser asks for an icon on every page load whether or not one exists, and
@@ -15,19 +15,29 @@ import sharp from 'sharp';
  * a real icon rather than an error in the console.
  *
  * Nothing here invents a visual, on the same reasoning as the Android asset
- * script: the mark is the `sparkle` path from `apps/web/src/design/icons.tsx`,
- * the ground is `--canvas`, the tone is `--ember`, and the stroke is
- * `--icon-stroke`, all read out of `apps/web/app/styles/tokens.css` rather than
- * restated here. A token or path change therefore fails this script or changes
- * its output, instead of silently leaving a stale icon in the tab.
+ * script: the mark is the `sparkle` path from that surface's own
+ * `src/design/icons.tsx`, the ground is its `--canvas`, the tone is its
+ * `--ember`, and the stroke is its `--icon-stroke`, all read out of that
+ * surface's own `app/styles/tokens.css` rather than restated here. A token or
+ * path change therefore fails this script or changes its output, instead of
+ * silently leaving a stale icon in the tab.
  *
- * Run it with `pnpm web:assets`. The outputs are committed, because a build
- * that regenerates its own icons is a build whose icons nobody has looked at.
+ * Three surfaces, one drawing. Consumer Web is dark and Creator Studio and
+ * Platform Admin are light, so the three icons differ exactly as the three
+ * products do, and a developer with all three open can tell one tab from
+ * another — which is the whole reason a surface has an icon at all.
+ *
+ * Run it with `pnpm surfaces:assets`. The outputs are committed, because a
+ * build that regenerates its own icons is a build whose icons nobody has looked
+ * at.
  */
 
-const iconsFile = 'apps/web/src/design/icons.tsx';
-const tokensFile = 'apps/web/app/styles/tokens.css';
-const outputDirectory = 'apps/web/app';
+/** Every surface a browser renders, in the order a developer opens them. */
+const surfaces = [
+  { directory: 'apps/web', name: 'Consumer Web' },
+  { directory: 'apps/creator-studio', name: 'Creator Studio' },
+  { directory: 'apps/admin', name: 'Platform Admin' },
+];
 
 /** The sizes a `.ico` carries, smallest first, as browsers still ask for all three. */
 const icoSizes = [16, 32, 48];
@@ -54,7 +64,7 @@ function fail(message) {
  * sidebar draws. A parse failure is fatal: an icon generated from a guess is
  * worse than no icon.
  */
-function readSparklePaths() {
+function readSparklePaths(iconsFile) {
   const source = readFileSync(iconsFile, 'utf8');
   const block = /\n {2}sparkle: \[\n([\s\S]*?)\n {2}\],\n/u.exec(source);
   if (block === null) fail(`No sparkle mark found in ${iconsFile}`);
@@ -64,7 +74,7 @@ function readSparklePaths() {
 }
 
 /** One custom property out of the Consumer stylesheet. */
-function readToken(name, shape) {
+function readToken(tokensFile, name, shape) {
   const source = readFileSync(tokensFile, 'utf8');
   const found = new RegExp(`\\n {2}--${name}: (${shape});`, 'u').exec(source);
   if (found === null) fail(`No --${name} value found in ${tokensFile}`);
@@ -84,7 +94,7 @@ function readToken(name, shape) {
  * because an arc silently treated as a line would move the centre by an amount
  * nobody could see in the source.
  */
-function inkBounds(paths) {
+function inkBounds(iconsFile, paths) {
   let minimumX = Infinity;
   let minimumY = Infinity;
   let maximumX = -Infinity;
@@ -127,8 +137,8 @@ function inkBounds(paths) {
 }
 
 /** The mark, centred on a `size`-unit square over the product's own ground. */
-function markSvg({ ground, paths, size, stroke, tone }) {
-  const bounds = inkBounds(paths);
+function markSvg({ ground, iconsFile, paths, size, stroke, tone }) {
+  const bounds = inkBounds(iconsFile, paths);
   // A stroke is centred on its path, so half of it lies outside the geometry.
   const bleed = stroke / 2;
   const inkWidth = bounds.maximumX - bounds.minimumX + stroke;
@@ -186,21 +196,25 @@ function ico(images) {
   ]);
 }
 
-async function main() {
-  const paths = readSparklePaths();
-  const ground = readToken('canvas', '#[0-9a-fA-F]{6}');
-  const tone = readToken('ember', '#[0-9a-fA-F]{6}');
-  const stroke = Number(readToken('icon-stroke', '[0-9.]+'));
-  process.stdout.write('Drawing Consumer Web icons from the product mark:\n');
+/** Both files one surface serves, drawn from that surface's own tokens. */
+async function drawSurface(surface) {
+  const iconsFile = join(surface.directory, 'src/design/icons.tsx');
+  const tokensFile = join(surface.directory, 'app/styles/tokens.css');
+  const outputDirectory = join(surface.directory, 'app');
+
+  const paths = readSparklePaths(iconsFile);
+  const ground = readToken(tokensFile, 'canvas', '#[0-9a-fA-F]{6}');
+  const tone = readToken(tokensFile, 'ember', '#[0-9a-fA-F]{6}');
+  const stroke = Number(readToken(tokensFile, 'icon-stroke', '[0-9.]+'));
 
   // The vector every current browser prefers. Drawn on the same 24-unit grid
   // the mark is authored on, so it stays sharp at any size a tab, a bookmark
   // bar, or an installed shortcut asks for.
-  const vector = markSvg({ ground, paths, size: 24, stroke, tone });
+  const vector = markSvg({ ground, iconsFile, paths, size: 24, stroke, tone });
   const svgFile = join(outputDirectory, 'icon.svg');
   writeFileSync(
     svgFile,
-    `<!-- Generated by \`pnpm web:assets\` from the sparkle mark in ${iconsFile}. Do not edit by hand. -->\n${vector}\n`,
+    `<!-- Generated by \`pnpm surfaces:assets\` from the sparkle mark in ${iconsFile}. Do not edit by hand. -->\n${vector}\n`,
   );
   process.stdout.write(`  ${svgFile}\n`);
 
@@ -222,6 +236,13 @@ async function main() {
   const icoFile = join(outputDirectory, 'favicon.ico');
   writeFileSync(icoFile, ico(images));
   process.stdout.write(`  ${icoFile}\n`);
+}
+
+async function main() {
+  for (const surface of surfaces) {
+    process.stdout.write(`Drawing ${surface.name} icons from its own mark:\n`);
+    await drawSurface(surface);
+  }
 }
 
 await main();
