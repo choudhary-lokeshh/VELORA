@@ -57,6 +57,21 @@ async function allowCapture(
   });
 }
 
+/**
+ * Applies one local scenario.
+ *
+ * The panel is collapsed until somebody opens it, because it is a developer's
+ * tool sitting on the product's primary screen. Opening it is part of using it,
+ * so it belongs here rather than at every call site.
+ */
+async function scenario(page: Page, name: string): Promise<void> {
+  const control = page.getByTestId(`live-sim-${name}`);
+  if (!(await control.isVisible())) {
+    await page.getByTestId('live-sim-toggle').click();
+  }
+  await control.click();
+}
+
 async function atTheDoor(page: Page): Promise<void> {
   const door = page.getByTestId('live-door');
   if (await door.isVisible()) return;
@@ -136,8 +151,12 @@ test.describe('Live discovery', () => {
 
     // And an honest account of what is carrying them, rather than a black
     // rectangle implying a connection that does not exist.
+    // Held behind the reveal, which is why this has a timeout: a match arrives
+    // rather than appearing, and during the arrival the screen says the session
+    // is connecting — which is what the session state actually is.
     await expect(page.getByTestId('live-no-media')).toContainText(
       'no approved provider exists yet',
+      { timeout: 30_000 },
     );
 
     // Words, both ways. The stand-in answers through the same send route.
@@ -146,7 +165,7 @@ test.describe('Live discovery', () => {
     await expect(page.getByTestId('live-chat-list')).toContainText(
       'hello from the browser',
     );
-    await page.getByTestId('live-sim-peer_message').click();
+    await scenario(page, 'peer_message');
     await expect(page.getByTestId('live-chat-list')).toContainText(
       'local stand-in',
       { timeout: 30_000 },
@@ -192,7 +211,8 @@ test.describe('Live discovery', () => {
      * one press.
      */
     const badge = page.getByTestId('live-connection');
-    const before = await badge.textContent();
+    // Trimmed, because the badge now carries a mark beside its words.
+    const before = (await badge.textContent())?.trim();
 
     if (before === 'Connect') {
       // A fresh pair. One tap is not a connection.
@@ -200,25 +220,25 @@ test.describe('Live discovery', () => {
       await expect(badge).toHaveText('Waiting for them', { timeout: 30_000 });
 
       // The other person asks too, independently. Only now is it mutual.
-      await page.getByTestId('live-sim-peer_connect').click();
-      await expect(badge).toHaveText('You are connected', { timeout: 30_000 });
+      await scenario(page, 'peer_connect');
+      await expect(badge).toContainText('Connected', { timeout: 30_000 });
     } else if (before === 'They want to connect') {
       // The other person asked first, which is the same rule from the other
       // side: this person's single tap completes it and nothing before it did.
       await page.getByTestId('live-connect').click();
-      await expect(badge).toHaveText('You are connected', { timeout: 30_000 });
+      await expect(badge).toContainText('Connected', { timeout: 30_000 });
     } else {
       // Already connected, which a persistent world genuinely produces: these
       // two have met before. There is nothing to press — the control is
       // disabled, which is itself the assertion that a connection is not
       // something this surface can re-make — and what still has to hold is
       // everything below about the conversation surviving.
-      expect(before).toBe('You are connected');
+      expect(before).toContain('Connected');
       await expect(page.getByTestId('live-connect')).toBeDisabled();
     }
 
     // They move on. The relationship is what survives the encounter.
-    await page.getByTestId('live-sim-peer_next').click();
+    await scenario(page, 'peer_next');
     await expect(page.getByTestId('live-ended')).toContainText(
       'They moved on',
       {
@@ -264,6 +284,127 @@ test.describe('Live discovery', () => {
 
     // And navigating away leaves nothing bound either.
     await navigateTo(page, 'discover');
+    await expect(page.locator('video')).toHaveCount(0);
+  });
+
+  test('narrows a search, and never claims nobody matching exists', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+
+    // Two controls and no more. There is no country picker, no age band, and
+    // no compatibility score anywhere on this screen, because the contract
+    // cannot express one.
+    const region = page.getByTestId('live-pref-region');
+    await expect(region).toHaveText('Anywhere');
+    await region.click();
+    await expect(region).toHaveText('Prefer near me');
+
+    // Narrowing is applied to the search rather than remembered and ignored.
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-room')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Whatever the matcher found, the screen never asserts that nobody
+    // matching exists — it cannot know that, and neither can this test.
+    await expect(page.getByTestId('live')).not.toContainText('nobody matching');
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+    // Left as it was found, so the next test in this serial group searches
+    // across everybody.
+    await page.getByTestId('live-pref-region').click();
+    await expect(page.getByTestId('live-pref-region')).toHaveText('Anywhere');
+  });
+
+  test('asks one real person to meet, and promises only a request', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+
+    await page.getByTestId('segment-choose').click();
+    const people = page.getByTestId('live-choose');
+    await expect(people).toBeVisible({ timeout: 30_000 });
+
+    // Real profiles from the discovery feed, and nothing on any of them claims
+    // anybody is online: availability is not published and this surface has no
+    // way to prove it.
+    await expect(people).not.toContainText('Online');
+    const ask = people.getByRole('button', { name: 'Ask to meet' }).first();
+    if ((await ask.count()) === 0) {
+      // A cohort whose feed is empty is a legitimate world state, and the
+      // surface says so rather than pretending otherwise.
+      await expect(page.getByTestId('live-choose-empty')).toBeVisible();
+      return;
+    }
+
+    await ask.click();
+    // A request, and the surface says exactly that: not "connecting", not
+    // "waiting to join", and no live session anywhere.
+    await expect(page.getByTestId('live-invitations')).toContainText(
+      'They have not answered yet',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId('live-room')).toHaveCount(0);
+  });
+
+  test('moves on immediately, over and over, without leaking anything', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-room')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    /*
+     * Three cycles, because the failures this catches are cumulative: a chat
+     * poller that was never cleared, a stale encounter identifier that lets a
+     * late answer land on the next person, a preview that is reacquired every
+     * time. One cycle proves none of them.
+     */
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const next = page.getByTestId('live-next');
+      if ((await next.count()) === 0) {
+        // Nobody available is a legitimate outcome of a real matcher against a
+        // real pool, and searching again is what a person does.
+        const again = page.getByTestId('live-search-again');
+        if ((await again.count()) > 0) await again.click();
+        continue;
+      }
+      await next.click();
+      // Acknowledged at once: the previous stranger is gone from the screen
+      // before the server has answered.
+      await expect(page.getByTestId('live-peer-name')).toHaveCount(0, {
+        timeout: 5_000,
+      });
+      await expect(page.getByTestId('live-room')).toBeVisible();
+    }
+
+    // Exactly one preview element after all of it. A cycle that leaked one
+    // would leave a second camera bound to a device nobody is looking at.
+    await expect(page.locator('video')).toHaveCount(1);
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.locator('video')).toHaveCount(0);
   });
 
