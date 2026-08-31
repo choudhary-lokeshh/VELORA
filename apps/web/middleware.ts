@@ -31,6 +31,12 @@ const headers = () => {
     apiBaseUrl: config?.apiBaseUrl,
     appEnvironment: config?.appEnvironment,
     developmentRuntime: process.env.NODE_ENV === 'development',
+    // Consumer Web is the one surface that opens a camera: live discovery is
+    // its primary destination, and `Permissions-Policy` refuses capture before
+    // any permission prompt is reached — a refusal no amount of consent can
+    // override. `self` permits it on this origin and never in a frame, which
+    // with `frame-ancestors 'none'` means nowhere else at all.
+    mediaCapture: 'self',
     mediaDeliveryOrigin: config?.mediaDeliveryOrigin,
     referrerPolicy: 'same-origin',
   });

@@ -60,8 +60,14 @@ for (const surface of surfaces) {
     expect(headers['x-content-type-options']).toBe('nosniff');
     expect(headers['x-frame-options']).toBe('DENY');
     expect(headers['referrer-policy']).toBe(surface.referrerPolicy);
+    // Capture is opt-in per surface. Consumer Web opens a camera for live
+    // discovery and says so on this origin only; the two operator surfaces have
+    // no reason to and stay unable to. Geolocation is refused everywhere,
+    // because nothing in this product asks for a location.
     expect(headers['permissions-policy']).toBe(
-      'camera=(), geolocation=(), microphone=()',
+      surface.name === 'Consumer Web'
+        ? 'camera=(self), geolocation=(), microphone=(self)'
+        : 'camera=(), geolocation=(), microphone=()',
     );
     expect(headers['x-powered-by']).toBeUndefined();
   });

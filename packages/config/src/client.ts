@@ -184,6 +184,27 @@ export interface BrowserSecurityHeaderOptions {
    * on that hostname, while the bytes come from wherever delivery issues them.
    */
   readonly mediaDeliveryOrigin?: string | undefined;
+  /**
+   * Whether this surface may open a camera and a microphone at all.
+   *
+   * `denied` is the default and what every surface had until ADR-0040: a
+   * `Permissions-Policy` that names no allow-list for a capability disables it
+   * for the document, and a surface that never captures should not be able to
+   * start. `self` permits capture on this origin only, and never in a frame.
+   *
+   * It is opt-in per surface rather than a blanket relaxation because the three
+   * browser surfaces have genuinely different needs: Consumer Web opens a
+   * camera for live discovery, and Creator Studio and Platform Admin have no
+   * reason to and must keep being unable to. It is also the reason live
+   * discovery could not work in a browser at all until it was added — the
+   * header refused the capture before any permission prompt was reached, which
+   * is a refusal no amount of user consent could have overridden.
+   *
+   * Geolocation stays denied on every surface. Nothing in this product asks for
+   * a location, and a capability that is only ever going to be refused belongs
+   * in the header rather than in a code review.
+   */
+  readonly mediaCapture?: 'denied' | 'self' | undefined;
   readonly referrerPolicy: 'no-referrer' | 'same-origin';
   readonly robots?: string | undefined;
 }
@@ -314,6 +335,23 @@ function permitsDevelopmentEval(
   );
 }
 
+/**
+ * The capability allow-list this surface publishes.
+ *
+ * Written as an allow-list with an empty default rather than as a set of
+ * relaxations, so a capability nobody has thought about is disabled: a name
+ * absent from this header is not permitted for the document, and adding one
+ * means writing it down here.
+ *
+ * Geolocation is `()` unconditionally. `camera` and `microphone` are `()` for
+ * every surface that has not asked for them, and `(self)` — this origin, never
+ * a frame — for the one that has.
+ */
+function permissionsPolicy(options: BrowserSecurityHeaderOptions): string {
+  const capture = options.mediaCapture === 'self' ? '(self)' : '()';
+  return `camera=${capture}, geolocation=(), microphone=${capture}`;
+}
+
 export function browserSecurityHeaders(
   options: BrowserSecurityHeaderOptions,
 ): Readonly<Record<string, string>> {
@@ -341,7 +379,7 @@ export function browserSecurityHeaders(
         ? ['upgrade-insecure-requests']
         : []),
     ].join('; '),
-    'permissions-policy': 'camera=(), geolocation=(), microphone=()',
+    'permissions-policy': permissionsPolicy(options),
     'referrer-policy': options.referrerPolicy,
     'strict-transport-security': 'max-age=63072000; includeSubDomains',
     'x-content-type-options': 'nosniff',

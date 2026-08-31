@@ -929,6 +929,45 @@ describe('browser security headers', () => {
     ).toContain("connect-src 'self' https://api.velora.test;");
   });
 
+  it('disables capture unless a surface has asked for it', () => {
+    // The default, and what Creator Studio and Platform Admin get. A capability
+    // absent from `Permissions-Policy` is disabled for the document, which is
+    // why this is written as an allow-list with an empty default rather than as
+    // a set of relaxations.
+    expect(
+      browserSecurityHeaders({ referrerPolicy: 'same-origin' })[
+        'permissions-policy'
+      ],
+    ).toBe('camera=(), geolocation=(), microphone=()');
+    expect(
+      browserSecurityHeaders({
+        mediaCapture: 'denied',
+        referrerPolicy: 'same-origin',
+      })['permissions-policy'],
+    ).toBe('camera=(), geolocation=(), microphone=()');
+  });
+
+  it('permits capture on the surface that opens a camera, and only there', () => {
+    // Consumer Web opens a camera for live discovery. `(self)` is this origin
+    // and never a frame, which with `frame-ancestors 'none'` means nowhere
+    // else at all.
+    //
+    // This is not cosmetic. The header refuses capture *before* any permission
+    // prompt is reached, so with the default in place `getUserMedia` fails with
+    // a refusal no amount of user consent can override — which is exactly what
+    // it did until ADR-0040.
+    const headers = browserSecurityHeaders({
+      mediaCapture: 'self',
+      referrerPolicy: 'same-origin',
+    });
+    expect(headers['permissions-policy']).toBe(
+      'camera=(self), geolocation=(), microphone=(self)',
+    );
+    // Location is refused whatever a surface asks for. Nothing in this product
+    // asks for one.
+    expect(headers['permissions-policy']).toContain('geolocation=()');
+  });
+
   it('adds the Admin robots directive and nothing else by default', () => {
     expect(
       browserSecurityHeaders({ referrerPolicy: 'same-origin' })['x-robots-tag'],
