@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 
 import type { CreatorOnboardingState } from '@velora/creator-client';
 import {
-  creatorAdultGateMessages,
+  creatorAdultGateMessage,
   failureMessage,
 } from '@velora/creator-client';
 
@@ -21,7 +21,7 @@ import {
 import { useApi, useCreator, useToast } from '../app/providers';
 import { EntryLayout } from '../app/shell';
 import { policyDocumentLabels, standingReasonLabels } from './format';
-import { useSingleFlight } from './resource';
+import { useRevalidateOnFocus, useSingleFlight } from './resource';
 
 /**
  * Becoming a creator.
@@ -102,6 +102,39 @@ function BecomeCreator() {
   const toast = useToast();
   const { busy, run } = useSingleFlight();
   const [message, setMessage] = useState<string | undefined>(undefined);
+  const [blocked, setBlocked] = useState(false);
+
+  /*
+   * The refusal described a moment, not a standing fact, and it named a step
+   * taken somewhere else. Before a capability exists there is nothing for the
+   * server to publish, so no re-read can carry the news that the step is done:
+   * `/v1/creator/onboarding` answers the same 404 either way, and the only
+   * question that asks the gate is the activation itself.
+   *
+   * So the tab coming back is what restores the offer — the rule every other
+   * server-owned value on this surface already follows. This asserts nothing
+   * about the gate. It puts back the one control that can ask, instead of
+   * leaving somebody who did exactly what the screen told them looking at the
+   * screen that told them, with nothing on it.
+   */
+  useRevalidateOnFocus(() => {
+    setBlocked(false);
+  });
+
+  // The gate answered, so the offer is withdrawn rather than left standing
+  // under an error. It is the same screen the ladder shows once a capability
+  // exists and the gate stops being met, because it is the same situation:
+  // the next step is on VELORA. Here it carries a way back, because the person
+  // may have finished on a phone and never left this tab.
+  if (blocked) {
+    return (
+      <AdultGate
+        onRetry={() => {
+          setBlocked(false);
+        }}
+      />
+    );
+  }
 
   return (
     <Card>
@@ -146,7 +179,22 @@ function BecomeCreator() {
         tone="primary"
         onClick={() => {
           run(async () => {
-            const failure = failureMessage(await api.createAccount());
+            const result = await api.createAccount();
+            // One refusal is not an error on this card: it is the answer that
+            // this account may not hold creator access yet, and it has a screen
+            // of its own. Reported as a red sentence about "your creator
+            // access", it described a thing that does not exist and named
+            // nothing the person could do next.
+            if (
+              result.kind === 'refused' &&
+              result.code === 'ACCOUNT_NOT_ELIGIBLE'
+            ) {
+              setMessage(undefined);
+              setBlocked(true);
+              creator.reloadAll();
+              return;
+            }
+            const failure = failureMessage(result);
             setMessage(failure);
             if (failure === undefined)
               toast.show('Creator access opened.', 'positive');
@@ -174,6 +222,56 @@ function ActivationPoint({
       </span>
       <span className="s-small s-muted">{children}</span>
     </li>
+  );
+}
+
+/**
+ * The gate that Creator Studio cannot open, wherever it is reached from.
+ *
+ * One component for both arrivals — the refusal of a first activation, and the
+ * ladder step for a capability whose evidence stopped being enough — because
+ * they are the same fact about the same account, and two screens saying it
+ * would eventually say it differently. The reason is rendered when the server
+ * published one; before a capability exists there is none to publish, and the
+ * sentence for that case says where to go rather than guessing which gate it
+ * was.
+ *
+ * `onRetry` is given by exactly one of the two arrivals, and the asymmetry is
+ * the point. Once a capability exists the server publishes this step and
+ * withdraws it by itself, so a control here would be a control that fails.
+ * Before one exists nothing is published and the activation request *is* the
+ * question, so a control here is the only way to ask it again.
+ */
+function AdultGate({
+  onRetry,
+  reason,
+}: {
+  readonly onRetry?: (() => void) | undefined;
+  readonly reason?: string | undefined;
+}) {
+  return (
+    <Card>
+      <BlockedState
+        label="One step on VELORA"
+        testId="creator-adult-gate"
+        title="Finish this on VELORA first"
+      >
+        <p>{creatorAdultGateMessage(reason)}</p>
+        <p>
+          VELORA decides who is an adult, not Creator Studio, so there is
+          nothing here that could complete it for you.
+        </p>
+        {onRetry === undefined ? null : (
+          <Button
+            data-testid="creator-adult-gate-retry"
+            onClick={onRetry}
+            tone="secondary"
+          >
+            I have finished on VELORA
+          </Button>
+        )}
+      </BlockedState>
+    </Card>
   );
 }
 
@@ -219,25 +317,7 @@ function ActivationStep({
   }
 
   if (onboarding.step === 'adult_eligibility') {
-    return (
-      <Card>
-        <BlockedState
-          label="One step on VELORA"
-          testId="creator-adult-gate"
-          title="Finish this on VELORA first"
-        >
-          <p>
-            {creatorAdultGateMessages[
-              onboarding.adultGateReason ?? 'not_in_good_standing'
-            ] ?? 'Creator access is not available for this account.'}
-          </p>
-          <p>
-            VELORA decides who is an adult, not Creator Studio, so there is
-            nothing here that could complete it for you.
-          </p>
-        </BlockedState>
-      </Card>
-    );
+    return <AdultGate reason={onboarding.adultGateReason} />;
   }
 
   return <AcceptPolicies documents={onboarding.outstandingPolicies} />;

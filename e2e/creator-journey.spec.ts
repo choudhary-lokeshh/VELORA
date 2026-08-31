@@ -102,6 +102,62 @@ test.describe('Creator Studio journey', () => {
    * tab holds would show a creator their drafts and tell them nothing about
    * what they had actually published.
    */
+  test('restores the activation offer once the person finishes on Consumer Web', async ({
+    context,
+  }) => {
+    /*
+     * The gate, and the way back from it, across two surfaces in one browser.
+     *
+     * A person who reaches Studio before finishing their VELORA account is
+     * refused activation, correctly and without being told which of the three
+     * conditions it was. What the refusal names is a step taken on the other
+     * surface — and before a creator capability exists there is nothing for
+     * `/v1/creator/onboarding` to publish, so no amount of re-reading can carry
+     * the news back. This is the only test that proves the person is not left
+     * there: they finish on Consumer Web, come back, and the offer is standing
+     * again and now succeeds.
+     */
+    const subject = uniqueSubject('creator-gate');
+
+    const studio = await context.newPage();
+    await signInToStudio(studio, subject);
+    await studio.waitForURL(/\/start$/u, { timeout: 30_000 });
+    await studio.getByTestId('creator-onboard').click();
+
+    await expect(studio.getByTestId('creator-adult-gate')).toBeVisible();
+    // The offer is withdrawn rather than left standing under an error, and the
+    // sentence about a capability that does not exist is never shown.
+    await expect(studio.getByTestId('creator-onboard')).toHaveCount(0);
+    await expect(studio.getByTestId('creator-onboard-error')).toHaveCount(0);
+
+    const web = await context.newPage();
+    await declareAdult(web, subject);
+    await web.close();
+
+    /*
+     * The control the gate carries, rather than the tab regaining focus.
+     *
+     * A real browser blurs the tab a person leaves and fires `focus` on the one
+     * they come back to, which is what restores the offer for them; headless
+     * Playwright never blurs the first page, so returning to it fires nothing
+     * and asserting on it here would assert on the harness. That path is proved
+     * in `apps/creator-studio/test/journey.test.tsx`, where the event can be
+     * dispatched directly. What this proves is the one that survives either
+     * way: somebody who finished on VELORA — on this machine or on a phone,
+     * without this tab ever moving — has a way forward on the screen itself.
+     */
+    await studio.bringToFront();
+    await studio.getByTestId('creator-adult-gate-retry').click();
+
+    await expect(studio.getByTestId('creator-onboard')).toBeVisible();
+    await expect(studio.getByTestId('creator-adult-gate')).toHaveCount(0);
+    await studio.getByTestId('creator-onboard').click();
+    await expect(
+      studio.getByTestId('creator-outstanding-policies'),
+    ).toBeVisible();
+    await studio.close();
+  });
+
   test('previews the public page as a visitor would find it', async ({
     page,
   }) => {

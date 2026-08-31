@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { CreatorAccount, CreatorProfile } from '../src/contract.js';
 import {
+  creatorAdultGateMessage,
   creatorAdultGateMessages,
+  creatorAdultGateUnnamedMessage,
   creatorStage,
   creatorStanding,
   failureMessage,
@@ -87,6 +89,38 @@ describe('adult gate messages', () => {
   it('never offers to declare adulthood inside Creator Studio', () => {
     for (const message of Object.values(creatorAdultGateMessages)) {
       expect(message).not.toContain('Confirm here');
+    }
+  });
+
+  it('has a sentence for the refusal that names no reason at all', () => {
+    // `POST /v1/creator` refuses with one code for every unmet gate, so the
+    // first activation has no reason to render. The answer is still a next
+    // step rather than a description of a capability that does not exist.
+    const unnamed = creatorAdultGateMessage(undefined);
+    expect(unnamed).toBe(creatorAdultGateUnnamedMessage);
+    expect(unnamed).toContain('VELORA');
+    expect(unnamed).not.toContain('creator access cannot');
+  });
+
+  it('never guesses the adult declaration when the server named nothing', () => {
+    // Standing is the first gate the server checks, so that a restricted
+    // account is not told the declaration is what is missing. A client that
+    // narrowed to the declaration here would put that back.
+    expect(creatorAdultGateMessage(undefined)).not.toContain('are an adult');
+    expect(creatorAdultGateMessage('unknown_future_reason')).toBe(
+      creatorAdultGateUnnamedMessage,
+    );
+  });
+
+  it('prefers the published reason whenever there is one', () => {
+    for (const reason of [
+      'no_consumer_account',
+      'adult_declaration_missing',
+      'not_in_good_standing',
+    ]) {
+      expect(creatorAdultGateMessage(reason)).toBe(
+        creatorAdultGateMessages[reason],
+      );
     }
   });
 });

@@ -218,6 +218,126 @@ describe('becoming a creator', () => {
     });
   });
 
+  it('withdraws the offer when the first activation is refused by the gate', async () => {
+    // The regression. A person who signed into Studio before finishing their
+    // VELORA account pressed Become a creator, the server refused with
+    // ACCOUNT_NOT_ELIGIBLE — correctly, and naming no reason, because the
+    // reason lives in an onboarding state that only exists once a capability
+    // does — and Studio reported "Your creator access cannot do that in its
+    // current state" beside a button still offering to try again. It described
+    // a capability that did not exist and named nothing to do next.
+    const double = createCreatorApiDouble({
+      ...emptyCreatorState(),
+      session: activeCreatorState().session,
+    });
+    double.refuseNext('/v1/creator', 'POST', 409, 'ACCOUNT_NOT_ELIGIBLE');
+    renderStudio(
+      <ActivationGate>
+        <Activation />
+      </ActivationGate>,
+      double,
+      { pathname: '/start' },
+    );
+
+    fireEvent.click(await screen.findByTestId('creator-onboard'));
+
+    const gate = await screen.findByTestId('creator-adult-gate');
+    expect(gate.textContent).toContain('Finish your account on VELORA');
+    // The offer is gone rather than left standing under an error, and the
+    // sentence about a capability that does not exist is not shown at all.
+    expect(screen.queryByTestId('creator-onboard')).toBeNull();
+    expect(screen.queryByTestId('creator-onboard-error')).toBeNull();
+    expect(document.body.textContent).not.toContain(
+      'Your creator access cannot do that in its current state.',
+    );
+  });
+
+  it('offers the way back on the gate itself, and advances when it is taken', async () => {
+    // The second half of the same regression. The step the gate names is taken
+    // on another surface, and before a capability exists no re-read can report
+    // that it was: `/v1/creator/onboarding` answers the same 404 either way. A
+    // gate with no control was therefore a dead end for somebody who did
+    // exactly what it asked — the activation request is the only question that
+    // reaches the gate, so the screen has to be able to ask it again.
+    const double = createCreatorApiDouble({
+      ...emptyCreatorState(),
+      session: activeCreatorState().session,
+    });
+    double.refuseNext('/v1/creator', 'POST', 409, 'ACCOUNT_NOT_ELIGIBLE');
+    renderStudio(
+      <ActivationGate>
+        <Activation />
+      </ActivationGate>,
+      double,
+      { pathname: '/start' },
+    );
+
+    fireEvent.click(await screen.findByTestId('creator-onboard'));
+    await screen.findByTestId('creator-adult-gate');
+
+    fireEvent.click(screen.getByTestId('creator-adult-gate-retry'));
+
+    // The offer is back, and pressing it now reaches a gate that passes.
+    fireEvent.click(await screen.findByTestId('creator-onboard'));
+    const policies = await screen.findByTestId('creator-outstanding-policies');
+    expect(policies.textContent).toContain('Creator terms');
+    expect(screen.queryByTestId('creator-adult-gate')).toBeNull();
+  });
+
+  it('restores the offer when the tab comes back from the other surface', async () => {
+    // The ordinary path: the person leaves for VELORA in another tab, finishes
+    // there, and comes back. Every other server-owned value on this surface
+    // re-reads on focus; a refusal held in this screen's own state has to
+    // expire on the same signal, or the tab that has been away goes on showing
+    // an answer from before the thing it asked for was done.
+    const double = createCreatorApiDouble({
+      ...emptyCreatorState(),
+      session: activeCreatorState().session,
+    });
+    double.refuseNext('/v1/creator', 'POST', 409, 'ACCOUNT_NOT_ELIGIBLE');
+    renderStudio(
+      <ActivationGate>
+        <Activation />
+      </ActivationGate>,
+      double,
+      { pathname: '/start' },
+    );
+
+    fireEvent.click(await screen.findByTestId('creator-onboard'));
+    await screen.findByTestId('creator-adult-gate');
+
+    act(() => {
+      fireEvent.focus(window);
+    });
+
+    await screen.findByTestId('creator-onboard');
+    expect(screen.queryByTestId('creator-adult-gate')).toBeNull();
+  });
+
+  it('still reports an ordinary failure on the activation card itself', async () => {
+    // Only the eligibility refusal has a screen of its own. Everything else
+    // stays a sentence beside a button that is still worth pressing.
+    const double = createCreatorApiDouble({
+      ...emptyCreatorState(),
+      session: activeCreatorState().session,
+    });
+    double.refuseNext('/v1/creator', 'POST', 429, 'RATE_LIMITED');
+    renderStudio(
+      <ActivationGate>
+        <Activation />
+      </ActivationGate>,
+      double,
+      { pathname: '/start' },
+    );
+
+    fireEvent.click(await screen.findByTestId('creator-onboard'));
+
+    const error = await screen.findByTestId('creator-onboard-error');
+    expect(error.textContent).toContain('Too many attempts');
+    expect(screen.getByTestId('creator-onboard')).not.toBeNull();
+    expect(screen.queryByTestId('creator-adult-gate')).toBeNull();
+  });
+
   it('offers no control at all when the next step belongs to another surface', async () => {
     const double = createCreatorApiDouble({
       ...emptyCreatorState(),

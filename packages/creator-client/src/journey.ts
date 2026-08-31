@@ -71,6 +71,36 @@ export const creatorAdultGateMessages: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The same instruction before a capability exists, where no reason is published.
+ *
+ * `POST /v1/creator` refuses with one code for every unmet gate and deliberately
+ * names none of them: the reason belongs to the onboarding state, which only
+ * exists once a capability does. So this sentence covers the union of the three
+ * above without asserting which applies — it points at the surface that can
+ * answer instead of at the condition, which is the one honest thing to say when
+ * the server has said only that the account is not eligible.
+ *
+ * It must not narrow to the adult declaration. Standing is the first gate the
+ * server checks, precisely so a restricted account is never told that declaring
+ * adulthood is what is missing; a client that guessed the declaration here would
+ * reintroduce exactly that.
+ */
+export const creatorAdultGateUnnamedMessage =
+  'Creator access sits on a VELORA account that is set up and in good standing. Finish your account on VELORA, then come back.';
+
+/**
+ * The sentence for a gate reason, whether or not the server named one.
+ *
+ * One function rather than a table plus a fallback written at each call site,
+ * because the two screens that need it — before a capability exists and after —
+ * are the same screen and must not drift into saying different things.
+ */
+export function creatorAdultGateMessage(reason?: string): string {
+  if (reason === undefined) return creatorAdultGateUnnamedMessage;
+  return creatorAdultGateMessages[reason] ?? creatorAdultGateUnnamedMessage;
+}
+
+/**
  * The creator's own standing, as its holder may see it.
  *
  * The coarse reason the server publishes is repeated verbatim rather than
