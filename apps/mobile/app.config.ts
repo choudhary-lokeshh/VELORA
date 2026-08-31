@@ -228,6 +228,25 @@ const config: ExpoConfig = {
         microphonePermission: false,
       },
     ],
+    /**
+     * The live-discovery preview, and the same refusal for the same reason.
+     *
+     * `recordAudioAndroidPermission: false` keeps `RECORD_AUDIO` out. The
+     * camera opens so somebody can see themselves before and during a live
+     * encounter; nothing records, and no approved provider exists to carry
+     * audio anywhere, so asking for a microphone would be asking for a
+     * permission this build cannot use. `scripts/android-permission-model.mjs`
+     * asserts the merged manifest against that.
+     */
+    [
+      'expo-camera',
+      {
+        cameraPermission:
+          'VELORA opens the camera when you start Live, so the person you meet can see you.',
+        microphonePermission: false,
+        recordAudioAndroidPermission: false,
+      },
+    ],
     './plugins/with-velora-android',
   ],
   experiments: {

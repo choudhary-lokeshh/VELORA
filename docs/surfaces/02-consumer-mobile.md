@@ -94,7 +94,7 @@ Two things the approved DNA fixes needed a dependency each. IBM Plex Sans is not
 
 ## Implemented: navigation and screens
 
-Five destinations, the same five Consumer Web has and named the same way: Discover, Introductions, Messages, Notices, You. They are real routes, so the system back gesture, a deep link, and a notification all land where they should, and the platform restores the right tab on a cold start.
+Six destinations, the same six Consumer Web has and named the same way: Live, Discover, Introductions, Messages, Notices, You. Live is first and is where a launch lands, on the rule [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) fixes: a bare `velora://` is somebody opening the product rather than following a link to a particular thing. They are real routes, so the system back gesture, a deep link, and a notification all land where they should, and the platform restores the right tab on a cold start.
 
 **Calling is not a destination.** A call is placed against a mutual introduction and against nothing else, and the server derives who the other party is from the relationship — so entry lives beside that relationship in Introductions and in the conversation it authorized. A calling tab would be a second list of the same people with a field somewhere that took a person.
 

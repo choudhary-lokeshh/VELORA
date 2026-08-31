@@ -123,11 +123,13 @@ export function AppGate({
  * Pages that only make sense when nobody is signed in.
  *
  * Somebody with a live session landing on the entry page is sent into the
- * product rather than shown a door they are already through.
+ * product rather than shown a door they are already through — and into Live,
+ * which is the primary destination, unless they arrived following a link
+ * somewhere else.
  */
 export function PublicGate({
   children,
-  redirectTo = '/discover',
+  redirectTo = '/live',
 }: {
   readonly children: ReactNode;
   readonly redirectTo?: string;
@@ -168,7 +170,7 @@ export function WelcomeGate({ children }: { readonly children: ReactNode }) {
       router.replace(signInHref('/welcome'));
       return;
     }
-    if (ready) router.replace('/discover');
+    if (ready) router.replace('/live');
   }, [ready, router, session.known, session.signedIn]);
 
   if (!session.known || !session.signedIn || ready) return <Bootstrap />;

@@ -17,6 +17,7 @@
  * nothing on its own.
  */
 
+export const livePath = '/live';
 export const discoverPath = '/discover';
 export const introductionsPath = '/introductions';
 export const messagesPath = '/messages';

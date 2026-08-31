@@ -162,9 +162,10 @@ describe('session', () => {
     await click('auth-sign-in');
 
     await waitFor(() => {
-      expect(navigations().some((entry) => entry.path === '/discover')).toBe(
-        true,
-      );
+      // Live, not Discover. It is the primary destination since ADR-0040:
+      // somebody who just signed in came to meet somebody, not to read a list
+      // of people who were here earlier.
+      expect(navigations().some((entry) => entry.path === '/live')).toBe(true);
     });
   });
 
@@ -309,9 +310,10 @@ describe('admission', () => {
     await click('save-profile');
 
     await waitFor(() => {
-      expect(navigations().some((entry) => entry.path === '/discover')).toBe(
-        true,
-      );
+      // Live, not Discover. It is the primary destination since ADR-0040:
+      // somebody who just signed in came to meet somebody, not to read a list
+      // of people who were here earlier.
+      expect(navigations().some((entry) => entry.path === '/live')).toBe(true);
     });
   });
 

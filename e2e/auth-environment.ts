@@ -182,6 +182,13 @@ export async function startAuthEnvironment(): Promise<void> {
     BILLING_TAX_AUTHORITY: 'local-test',
     DATABASE_URL: databaseUrl,
     EPHEMERAL_REDIS_URL: `${redisUrl}/0`,
+    // Live discovery, and the deterministic stand-in that lets one browser walk
+    // a feature that needs two people. Both are refused outside local and test
+    // by the configuration schema, and that refusal has its own assertions —
+    // they are enabled here because without them the browser cannot reach the
+    // product's primary destination at all.
+    LIVE_DISCOVERY_MODE: 'open',
+    LIVE_DISCOVERY_SIMULATION: 'local-test',
     LOG_LEVEL: 'warn',
     MEDIA_DELIVERY_SIGNING_KEY: mediaSigningKey,
     MEDIA_LOCAL_STORAGE_DIRECTORY: mediaDirectory,

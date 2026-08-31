@@ -3,7 +3,7 @@ import type { IconName } from '../design/icons';
 /**
  * The map of the product, on a phone.
  *
- * Five destinations, the same five Consumer Web has and named the same way:
+ * Six destinations, the same six Consumer Web has and named the same way:
  * for what somebody is trying to do rather than for the domain that answers it.
  * `AGENTS.md` keeps backend architecture out of client responsibility, and a
  * navigation with an item per backend module is exactly that leak.
@@ -28,6 +28,10 @@ export interface Destination {
 }
 
 export const destinations: readonly Destination[] = [
+  // First, because it is the reason to open the product. Discover is browsing
+  // and Live is meeting; somebody who came here to meet a person should not
+  // have to walk past a feed to do it.
+  { icon: 'live', id: 'live', label: 'Live', name: 'live' },
   { icon: 'compass', id: 'discover', label: 'Discover', name: 'discover' },
   {
     icon: 'link',

@@ -16,8 +16,46 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   globalTeardown: './e2e/global-teardown.ts',
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          /*
+           * A camera, without hardware.
+           *
+           * Live discovery opens `getUserMedia`, and a headless browser on a
+           * build machine has no device to open. These are Chromium's own
+           * switches for exactly that: a synthetic capture device, and a
+           * standing answer to the prompt that nobody is there to give. Both
+           * are needed — with the device switch alone this Chromium answers
+           * `NotSupportedError`, which was measured rather than assumed.
+           *
+           * They change nothing about what the product does. The surface still
+           * asks at the moment it should and still has to bind what it is
+           * handed; what they remove is a dialog no automation can answer. The
+           * refusal paths are proved in the component suite, where a refusal
+           * can be produced on demand.
+           */
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+          ],
+        },
+      },
+    },
+    {
+      name: 'firefox',
+      use: {
+        ...devices['Desktop Firefox'],
+        launchOptions: {
+          firefoxUserPrefs: {
+            'media.navigator.permission.disabled': true,
+            'media.navigator.streams.fake': true,
+          },
+        },
+      },
+    },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   reporter: 'list',

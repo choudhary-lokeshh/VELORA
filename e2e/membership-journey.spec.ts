@@ -163,7 +163,7 @@ test.describe('Buying a membership', () => {
       await visitor.goto(`${consumerWebOrigin}/sign-in`);
       await visitor.getByTestId('sign-in-subject').fill(buyer.subject);
       await visitor.getByTestId('sign-in-subject').press('Enter');
-      await visitor.waitForURL(/\/discover$/u, { timeout: 30_000 });
+      await visitor.waitForURL(/\/live$/u, { timeout: 30_000 });
 
       await visitor.goto(`${consumerWebOrigin}/c/${handle}`);
       const card = visitor.getByTestId('creator-public-clubs');

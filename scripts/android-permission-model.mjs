@@ -91,7 +91,7 @@ export const developmentOnlyPermissions = new Set([
 export const blockedPermissions = new Map([
   [
     'android.permission.RECORD_AUDIO',
-    'expo-image-picker, for video capture this product does not do.',
+    'expo-image-picker and expo-camera, for video capture this product does not do. Live discovery opens the camera for a preview and records nothing, and no approved provider exists to carry audio anywhere, so a microphone permission would be one this build cannot use.',
   ],
   [
     'android.permission.RECEIVE_BOOT_COMPLETED',

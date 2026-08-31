@@ -8,6 +8,7 @@ import {
   conversationPath,
   creatorPath,
   discoverPath,
+  livePath,
   introductionsPath,
   messagesPath,
   noticesPath,
@@ -161,8 +162,10 @@ export function resolveDeepLink(url: string): ResolvedLink {
   const [first, second, ...extra] = segments;
 
   // The launch address. Every destination is named, so `/` has nothing of its
-  // own and Discover is where a launch lands.
-  if (first === undefined) return { kind: 'route', path: discoverPath };
+  // own and Live is where a launch lands — it is the primary destination, and
+  // a bare `velora://` is somebody opening the product rather than following a
+  // link to a particular thing.
+  if (first === undefined) return { kind: 'route', path: livePath };
 
   const owner = foreignAddresses[first];
   if (owner !== undefined) return { kind: 'ignored', owner };
@@ -173,6 +176,11 @@ export function resolveDeepLink(url: string): ResolvedLink {
     return refused('That link does not lead anywhere here.');
 
   switch (first) {
+    case 'live':
+      return second === undefined
+        ? { kind: 'route', path: livePath }
+        : refused('That link does not lead anywhere here.');
+
     case 'discover':
       return second === undefined
         ? { kind: 'route', path: discoverPath }

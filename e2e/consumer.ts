@@ -39,24 +39,38 @@ export async function signIn(page: Page, subject: string): Promise<void> {
   // click aimed at a control it has only just painted; Enter goes to the focused
   // field and submits the same form through the same handler.
   await page.getByTestId('sign-in-subject').press('Enter');
-  await page.waitForURL(/\/(discover|welcome)$/u, { timeout: 30_000 });
+  // Live, not Discover. Since ADR-0040 it is the primary destination and the
+  // one an admitted account lands on; `welcome` is still where an unfinished
+  // one goes.
+  await page.waitForURL(/\/(live|welcome)$/u, { timeout: 30_000 });
 }
 
-/** Signs in an account the fixtures already admitted, landing in discovery. */
+/**
+ * Signs in an account the fixtures already admitted, landing on Live.
+ *
+ * Live is where an admitted account arrives. Callers that need Discover
+ * navigate to it, which is what a person does — and which also proves the
+ * navigation carries them there.
+ */
 export async function signInAdmitted(
   page: Page,
   subject: string,
 ): Promise<void> {
   await signIn(page, subject);
-  await page.waitForURL(/\/discover$/u, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Discover');
+  await page.waitForURL(/\/live$/u, { timeout: 30_000 });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Live');
 }
 
 /** Moves to a destination through the navigation rather than the address bar. */
 export async function navigateTo(
   page: Page,
   destination:
-    'discover' | 'introductions' | 'messages' | 'notifications' | 'you',
+    | 'discover'
+    | 'introductions'
+    | 'live'
+    | 'messages'
+    | 'notifications'
+    | 'you',
 ): Promise<void> {
   const viewport = page.viewportSize();
   const compact = (viewport?.width ?? 1280) < 768;

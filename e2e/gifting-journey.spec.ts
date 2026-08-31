@@ -82,7 +82,7 @@ test.describe('Sending a virtual gift', () => {
       await visitor.goto(`${consumerWebOrigin}/sign-in`);
       await visitor.getByTestId('sign-in-subject').fill(sender.subject);
       await visitor.getByTestId('sign-in-subject').press('Enter');
-      await visitor.waitForURL(/\/discover$/u, { timeout: 30_000 });
+      await visitor.waitForURL(/\/live$/u, { timeout: 30_000 });
 
       // Reloaded rather than waited on. The catalog is one read, and a read
       // that fails leaves the card offering "Try again" rather than retrying

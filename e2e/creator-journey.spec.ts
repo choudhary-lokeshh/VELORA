@@ -448,7 +448,7 @@ test.describe('Creator Studio journey', () => {
       await memberPage.goto(`${consumerWebOrigin}/sign-in`);
       await memberPage.getByTestId('sign-in-subject').fill(member.subject);
       await memberPage.getByTestId('sign-in-subject').press('Enter');
-      await memberPage.waitForURL(/\/discover$/u, { timeout: 30_000 });
+      await memberPage.waitForURL(/\/live$/u, { timeout: 30_000 });
 
       await memberPage.goto(`${consumerWebOrigin}/you/memberships`);
       await expect(memberPage.getByTestId('club-access-empty')).toBeVisible();

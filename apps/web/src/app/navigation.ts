@@ -3,8 +3,10 @@ import type { IconName } from '../design/icons';
 /**
  * The consumer's map of the product.
  *
- * Five destinations, named for what somebody is trying to do rather than for the
- * domain that answers them. `AGENTS.md` keeps backend architecture out of client
+ * Six destinations, named for what somebody is trying to do rather than for the
+ * domain that answers them. Live is first because it is the primary reason to
+ * open VELORA: meeting one person who is here now, rather than reading a list
+ * of people who were here earlier. `AGENTS.md` keeps backend architecture out of client
  * responsibility, and a navigation with an item per backend module would be
  * exactly that leak — which is why calling is not here. A call is placed against
  * a mutual introduction and against nothing else, so it belongs where the
@@ -23,6 +25,10 @@ export interface Destination {
 }
 
 export const destinations: readonly Destination[] = [
+  // First, because it is the reason to open the product. Discover is browsing
+  // and Live is meeting; a person who came here to meet somebody should not
+  // have to walk past a feed to do it.
+  { icon: 'live', id: 'live', label: 'Live', path: '/live' },
   { icon: 'compass', id: 'discover', label: 'Discover', path: '/discover' },
   {
     icon: 'link',
@@ -92,10 +98,20 @@ export function destinationName(path: string): string | undefined {
  */
 const ancestry: readonly {
   readonly of: RegExp;
+  /**
+   * Other addresses this page is genuinely reached from, beyond its parent.
+   *
+   * A page can have more than one way in and still have one place it belongs.
+   * A person is opened from Discover and also from Live, and returning somebody
+   * who came from Live to Discover is a Back that lands where they have never
+   * been. Declared per route rather than derived, so a crafted `from` still
+   * cannot send anybody anywhere this table has not named.
+   */
+  readonly origins?: readonly string[];
   readonly parent: string | ((match: RegExpMatchArray) => string);
 }[] = [
   { of: /^\/messages\/[^/]+$/u, parent: '/messages' },
-  { of: /^\/people\/[^/]+$/u, parent: '/discover' },
+  { of: /^\/people\/[^/]+$/u, origins: ['/live'], parent: '/discover' },
   {
     of: /^\/c\/([^/]+)\/club\/([^/]+)\/join$/u,
     parent: (match) => `/c/${match[1] ?? ''}/club/${match[2] ?? ''}`,
@@ -122,6 +138,14 @@ export function parentOf(pathname: string): string | undefined {
       : entry.parent(match);
   }
   return undefined;
+}
+
+/** The other declared ways into this page, if it has any. */
+function originsOf(pathname: string): readonly string[] {
+  for (const entry of ancestry) {
+    if (entry.of.test(pathname)) return entry.origins ?? [];
+  }
+  return [];
 }
 
 /** This page's own address, query and all, as somewhere to come back to. */
@@ -166,9 +190,14 @@ export function backTarget(
   if (parent === undefined) return undefined;
   const requested = safeReturnPath(from);
   if (requested === undefined) return parent;
-  return requested === parent || requested.startsWith(`${parent}?`)
-    ? requested
-    : parent;
+  if (requested === parent || requested.startsWith(`${parent}?`)) {
+    return requested;
+  }
+  // The other declared ways into this page. A closed per-route list rather than
+  // "trust the query": the worst a crafted `from` can do is still send somebody
+  // one level up, which is where Back was going anyway.
+  const address = requested.split('?')[0] ?? requested;
+  return originsOf(pathname).includes(address) ? requested : parent;
 }
 
 /**

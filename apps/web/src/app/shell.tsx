@@ -88,7 +88,7 @@ export function AppShell({
       </a>
 
       <nav aria-label="Primary" className="v-sidebar">
-        <Link className="v-sidebar__brand" href="/discover">
+        <Link className="v-sidebar__brand" href="/live">
           <Icon name="sparkle" size="md" />
           <span className="v-sidebar__brand-text">VELORA</span>
         </Link>

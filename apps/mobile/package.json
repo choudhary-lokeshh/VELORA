@@ -34,6 +34,7 @@
     "@velora/validation": "workspace:*",
     "expo": "catalog:",
     "expo-build-properties": "catalog:",
+    "expo-camera": "catalog:",
     "expo-constants": "catalog:",
     "expo-crypto": "catalog:",
     "expo-dev-client": "catalog:",

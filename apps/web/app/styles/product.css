@@ -1228,3 +1228,413 @@
   max-inline-size: 34ch;
   text-align: end;
 }
+
+/* =============================== Live ================================ */
+
+/*
+ * Live discovery.
+ *
+ * The screen is a stage and a set of controls, and it is built to keep the
+ * viewfinder still: the same layout carries searching, matched, and ended, so
+ * the camera is never torn down and reopened between them. A preview that
+ * blinked every time somebody was found would look broken, and reacquiring a
+ * device takes long enough to be seen.
+ *
+ * Nothing here is a black rectangle waiting for a stream. The remote pane holds
+ * a person, a name, and an honest sentence about what is carrying them, because
+ * an empty video element implies a connection that does not exist.
+ */
+.v-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ------------------------------ The door ----------------------------- */
+
+.v-live__door {
+  align-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--ember-wash) 0%, transparent 62%),
+    var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+}
+
+.v-live__mark {
+  align-items: center;
+  background: var(--ember-wash-strong);
+  block-size: var(--space-14);
+  border: 1px solid var(--ember-line);
+  border-radius: var(--radius-pill);
+  color: var(--ember);
+  display: inline-flex;
+  inline-size: var(--space-14);
+  justify-content: center;
+}
+
+.v-live__lede {
+  color: var(--text-secondary);
+  font-size: var(--text-subheading-size);
+  line-height: var(--text-subheading-line);
+  margin: 0;
+}
+
+.v-live__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: start;
+}
+
+.v-live__steps > li {
+  align-items: flex-start;
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-3);
+  line-height: var(--text-small-line);
+}
+
+.v-live__steps > li > svg {
+  color: var(--ember);
+  flex: none;
+  margin-block-start: 0.15em;
+}
+
+.v-live__door-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+/* ------------------------------ The room ----------------------------- */
+
+.v-live__room {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/*
+ * The stage holds the remote pane and the local preview.
+ *
+ * `position: relative` so the preview can sit inside it as a picture-in-picture
+ * on a phone and beside it on a desktop; the aspect ratio is bounded rather
+ * than fixed so a very tall window does not produce a stage taller than the
+ * viewport with the controls pushed off the bottom.
+ */
+.v-live__stage {
+  /*
+   * The preview's own size, named once.
+   *
+   * The picture-in-picture is positioned over the stage, and the pane beneath
+   * it holds words — a person's name, and the sentence about what is carrying
+   * them. Reserving the preview's height as padding is what stops the two
+   * overlapping at every width, which they did until a walk on a real browser
+   * showed the explanation running underneath the preview.
+   */
+  --live-preview-block: 180px;
+  --live-preview-inline: 240px;
+
+  background: var(--surface-inset);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  min-block-size: min(58vh, 460px);
+  overflow: hidden;
+  position: relative;
+}
+
+.v-live__remote {
+  align-items: center;
+  block-size: 100%;
+  display: flex;
+  justify-content: center;
+  min-block-size: min(58vh, 460px);
+  padding: var(--space-6);
+  padding-block-end: calc(var(--live-preview-block) + var(--space-8));
+}
+
+.v-live__peer,
+.v-live__searching,
+.v-live__ended {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.v-live__peer-actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.v-live__peer-link {
+  align-items: center;
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: var(--text-small-size);
+  gap: var(--space-2);
+}
+
+/*
+ * The searching pulse.
+ *
+ * Restrained on purpose: one slow ring rather than a spinner, because this is a
+ * wait measured in seconds that should feel calm rather than urgent. It carries
+ * no information — the words beside it do — so it is hidden from assistive
+ * technology and stops entirely under reduced motion.
+ */
+.v-live__pulse {
+  background: var(--ember-wash-strong);
+  block-size: var(--space-16);
+  border: 1px solid var(--ember-line);
+  border-radius: var(--radius-pill);
+  display: block;
+  inline-size: var(--space-16);
+  animation: v-live-pulse 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes v-live-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-live__pulse {
+    animation: none;
+  }
+}
+
+/* --------------------------- Local preview --------------------------- */
+
+.v-live__local {
+  background: var(--canvas-deep);
+  block-size: var(--live-preview-block);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  inset-block-end: var(--space-4);
+  inset-inline-end: var(--space-4);
+  overflow: hidden;
+  position: absolute;
+  inline-size: var(--live-preview-inline);
+}
+
+.v-live__local-video {
+  block-size: 100%;
+  inline-size: 100%;
+  object-fit: cover;
+  /* The preview is a mirror, which is what a person expects of their own
+     camera and what every video product does. It is never applied to a remote
+     participant, who should be seen the way they actually are. */
+  transform: scaleX(-1);
+}
+
+.v-live__local-off {
+  align-items: center;
+  block-size: 100%;
+  color: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  justify-content: center;
+  padding: var(--space-2);
+  text-align: center;
+}
+
+.v-live__local-badges {
+  display: flex;
+  gap: var(--space-1);
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  position: absolute;
+}
+
+.v-live__badge {
+  align-items: center;
+  background: var(--surface-overlay);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  display: inline-flex;
+  padding: var(--space-1);
+}
+
+.v-live__badge--off {
+  color: var(--status-critical);
+}
+
+/* ------------------------------ Controls ----------------------------- */
+
+.v-live__controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.v-live__device-controls,
+.v-live__flow-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* -------------------------------- Chat ------------------------------- */
+
+.v-live__chat {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.v-live__chat-note {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/*
+ * The transcript scrolls inside itself rather than growing the page.
+ *
+ * A chat that pushed the controls down as it filled would eventually put Next
+ * and End below the fold, which are the two controls that must never be hard to
+ * reach.
+ */
+.v-live__chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-block-size: 240px;
+  min-block-size: 96px;
+  overflow-y: auto;
+  padding-inline-end: var(--space-1);
+}
+
+.v-live__bubble {
+  align-self: flex-start;
+  background: var(--surface-3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-line);
+  margin: 0;
+  max-inline-size: 44ch;
+  overflow-wrap: anywhere;
+  padding: var(--space-2) var(--space-3);
+}
+
+.v-live__bubble--self {
+  align-self: flex-end;
+  background: var(--ember-wash-strong);
+}
+
+.v-live__composer {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.v-live__composer > .v-control {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* ---------------------------- Local scenarios ------------------------ */
+
+/*
+ * Present only where the server says a simulation adapter is configured, which
+ * configuration refuses outside local and test. It is styled as an aside rather
+ * than as product, so nobody mistakes it for one.
+ */
+.v-live__sim {
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.v-live__sim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ----------------------------- Wider views --------------------------- */
+
+/*
+ * On a wide viewport the stage and the chat sit side by side, because the
+ * viewport is wide rather than because a device name says so. Below this the
+ * chat is under the stage, which is the right order on a phone: the person is
+ * what somebody is looking at, and the chat is what they scroll to.
+ */
+/*
+ * A phone gets a smaller preview, because the stage it sits on is smaller and a
+ * quarter of the screen given to one's own face is a quarter taken from the
+ * person being met.
+ */
+@media (max-width: 30rem) {
+  .v-live__stage {
+    --live-preview-block: 132px;
+    --live-preview-inline: 100px;
+  }
+}
+
+@media (min-width: 60rem) {
+  .v-live__room {
+    align-items: start;
+    display: grid;
+    grid-template-areas:
+      'stage chat'
+      'controls chat'
+      'notice chat';
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 22rem);
+    gap: var(--space-4);
+  }
+
+  .v-live__room > .v-live__stage {
+    grid-area: stage;
+  }
+
+  .v-live__room > .v-live__controls {
+    grid-area: controls;
+  }
+
+  .v-live__room > .v-notice {
+    grid-area: notice;
+  }
+
+  .v-live__room > .v-live__chat {
+    block-size: 100%;
+    grid-area: chat;
+  }
+
+  .v-live__room > .v-live__chat > .v-live__chat-list {
+    max-block-size: min(46vh, 420px);
+  }
+}

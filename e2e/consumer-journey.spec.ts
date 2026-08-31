@@ -54,7 +54,14 @@ test.describe('Consumer Web product journey', () => {
 
     await page.getByTestId('sign-in-subject').fill(person.subject);
     await page.getByTestId('sign-in-subject').press('Enter');
-    await page.waitForURL(/\/discover$/u, { timeout: 30_000 });
+    // Live is where an admitted account lands. It is the primary destination
+    // since ADR-0040, and the door rather than a viewfinder: nothing has opened
+    // a camera by arriving here.
+    await page.waitForURL(/\/live$/u, { timeout: 30_000 });
+    await expect(page.getByTestId('live-door')).toBeVisible();
+
+    // Discover is one press away and still shows what it always did.
+    await navigateTo(page, 'discover');
 
     // Somebody available, with a name, a place, and a bio the server sent.
     await expect(page.getByTestId('discovery-candidates')).toBeVisible();

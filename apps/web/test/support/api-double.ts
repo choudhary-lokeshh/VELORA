@@ -243,6 +243,51 @@ export interface ApiDoubleState {
     role: 'caller' | 'recipient';
     state: string;
   } | null;
+  /**
+   * Live discovery, held as the one authoritative shape the contract publishes.
+   *
+   * Singular and server-shaped on purpose. The states are mutually exclusive —
+   * the server can never be searching *and* matched — so a double holding them
+   * as separate flags would let a surface pass against a combination the server
+   * cannot produce, which is exactly the class of bug this screen is most
+   * likely to have.
+   */
+  live: {
+    admission: 'eligible' | 'not_eligible' | 'unavailable';
+    encounter: {
+      call?: {
+        id: string;
+        mediaTransport: 'none' | 'provider';
+        medium: 'voice' | 'video';
+        state: string;
+      };
+      connection: {
+        conversationId?: string;
+        introductionId?: string;
+        state: 'none' | 'requested' | 'received' | 'connected';
+      };
+      endReason?:
+        'left' | 'peer_left' | 'timed_out' | 'failed' | 'ended_by_platform';
+      endedAt?: string;
+      id: string;
+      messageSequence: number;
+      peer: { displayName: string; id: string };
+      startedAt: string;
+    } | null;
+    medium?: 'voice' | 'video';
+    messages: {
+      body: string;
+      id: string;
+      self: boolean;
+      sentAt: string;
+      sequence: number;
+    }[];
+    /** Whether a stand-in is available, exactly as the server reports it. */
+    simulated: boolean;
+    /** Set by a test to make the next search find nobody. */
+    standInAvailable: boolean;
+    state: 'idle' | 'searching' | 'matched' | 'ended';
+  };
   /** Category and channel pairs the server says are settable. */
   notificationPreferences: {
     category: string;
@@ -336,6 +381,12 @@ const iso = (offsetMilliseconds = 0) =>
   new Date(Date.UTC(2026, 7, 14, 12, 0, 0) + offsetMilliseconds).toISOString();
 
 export const otherPersonId = '22222222-2222-4222-8222-222222222222';
+export const secondPeerId = '77777777-7777-4777-8777-777777777777';
+export const liveEncounterId = '88888888-8888-4888-8888-888888888888';
+export const secondEncounterId = '99999999-9999-4999-8999-999999999999';
+export const liveCallId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+export const liveIntroductionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+export const liveConversationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const ownAccountId = '11111111-1111-4111-8111-111111111111';
 
 export function emptyState(): ApiDoubleState {
@@ -361,6 +412,14 @@ export function emptyState(): ApiDoubleState {
     candidates: [],
     conversations: [],
     introductions: [],
+    live: {
+      admission: 'eligible',
+      encounter: null,
+      messages: [],
+      simulated: false,
+      standInAvailable: true,
+      state: 'idle',
+    },
     messages: [],
     notificationPreferences: [
       { category: 'direct_message', channel: 'push', enabled: true },
@@ -496,6 +555,92 @@ const callTransitions: Readonly<
     reason: 'hung_up',
   },
 };
+
+/**
+ * The whole live shape, assembled the way the server assembles it.
+ *
+ * Optional fields are omitted rather than sent as `undefined`, because the
+ * published schema is strict and a surface that only worked against a lenient
+ * double would fail against the real thing.
+ */
+function liveBody(state: ApiDoubleState): unknown {
+  const encounter = state.live.encounter;
+  return {
+    admission: state.live.admission,
+    ...(encounter === null
+      ? {}
+      : {
+          encounter: {
+            ...(encounter.call === undefined ? {} : { call: encounter.call }),
+            connection: encounter.connection,
+            ...(encounter.endReason === undefined
+              ? {}
+              : { endReason: encounter.endReason }),
+            ...(encounter.endedAt === undefined
+              ? {}
+              : { endedAt: encounter.endedAt }),
+            id: encounter.id,
+            messageSequence: encounter.messageSequence,
+            peer: encounter.peer,
+            startedAt: encounter.startedAt,
+          },
+        }),
+    ...(state.live.medium === undefined ? {} : { medium: state.live.medium }),
+    ...(state.live.state === 'searching' ? { searchingSince: iso() } : {}),
+    simulated: state.live.simulated,
+    state: state.live.state,
+  };
+}
+
+/**
+ * What the local stand-in does, as the other person.
+ *
+ * Each of these is the effect the server's own scenario produces, so a surface
+ * that renders these correctly renders the real ones — which is the only reason
+ * a double is allowed to implement them at all.
+ */
+function applyLiveScenario(state: ApiDoubleState, scenario: string): void {
+  const encounter = state.live.encounter;
+  if (scenario === 'nobody_available') {
+    state.live.standInAvailable = false;
+    return;
+  }
+  state.live.standInAvailable = true;
+  if (encounter === null) return;
+  if (scenario === 'peer_message') {
+    state.live.messages = [
+      ...state.live.messages,
+      {
+        body: 'Hey — this is the local stand-in saying something back.',
+        id: `peer-${String(state.live.messages.length + 1)}`,
+        self: false,
+        sentAt: iso(),
+        sequence: state.live.messages.length + 1,
+      },
+    ];
+    return;
+  }
+  if (scenario === 'peer_connect') {
+    encounter.connection =
+      encounter.connection.state === 'requested'
+        ? {
+            conversationId: liveConversationId,
+            introductionId: liveIntroductionId,
+            state: 'connected',
+          }
+        : { introductionId: liveIntroductionId, state: 'received' };
+    return;
+  }
+  if (scenario === 'peer_next' || scenario === 'peer_disconnect') {
+    // The person who was left is held on the finished encounter rather than
+    // silently put back in the queue, which is what lets the screen say what
+    // happened instead of replacing somebody with a spinner.
+    state.live.state = 'ended';
+    encounter.endReason = scenario === 'peer_next' ? 'peer_left' : 'timed_out';
+    encounter.endedAt = iso();
+    if (encounter.call !== undefined) encounter.call.state = 'ended';
+  }
+}
 
 export function createApiDouble(
   initial: ApiDoubleState = emptyState(),
@@ -964,6 +1109,156 @@ export function createApiDouble(
         (entry) => entry.id !== input.introductionId,
       );
       return json(200, { ...target, state: 'closed' as const });
+    }
+
+    // LIVE. The states are mutually exclusive here exactly as they are on the
+    // server, and every route answers with the whole authoritative shape rather
+    // than a fragment — a surface assembling state from fragments could hold a
+    // combination the server never had.
+    if (path === '/v1/live/sessions' && method === 'GET') {
+      return json(200, liveBody(state));
+    }
+    if (path === '/v1/live/sessions' && method === 'POST') {
+      const input = body as { medium: 'voice' | 'video' };
+      if (state.live.admission !== 'eligible') {
+        return error(
+          state.live.admission === 'unavailable' ? 503 : 409,
+          state.live.admission === 'unavailable'
+            ? 'DEPENDENCY_UNAVAILABLE'
+            : 'ACCOUNT_NOT_ELIGIBLE',
+        );
+      }
+      state.live.medium = input.medium;
+      // Already in an encounter: the answer is that encounter, not a second
+      // search. Idempotence is what makes this route safe to poll.
+      if (state.live.state === 'matched') return json(200, liveBody(state));
+      if (!state.live.standInAvailable) {
+        state.live.state = 'searching';
+        state.live.encounter = null;
+        return json(200, liveBody(state));
+      }
+      state.live.state = 'matched';
+      state.live.messages = [];
+      state.live.encounter = {
+        call: {
+          id: liveCallId,
+          // The honest answer with no approved provider, and what the surface
+          // has to be able to render without implying a connection.
+          mediaTransport: 'none',
+          medium: input.medium,
+          state: 'connecting',
+        },
+        connection: { state: 'none' },
+        id: liveEncounterId,
+        messageSequence: 0,
+        peer: { displayName: 'Robin', id: otherPersonId },
+        startedAt: iso(),
+      };
+      return json(200, liveBody(state));
+    }
+    if (path === '/v1/live/transitions' && method === 'POST') {
+      const input = body as { encounterId: string };
+      // An encounter that is no longer current is answered with current state
+      // rather than refused: pressing Next twice is ordinary, and a late Next
+      // must never end the encounter that replaced the one it names.
+      if (state.live.encounter?.id === input.encounterId) {
+        state.live.encounter = null;
+        state.live.messages = [];
+        state.live.state = state.live.standInAvailable
+          ? 'matched'
+          : 'searching';
+        if (state.live.state === 'matched') {
+          state.live.encounter = {
+            call: {
+              id: liveCallId,
+              mediaTransport: 'none',
+              medium: state.live.medium ?? 'video',
+              state: 'connecting',
+            },
+            connection: { state: 'none' },
+            id: secondEncounterId,
+            messageSequence: 0,
+            peer: { displayName: 'Sam', id: secondPeerId },
+            startedAt: iso(1000),
+          };
+        }
+      }
+      return json(200, liveBody(state));
+    }
+    if (path === '/v1/live/departures' && method === 'POST') {
+      state.live.encounter = null;
+      state.live.messages = [];
+      state.live.state = 'idle';
+      return json(200, liveBody(state));
+    }
+    if (path === '/v1/live/messages' && method === 'GET') {
+      const encounterId = url.searchParams.get('encounterId');
+      if (state.live.encounter?.id !== encounterId) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      return json(200, {
+        encounterId,
+        messages: state.live.messages,
+      });
+    }
+    if (path === '/v1/live/messages' && method === 'POST') {
+      const input = body as {
+        body: string;
+        clientMessageId: string;
+        encounterId: string;
+      };
+      if (state.live.encounter?.id !== input.encounterId) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      // Idempotent by the client identifier, exactly as the unique index makes
+      // it on the server: a retry writes nothing and answers the same list.
+      if (
+        !state.live.messages.some(
+          (entry) => entry.id === `live-${input.clientMessageId}`,
+        )
+      ) {
+        state.live.messages = [
+          ...state.live.messages,
+          {
+            body: input.body,
+            id: `live-${input.clientMessageId}`,
+            self: true,
+            sentAt: iso(),
+            sequence: state.live.messages.length + 1,
+          },
+        ];
+      }
+      return json(200, {
+        encounterId: input.encounterId,
+        messages: state.live.messages,
+      });
+    }
+    if (path === '/v1/live/connections' && method === 'POST') {
+      const input = body as { encounterId: string };
+      const encounter = state.live.encounter;
+      if (encounter?.id !== input.encounterId) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      // One tap is never a connection. `received` means the other person asked
+      // first, and only then does asking make it mutual.
+      encounter.connection =
+        encounter.connection.state === 'received'
+          ? {
+              conversationId: liveConversationId,
+              introductionId: liveIntroductionId,
+              state: 'connected',
+            }
+          : { introductionId: liveIntroductionId, state: 'requested' };
+      return json(200, {
+        connection: encounter.connection,
+        encounterId: input.encounterId,
+      });
+    }
+    if (path === '/v1/live/simulation' && method === 'POST') {
+      if (!state.live.simulated) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      const input = body as { scenario: string };
+      applyLiveScenario(state, input.scenario);
+      return json(200, { applied: true, scenario: input.scenario });
     }
 
     // REALTIME. Terminal states are terminal here too: a double that let an

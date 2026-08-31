@@ -134,10 +134,30 @@ describe('a deep link', () => {
     }
   });
 
-  it('sends a launch with no path to Discover', () => {
+  it('sends a launch with no path to Live', () => {
+    // Live, not Discover. A bare `velora://` is somebody opening the product
+    // rather than following a link to a particular thing, and since ADR-0040
+    // the reason to open it is to meet somebody.
     expect(resolveDeepLink('velora://')).toEqual({
       kind: 'route',
-      path: '/discover',
+      path: '/live',
+    });
+  });
+
+  it('serves the Live destination by name', () => {
+    expect(resolveDeepLink('velora://live')).toEqual({
+      kind: 'route',
+      path: '/live',
+    });
+    // The tab has nothing beneath it, so a deeper address is refused rather
+    // than quietly truncated to the tab — which would be a different address
+    // than the one somebody was given.
+    // A refusal navigates: it lands on Notices and says why, rather than
+    // leaving somebody on a screen that never changed.
+    expect(resolveDeepLink('velora://live/anything')).toEqual({
+      kind: 'refused',
+      path: '/notices',
+      reason: 'That link does not lead anywhere here.',
     });
   });
 
