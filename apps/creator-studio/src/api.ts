@@ -10,6 +10,7 @@ export interface ApiEnvironment {
   readonly NODE_ENV?: string | undefined;
   readonly VELORA_API_BASE_URL?: string | undefined;
   readonly VELORA_APP_ENV?: string | undefined;
+  readonly VELORA_MEDIA_DELIVERY_ORIGIN?: string | undefined;
 }
 
 export function resolveApiBaseUrl(

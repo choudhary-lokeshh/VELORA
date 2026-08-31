@@ -682,6 +682,64 @@ describe('Next.js surface environment resolution', () => {
       );
     },
   );
+
+  it('reads a blank delivery origin as no delivery origin', () => {
+    // An environment file writes the blank form. Absent and blank are the same
+    // statement — the API's own origin serves the bytes — and neither may fail
+    // an origin parse on the empty string.
+    for (const VELORA_MEDIA_DELIVERY_ORIGIN of ['', undefined]) {
+      expect(
+        resolveSurfaceConfig({ VELORA_MEDIA_DELIVERY_ORIGIN })
+          .mediaDeliveryOrigin,
+      ).toBeUndefined();
+    }
+  });
+
+  it('carries a declared delivery origin through to the policy', () => {
+    const config = resolveSurfaceConfig({
+      VELORA_API_BASE_URL: 'https://studio.velora.local',
+      VELORA_APP_ENV: 'local',
+      VELORA_MEDIA_DELIVERY_ORIGIN: 'https://velora.local',
+    });
+    expect(config.mediaDeliveryOrigin).toBe('https://velora.local');
+    expect(
+      browserSecurityHeaders({
+        apiBaseUrl: config.apiBaseUrl,
+        appEnvironment: config.appEnvironment,
+        mediaDeliveryOrigin: config.mediaDeliveryOrigin,
+        referrerPolicy: 'same-origin',
+      })['content-security-policy'],
+    ).toContain(
+      "img-src 'self' data: https://studio.velora.local https://velora.local",
+    );
+  });
+
+  it('refuses a delivery origin that is not exactly an origin', () => {
+    // A path in a Content-Security-Policy source means something other than
+    // whoever wrote it meant, so it is refused rather than silently narrowed.
+    for (const VELORA_MEDIA_DELIVERY_ORIGIN of [
+      'https://velora.local/media',
+      'velora.local',
+      'ftp://velora.local',
+    ]) {
+      expect(() =>
+        resolveSurfaceConfig({
+          VELORA_APP_ENV: 'local',
+          VELORA_MEDIA_DELIVERY_ORIGIN,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it('refuses a loopback delivery origin outside local and test', () => {
+    expect(() =>
+      resolveSurfaceConfig({
+        VELORA_API_BASE_URL: 'https://api.velora.test',
+        VELORA_APP_ENV: 'production',
+        VELORA_MEDIA_DELIVERY_ORIGIN: 'http://127.0.0.1:4000',
+      }),
+    ).toThrow('Staging/production media delivery origin cannot use localhost');
+  });
 });
 
 describe('browser security headers', () => {
@@ -769,13 +827,24 @@ describe('browser security headers', () => {
   });
 
   it('permits React development stack reconstruction only in local next dev', () => {
-    expect(
-      policy({
-        apiBaseUrl: 'http://127.0.0.1:4100',
-        appEnvironment: 'local',
-        developmentRuntime: true,
-      }),
-    ).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    // The addresses a developer's own machine answers on: the loopback API,
+    // and the reserved names the local domain topology serves over TLS. No
+    // deployment can hold `.local` or `.localhost`, which is what makes them
+    // safe to name alongside 127.0.0.1.
+    for (const apiBaseUrl of [
+      'http://127.0.0.1:4100',
+      'https://velora.local',
+      'https://studio.velora.local',
+      'http://velora.localhost:3000',
+    ]) {
+      expect(
+        policy({
+          apiBaseUrl,
+          appEnvironment: 'local',
+          developmentRuntime: true,
+        }),
+      ).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    }
 
     for (const options of [
       {
@@ -797,9 +866,67 @@ describe('browser security headers', () => {
         appEnvironment: 'production',
         developmentRuntime: true,
       },
+      // A reserved local name is not a licence on its own: the environment has
+      // to say local or test, and the runtime has to be `next dev`.
+      {
+        apiBaseUrl: 'https://velora.local',
+        appEnvironment: 'production',
+        developmentRuntime: true,
+      },
+      {
+        apiBaseUrl: 'https://velora.local',
+        appEnvironment: 'staging',
+        developmentRuntime: true,
+      },
+      { apiBaseUrl: 'https://velora.local', appEnvironment: 'local' },
     ]) {
       expect(policy(options)).not.toContain("'unsafe-eval'");
     }
+  });
+
+  it('still upgrades insecure requests for a local domain served over TLS', () => {
+    // The omission exists for a plain-HTTP loopback API that WebKit would
+    // otherwise upgrade out of reach. A local domain is HTTPS end to end, so
+    // the directive has nothing to upgrade and stays on.
+    expect(
+      policy({ apiBaseUrl: 'https://velora.local', appEnvironment: 'local' }),
+    ).toContain('upgrade-insecure-requests');
+  });
+
+  it('names a separate delivery origin in both directives', () => {
+    // Asking for a photograph and rendering it are two permissions, and a
+    // delivery origin that is not the API's needs both.
+    const withDelivery = policy({
+      apiBaseUrl: 'https://studio.velora.local',
+      mediaDeliveryOrigin: 'https://velora.local',
+    });
+    expect(withDelivery).toContain(
+      "connect-src 'self' https://studio.velora.local https://velora.local",
+    );
+    expect(withDelivery).toContain(
+      "img-src 'self' data: https://studio.velora.local https://velora.local",
+    );
+    expect(withDelivery).not.toContain('*');
+  });
+
+  it('names one origin once when delivery and the API share it', () => {
+    const shared = policy({
+      apiBaseUrl: 'https://velora.local',
+      mediaDeliveryOrigin: 'https://velora.local',
+    });
+    expect(shared).toContain("connect-src 'self' https://velora.local;");
+    expect(shared).toContain("img-src 'self' data: https://velora.local;");
+  });
+
+  it('contributes nothing rather than throwing on an unusable origin', () => {
+    // A configuration mistake must not turn every route into a 500, and a
+    // policy naming one fewer origin fails closed.
+    expect(
+      policy({
+        apiBaseUrl: 'https://api.velora.test',
+        mediaDeliveryOrigin: 'not a url',
+      }),
+    ).toContain("connect-src 'self' https://api.velora.test;");
   });
 
   it('adds the Admin robots directive and nothing else by default', () => {

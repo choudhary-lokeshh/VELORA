@@ -31,6 +31,7 @@ const headers = () => {
     apiBaseUrl: config?.apiBaseUrl,
     appEnvironment: config?.appEnvironment,
     developmentRuntime: process.env.NODE_ENV === 'development',
+    mediaDeliveryOrigin: config?.mediaDeliveryOrigin,
     referrerPolicy: 'same-origin',
   });
 };

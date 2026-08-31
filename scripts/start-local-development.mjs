@@ -4,6 +4,19 @@ import { connect } from 'node:net';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  certificateCovers,
+  domainHostnames,
+  issueCertificate,
+  localDomainDirectory,
+  localDomainSurfaces,
+  mediaDeliveryOrigin,
+  originFor,
+  preflight,
+  proxyConfigurationFile,
+  writeProxyConfiguration,
+} from './local-domains.mjs';
+
 /**
  * The one command a developer runs to work on Velora locally: `bun run dev`.
  *
@@ -23,6 +36,12 @@ import { fileURLToPath } from 'node:url';
  * processes here exactly as they deploy separately, because collapsing them for
  * local convenience would make local development the one place the split is
  * never exercised.
+ *
+ * `--domains` adds one thing to all of that and changes nothing else: a TLS
+ * reverse proxy in front, so each surface answers at its own hostname with the
+ * API mounted on the same origin. `scripts/local-domains.mjs` holds why that
+ * shape and no other. Without the flag this file behaves exactly as it always
+ * has, which is the point of it being a flag.
  */
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -31,13 +50,22 @@ process.chdir(repositoryRoot);
 const loopbackHost = '127.0.0.1';
 
 /**
+ * Opt in, never inferred. A developer who has not set up the hosts entries and
+ * the certificate authority still gets the loopback session they asked for.
+ */
+const domainsMode = process.argv.includes('--domains');
+
+/** Ports the proxy binds: TLS, and the plain-HTTP port it redirects from. */
+const proxyPorts = [443, 80];
+
+/**
  * Every process this command owns, in the order they are started: the API and
  * the worker first, because a surface that renders before its API answers is
  * the confusing half-minute this ordering removes. `port` is what the
  * workspace's own `dev` script binds; nothing here chooses a port, so changing
  * one stays a single edit in that workspace.
  */
-const services = [
+const baseServices = [
   {
     label: 'api',
     name: 'API',
@@ -87,6 +115,86 @@ const services = [
     script: 'dev',
   },
 ];
+
+/**
+ * What each process is told when the surfaces answer at their own hostnames.
+ *
+ * Overrides, not a second configuration file: they are placed in the child's
+ * environment, which Bun and Next both let win over `.env`, so the values a
+ * developer maintains stay the ones they maintain and only the four facts this
+ * topology changes are stated here.
+ *
+ * The API is told the three exact browser origins it may authenticate — the
+ * same allowlist mechanism as ever, with different values in it — and the base
+ * URL its `local-test` storage adapter signs media addresses with. Each surface
+ * is told the API origin it calls, which is now its own, and the hostname
+ * `next dev` should accept a development request from.
+ */
+function domainEnvironmentFor(label) {
+  if (!domainsMode) return undefined;
+  if (label === 'api' || label === 'worker') {
+    return {
+      ...Object.fromEntries(
+        localDomainSurfaces.map((surface) => [
+          surface.browserOriginsVariable,
+          originFor(surface),
+        ]),
+      ),
+      VELORA_API_BASE_URL: mediaDeliveryOrigin,
+    };
+  }
+  const surface = localDomainSurfaces.find((each) => each.label === label);
+  if (surface === undefined) return undefined;
+  const origin = originFor(surface);
+  return {
+    VELORA_API_BASE_URL: origin,
+    VELORA_DEV_ORIGIN_HOSTS: surface.hostname,
+    // Named only where the bytes come from somewhere other than the origin
+    // this surface already calls, and only where a surface renders them.
+    ...(surface.rendersMedia && origin !== mediaDeliveryOrigin
+      ? { VELORA_MEDIA_DELIVERY_ORIGIN: mediaDeliveryOrigin }
+      : {}),
+  };
+}
+
+/**
+ * The proxy, when there is one. It is a service like the others so that one
+ * shutdown path stops everything, one port check refuses to fight for 443, and
+ * a proxy that dies takes the session down instead of leaving three hostnames
+ * that quietly answer nothing.
+ *
+ * `sudo` is unavoidable: 443 is privileged. It is asked for up front rather
+ * than in the middle of the log, and nothing else in this file runs as root.
+ */
+const proxyService = {
+  args: [
+    `XDG_DATA_HOME=${localDomainDirectory}`,
+    `XDG_CONFIG_HOME=${localDomainDirectory}`,
+    'caddy',
+    'run',
+    '--config',
+    proxyConfigurationFile,
+    '--adapter',
+    'caddyfile',
+  ],
+  command: 'sudo',
+  label: 'proxy',
+  name: 'Domain proxy',
+  port: 443,
+  readiness: { kind: 'tcp' },
+};
+
+const services = domainsMode
+  ? [
+      ...baseServices.map((service) => {
+        const environment = domainEnvironmentFor(service.label);
+        return environment === undefined
+          ? service
+          : { ...service, environment };
+      }),
+      proxyService,
+    ]
+  : baseServices;
 
 const labelWidth = Math.max(...services.map((service) => service.label.length));
 
@@ -436,9 +544,18 @@ function describePortHolder(port) {
 }
 
 async function requireFreePorts() {
-  const ports = services
-    .filter((service) => service.port !== undefined)
-    .map((service) => ({ port: service.port, service: service.name }));
+  const ports = [
+    ...services
+      .filter((service) => service.port !== undefined)
+      .map((service) => ({ port: service.port, service: service.name })),
+    // The proxy declares 443; it also binds 80 to redirect to it, and a port
+    // taken there fails the proxy after everything else has already started.
+    ...(domainsMode
+      ? proxyPorts
+          .filter((port) => port !== proxyService.port)
+          .map((port) => ({ port, service: `${proxyService.name} (redirect)` }))
+      : []),
+  ];
   const conflicts = [];
 
   for (const entry of ports) {
@@ -511,14 +628,21 @@ function forwardOutput(stream, label, sink) {
  * how an orphaned worker or a still-bound 3000 survives a Ctrl+C.
  */
 function startService(toolchain, service) {
-  const [file, args] = withToolchain(toolchain.prefix, 'pnpm', [
-    '--filter',
-    service.packageName,
-    service.script,
-  ]);
+  const [file, args] =
+    service.command === undefined
+      ? withToolchain(toolchain.prefix, 'pnpm', [
+          '--filter',
+          service.packageName,
+          service.script,
+        ])
+      : [service.command, service.args];
   const child = spawn(file, args, {
     cwd: repositoryRoot,
     detached: process.platform !== 'win32',
+    // An override wins over `.env` in both Bun and Next, which is what makes
+    // the domain topology a set of four stated facts rather than a second copy
+    // of a developer's configuration.
+    env: { ...process.env, ...service.environment },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   forwardOutput(child.stdout, service.label, process.stdout);
@@ -648,7 +772,23 @@ const summaryOrder = [
   'api',
   'mobile',
   'worker',
+  'proxy',
 ];
+
+/** What a developer should actually open, which in domains mode is not a port. */
+function addressFor(service) {
+  if (domainsMode) {
+    const surface = localDomainSurfaces.find(
+      (each) => each.label === service.label,
+    );
+    if (surface !== undefined) return originFor(surface);
+    if (service.label === 'api') return `${mediaDeliveryOrigin}/v1`;
+    if (service.label === 'proxy') return 'serving the three domains';
+  }
+  return service.port === undefined
+    ? 'running'
+    : `http://${loopbackHost}:${String(service.port)}`;
+}
 
 function summarise(statuses) {
   const nameWidth = Math.max(...services.map((service) => service.name.length));
@@ -662,15 +802,20 @@ function summarise(statuses) {
     ...services.filter((service) => !summaryOrder.includes(service.label)),
   ];
   for (const service of ordered) {
-    const address =
-      service.port === undefined
-        ? 'running'
-        : `http://${loopbackHost}:${String(service.port)}`;
+    const address = addressFor(service);
     const ready = statuses.get(service.label) === true;
     lines.push(
       `${service.name.padEnd(nameWidth)}  ${address}${
         ready ? '' : '  (not responding yet — watch the log above)'
       }`,
+    );
+  }
+  if (domainsMode) {
+    lines.push(
+      '',
+      'Open the domains, not the ports. Each surface calls the API on its own',
+      'origin, so a page opened at 127.0.0.1 would set its session cookie on a',
+      'host its own script cannot read the CSRF companion from.',
     );
   }
   lines.push(
@@ -680,6 +825,63 @@ function summarise(statuses) {
     '',
   );
   process.stdout.write(`${lines.join('\n')}\n`);
+}
+
+// ---------------------------------------------------------------------------
+// Local domains
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the proxy needs, refused rather than improvised when it is absent.
+ *
+ * Two of the four steps need a password and neither is taken here: adding a
+ * certificate authority to a machine's trust store and writing `/etc/hosts` are
+ * decisions a developer makes, not side effects of a `dev` command. Issuing the
+ * leaf certificate and writing the proxy configuration need no password and are
+ * done, because both are derived entirely from the topology table and a stale
+ * copy of either is a confusing failure rather than a decision.
+ */
+function prepareLocalDomains() {
+  const problems = preflight();
+  if (problems.length > 0) {
+    fail([
+      'Refusing to serve the local domains: this machine is not set up for them yet.',
+      '',
+      ...problems.flatMap((problem) => [
+        `  ${problem.trouble}`,
+        `    ${problem.remedy}`,
+      ]),
+      '',
+      '`bun run dev` needs none of this and is unaffected.',
+    ]);
+  }
+
+  const hostnames = domainHostnames();
+  if (!certificateCovers(hostnames)) {
+    const issued = issueCertificate();
+    if (issued.status !== 0) {
+      fail([
+        `Could not issue a certificate for ${hostnames.join(', ')}.`,
+        describeFailure(issued, 'mkcert'),
+      ]);
+    }
+    note(`  certificate   issued for ${hostnames.join(', ')}`);
+  } else {
+    note(`  certificate   valid for ${hostnames.join(', ')}`);
+  }
+
+  writeProxyConfiguration();
+  note(`  proxy config  ${proxyConfigurationFile}`);
+
+  // Asked for before anything starts, so the password prompt is not buried
+  // under four processes' worth of output half a minute later.
+  const authorized = spawnSync('sudo', ['--validate'], { stdio: 'inherit' });
+  if (authorized.status !== 0) {
+    fail([
+      'The proxy binds 443, which needs a password on this machine.',
+      'Nothing else in this session runs as root.',
+    ]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -693,12 +895,17 @@ if (process.env.CI !== undefined) {
   ]);
 }
 
-note('Starting VELORA local development.');
+note(
+  domainsMode
+    ? 'Starting VELORA local development on the local domains.'
+    : 'Starting VELORA local development.',
+);
 const toolchain = resolveToolchain();
 note(`  toolchain     ${toolchain.report} (via ${toolchain.description})`);
 installDependenciesIfMissing(toolchain);
 buildWorkspaceLibraries(toolchain);
 bootstrapEnvironmentFile(toolchain);
+if (domainsMode) prepareLocalDomains();
 await requireFreePorts();
 startInfrastructure(toolchain);
 applyMigrations(toolchain);
@@ -709,7 +916,11 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   });
 }
 
-note('  processes     starting API, worker, three web surfaces, and Metro\n');
+note(
+  domainsMode
+    ? '  processes     starting API, worker, three web surfaces, Metro, and the proxy\n'
+    : '  processes     starting API, worker, three web surfaces, and Metro\n',
+);
 const started = services.map((service) => ({
   record: startService(toolchain, service),
   service,

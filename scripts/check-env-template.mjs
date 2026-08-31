@@ -31,6 +31,7 @@ const templatedNonSchemaKeys = new Map([
   ['EXPO_PUBLIC_APP_ENV', 'Consumer Mobile bundle'],
   ['VELORA_APP_ENV', 'Next.js surfaces at request time'],
   ['VELORA_BIND_HOST', 'Next.js dev and standalone start scripts'],
+  ['VELORA_MEDIA_DELIVERY_ORIGIN', 'Next.js surfaces at request time'],
   ['VELORA_POSTGRES_PORT', 'local Docker Compose host port'],
   ['VELORA_REDIS_PORT', 'local Docker Compose host port'],
 ]);
@@ -53,6 +54,10 @@ const internalKeys = new Map([
     'where a machine keeps its JDK; read by the Android toolchain scripts',
   ],
   ['NODE_ENV', 'set by Next.js and the test runners'],
+  [
+    'VELORA_DEV_ORIGIN_HOSTS',
+    'set by `start-local-development.mjs --domains`; read by each surface next.config.ts',
+  ],
   ['STABILITY_ITERATIONS', 'scripts/rtc-stability-proof.mjs argument'],
   ['STABILITY_OUTPUT_DIRECTORY', 'scripts/rtc-stability-proof.mjs argument'],
   ['TEST_DATABASE_URL', 'injected by the integration harness per run'],

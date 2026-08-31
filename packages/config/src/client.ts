@@ -7,11 +7,24 @@ const clientHttpUrlSchema = serviceUrlSchema('API base URL', [
   'https:',
 ]);
 
+/**
+ * An origin and nothing else: no path, no query, no fragment.
+ *
+ * A delivery origin carrying a path would land in a Content-Security-Policy
+ * source list, where a path means something different from what whoever wrote
+ * it meant, so it is refused here instead of silently narrowing the policy.
+ */
+const clientOriginSchema = clientHttpUrlSchema.refine(
+  (value) => new URL(value).origin === value,
+  'Media delivery origin must be an exact scheme://host[:port] value',
+);
+
 const clientConfigInputSchema = z
   .object({
     apiBaseUrl: z.string().optional(),
     appEnvironment: appEnvironmentSchema,
     localDefaultApiBaseUrl: clientHttpUrlSchema.optional(),
+    mediaDeliveryOrigin: clientOriginSchema.optional(),
   })
   .strict();
 
@@ -19,6 +32,7 @@ const clientConfigSchema = z
   .object({
     apiBaseUrl: clientHttpUrlSchema,
     appEnvironment: appEnvironmentSchema,
+    mediaDeliveryOrigin: clientOriginSchema.optional(),
   })
   .readonly();
 
@@ -28,6 +42,7 @@ export interface ClientConfigInput {
   readonly apiBaseUrl?: string | undefined;
   readonly appEnvironment: string;
   readonly localDefaultApiBaseUrl?: string | undefined;
+  readonly mediaDeliveryOrigin?: string | undefined;
 }
 
 /**
@@ -77,9 +92,21 @@ export function loadClientConfig(input: ClientConfigInput): ClientConfig {
     throw new Error('Staging/production API base URL cannot use localhost');
   }
 
+  const { mediaDeliveryOrigin } = parsed;
+  if (
+    mediaDeliveryOrigin !== undefined &&
+    !mayUseLocalDefault &&
+    isLoopbackHostname(new URL(mediaDeliveryOrigin).hostname)
+  ) {
+    throw new Error(
+      'Staging/production media delivery origin cannot use localhost',
+    );
+  }
+
   return clientConfigSchema.parse({
     apiBaseUrl: url.toString().replace(/\/$/, ''),
     appEnvironment: parsed.appEnvironment,
+    ...(mediaDeliveryOrigin === undefined ? {} : { mediaDeliveryOrigin }),
   });
 }
 
@@ -100,6 +127,7 @@ export interface SurfaceEnvironment {
   readonly NODE_ENV?: string | undefined;
   readonly VELORA_API_BASE_URL?: string | undefined;
   readonly VELORA_APP_ENV?: string | undefined;
+  readonly VELORA_MEDIA_DELIVERY_ORIGIN?: string | undefined;
 }
 
 /**
@@ -114,12 +142,19 @@ export interface SurfaceEnvironment {
 export function resolveSurfaceConfig(
   environment: SurfaceEnvironment,
 ): ClientConfig {
+  // Blank and absent are the same statement — no separate delivery origin —
+  // and an environment file writes the blank form, so they resolve alike here
+  // rather than failing an origin parse on the empty string.
+  const mediaDeliveryOrigin = environment.VELORA_MEDIA_DELIVERY_ORIGIN;
   return loadClientConfig({
     apiBaseUrl: environment.VELORA_API_BASE_URL,
     appEnvironment:
       environment.VELORA_APP_ENV ??
       (environment.NODE_ENV === 'production' ? 'production' : 'local'),
     localDefaultApiBaseUrl: loopbackApiBaseUrl,
+    ...(mediaDeliveryOrigin === undefined || mediaDeliveryOrigin.length === 0
+      ? {}
+      : { mediaDeliveryOrigin }),
   });
 }
 
@@ -140,31 +175,50 @@ export interface BrowserSecurityHeaderOptions {
   readonly appEnvironment?: string | undefined;
   /** True only for `next dev`; never inferred from the product environment. */
   readonly developmentRuntime?: boolean | undefined;
+  /**
+   * Exact origin that serves media bytes, when it is not the API's own.
+   *
+   * Omitted means the API origin serves them, which is every environment that
+   * has no approved storage or delivery provider. Named separately because the
+   * two are separate facts: a surface reached at its own hostname calls the API
+   * on that hostname, while the bytes come from wherever delivery issues them.
+   */
+  readonly mediaDeliveryOrigin?: string | undefined;
   readonly referrerPolicy: 'no-referrer' | 'same-origin';
   readonly robots?: string | undefined;
 }
 
 /**
- * The one extra origin a surface is allowed to reach, when it has one.
+ * The extra origins a surface is allowed to reach, when it has any.
  *
- * Used for both `connect-src` and `img-src`, and it is the same origin in both
- * because it is the same platform: media delivery issues addresses on whichever
- * origin serves the bytes, and today the only such origin is the API's own —
- * the development storage adapter has no origin of its own and answers on the
- * API's. An approved storage or delivery provider brings a third origin, and
- * that is a separate value this function will need rather than a wildcard.
+ * The same list serves `connect-src` and `img-src`, because a photograph is
+ * asked for and then rendered and both halves have to be permitted. Usually
+ * there is one origin — the API's, since the development storage adapter has no
+ * origin of its own and answers on the API's. A second appears when the bytes
+ * come from somewhere else: an approved storage or delivery provider, or a
+ * local development topology where each surface calls the API on its own
+ * hostname while delivery issues addresses on one. Exact origins either way,
+ * never a wildcard.
+ *
+ * A malformed value contributes nothing rather than throwing: a configuration
+ * mistake must not turn every route into a 500, and a policy that names one
+ * fewer origin fails closed.
  */
-function withApiOrigin(
-  apiBaseUrl: string | undefined,
+function withOrigins(
   baseline: string,
+  ...urls: readonly (string | undefined)[]
 ): string {
-  if (apiBaseUrl === undefined || apiBaseUrl.length === 0) return baseline;
-  try {
-    const { origin } = new URL(apiBaseUrl);
-    return `${baseline} ${origin}`;
-  } catch {
-    return baseline;
+  const origins: string[] = [];
+  for (const url of urls) {
+    if (url === undefined || url.length === 0) continue;
+    try {
+      const { origin } = new URL(url);
+      if (!origins.includes(origin)) origins.push(origin);
+    } catch {
+      continue;
+    }
   }
+  return [baseline, ...origins].join(' ');
 }
 
 function isLoopbackApi(apiBaseUrl: string | undefined): boolean {
@@ -172,6 +226,45 @@ function isLoopbackApi(apiBaseUrl: string | undefined): boolean {
   try {
     const url = new URL(apiBaseUrl);
     return url.protocol === 'http:' && isLoopbackHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Names reserved for a developer's own machine, which no deployment can hold.
+ *
+ * `.localhost` is reserved for the loopback interface by RFC 6761 and
+ * `.local` for link-local multicast DNS by RFC 6762. Neither is delegable, so
+ * neither can ever resolve to a Velora deployment — which is what makes them
+ * safe to name here alongside the loopback addresses.
+ */
+function isLocalDevelopmentHostname(hostname: string): boolean {
+  return (
+    isLoopbackHostname(hostname) ||
+    hostname === 'local' ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.localhost')
+  );
+}
+
+/**
+ * Whether the configured API is one a developer is running on this machine.
+ *
+ * Wider than `isLoopbackApi` by exactly the reserved names above, and used only
+ * for the `next dev` allowance below. The two are deliberately separate: a
+ * plain-HTTP loopback endpoint is the one thing
+ * `upgrade-insecure-requests` must not be applied to, whereas a local
+ * development domain is served over TLS and wants the directive left on.
+ */
+function isLocalDevelopmentApi(apiBaseUrl: string | undefined): boolean {
+  if (apiBaseUrl === undefined || apiBaseUrl.length === 0) return false;
+  try {
+    const url = new URL(apiBaseUrl);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      isLocalDevelopmentHostname(url.hostname)
+    );
   } catch {
     return false;
   }
@@ -198,9 +291,16 @@ function upgradesInsecureRequests(
 
 /**
  * React's development runtime uses `eval` to reconstruct component stacks.
- * Permit that debugging primitive only for `next dev` against the same local
- * loopback combination that the client configuration already constrains. A
- * production Next.js server using local/test data remains on the deployed CSP.
+ * Permit that debugging primitive only for `next dev` against an API this
+ * machine is itself running. A production Next.js server using local/test data
+ * remains on the deployed CSP.
+ *
+ * The address, not only the loopback address. Local development also runs the
+ * surfaces behind their own reserved hostnames over TLS, and a policy that
+ * dropped `'unsafe-eval'` there would leave a developer with a broken hot
+ * reload and a console full of policy violations for a topology that is still
+ * entirely on their own machine. All three conditions still have to hold, and
+ * `isLocalDevelopmentApi` admits only names no deployment can ever hold.
  */
 function permitsDevelopmentEval(
   options: BrowserSecurityHeaderOptions,
@@ -210,7 +310,7 @@ function permitsDevelopmentEval(
   return (
     options.developmentRuntime === true &&
     local &&
-    isLoopbackApi(options.apiBaseUrl)
+    isLocalDevelopmentApi(options.apiBaseUrl)
   );
 }
 
@@ -224,14 +324,14 @@ export function browserSecurityHeaders(
       "object-src 'none'",
       "frame-ancestors 'none'",
       "form-action 'self'",
-      `connect-src ${withApiOrigin(options.apiBaseUrl, "'self'")}`,
+      `connect-src ${withOrigins("'self'", options.apiBaseUrl, options.mediaDeliveryOrigin)}`,
       // The API origin is named here as well as in `connect-src`, because a
       // consumer photograph is fetched from it: delivery issues a signed,
       // short-lived address on the origin that serves the bytes, and a policy
       // that allowed the surface to *ask* for one but not to *render* it would
       // leave every person on the platform as an identity mark for a reason no
       // developer tool would explain.
-      `img-src ${withApiOrigin(options.apiBaseUrl, "'self' data:")}`,
+      `img-src ${withOrigins("'self' data:", options.apiBaseUrl, options.mediaDeliveryOrigin)}`,
       "font-src 'self'",
       "style-src 'self' 'unsafe-inline'",
       `script-src 'self' 'unsafe-inline'${

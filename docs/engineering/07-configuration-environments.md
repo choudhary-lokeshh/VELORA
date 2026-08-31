@@ -243,6 +243,7 @@ Platform Admin.
 | `VELORA_APP_ENV` | No | Safe default locally, required when deployed | `local` | The environment name | Falls back to `production` when `NODE_ENV` is `production`, `local` otherwise. Set it explicitly when deployed |
 | `VELORA_API_BASE_URL` | No | Safe default locally, required now when deployed | `http://127.0.0.1:4000` | The environment's API origin | Local and test fall back to the loopback API. Staging and production throw at startup, and a loopback value there is refused outright |
 | `VELORA_BIND_HOST` | No | Safe default | blank | Container/host interface if not `0.0.0.0` (start) or `127.0.0.1` (dev) | The `start` scripts default `0.0.0.0` and `dev` scripts default `127.0.0.1`. Read by `package.json` only, never by application code |
+| `VELORA_MEDIA_DELIVERY_ORIGIN` | No | Optional everywhere | blank | The origin serving media bytes, when it is not the API's own | The API origin is assumed to serve the bytes, which is true of every environment with no approved storage or delivery provider. A loopback value is refused outside local and test, exactly as the API base URL is |
 
 `VELORA_API_BASE_URL` is also a server field, and the only thing that reads it
 there is the `local-test` storage adapter, which has no provider origin of its
@@ -251,11 +252,27 @@ from its own `HOST` and `PORT`, so a developer on loopback sets nothing; a
 deployment where a worker issues addresses for an API on a different origin
 must set it explicitly, because a worker has no port of its own to derive from.
 
-Both are read at request time and neither carries a `NEXT_PUBLIC_` prefix, on
-purpose: a build-inlined value would bake one environment's endpoint into the
+`VELORA_MEDIA_DELIVERY_ORIGIN` names the second origin a surface may reach, and
+it exists because the origin a surface *calls* and the origin its photographs
+*come from* are two facts, not one. They are the same today — no storage or
+delivery provider is approved, so the `local-test` adapter answers on the API's
+own origin — and the field stays blank, which is exactly what every deployed
+environment sets. It is named when they differ: an approved delivery provider
+with an origin of its own, or the local domain topology below, where each
+surface calls the API on its own hostname while one origin issues the bytes. It
+is added to `connect-src` and `img-src` as an exact origin, never a wildcard.
+
+All of these are read at request time and none carries a `NEXT_PUBLIC_` prefix,
+on purpose: a build-inlined value would bake one environment's endpoint into the
 artifact every environment is supposed to share. The API origin a browser may
 reach is also the origin named in that response's `connect-src`, so these two
 facts cannot diverge.
+
+`VELORA_DEV_ORIGIN_HOSTS` is deliberately absent from the table and from the
+template. It is read by each surface's `next.config.ts` to tell `next dev` which
+`Host` a development request may carry, and it is set by
+`scripts/start-local-development.mjs --domains` for the process it starts.
+Nobody sets it by hand and no deployed environment reads it.
 
 ## Consumer Mobile configuration
 
@@ -342,6 +359,10 @@ Redis, applies migrations, and runs the API on 4000, the background worker,
 Consumer Web on 3000, Creator Studio on 3001, Platform Admin on 3002, and the
 Expo/Metro dev server on 8081. It prints the addresses once they answer.
 
+`bun run dev:domains` runs the same session behind three local hostnames over
+TLS instead of three loopback ports; see [Local development
+domains](#local-development-domains) for what that changes and why.
+
 It decides nothing destructive. It never overwrites an existing `.env`, never
 generates a secret, never resets a database, and reuses a healthy container
 rather than recreating one, so repeated ordinary use is safe. A port it needs
@@ -377,6 +398,117 @@ curl -fsS http://127.0.0.1:4000/v1/health/ready
 
 Readiness reports PostgreSQL, ephemeral Redis, and queue Redis separately and
 answers 503 while any one of them is down.
+
+## Local development domains
+
+`bun run dev:domains` serves the same session at three hostnames instead of
+three ports:
+
+| Address | Serves |
+|---|---|
+| `https://velora.local` | Consumer Web, and the API at `/v1/*` |
+| `https://studio.velora.local` | Creator Studio, and the API at `/v1/*` |
+| `https://admin.velora.local` | Platform Admin, and the API at `/v1/*` |
+
+It is opt-in and additive. `bun run dev` is unchanged, so a stale hosts file or
+a stopped proxy is never the reason local development will not start.
+
+### Why the API is on each hostname rather than its own
+
+The loopback session works because a cookie is scoped to a host and ignores the
+port. Consumer Web on 3000 and the API on 4000 are both `127.0.0.1`, so the
+`__Host-` CSRF companion cookie the API sets is readable by the surface's own
+script, which is the value it echoes on every state-changing request. Give the
+surfaces separate hostnames and put the API on a fourth, and that read returns
+nothing: a `__Host-` cookie is host-only by definition, and every POST would be
+refused for missing CSRF evidence.
+
+Mounting the API on each surface's own origin keeps the property without
+relaxing anything. Session and CSRF cookies are set on the hostname the browser
+is already on, host-only per surface — which is what ADR-0009 chose over one
+cross-subdomain cookie, and stricter than the loopback session, where all three
+audiences' cookies land on the same host and have to be disambiguated by
+`Origin`.
+
+The cost is honest: same-origin requests are not preflighted, so this topology
+does not exercise CORS. `pnpm contracts:check` is what covers that, by comparing
+every contract request header against `apps/api/src/http/cors.ts` as a
+statement; and `bun run dev` still runs the cross-origin split.
+
+### Why it is HTTPS
+
+`apps/api/src/auth/cookies.ts` fixes `Secure` on every session cookie in every
+environment, with no branch that relaxes it. A browser accepts a `Secure` cookie
+only from a trustworthy origin, and while `localhost` and `127.0.0.1` are
+trustworthy, `velora.local` is not. Over plain HTTP the cookie would be dropped
+silently: sign-in would appear to succeed and no session would ever exist.
+
+So the domains are served over TLS with a certificate from a local authority,
+and the cookie policy runs exactly as it does in production. That is the whole
+reason for the certificate step; nothing about the attributes changes.
+
+### Setup, once per machine
+
+```bash
+brew install caddy mkcert nss
+mkcert -install
+printf '%s\n' '127.0.0.1\tvelora.local studio.velora.local admin.velora.local' | sudo tee -a /etc/hosts
+```
+
+`mkcert -install` adds a development certificate authority to this machine's
+trust store, and the hosts line points the three names at loopback. Both need a
+password and neither is done by the `dev` command: adding a certificate
+authority and editing `/etc/hosts` are decisions a developer makes deliberately.
+`bun run dev:domains` refuses with the exact command for whichever step is
+missing.
+
+What the command does do, because both are derived entirely from
+`scripts/local-domains.mjs` and need no password, is issue the leaf certificate
+and write the proxy configuration. Both live in `~/.velora/local-domains`,
+outside the repository, because a configuration file naming a private key is not
+a file to leave in a working tree.
+
+The proxy binds 443, which is privileged, so the command asks for a password
+once at the start. Nothing else in the session runs as root, and the proxy stops
+with the rest of the session on Ctrl+C.
+
+### What each process is told
+
+Overrides in the child process environment, which wins over `.env` in both Bun
+and Next, so a developer's own configuration is not rewritten:
+
+| Process | Variable | Value |
+|---|---|---|
+| API, worker | `AUTH_BROWSER_ORIGINS_*` | the three `https://` origins, one per audience |
+| API, worker | `VELORA_API_BASE_URL` | `https://velora.local`, which is what `local-test` media addresses name |
+| each surface | `VELORA_API_BASE_URL` | that surface's own origin |
+| each surface | `VELORA_DEV_ORIGIN_HOSTS` | that surface's hostname, for `next dev` |
+| Creator Studio | `VELORA_MEDIA_DELIVERY_ORIGIN` | `https://velora.local` |
+
+The last row is the one asymmetry, and it is a real one. The `local-test`
+storage adapter issues absolute addresses from a single configured API base URL,
+so the bytes come from one origin no matter which surface asked. Consumer Web is
+that origin, so it needs no extra allowance. Creator Studio renders media and
+must therefore name the delivery origin in its policy. Platform Admin renders
+none and is told nothing, because the console with the tightest policy on the
+platform should not carry an allowance nothing on it uses.
+
+Consumer Mobile is unaffected and stays on the loopback API: a device cannot
+resolve these names, and Mobile carries a bearer token rather than a cookie, so
+none of the reasoning above applies to it.
+
+### Two things to know
+
+Open the domains, not the ports. The loopback servers are still listening in
+this mode, but a page opened at `127.0.0.1:3000` is configured to call
+`https://velora.local`, so its session cookie would land on a host its own
+script cannot read the CSRF companion from.
+
+The surfaces send `Strict-Transport-Security` with `includeSubDomains`, so after
+the first visit a browser will refuse plain HTTP on `velora.local` and every name
+under it for two years. That is correct here — the domains are HTTPS — but it is
+a browser-level fact that outlives the dev session, and undoing it means clearing
+the HSTS entry in the browser rather than changing anything in this repository.
 
 ## A note on commit 3feb6f3
 
