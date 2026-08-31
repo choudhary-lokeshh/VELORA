@@ -48,12 +48,18 @@ import { useSingleFlight } from './resource';
  * would gather sensitive data for a rule that does not exist yet. Nothing here
  * calls a declaration a verified check, because it is not one.
  *
- * A photo can now be supplied here, from the camera or the photo library, and
- * the same control the profile screen uses is reused so both behave
- * identically. What still cannot happen is anybody seeing it: consumer media
- * has no authorized delivery route, and the control says so on the screen. In
- * an environment with no storage provider the upload refuses cleanly and says
- * nothing was lost, rather than the step pretending to work.
+ * A photo can be supplied here, from the camera or the photo library, and the
+ * same control the profile screen uses is reused so both behave identically.
+ * Whether anybody then sees it is the environment's answer rather than this
+ * screen's: where delivery exists the photograph appears here and on every
+ * other card, and where it does not the control says so itself, from what the
+ * last exchange actually reported. This comment used to assert the second case
+ * as a standing fact, which stopped being true the day the development
+ * transport shipped -- and a comment that overstates a limit is the same defect
+ * as a screen that does, just further from the reader.
+ *
+ * In an environment with no storage provider the upload refuses cleanly and
+ * says nothing was lost, rather than the step pretending to work.
  */
 
 const ladder: readonly JourneyStage[] = [
