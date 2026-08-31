@@ -112,6 +112,17 @@ export const livePresenceGraceMilliseconds = 45_000;
 export const liveSearchGraceMilliseconds = 30_000;
 
 /**
+ * How often the worker looks for people who stopped reading.
+ *
+ * Shorter than the search grace, so a stale searcher is normally gone before
+ * anybody could be matched with them, and short enough that the person left on
+ * an unattended encounter is told within a few seconds of the grace expiring.
+ * Presence in this domain is reading, and this cycle is what makes that true
+ * rather than aspirational.
+ */
+export const livePresenceSweepIntervalMilliseconds = 10_000;
+
+/**
  * How long before the same two people may be matched again by chance.
  *
  * Not a block and not a judgement — the pair may still find each other through

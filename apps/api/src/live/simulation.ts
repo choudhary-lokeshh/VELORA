@@ -3,6 +3,7 @@ import type { SafeLogger } from '@velora/observability/server';
 
 import type { Executor } from '../database/executor.js';
 import type { UserAccountRow } from '../users/repository.js';
+import { liveRematchSuppressionMilliseconds } from './policy.js';
 import type { LiveRepository } from './repository.js';
 import type { LiveService, LiveSimulationPort } from './service.js';
 
@@ -116,7 +117,23 @@ export class LiveSimulator implements LiveSimulationPort {
       excludeId: input.viewerId,
       limit: standInScanLimit,
     });
+    // Skipped here rather than left to the matcher, because the matcher would
+    // reject them and this adapter offers exactly one. A developer who walked
+    // the loop once would then find "nobody is available" for the length of the
+    // rematch suppression — a local dead end produced by a product rule working
+    // correctly, which is the worst kind to debug.
+    const recentlyMet = await this.dependencies.repository.recentlyMetAmong(
+      input.executor,
+      {
+        candidateIds: candidates.map((candidate) => candidate.id),
+        since: new Date(
+          input.now.getTime() - liveRematchSuppressionMilliseconds,
+        ),
+        userId: input.viewerId,
+      },
+    );
     for (const candidate of candidates) {
+      if (recentlyMet.has(candidate.id)) continue;
       // Somebody genuinely in the pool is matched by the ordinary path, and
       // offering them here as well would be this adapter competing with the
       // matcher it stands in for.

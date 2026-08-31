@@ -49,6 +49,8 @@ import {
   mediaUploadSweepIntervalMilliseconds,
 } from './media/policy.js';
 import { messagingOutbox } from './messaging/schema.js';
+import { createLiveRuntime } from './live/composition.js';
+import { livePresenceSweepIntervalMilliseconds } from './live/policy.js';
 import { createRealtimeRuntime } from './realtime/composition.js';
 import {
   rtcObligationDrainIntervalMilliseconds,
@@ -207,6 +209,7 @@ export interface WorkerComposition {
   readonly payouts: PayoutsRuntime;
   close(): Promise<void>;
   readonly deliverySweep: Poller;
+  readonly livePresenceSweep: Poller;
   readonly providerFeedbackSweep: Poller;
   /** Resolves ambiguous financial outcomes from provider truth. */
   readonly financialReconciliation: Poller;
@@ -250,6 +253,28 @@ const refusedAdmission = {
   outstandingProfile: [],
   step: 'adult_declaration',
 } as const;
+
+/**
+ * The directory LIVE is composed with on the worker: one that tells it nothing.
+ *
+ * The presence sweep renders no view of anybody. It ends encounters and closes
+ * participations, and every question about who somebody is belongs to the
+ * request path that has somebody asking. Answering nothing here is what makes
+ * that a property of the composition rather than of the sweep remembering not
+ * to ask.
+ */
+const refusedLiveDirectory = {
+  languagesOf: () => Promise.resolve([]),
+  matchingAmong: () => Promise.resolve(new Set<string>()),
+  namesFor: () => Promise.resolve([]),
+  profilesFor: () => Promise.resolve([]),
+};
+
+/** The pairwise answers, all refusing. The worker matches nobody. */
+const refusedLiveSafety = {
+  blockedAmong: () => Promise.resolve(new Set<string>()),
+  mayInteract: () => Promise.resolve(false),
+};
 
 export function createWorkerComposition(input: {
   readonly config: ServerConfig;
@@ -303,6 +328,46 @@ export function createWorkerComposition(input: {
     now,
     onboarding: { evaluate: () => Promise.resolve(refusedAdmission) },
     workerName: owner,
+  });
+
+  /*
+   * LIVE is composed here for one reason: absence has to be noticed by
+   * something, and nobody in a live encounter is going to report that the other
+   * person's tab closed.
+   *
+   * Presence in live discovery is reading — a client that is polling is here,
+   * one that has stopped is gone — and that model only works if something
+   * actually measures the silence. Without this sweep the pool fills with
+   * people who left hours ago and the person they were talking to is left on a
+   * screen that still says they are there.
+   *
+   * Everything this composition is handed that could *admit* anybody refuses.
+   * The sweep ends encounters and closes participations; it never matches, never
+   * introduces, never opens a conversation, and never authorizes a session, so
+   * the ports that would let it do any of those answer no. A worker able to
+   * match two people would be a second matcher no request path guards.
+   */
+  const live = createLiveRuntime({
+    accounts: {
+      findAccountById: () => Promise.resolve(undefined),
+      listActiveAccounts: () => Promise.resolve([]),
+    },
+    admission: { evaluate: () => Promise.resolve(refusedAdmission) },
+    config: input.config,
+    connections: new ConnectionDirectory(handle),
+    conversations: {
+      openConversation: () => Promise.resolve({ kind: 'not_permitted' }),
+    },
+    database: handle,
+    directory: refusedLiveDirectory,
+    enforcement: { decide: () => Promise.resolve({ allowed: false }) },
+    introducibility: { mayBeIntroducedTo: () => Promise.resolve(false) },
+    introductions: { signal: () => Promise.resolve({ kind: 'not_eligible' }) },
+    logger: input.logger,
+    now,
+    realtime: realtime.liveSessions,
+    safety: refusedLiveSafety,
+    standing: { isDeliverable: () => Promise.resolve(false) },
   });
 
   // BILLING is composed on the worker for one reason: this process drains its
@@ -803,6 +868,31 @@ export function createWorkerComposition(input: {
     name: 'media-reconciliation',
   });
 
+  /*
+   * Notices that somebody stopped reading, and closes what they left open.
+   *
+   * The one cycle that makes "reading is presence" true rather than aspirational.
+   * It reports what it closed so an operator can see it working instead of
+   * inferring it from an absence of complaints.
+   */
+  const livePresenceSweep = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const swept = await live.service.sweepLapsedPresence();
+        if (swept.participationsClosed === 0) return;
+        input.logger.info(
+          {
+            encountersEnded: swept.encountersEnded,
+            participationsClosed: swept.participationsClosed,
+          },
+          'live presence sweep cycle',
+        );
+      }),
+    intervalMilliseconds: livePresenceSweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'live-presence-sweep',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -829,6 +919,7 @@ export function createWorkerComposition(input: {
   return {
     billing,
     financialReconciliation,
+    livePresenceSweep,
     subscriptionExpiry,
     rtcObligationDrain,
     rtcSweep,
