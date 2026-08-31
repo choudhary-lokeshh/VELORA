@@ -193,9 +193,12 @@ test.describe('Live discovery', () => {
 
     // They move on. The relationship is what survives the encounter.
     await page.getByTestId('live-sim-peer_next').click();
-    await expect(page.getByTestId('live-ended')).toContainText('They moved on', {
-      timeout: 30_000,
-    });
+    await expect(page.getByTestId('live-ended')).toContainText(
+      'They moved on',
+      {
+        timeout: 30_000,
+      },
+    );
     const conversationLink = page.getByTestId('live-ended-conversation');
     await expect(conversationLink).toBeVisible();
 

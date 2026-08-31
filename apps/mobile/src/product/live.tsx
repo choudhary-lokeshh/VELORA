@@ -247,40 +247,53 @@ export function LiveScreen({
       // above it. Getting this wrong is what puts a text field under a keyboard
       // somebody cannot dismiss.
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.room}
+      // The top inset is applied here rather than by a shell. This screen owns
+      // its own layout — a fixed control row above the tab bar with a scrolling
+      // body above it — so it also owns clearing the status bar, which it was
+      // not doing: on a device the person's avatar sat under the clock.
+      style={[styles.room, { paddingTop: insets.top }]}
       testID="live-room"
     >
-      <View style={styles.stage}>
+      <ScrollView
+        contentContainerStyle={styles.body}
+        // The body scrolls and the controls do not. A stage that only shrank
+        // would clip a long name or a long sentence off the top of the screen,
+        // which is what a device showed; scrolling costs a gesture and loses
+        // nothing.
+        style={styles.bodyScroll}
+      >
+        <View style={styles.stage}>
+          {serverState === 'matched' && encounter !== undefined ? (
+            <RemotePane encounter={encounter} onOpenPerson={onOpenPerson} />
+          ) : serverState === 'ended' && encounter !== undefined ? (
+            <EndedPane
+              encounter={encounter}
+              onOpenConversation={onOpenConversation}
+            />
+          ) : (
+            <SearchingPane />
+          )}
+          <LocalPreview media={media} medium={medium} />
+        </View>
+
         {serverState === 'matched' && encounter !== undefined ? (
-          <RemotePane encounter={encounter} onOpenPerson={onOpenPerson} />
-        ) : serverState === 'ended' && encounter !== undefined ? (
-          <EndedPane
-            encounter={encounter}
-            onOpenConversation={onOpenConversation}
-          />
-        ) : (
-          <SearchingPane />
+          <LiveChat encounter={encounter} />
+        ) : null}
+
+        <PermissionNotice media={media} />
+
+        {message === undefined ? null : (
+          <ErrorMessage testID="live-message">{message}</ErrorMessage>
         )}
-        <LocalPreview media={media} medium={medium} />
-      </View>
 
-      {serverState === 'matched' && encounter !== undefined ? (
-        <LiveChat encounter={encounter} />
-      ) : null}
-
-      <PermissionNotice media={media} />
-
-      {message === undefined ? null : (
-        <ErrorMessage testID="live-message">{message}</ErrorMessage>
-      )}
-
-      {state?.simulated === true ? (
-        <SimulationPanel
-          onApplied={(next) => {
-            setState(next);
-          }}
-        />
-      ) : null}
+        {state?.simulated === true ? (
+          <SimulationPanel
+            onApplied={(next) => {
+              setState(next);
+            }}
+          />
+        ) : null}
+      </ScrollView>
 
       <View
         style={[
@@ -642,7 +655,13 @@ function MediaControls({
         />
       </Inline>
 
-      <Inline gap={2}>
+      {/*
+        Wrapping, because the Connect control's label is a sentence that grows:
+        "Connect" becomes "Waiting for them" becomes "You are connected". On a
+        device the row overflowed at the second of those and cut End in half —
+        and End is one of the two controls that must never be hard to reach.
+      */}
+      <Inline gap={2} wrap>
         {encounter === undefined ? null : (
           <Button
             busy={connect.busy}
@@ -937,6 +956,9 @@ function SimulationPanel({
   );
 }
 
+/** The preview's height, named once so the stage can reserve exactly it. */
+const previewHeight = 148;
+
 const styles = StyleSheet.create({
   bubble: {
     alignSelf: 'flex-start',
@@ -981,7 +1003,18 @@ const styles = StyleSheet.create({
     paddingTop: space[3],
   },
   door: {
-    alignItems: 'flex-start',
+    /*
+     * Stretch, not `flex-start`.
+     *
+     * The step rows are a mark beside a `Text` with `flex: 1`, and a row inside
+     * a container that sizes to its content gives a `flex: 1` child zero width
+     * — so on a device the marks rendered and every sentence beside them
+     * vanished, while still taking up its line height. It was invisible in
+     * jsdom, where the web surface uses CSS flex with different intrinsic
+     * sizing, and invisible in the mobile suite, which asserts text content
+     * rather than measured width.
+     */
+    alignItems: 'stretch',
     gap: space[4],
     padding: space[5],
   },
@@ -1001,7 +1034,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     bottom: space[4],
-    height: 148,
+    height: previewHeight,
     overflow: 'hidden',
     position: 'absolute',
     right: space[4],
@@ -1031,6 +1064,8 @@ const styles = StyleSheet.create({
     height: space[16],
     width: space[16],
   },
+  body: { gap: space[3], paddingBottom: space[4] },
+  bodyScroll: { flex: 1 },
   room: { flex: 1 },
   searching: { alignItems: 'center', gap: space[3] },
   simulation: {
@@ -1054,9 +1089,18 @@ const styles = StyleSheet.create({
   stage: {
     alignItems: 'center',
     backgroundColor: color.surfaceInset,
-    flex: 1,
     justifyContent: 'center',
+    minHeight: 320,
     padding: space[5],
+    /*
+     * The preview's own height, reserved.
+     *
+     * The picture-in-picture is positioned over the stage and the pane beneath
+     * it holds words — a name, and the sentence about what is carrying them. A
+     * device showed the sentence running underneath the preview, which is the
+     * same defect the web surface had and is fixed the same way.
+     */
+    paddingBottom: previewHeight + space[8],
   },
   step: { flex: 1 },
 });

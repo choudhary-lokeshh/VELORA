@@ -16,6 +16,18 @@ import { color } from '../../src/design/tokens';
  * default carries each platform's own palette, and this product's accent is one
  * of the few things that should look the same on an iPhone and on a Pixel.
  */
+/**
+ * Which tab a cold launch lands on.
+ *
+ * Declared rather than left to the router. Expo Router picks an initial route
+ * from its own sorted route list, which is alphabetical — so with Live added
+ * the application opened on Discover, and the destination the product is
+ * arranged around was one tap away on every launch. Proved on an Android
+ * device; the rendered bar was already correct, which is why nothing on screen
+ * looked wrong until somebody launched it.
+ */
+export const unstable_settings = { initialRouteName: 'live' };
+
 export default function TabLayout() {
   const signals = useTabSignals();
 
