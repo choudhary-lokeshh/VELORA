@@ -62,8 +62,19 @@ export function ConsumerGate({ children }: { readonly children: ReactNode }) {
   // itself. Falling through to the ladder on a failure told a member of a year
   // that there is no account behind their sign-in, and offered them a button
   // that would try to create the one they already have.
+  //
+  // Both reads are checked, and each against its own value, because either one
+  // alone is enough to make the question unanswerable: an onboarding read that
+  // failed leaves `journeyStage(undefined)` reporting `account_required`, which
+  // is the same wrong sentence arrived at from the other direction. A read that
+  // failed but still holds the previous answer is not this case -- the resource
+  // keeps the last good value precisely so a revalidation never blanks a
+  // screen, and the last good value is still enough to decide on.
   const failure = account.error ?? onboarding.error;
-  if (failure !== undefined && account.value === undefined) {
+  const undecidable =
+    (account.error !== undefined && account.value === undefined) ||
+    (onboarding.error !== undefined && onboarding.value === undefined);
+  if (failure !== undefined && undecidable) {
     return (
       <AccountUnreadableScreen
         message={failure}

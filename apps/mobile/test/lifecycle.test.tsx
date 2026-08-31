@@ -292,6 +292,25 @@ describe('the gate', () => {
     });
   });
 
+  /**
+   * The same wrong sentence, arrived at from the other read.
+   *
+   * `journeyStage(undefined)` reports `account_required`, so an onboarding read
+   * that failed put an admitted member in front of "create your account" just
+   * as surely as an account read that failed -- and the first version of the
+   * guard above only checked one of them.
+   */
+  it('says so when the onboarding read is the one that failed', async () => {
+    const double = createMobileApiDouble(admittedState());
+    double.refuseNext('/v1/users/me/onboarding', 500, 'INTERNAL');
+    const { view } = await launch({ double });
+
+    await waitFor(() => {
+      expect(view.getByTestId('account-failed')).toBeTruthy();
+    });
+    expect(view.queryByTestId('create-account')).toBeNull();
+  });
+
   it('shows the onboarding ladder to somebody with no account yet', async () => {
     const state = admittedState();
     // Both reads 404 for somebody who has authenticated and never created an
