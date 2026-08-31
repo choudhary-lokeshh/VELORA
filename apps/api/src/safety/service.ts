@@ -1,6 +1,7 @@
 import type { TransactionHandle } from '../database/executor.js';
 import { lockPair } from '../database/pair-lock.js';
 import { lockSubject } from '../database/subject-lock.js';
+import type { LiveEncounterEnforcementPort } from '../live/enforcement.js';
 import type { RtcCallEnforcementPort } from '../realtime/enforcement.js';
 import type { UserAccountRow } from '../users/repository.js';
 import type { UsersService } from '../users/service.js';
@@ -101,6 +102,15 @@ export interface SafetyServiceDependencies {
    * call in progress, in the same transaction.
    */
   readonly calls?: RtcCallEnforcementPort;
+  /**
+   * LIVE's published enforcement contract, when this composition has one.
+   *
+   * Separate from `calls` because they are separate rows with separate owners:
+   * ending the RTC session that carries a random encounter does not end the
+   * encounter, and ending the encounter does not tear down the session. A block
+   * has to do both, in this transaction, under this pair lock.
+   */
+  readonly liveEncounters?: LiveEncounterEnforcementPort;
   readonly now: () => Date;
   readonly repository: SafetyRepository;
   readonly targets: ReportTargetResolver;
@@ -161,6 +171,18 @@ export class SafetyService {
         // is answered idempotently, and a call that somehow outlived an earlier
         // block should still be ended rather than reported as fine.
         await this.dependencies.calls?.endLiveCallForPair({
+          executor,
+          first: actor.id,
+          now,
+          second: targetId,
+        });
+        // And the random live encounter, if these two were meeting through
+        // live discovery. Two calls because they are two rows owned by two
+        // domains: the session is REALTIME's and the encounter is LIVE's, and
+        // neither writes the other's table. Both end here, together, so a block
+        // placed while two strangers are on camera stops that rather than
+        // refusing the next thing they try.
+        await this.dependencies.liveEncounters?.endLiveEncounterForPair({
           executor,
           first: actor.id,
           now,

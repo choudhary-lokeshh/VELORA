@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import {
@@ -61,6 +61,38 @@ export class UsersRepository {
       .where(eq(userAccounts.id, id))
       .limit(1);
     return rows[0];
+  }
+
+  /**
+   * Active consumer accounts, oldest first, excluding one.
+   *
+   * Deliberately narrow and deliberately not a search: no filter, no cursor, no
+   * ordering choice, and a caller-supplied bound that is small. It exists for
+   * exactly one consumer — the local live-discovery stand-in, which needs a
+   * deterministic eligible account to put in the matching pool so one developer
+   * can walk a two-person feature — and `LIVE_DISCOVERY_SIMULATION` is refused
+   * outside local and test, so nothing in a deployed environment composes the
+   * adapter that calls it.
+   *
+   * Ordered by creation and then by identifier so the same world produces the
+   * same first account every time. A random order would make a walked scenario
+   * unrepeatable, which is the one property a simulation has to have.
+   */
+  async listActive(
+    executor: AnyExecutor,
+    input: { readonly excludeId: string; readonly limit: number },
+  ): Promise<readonly UserAccountRow[]> {
+    return executor
+      .select()
+      .from(userAccounts)
+      .where(
+        and(
+          eq(userAccounts.status, 'active'),
+          ne(userAccounts.id, input.excludeId),
+        ),
+      )
+      .orderBy(userAccounts.createdAt, userAccounts.id)
+      .limit(input.limit);
   }
 
   /**

@@ -23,6 +23,30 @@ export const rtcCallMediums = ['voice', 'video'] as const;
 export type RtcCallMedium = (typeof rtcCallMediums)[number];
 
 /**
+ * Why a session exists, and therefore which relationship authorizes it.
+ *
+ * Two values, and the distinction is the whole of what separates a call from a
+ * random live encounter. `introduced` is the original: two people who are
+ * mutually introduced, one of whom placed a call, and the relationship that
+ * authorizes it is DISCOVERY's introduction. `live_discovery` is two people the
+ * server put together because both were waiting to meet somebody, and the fact
+ * that authorizes it is LIVE's encounter — which is a fact with a lifetime of
+ * minutes rather than a standing relationship.
+ *
+ * It is a stored column rather than something inferred from which reference is
+ * present, because every eligibility recomposition has to ask the *same*
+ * question the session was created under. Inferring it would mean a session
+ * whose introduction was closed silently changing which predicate it is judged
+ * by, which is exactly how a live encounter would become a standing permission.
+ *
+ * [ADR-0025](../../../../docs/decisions/ADR-0025-rtc-live-communications-architecture.md)
+ * left this seam open in as many words; [ADR-0040](../../../../docs/decisions/ADR-0040-random-live-discovery.md)
+ * is what walks through it.
+ */
+export const rtcSessionPurposes = ['introduced', 'live_discovery'] as const;
+export type RtcSessionPurpose = (typeof rtcSessionPurposes)[number];
+
+/**
  * Where a call is in its life.
  *
  * `invited` is the only entry state, and every path out of it is explicit. The
@@ -157,6 +181,15 @@ export const rtcEndReasons = [
   'join_timeout',
   /** An operator terminated it under audited authority. */
   'operator_terminated',
+  /**
+   * The random live encounter this session existed for is over.
+   *
+   * Distinct from `hung_up`, and the distinction is not cosmetic: a live
+   * session is ended by LIVE when the encounter ends, which happens for
+   * several reasons only one of which is somebody hanging up. Recording all of
+   * them as `hung_up` would put a decision in the row that nobody took.
+   */
+  'encounter_ended',
 ] as const;
 export type RtcEndReason = (typeof rtcEndReasons)[number];
 
@@ -179,6 +212,7 @@ const reasonsByTerminalState: Readonly<
     'reconnect_expired',
     'provider_failed',
     'operator_terminated',
+    'encounter_ended',
   ],
   expired: ['invitation_expired'],
   failed: ['provider_unavailable', 'provider_failed', 'join_timeout'],

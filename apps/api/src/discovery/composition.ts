@@ -11,7 +11,10 @@ import { DiscoveryRepository } from './repository.js';
 import { DiscoveryRoutes } from './routes.js';
 import type { CandidateSafetyPort } from './safety.js';
 import { discoveryOutbox } from './schema.js';
-import { DiscoveryService } from './service.js';
+import {
+  DiscoveryService,
+  type LiveEncounterIntroducibilityPort,
+} from './service.js';
 
 export interface DiscoveryRuntime {
   /** The connection fact this domain publishes to MESSAGING. */
@@ -39,6 +42,15 @@ export function createDiscoveryRuntime(input: {
   readonly consumerContext: ConsumerContextResolver;
   readonly database: UsersDatabase;
   readonly directory: ConsumerDirectory;
+  /**
+   * LIVE's published answer about two people having met live recently.
+   *
+   * Optional because a composition without live discovery has no live
+   * encounters to introduce from, not because the rule is optional where they
+   * exist. When it is absent this domain behaves exactly as it did before
+   * ADR-0040: only a current candidate may be signalled.
+   */
+  readonly liveEncounters?: LiveEncounterIntroducibilityPort;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
   readonly onboarding: OnboardingService;
@@ -51,6 +63,9 @@ export function createDiscoveryRuntime(input: {
   const service = new DiscoveryService({
     directory: input.directory,
     introductions,
+    ...(input.liveEncounters === undefined
+      ? {}
+      : { liveEncounters: input.liveEncounters }),
     logger: input.logger,
     now: input.now ?? (() => new Date()),
     onboarding: input.onboarding,

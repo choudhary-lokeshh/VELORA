@@ -10,6 +10,11 @@ import type {
   BlockList,
   CancelSubscriptionBody,
   Call,
+  LiveConnectionResult,
+  LiveMedium,
+  LiveMessageList,
+  LiveSimulationScenario,
+  LiveState,
   CheckoutResponse,
   ClubAccessList,
   ClubDetail,
@@ -262,6 +267,73 @@ export interface ConsumerApi {
    * what makes a block landing mid-call take effect.
    */
   joinAuthorization(callId: string): Promise<ApiResult<JoinAuthorization>>;
+  /**
+   * The one authoritative read behind live discovery.
+   *
+   * Reading is also how presence is expressed: there is no gateway and no
+   * heartbeat endpoint, so a client that is looking at the screen is the client
+   * that is reading this. It never allocates anybody — a surface that only
+   * wants to know where it stands can call it without being put into an
+   * encounter.
+   */
+  liveState(signal?: AbortSignal): Promise<ApiResult<LiveState>>;
+  /**
+   * Enters the matching pool, and takes an allocation if one is available.
+   *
+   * Idempotent, which is what makes it safe to poll while the screen says
+   * "Finding someone": entering while already searching refreshes presence and
+   * tries again, and entering while already matched returns the encounter
+   * rather than opening a second search.
+   *
+   * It names a medium and never a person. There is deliberately no way to ask
+   * for a particular stranger, so this client cannot express one.
+   */
+  startLiveSearch(medium: LiveMedium): Promise<ApiResult<LiveState>>;
+  /**
+   * Next: ends the named encounter and resumes searching.
+   *
+   * The encounter is named so a Next pressed a second too late cannot end the
+   * encounter that replaced it. Pressing it twice is safe.
+   */
+  advanceLiveEncounter(encounterId: string): Promise<ApiResult<LiveState>>;
+  /** Leaves live discovery entirely. Safe to repeat. */
+  leaveLiveDiscovery(): Promise<ApiResult<LiveState>>;
+  /**
+   * The messages exchanged inside one encounter.
+   *
+   * These belong to the encounter and never to a conversation: a temporary
+   * meeting does not become Inbox history, and no surface built on this may
+   * present it as though it had.
+   */
+  liveMessages(
+    encounterId: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<LiveMessageList>>;
+  sendLiveMessage(input: {
+    readonly body: string;
+    readonly clientMessageId: string;
+    readonly encounterId: string;
+  }): Promise<ApiResult<LiveMessageList>>;
+  /**
+   * Connect: signals this person's own interest, once.
+   *
+   * One tap never produces a mutual connection. The answer is `requested`
+   * unless the other person had already signalled independently, in which case
+   * it is `connected` and names the durable conversation that now exists.
+   */
+  connectInLiveEncounter(
+    encounterId: string,
+  ): Promise<ApiResult<LiveConnectionResult>>;
+  /**
+   * Applies one deterministic local scenario.
+   *
+   * Local development only. Configuration refuses the simulation adapter
+   * outside local and test, so this answers `503` everywhere else — which is
+   * why a surface offers it only when `liveState().simulated` is true.
+   */
+  applyLiveSimulation(
+    scenario: LiveSimulationScenario,
+  ): Promise<ApiResult<{ readonly applied: boolean }>>;
   candidates(
     query: PageQuery,
     signal?: AbortSignal,
@@ -662,6 +734,67 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         api.POST('/v1/rtc/calls/join-authorization', {
           ...(await writing()),
           body: { callId },
+        }),
+      ),
+
+    liveState: async (signal) =>
+      attempt(async () => api.GET('/v1/live/sessions', await reading(signal))),
+
+    startLiveSearch: async (medium) =>
+      attempt(async () =>
+        api.POST('/v1/live/sessions', {
+          ...(await writing()),
+          body: { medium },
+        }),
+      ),
+
+    advanceLiveEncounter: async (encounterId) =>
+      attempt(async () =>
+        api.POST('/v1/live/transitions', {
+          ...(await writing()),
+          body: { encounterId },
+        }),
+      ),
+
+    // No body, because there is one place a person can be and the server
+    // already knows which. A leave that named the wrong encounter would be a
+    // leave that did not leave.
+    leaveLiveDiscovery: async () =>
+      attempt(async () => api.POST('/v1/live/departures', await writing())),
+
+    liveMessages: async (encounterId, signal) =>
+      attempt(async () =>
+        api.GET('/v1/live/messages', {
+          ...(await reading(signal)),
+          params: { query: { encounterId } },
+        }),
+      ),
+
+    sendLiveMessage: async (input) =>
+      attempt(async () =>
+        api.POST('/v1/live/messages', {
+          ...(await writing()),
+          body: {
+            body: input.body,
+            clientMessageId: input.clientMessageId,
+            encounterId: input.encounterId,
+          },
+        }),
+      ),
+
+    connectInLiveEncounter: async (encounterId) =>
+      attempt(async () =>
+        api.POST('/v1/live/connections', {
+          ...(await writing()),
+          body: { encounterId },
+        }),
+      ),
+
+    applyLiveSimulation: async (scenario) =>
+      attempt(async () =>
+        api.POST('/v1/live/simulation', {
+          ...(await writing()),
+          body: { scenario },
         }),
       ),
 

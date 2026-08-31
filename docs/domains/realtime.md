@@ -36,13 +36,15 @@ Exactly two participants exist, they are distinct, and their roles are fixed at 
 
 ## Eligibility
 
-RTC introduces no new social relationship, because inventing one would create a second, weaker answer to a question DISCOVERY and TRUST & SAFETY already own. A call is permitted exactly where the existing server-side communication relationship already permits contact:
+RTC introduces no new social relationship, because inventing one would create a second, weaker answer to a question DISCOVERY, LIVE, and TRUST & SAFETY already own. A session is permitted exactly where the existing server-side relationship already permits contact:
 
 - the caller is an authenticated Consumer principal on the Consumer audience;
 - the caller's account is in a standing that permits interaction;
-- DISCOVERY reports a current mutual introduction between the two;
+- the relationship the session was created under is still current;
 - TRUST & SAFETY reports no pairwise block;
 - TRUST & SAFETY reports no live enforcement denying consumer interaction to either party.
+
+The third predicate is the only one that depends on *why* the session exists, and since [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) a session carries a `purpose` that says which question to ask. An `introduced` session — a call somebody placed — is judged against DISCOVERY's current mutual introduction. A `live_discovery` session — two strangers the server put together — is judged against LIVE's current encounter. The purpose is a stored column rather than something inferred from which reference is present, because inference would let a session silently change which predicate judges it, which is precisely how a few minutes of random discovery would become a standing permission. A session with neither reference, or with both, is refused by the schema.
 
 That composition is taken on invitation, on acceptance, on every join-authorization issuance, and on every reconnect. It is taken inside the transaction that writes, under the pair lock, on the caller's executor — the same discipline `docs/domains/messaging.md` and `docs/domains/notifications.md` already follow, and for the same reason: a check that commits separately from the write it authorizes is not a check.
 

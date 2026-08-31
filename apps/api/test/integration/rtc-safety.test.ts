@@ -317,6 +317,7 @@ describe('a block and the ending of the call commit together', () => {
         executor: database.drizzle,
         first: caller,
         now: now(),
+        purpose: 'introduced',
         second: recipient,
       }),
     ).toBe(false);

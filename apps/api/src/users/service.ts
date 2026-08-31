@@ -76,4 +76,26 @@ export class UsersService {
     const { repository } = this.dependencies;
     return repository.findById(repository.transactionless, id);
   }
+
+  /**
+   * A deterministic, bounded list of active consumer accounts.
+   *
+   * Published for exactly one consumer: the local live-discovery stand-in,
+   * which has to put a real, eligible account into the matching pool so that a
+   * developer alone in a local world can walk a feature that needs two people.
+   * `LIVE_DISCOVERY_SIMULATION` is refused outside local and test, so nothing
+   * in a deployed environment composes the adapter that calls this.
+   *
+   * It is not a directory, not a search, and not a feed. It carries no filter,
+   * no cursor, and no ordering choice, and it deliberately returns accounts
+   * rather than profiles — a caller that wanted to *show* somebody would use
+   * `ConsumerDirectory`, which applies the visibility rules this does not.
+   */
+  async listActiveAccounts(input: {
+    readonly excludeId: string;
+    readonly limit: number;
+  }): Promise<readonly UserAccountRow[]> {
+    const { repository } = this.dependencies;
+    return repository.listActive(repository.transactionless, input);
+  }
 }

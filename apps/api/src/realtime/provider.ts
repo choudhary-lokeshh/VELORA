@@ -52,6 +52,18 @@ export interface RtcProviderCapabilities {
   readonly rawBodyAuthenticatedEvents: boolean;
   /** Whether relay credentials are ephemeral rather than static. */
   readonly ephemeralRelayCredentials: boolean;
+  /**
+   * Whether this adapter actually carries audio and video between two people.
+   *
+   * The one capability that is about the *medium* rather than about control of
+   * it, and the one a product surface has to be able to read. `local-test`
+   * answers every control operation faithfully and reaches no network at all,
+   * so a surface that inferred "a provider is configured, therefore people can
+   * see each other" would be wrong about the only thing a person on a live
+   * screen cares about. Asked here rather than by comparing adapter names, so
+   * the day a real provider is approved there is one place that changes.
+   */
+  readonly carriesMedia: boolean;
   readonly mediums: readonly RtcCallMedium[];
   /**
    * Always false, and asserted to be. A provider that can record is not
@@ -218,6 +230,7 @@ export class RtcProviderUnavailableError extends Error {
 export class UnavailableRtcProvider implements RtcProviderPort {
   readonly account = 'unavailable';
   readonly capabilities: RtcProviderCapabilities = {
+    carriesMedia: false,
     ephemeralRelayCredentials: false,
     mediums: [],
     participantRevocation: false,

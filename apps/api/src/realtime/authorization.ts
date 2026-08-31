@@ -135,6 +135,12 @@ export class RtcJoinAuthorizationService {
             executor,
             first: held.pairLowId,
             now,
+            // The session's own purpose, read from the row rather than assumed.
+            // A random live session is re-authorized against the encounter that
+            // created it, and a call against the introduction, on every single
+            // issuance — which is what makes an encounter that has just ended
+            // refuse the reconnect somebody's client is already attempting.
+            purpose: held.purpose,
             second: held.pairHighId,
           }))
         ) {

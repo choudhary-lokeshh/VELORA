@@ -70,6 +70,8 @@ export const callEndReasonSchema = z.enum([
   'provider_unavailable',
   'join_timeout',
   'ended_by_platform',
+  /** The random live encounter this session existed for is over. */
+  'encounter_ended',
 ]);
 
 /** Which side of the call the caller of this API is on. Derived, never sent. */

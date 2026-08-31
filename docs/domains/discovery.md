@@ -139,9 +139,19 @@ Live pairs are excluded from the feed in both directions. Somebody already intro
 
 No idempotency key is required on a signal. The live-pair index already makes a repeat return the same introduction, so a client key would add a second mechanism for a property the database already guarantees.
 
+### A second reason two people may be introduced
+
+Ordinary discovery introduces people it showed each other: the target has to be a candidate the viewer could be shown at that instant, which is the revalidation above. [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) adds one more reason, and only one — the *server* put the two of them together in a random live encounter, recently.
+
+Without it, Connect after a good live conversation would silently fail whenever the peer was not a current candidate of the caller's: a different language, a closed availability window, a rotation that was never going to surface them. That is most of them, and it is the whole product.
+
+The arm is bounded by the same window that stops the matcher handing the same two people to each other again, because it is a reason to introduce *now* rather than a permission that outlives the meeting. It is deliberately not restricted to a *live* encounter: pressing Connect and the encounter ending race constantly, and somebody whose Connect lost that race by a few milliseconds has still met the person.
+
+DISCOVERY keeps the rule. LIVE supplies the fact through a published contract that answers one boolean, and it is asked inside the writing transaction on the caller's own executor — a point-in-time revalidation taken on a different connection a moment earlier would leave a window under an authorization. A composition without live discovery answers `false` and this domain behaves exactly as it did before.
+
 ### The connection contract
 
-MESSAGING consumes the mutual fact through a published DISCOVERY contract rather than by reading `discovery_introductions`. The contract answers two questions and no others: whether a particular introduction is mutual and includes the caller, and whether two people currently hold a mutual introduction. It does not say who signalled first, when a signal expired, whether the pair ever declined, or what closed an earlier attempt, because the moment any of that were published another domain could start making decisions that belong to this one.
+MESSAGING consumes the mutual fact through a published DISCOVERY contract rather than by reading `discovery_introductions`. The contract answers three questions and no others: whether a particular introduction is mutual and includes the caller, whether two people currently hold a mutual introduction, and — since ADR-0040, for the live surface that has to render a Connect control — where the introduction between the caller and one other person stands from the caller's own side. That third answer is deliberately actor-scoped and says only what the caller has done and what has been done to them, which is exactly what the Introductions screen already shows them: absent, expired, and declined are one answer, because "they declined you" and "nobody ever signalled" are two different disclosures about another person's decision and neither is the caller's to receive. It does not say who signalled first, when a signal expired, whether the pair ever declined, or what closed an earlier attempt, because the moment any of that were published another domain could start making decisions that belong to this one.
 
 The second question accepts the caller's executor. MESSAGING asks it inside the transaction that persists a message, so "the connection was still live when the message was accepted" is a fact about one commit rather than about two.
 

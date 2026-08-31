@@ -1,7 +1,7 @@
 import { defaultPageSize } from '@velora/validation';
 import type { SafeLogger } from '@velora/observability/server';
 
-import type { TransactionHandle } from '../database/executor.js';
+import type { Executor, TransactionHandle } from '../database/executor.js';
 import { lockPair } from '../database/pair-lock.js';
 import type { OutboxAppendPort } from '../events/outbox.js';
 import {
@@ -105,9 +105,41 @@ export type PassOutcome =
   /** A pass against oneself is meaningless and is refused rather than stored. */
   | { readonly kind: 'invalid_target' };
 
+/**
+ * The second reason two people may be introduced, and the only one DISCOVERY
+ * does not derive itself.
+ *
+ * Ordinary discovery introduces people it showed each other: the target has to
+ * be a candidate the viewer could be shown at this instant, which is what
+ * `isIntroducible` asks. Random live discovery introduces people the *server*
+ * put together, and one of them is very often not a candidate of the other's —
+ * different language, a closed availability window, a rotation that was never
+ * going to surface them. Requiring feed eligibility there would mean Connect
+ * silently failing after a good conversation, which is the whole product.
+ *
+ * So LIVE publishes this, DISCOVERY consumes it, and the rule stays here: being
+ * put together live is a reason to be introducible, and it is bounded — the
+ * encounter has to be recent — because it is a reason to introduce *now* rather
+ * than a standing permission to introduce somebody afterwards.
+ *
+ * It is declared here rather than imported from LIVE, on the rule
+ * `docs/architecture/03-domain-boundaries.md` sets: a consumer declares the
+ * contract it needs and the owner supplies it at the composition root.
+ */
+export interface LiveEncounterIntroducibilityPort {
+  hasMetLiveRecently(input: {
+    readonly executor: Executor;
+    readonly first: string;
+    readonly now: Date;
+    readonly second: string;
+  }): Promise<boolean>;
+}
+
 export interface DiscoveryServiceDependencies {
   readonly directory: ConsumerDirectory;
   readonly introductions: IntroductionRepository;
+  /** Absent in a composition that does not run live discovery. */
+  readonly liveEncounters?: LiveEncounterIntroducibilityPort;
   readonly logger: SafeLogger;
   readonly now: () => Date;
   readonly onboarding: OnboardingService;
@@ -455,7 +487,16 @@ export class DiscoveryService {
           }),
           now,
         );
-        if (existing === undefined && !introducible) {
+        if (
+          existing === undefined &&
+          !introducible &&
+          !(await this.hasMetLiveRecently(
+            executor,
+            viewer.id,
+            candidateId,
+            now,
+          ))
+        ) {
           // Absent and not-permitted answer identically, so probing this
           // endpoint discloses nothing about another account.
           return { kind: 'not_found' };
@@ -699,6 +740,29 @@ export class DiscoveryService {
       viewerRegion: viewer.region,
     });
     return matches.length === 1;
+  }
+
+  /**
+   * Whether a live encounter is the reason these two may be introduced.
+   *
+   * Asked inside the writing transaction, on the caller's own executor, rather
+   * than beside the feed-eligibility read that happens before it. The feed
+   * answer is a point-in-time revalidation of a page somebody is holding; this
+   * one is an authorization, and an authorization taken on a different
+   * connection a moment earlier is an authorization with a window under it.
+   *
+   * A composition without live discovery answers `false` here and behaves
+   * exactly as this domain did before ADR-0040.
+   */
+  private async hasMetLiveRecently(
+    executor: Executor,
+    first: string,
+    second: string,
+    now: Date,
+  ): Promise<boolean> {
+    const live = this.dependencies.liveEncounters;
+    if (live === undefined) return false;
+    return live.hasMetLiveRecently({ executor, first, now, second });
   }
 
   private async viewOf(

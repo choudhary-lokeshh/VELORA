@@ -130,6 +130,12 @@ const truncationRoots = [
   // MEDIA holds no foreign key to any other domain — an owner is an opaque
   // reference — so nothing cascades into it and the asset is its own root. Its
   // sessions, objects, and obligations follow by cascade.
+  // LIVE references consumer accounts, the RTC session carrying an encounter,
+  // and the introduction two people may have signalled by opaque identifier
+  // with no foreign key, so nothing cascades into it and both of its roots are
+  // listed. Messages follow the encounter by cascade.
+  'live_encounters',
+  'live_participations',
   'media_assets',
   'messaging_conversations',
   'messaging_outbox',

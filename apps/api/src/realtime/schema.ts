@@ -28,6 +28,7 @@ import {
   rtcProviderEventStates,
   rtcProviderObligationStates,
   rtcProviderObligations,
+  rtcSessionPurposes,
   rtcSessionStates,
   terminalRtcSessionStates,
   type RtcCallMedium,
@@ -36,6 +37,7 @@ import {
   type RtcProviderEventState,
   type RtcProviderObligation,
   type RtcProviderObligationState,
+  type RtcSessionPurpose,
   type RtcSessionState,
 } from './policy.js';
 
@@ -103,8 +105,31 @@ export const realtimeSessions = pgTable(
     /** The invitation's own deadline. Expiry is decided against this column. */
     invitationExpiresAt: timestamptz('invitation_expires_at').notNull(),
     medium: text('medium').notNull().$type<RtcCallMedium>(),
-    /** The mutual introduction that authorized this call to exist at all. */
-    originIntroductionId: uuid('origin_introduction_id').notNull(),
+    /**
+     * The live encounter that authorized this session to exist at all, when
+     * that is what did.
+     *
+     * Present on exactly the sessions whose purpose is `live_discovery`, and a
+     * reference rather than a foreign key, on the cross-domain rule Phase 1
+     * recorded: LIVE owns the encounter and its deletion policy, and this
+     * domain must not be able to rewrite either by holding a constraint on it.
+     */
+    liveEncounterId: uuid('live_encounter_id'),
+    /**
+     * The mutual introduction that authorized this call to exist at all, when
+     * that is what did.
+     *
+     * Nullable since ADR-0040, and conditional rather than optional: the check
+     * below makes it present on exactly the `introduced` sessions. A session
+     * with neither reference, or with both, is not a session this platform
+     * knows how to re-authorize.
+     */
+    originIntroductionId: uuid('origin_introduction_id'),
+    /** Which relationship authorizes this session. Never a request field. */
+    purpose: text('purpose')
+      .notNull()
+      .default('introduced')
+      .$type<RtcSessionPurpose>(),
     /** Adapter carrying this call. Configuration, never a request field. */
     provider: text('provider'),
     providerBoundAt: timestamptz('provider_bound_at'),
@@ -173,6 +198,13 @@ export const realtimeSessions = pgTable(
       .on(table.invitationExpiresAt)
       .where(sql`${table.state} = 'invited'`),
     uniqueIndex('realtime_sessions_sequence_uk').on(table.sequence),
+    // One session per live encounter, ever. This is what makes opening a live
+    // session idempotent without a client key: a second attempt loses to the
+    // index and then reads the session that already exists, so two clients
+    // reaching for media at the same instant produce one room rather than two.
+    uniqueIndex('realtime_sessions_live_encounter_uk').on(
+      table.liveEncounterId,
+    ),
     // One provider room per key. The key is committed before the provider is
     // contacted, so this is what stops a retry creating a second room.
     uniqueIndex('realtime_sessions_provider_key_uk').on(
@@ -192,6 +224,23 @@ export const realtimeSessions = pgTable(
     check(
       'realtime_sessions_medium_check',
       inList(table.medium, rtcCallMediums),
+    ),
+    check(
+      'realtime_sessions_purpose_check',
+      inList(table.purpose, rtcSessionPurposes),
+    ),
+    // Exactly one authorizing reference, and it is the one the purpose names.
+    // Written as two paired equivalences rather than as a disjunction so that
+    // neither "an introduced session with no introduction" nor "a live session
+    // carrying one" can be recorded — the second being the shape that would
+    // turn a few minutes of random discovery into a standing permission.
+    check(
+      'realtime_sessions_purpose_introduction_check',
+      sql`(${table.purpose} = 'introduced') = (${table.originIntroductionId} is not null)`,
+    ),
+    check(
+      'realtime_sessions_purpose_encounter_check',
+      sql`(${table.purpose} = 'live_discovery') = (${table.liveEncounterId} is not null)`,
     ),
     check(
       'realtime_sessions_end_reason_check',

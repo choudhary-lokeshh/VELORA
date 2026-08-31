@@ -1,4 +1,5 @@
 import type { Executor } from '../database/executor.js';
+import type { RtcSessionPurpose } from './policy.js';
 
 /**
  * The answer REALTIME needs and does not own.
@@ -31,6 +32,16 @@ export interface RtcCallEligibilityPort {
     readonly executor: Executor;
     readonly first: string;
     readonly now: Date;
+    /**
+     * Which relationship this session is judged by, taken from the session
+     * itself rather than from the caller's situation.
+     *
+     * It is required rather than defaulted. A default would mean a new call
+     * site that forgot it silently got the *introduced* answer, and the two
+     * answers are not interchangeable: one asks about a standing relationship
+     * and the other about a live encounter that expires in minutes.
+     */
+    readonly purpose: RtcSessionPurpose;
     readonly second: string;
   }): Promise<boolean>;
 }
@@ -73,6 +84,41 @@ export interface RtcRelationshipPort {
     readonly first: string;
     readonly second: string;
   }): Promise<boolean>;
+}
+
+/**
+ * LIVE's answer, as the narrowest question REALTIME asks of it.
+ *
+ * A random live session is authorized by two people currently being in one
+ * encounter, and by nothing else. It is asked in exactly the places the mutual
+ * introduction is asked — on creation, on every join-authorization issuance,
+ * and on every reconnect — so an encounter ending kills the session's
+ * authorization at the same instant a closed introduction kills a call's.
+ *
+ * That is the property that stops random discovery becoming a standing
+ * permission: there is no version of this question that a person can pass
+ * because they once met somebody.
+ */
+export interface RtcLiveEncounterPort {
+  hasLiveEncounter(input: {
+    readonly executor: Executor;
+    readonly first: string;
+    readonly second: string;
+  }): Promise<boolean>;
+}
+
+/**
+ * Refuses every pair, which is what an environment with no LIVE domain
+ * composed should answer.
+ *
+ * Composed by default rather than left undefined, so a `live_discovery` session
+ * in a process that does not run live discovery is refused rather than reaching
+ * an optional dependency nobody checked.
+ */
+export class UnavailableRtcLiveEncounters implements RtcLiveEncounterPort {
+  hasLiveEncounter(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
 }
 
 export interface RtcPairSafetyPort {
@@ -123,6 +169,8 @@ export class ComposedRtcCallEligibility implements RtcCallEligibilityPort {
   constructor(
     private readonly dependencies: {
       readonly enforcement: RtcEnforcementPort;
+      /** Absent in a composition that does not run live discovery. */
+      readonly liveEncounters?: RtcLiveEncounterPort;
       readonly relationship: RtcRelationshipPort;
       readonly safety: RtcPairSafetyPort;
       readonly standing: RtcStandingPort;
@@ -133,6 +181,7 @@ export class ComposedRtcCallEligibility implements RtcCallEligibilityPort {
     readonly executor: Executor;
     readonly first: string;
     readonly now: Date;
+    readonly purpose: RtcSessionPurpose;
     readonly second: string;
   }): Promise<boolean> {
     // Nobody calls themselves, and no pair lock or relationship makes that
@@ -179,9 +228,27 @@ export class ComposedRtcCallEligibility implements RtcCallEligibilityPort {
       if (!decision.allowed) return false;
     }
 
-    // Last, because it is the fact most likely to still hold: the relationship
-    // that authorized contact in the first place is still current. A mutual
-    // introduction that has since closed is not a standing permission to call.
+    // Last, because it is the fact most likely to still hold: whatever
+    // authorized contact in the first place is still current. Which question
+    // that is depends on the session's purpose, and the three predicates above
+    // are shared precisely because safety, standing, and enforcement do not
+    // care how two people came to be talking.
+    //
+    // A mutual introduction that has since closed is not a standing permission
+    // to call; an encounter that has since ended is not a standing permission
+    // to be in a random live session. Same rule, two owners.
+    if (input.purpose === 'live_discovery') {
+      const liveEncounters = this.dependencies.liveEncounters;
+      // A composition that does not run live discovery refuses rather than
+      // falling through to the introduction arm, which would authorize a
+      // random session against a relationship it was never created under.
+      if (liveEncounters === undefined) return false;
+      return liveEncounters.hasLiveEncounter({
+        executor: input.executor,
+        first: input.first,
+        second: input.second,
+      });
+    }
     return this.dependencies.relationship.isMutuallyIntroduced({
       executor: input.executor,
       first: input.first,

@@ -305,6 +305,37 @@ export const unavailableRtcProvider = 'unavailable';
 export const localTestRtcProvider = 'local-test';
 
 /**
+ * Whether anybody may be admitted to random live discovery, and whether a
+ * deterministic peer stands in for a second person.
+ *
+ * Two values, on the same rule the RTC pair follows: they refuse for
+ * independent reasons and either alone is enough to stop a stranger meeting a
+ * stranger.
+ *
+ * `LIVE_DISCOVERY_MODE` gates the *product*. `unavailable` admits nobody to the
+ * matching pool, which is the only behaviour a deployed environment may have
+ * while the decisions behind live calling are open — no approved RTC provider,
+ * no call retention duration, no regional availability, no recording posture,
+ * and nobody on call for it. `open` admits accounts that pass every existing
+ * consumer eligibility predicate and nothing weaker.
+ *
+ * `LIVE_DISCOVERY_SIMULATION` gates the *stand-in*. `unavailable` means a match
+ * is only ever another real waiting account. `local-test` lets the matcher pair
+ * a waiting person with a seeded local account and drive that account's side
+ * through the same published service methods a person's client calls — which is
+ * what makes the whole loop walkable by one developer, without a single
+ * fabricated row, count, or presence. It is refused outside local and test by
+ * the guard below, exactly as the RTC and media adapters are.
+ *
+ * Neither value can be reached by a route, header, query parameter, or request
+ * field.
+ */
+export const unavailableLiveDiscovery = 'unavailable';
+export const openLiveDiscovery = 'open';
+export const unavailableLiveSimulation = 'unavailable';
+export const localTestLiveSimulation = 'local-test';
+
+/**
  * Notification delivery channels. No email, push, or SMS provider is approved —
  * country coverage, consent, deliverability, and privacy review are all pending
  * in `docs/decisions/DECISIONS_REQUIRED.md` — so `unavailable` is the only
@@ -480,6 +511,12 @@ export const serverConfigSchema = z
         localTestIdentityVerificationProvider,
       ])
       .default(unavailableIdentityVerificationProvider),
+    LIVE_DISCOVERY_MODE: z
+      .enum([unavailableLiveDiscovery, openLiveDiscovery])
+      .default(unavailableLiveDiscovery),
+    LIVE_DISCOVERY_SIMULATION: z
+      .enum([unavailableLiveSimulation, localTestLiveSimulation])
+      .default(unavailableLiveSimulation),
     LOG_LEVEL: logLevelSchema.default('info'),
     MESSAGING_SAFETY_ELIGIBILITY: z
       .enum([unavailableSafetyEligibility, trustAndSafetyEligibility])
@@ -676,6 +713,20 @@ export const serverConfigSchema = z
         path: ['REALTIME_CALL_ELIGIBILITY'],
       });
     }
+    if (config.LIVE_DISCOVERY_MODE !== unavailableLiveDiscovery) {
+      context.addIssue({
+        code: 'custom',
+        message: `LIVE_DISCOVERY_MODE is not usable in ${config.APP_ENV}: random live discovery puts two strangers into a call, and no RTC provider is approved to carry one, no call retention duration exists, regional availability and recording posture are undecided, and RTC operations ownership is unassigned; see DECISIONS_REQUIRED`,
+        path: ['LIVE_DISCOVERY_MODE'],
+      });
+    }
+    if (config.LIVE_DISCOVERY_SIMULATION !== unavailableLiveSimulation) {
+      context.addIssue({
+        code: 'custom',
+        message: `LIVE_DISCOVERY_SIMULATION is not usable in ${config.APP_ENV}: it stands a seeded local account in for a second person so one developer can walk the whole loop, and an environment with real people in it must never match somebody with one`,
+        path: ['LIVE_DISCOVERY_SIMULATION'],
+      });
+    }
     if (config.REALTIME_RTC_PROVIDER !== unavailableRtcProvider) {
       context.addIssue({
         code: 'custom',
@@ -845,6 +896,8 @@ export function redactServerConfig(config: ServerConfig) {
     identityJurisdictionPolicy: config.IDENTITY_JURISDICTION_POLICY,
     identityVerificationProvider: config.IDENTITY_VERIFICATION_PROVIDER,
     logLevel: config.LOG_LEVEL,
+    liveDiscoveryMode: config.LIVE_DISCOVERY_MODE,
+    liveDiscoverySimulation: config.LIVE_DISCOVERY_SIMULATION,
     notificationDeliveryChannel: config.NOTIFICATIONS_DELIVERY_CHANNEL,
     port: config.PORT,
     rtcCallEligibility: config.REALTIME_CALL_ELIGIBILITY,

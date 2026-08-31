@@ -133,6 +133,32 @@ export type JoinAuthorization = JsonBody<
   200
 >;
 
+/**
+ * Everything a live-discovery surface renders, in one authoritative answer.
+ *
+ * One shape rather than several, because the states are mutually exclusive and
+ * a client assembling them from separate reads could hold a combination the
+ * server never had — searching *and* matched, or matched to an encounter that
+ * has ended. There is no count of who is waiting or who is online anywhere in
+ * it: no presence projection exists, so a number here would be invented.
+ */
+export type LiveState = JsonBody<'/v1/live/sessions', 'get', 200>;
+export type LiveEncounter = NonNullable<LiveState['encounter']>;
+export type LiveConnectionState = LiveEncounter['connection']['state'];
+export type LiveEndReason = NonNullable<LiveEncounter['endReason']>;
+export type LiveMedium = NonNullable<LiveState['medium']>;
+export type LiveMessageList = JsonBody<'/v1/live/messages', 'get', 200>;
+export type LiveMessage = LiveMessageList['messages'][number];
+export type LiveConnectionResult = JsonBody<
+  '/v1/live/connections',
+  'post',
+  200
+>;
+export type LiveSimulationScenario = RequestBody<
+  '/v1/live/simulation',
+  'post'
+>['scenario'];
+
 export type BlockList = JsonBody<'/v1/safety/blocks', 'get', 200>;
 export type Block = BlockList['blocks'][number];
 export type ReportList = JsonBody<'/v1/safety/reports', 'get', 200>;

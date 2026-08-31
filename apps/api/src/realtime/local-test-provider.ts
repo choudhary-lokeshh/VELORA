@@ -51,6 +51,9 @@ interface LocalSession {
 export class LocalTestRtcProvider implements RtcProviderPort {
   readonly account = 'default';
   readonly capabilities: RtcProviderCapabilities = {
+    // Never true. This adapter reaches no network and carries no packet, so a
+    // surface reading it is told the truth rather than "a provider exists".
+    carriesMedia: false,
     ephemeralRelayCredentials: true,
     mediums: rtcCallMediums,
     participantRevocation: true,

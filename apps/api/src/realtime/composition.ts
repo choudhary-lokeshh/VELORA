@@ -20,9 +20,11 @@ import {
   UnavailableRtcCallEligibility,
   type RtcCallEligibilityPort,
   type RtcEnforcementPort,
+  type RtcLiveEncounterPort,
   type RtcPairSafetyPort,
   type RtcStandingPort,
 } from './eligibility.js';
+import { RtcLiveSessions } from './live-sessions.js';
 import { RtcJoinAuthorizationService } from './authorization.js';
 import { RtcCallEnforcement } from './enforcement.js';
 import { RtcOperations } from './operations.js';
@@ -45,6 +47,12 @@ import { RtcService, type RtcAdmissionPort } from './service.js';
 
 export interface RealtimeRuntime {
   readonly authorization: RtcJoinAuthorizationService;
+  /**
+   * The live-session contract this domain publishes to LIVE: open, read,
+   * establish, end. It carries no authority to admit anybody — a client asks
+   * for a join credential through the route that re-composes eligibility.
+   */
+  readonly liveSessions: RtcLiveSessions;
   /**
    * What TRUST & SAFETY is allowed to do to a call: end it. Published here so
    * the application can hand it to SAFETY without SAFETY reaching into this
@@ -153,6 +161,7 @@ function selectCallEligibility(input: {
   readonly config: ServerConfig;
   readonly connections: ConnectionDirectoryPort;
   readonly enforcement?: RtcEnforcementPort;
+  readonly liveEncounters?: RtcLiveEncounterPort;
   readonly override?: RtcCallEligibilityPort;
   readonly safety?: RtcPairSafetyPort;
   readonly standing?: RtcStandingPort;
@@ -178,6 +187,13 @@ function selectCallEligibility(input: {
   }
   return new ComposedRtcCallEligibility({
     enforcement: input.enforcement,
+    // Absent in a composition that does not run live discovery, which then
+    // refuses every `live_discovery` session rather than falling through to
+    // the introduction arm — a session judged by a relationship it was never
+    // created under would be a live encounter becoming a standing permission.
+    ...(input.liveEncounters === undefined
+      ? {}
+      : { liveEncounters: input.liveEncounters }),
     relationship: input.connections,
     safety: input.safety,
     standing: input.standing,
@@ -203,6 +219,8 @@ export function createRealtimeRuntime(input: {
   readonly eligibility?: RtcCallEligibilityPort;
   /** TRUST & SAFETY's live-enforcement answer for one subject. */
   readonly enforcement?: RtcEnforcementPort;
+  /** LIVE's published answer about a pair being in a live encounter. */
+  readonly liveEncounters?: RtcLiveEncounterPort;
   readonly now?: () => Date;
   readonly onboarding: RtcAdmissionPort;
   /** TRUST & SAFETY's pairwise answer. */
@@ -234,6 +252,9 @@ export function createRealtimeRuntime(input: {
     ...(input.enforcement === undefined
       ? {}
       : { enforcement: input.enforcement }),
+    ...(input.liveEncounters === undefined
+      ? {}
+      : { liveEncounters: input.liveEncounters }),
     ...(input.eligibility === undefined ? {} : { override: input.eligibility }),
     ...(input.safety === undefined ? {} : { safety: input.safety }),
     ...(input.standing === undefined ? {} : { standing: input.standing }),
@@ -263,6 +284,7 @@ export function createRealtimeRuntime(input: {
   return {
     authorization,
     eligibility,
+    liveSessions: new RtcLiveSessions({ provider, repository, service }),
     enforcement: new RtcCallEnforcement(input.database, { signals }),
     reconciliation: new RtcReconciler({
       logger: input.logger ?? silentFallbackLogger,

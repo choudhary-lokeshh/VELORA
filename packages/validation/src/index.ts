@@ -152,6 +152,16 @@ import {
   joinAuthorizationSchema,
 } from './realtime.js';
 import {
+  liveConnectionResponseSchema,
+  liveEncounterActionRequestSchema,
+  liveMessageListResponseSchema,
+  liveSearchRequestSchema,
+  liveSimulationRequestSchema,
+  liveSimulationResponseSchema,
+  liveStateResponseSchema,
+  sendLiveMessageRequestSchema,
+} from './live.js';
+import {
   markNotificationsReadRequestSchema,
   notificationListResponseSchema,
   notificationPreferencesResponseSchema,
@@ -220,6 +230,7 @@ export * from './billing.js';
 export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
+export * from './live.js';
 export * from './media.js';
 export * from './messaging.js';
 export * from './realtime.js';
@@ -383,6 +394,12 @@ export const apiRoutePaths = {
   rtcCallTermination: '/v1/rtc/calls/termination',
   rtcCalls: '/v1/rtc/calls',
   rtcProviderEvents: '/v1/rtc/provider-events',
+  liveConnections: '/v1/live/connections',
+  liveDepartures: '/v1/live/departures',
+  liveMessages: '/v1/live/messages',
+  liveSessions: '/v1/live/sessions',
+  liveSimulation: '/v1/live/simulation',
+  liveTransitions: '/v1/live/transitions',
   notifications: '/v1/notifications',
   notificationDeviceRevocations: '/v1/notifications/devices/revocations',
   notificationDevices: '/v1/notifications/devices',
@@ -556,6 +573,14 @@ export const apiSchemas = {
   IntroductionReferenceRequest: introductionReferenceRequestSchema,
   Call: callSchema,
   CallActionRequest: callActionRequestSchema,
+  LiveConnectionResponse: liveConnectionResponseSchema,
+  LiveEncounterActionRequest: liveEncounterActionRequestSchema,
+  LiveMessageListResponse: liveMessageListResponseSchema,
+  LiveSearchRequest: liveSearchRequestSchema,
+  LiveSimulationRequest: liveSimulationRequestSchema,
+  LiveSimulationResponse: liveSimulationResponseSchema,
+  LiveStateResponse: liveStateResponseSchema,
+  SendLiveMessageRequest: sendLiveMessageRequestSchema,
   Conversation: conversationSchema,
   CreateCallRequest: createCallRequestSchema,
   JoinAuthorization: joinAuthorizationSchema,
@@ -627,6 +652,7 @@ export const apiQueryParameters = {
   assetId: z.uuid(),
   caseId: z.uuid(),
   deliveryId: z.uuid(),
+  encounterId: z.uuid(),
   moderationQueue: moderationQueueSchema,
   ownerDomain: adminIdentityOwnerDomainSchema,
   ownerReference: z.uuid(),
@@ -841,6 +867,18 @@ const mediaStorageUnavailableResponse = {
 const mediaDeliveryUnavailableResponse = {
   description: `No approved media delivery provider is configured for this environment, so no address can be produced for anything. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. It is a statement about the platform rather than about any asset named in the request, which is why it is one answer for the whole call rather than a per-asset omission. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
   headers: { [retryAfterResponseHeader]: retryAfterHeader },
+  schemaName: 'ApiError',
+} as const;
+
+const liveDiscoveryUnavailableResponse = {
+  description: `Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
+  headers: { [retryAfterResponseHeader]: retryAfterHeader },
+  schemaName: 'ApiError',
+} as const;
+
+const liveEncounterNotFoundResponse = {
+  description:
+    'No encounter of the caller matches that identifier. Somebody else\u2019s encounter, an encounter that never existed, and one the caller has already left are deliberately indistinguishable. The body is an ApiError.',
   schemaName: 'ApiError',
 } as const;
 
@@ -3370,6 +3408,187 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'A mutual introduction requires both people to opt in independently. Two simultaneous reciprocal signals produce exactly one introduction.',
+  },
+  {
+    method: 'get',
+    operationId: 'getLiveState',
+    path: apiRoutePaths.liveSessions,
+    responses: {
+      '200': {
+        description:
+          'Everything a live surface renders, in one authoritative answer: admission, whether the caller is idle, searching, matched, or ended, and the current encounter when there is one. It carries no count of who is waiting or who is online, because no presence projection exists and a number here would be invented.',
+        schemaName: 'LiveStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'The one authoritative read behind live discovery. A client that missed a change asks this rather than assembling state from several endpoints.',
+  },
+  {
+    method: 'post',
+    operationId: 'startLiveSearch',
+    path: apiRoutePaths.liveSessions,
+    requestSchemaName: 'LiveSearchRequest',
+    responses: {
+      '200': {
+        description:
+          'Live state after entering the pool: searching, or matched when somebody eligible was already waiting. Repeating the request while already searching or matched returns the current state rather than opening a second search.',
+        schemaName: 'LiveStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The account may not take part in live discovery right now, or a live-discovery bound has been reached — code ${productErrorCodes.rateLimited} in that last case. Which eligibility predicate refused is deliberately not disclosed.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': liveDiscoveryUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Enters the random matching pool. The request names a medium and never a person; the server decides who, if anybody, the caller meets.',
+  },
+  {
+    method: 'post',
+    operationId: 'advanceLiveEncounter',
+    path: apiRoutePaths.liveTransitions,
+    requestSchemaName: 'LiveEncounterActionRequest',
+    responses: {
+      '200': {
+        description:
+          'Live state after the named encounter was ended and searching resumed. An encounter that had already ended is not an error: the answer is current state, because pressing Next twice is ordinary.',
+        schemaName: 'LiveStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The account may not take part in live discovery right now. The body is an ApiError.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': liveDiscoveryUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Next: ends the named encounter and resumes searching. Naming the encounter is what stops a late Next ending the encounter that replaced it.',
+  },
+  {
+    method: 'post',
+    operationId: 'leaveLiveDiscovery',
+    path: apiRoutePaths.liveDepartures,
+    responses: {
+      '200': {
+        description:
+          'Live state after leaving: idle, with any live encounter ended and any live session terminated. Repeating it is safe.',
+        schemaName: 'LiveStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Leaves live discovery entirely. It takes no body: there is one place a person can be, and the server already knows which.',
+  },
+  {
+    method: 'get',
+    operationId: 'getLiveMessages',
+    path: apiRoutePaths.liveMessages,
+    requestQuery: [
+      {
+        description: 'The encounter whose messages to read',
+        name: 'encounterId',
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Messages exchanged inside that encounter, oldest first. These belong to the encounter and never to a conversation: a temporary meeting does not become Inbox history.',
+        schemaName: 'LiveMessageListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': liveEncounterNotFoundResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'sendLiveMessage',
+    path: apiRoutePaths.liveMessages,
+    requestSchemaName: 'SendLiveMessageRequest',
+    responses: {
+      '200': {
+        description:
+          'The encounter\u2019s messages after the send, including the one just written. A repeated client message identifier returns the same message rather than writing a second.',
+        schemaName: 'LiveMessageListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The encounter is over, or the pair may no longer interact. The body is an ApiError, and it never says which.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': liveEncounterNotFoundResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Writes into the live encounter. Nothing written here reaches the Inbox; durable messaging begins at mutual connection and not before.',
+  },
+  {
+    method: 'post',
+    operationId: 'connectInLiveEncounter',
+    path: apiRoutePaths.liveConnections,
+    requestSchemaName: 'LiveEncounterActionRequest',
+    responses: {
+      '200': {
+        description:
+          'The relationship after this person signalled: requested, or connected when the other person had already signalled independently. A single tap never produces a mutual connection.',
+        schemaName: 'LiveConnectionResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The pair may not be introduced right now, or the caller\u2019s own standing does not permit it. The body is an ApiError, and it never says which.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': liveEncounterNotFoundResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Connect: signals this person\u2019s own interest through the same introduction contract Discover uses, so a live meeting and a browsed one produce one relationship and one conversation.',
+  },
+  {
+    method: 'post',
+    operationId: 'applyLiveSimulation',
+    path: apiRoutePaths.liveSimulation,
+    requestSchemaName: 'LiveSimulationRequest',
+    responses: {
+      '200': {
+        description:
+          'Whether the deterministic stand-in applied the named scenario. Each scenario drives a seeded local account through the same published service methods a person\u2019s client calls.',
+        schemaName: 'LiveSimulationResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': {
+        description: `No live-discovery simulation adapter is configured, which is the only behaviour staging and production may have. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
+        headers: { [retryAfterResponseHeader]: retryAfterHeader },
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Local development only. Configuration refuses the simulation adapter outside local and test, so this endpoint answers 503 everywhere else.',
   },
   {
     method: 'post',

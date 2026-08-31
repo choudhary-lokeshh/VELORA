@@ -187,6 +187,7 @@ export class RtcService {
             executor,
             first: actor.id,
             now,
+            purpose: 'introduced',
             second: connection.counterpartId,
           }))
         ) {
@@ -302,6 +303,7 @@ export class RtcService {
           executor,
           first: held.pairLowId,
           now,
+          purpose: held.purpose,
           second: held.pairHighId,
         }))
       ) {
@@ -363,6 +365,126 @@ export class RtcService {
       reason: 'hung_up',
       terminal: 'ended',
     });
+  }
+
+  /**
+   * Opens the session that carries a random live encounter, or returns the one
+   * it already has.
+   *
+   * The whole of what makes this different from `invite` is *who decided*. An
+   * invitation is one person reaching for another and has to be answered; an
+   * encounter is the platform having already put two people together because
+   * both asked to meet somebody, so there is nobody left to ask. Everything
+   * else is identical, deliberately: the same eligibility composition, the same
+   * pair lock, the same transaction, the same provider orchestration, the same
+   * join credentials, the same revocation obligations, the same operator read.
+   * A second lifecycle for random sessions would be a second, weaker answer to
+   * questions this one already answers.
+   *
+   * It is not a consumer route and never will be. LIVE calls it, having already
+   * established that these two people are in an encounter; a client that could
+   * reach it would be a client that could name its own peer.
+   *
+   * The encounter is re-verified here rather than trusted, through the same
+   * eligibility port every other path uses. LIVE having just written the
+   * encounter is not a reason to skip the check — it is a reason the check
+   * passes.
+   */
+  async openLiveSession(input: {
+    readonly liveEncounterId: string;
+    readonly medium: RtcCallMedium;
+    readonly first: string;
+    readonly second: string;
+  }): Promise<
+    | { readonly kind: 'session'; readonly session: RtcSessionRow }
+    | { readonly kind: 'denied' }
+  > {
+    const now = this.dependencies.now();
+    return this.dependencies.repository.transaction(async (executor) => {
+      await lockPair(executor, input.first, input.second);
+      if (
+        !(await this.dependencies.eligibility.mayCall({
+          executor,
+          first: input.first,
+          now,
+          purpose: 'live_discovery',
+          second: input.second,
+        }))
+      ) {
+        return { kind: 'denied' as const };
+      }
+
+      const created = await this.dependencies.repository.insertLiveSession(
+        executor,
+        {
+          first: input.first,
+          id: crypto.randomUUID(),
+          liveEncounterId: input.liveEncounterId,
+          medium: input.medium,
+          now,
+          second: input.second,
+        },
+      );
+      if (created !== undefined) {
+        return { kind: 'session' as const, session: created };
+      }
+
+      // The encounter already has a session. The loser of the unique index
+      // reads the winner's rather than opening a second, which is what makes
+      // two clients reaching for media at the same instant produce one room.
+      const existing = await this.dependencies.repository.findByLiveEncounter(
+        executor,
+        input.liveEncounterId,
+      );
+      if (existing === undefined) {
+        throw new Error('Live session vanished between insert and read');
+      }
+      return { kind: 'session' as const, session: existing };
+    });
+  }
+
+  /**
+   * Ends the session a live encounter was using, because the encounter is over.
+   *
+   * Called by LIVE and by nobody else. It takes no actor, because an encounter
+   * ends for reasons that are not a person's decision — presence lapsing, a
+   * session that could not be carried, a safety decision — and attributing one
+   * of those to a participant would record a decision nobody took.
+   *
+   * Idempotent, and silent about a session that is already terminal: a retried
+   * teardown is the ordinary case. Ending advances the authorization
+   * generation, which is what makes any credential already in flight dead at
+   * the platform boundary before the provider has finished being told.
+   */
+  async endLiveSession(sessionId: string): Promise<boolean> {
+    const now = this.dependencies.now();
+    const ended = await this.dependencies.repository.transaction(
+      async (executor) => {
+        const held = await this.dependencies.repository.lockById(
+          executor,
+          sessionId,
+        );
+        if (held === undefined) return undefined;
+        if (isTerminalRtcSessionState(held.state)) return undefined;
+        if (held.state === 'invited') {
+          // Unreachable for a live session, which is created `accepted`. Guarded
+          // anyway rather than assumed, because the transition map refuses
+          // `invited -> ended` for every reason except safety and a silent
+          // failure here would leave a session nobody owes anything about.
+          return undefined;
+        }
+        return this.dependencies.repository.terminateSession(executor, {
+          expected: held.state,
+          id: sessionId,
+          now,
+          reason: 'encounter_ended',
+          terminal: 'ended',
+        });
+      },
+    );
+    if (ended === undefined) return false;
+    this.announce(ended);
+    return true;
   }
 
   /** One call the actor is a participant of. */

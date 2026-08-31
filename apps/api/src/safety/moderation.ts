@@ -1,6 +1,7 @@
 import type { TransactionHandle } from '../database/executor.js';
 import { lockSubject } from '../database/subject-lock.js';
 import type { ConversationEnforcementPort } from '../messaging/enforcement.js';
+import type { LiveEncounterEnforcementPort } from '../live/enforcement.js';
 import type { RtcCallEnforcementPort } from '../realtime/enforcement.js';
 import type { ConsumerEnforcementPort } from '../users/enforcement.js';
 import { decodeCaseCursor, encodeCaseCursor } from './cursor.js';
@@ -266,6 +267,8 @@ export interface ModerationServiceDependencies {
    * part of imposing a restriction rather than afterwards.
    */
   readonly calls?: RtcCallEnforcementPort;
+  /** LIVE's published enforcement contract, when this composition has one. */
+  readonly liveEncounters?: LiveEncounterEnforcementPort;
   readonly conversations: ConversationEnforcementPort;
   readonly now: () => Date;
   readonly repository: SafetyRepository;
@@ -886,6 +889,15 @@ export class ModerationService {
       // dies with it. In the same transaction as the restriction, so the two
       // cannot disagree.
       await this.dependencies.calls?.endLiveCallsForSubject({
+        executor,
+        now: input.now,
+        userId: input.found.targetId,
+      });
+      // And every random live encounter, which also takes the account out of
+      // the matching pool: a restricted account must not be handed to the next
+      // person waiting, and refusing them at their next search would leave them
+      // matched with somebody in the meantime.
+      await this.dependencies.liveEncounters?.endLiveEncountersForSubject({
         executor,
         now: input.now,
         userId: input.found.targetId,

@@ -99,6 +99,7 @@ export class RtcRepository {
         originIntroductionId: input.originIntroductionId,
         pairHighId: pair.high,
         pairLowId: pair.low,
+        purpose: 'introduced',
         state: 'invited',
         stateEnteredAt: input.now,
         updatedAt: input.now,
@@ -126,6 +127,99 @@ export class RtcRepository {
       },
     ]);
     return session;
+  }
+
+  /**
+   * Opens the session that carries a random live encounter, already answered.
+   *
+   * Deliberately not an invitation. Neither person was invited: both entered
+   * the matching pool, which is a stronger and earlier consent than answering a
+   * ring, and modelling it as `invited` would produce a session that one of
+   * them had to accept before the other could be heard — plus an
+   * `invitationExpiresAt` deadline that means nothing and a `rejected` path
+   * neither of them can reach. So it is created in `accepted`, with both
+   * participants already marked as having accepted, at the instant the server
+   * put them together.
+   *
+   * `initiatorId` is one of the two, because a session's own check constraint
+   * requires it and the participant roles are a fixed pair. It carries no
+   * product meaning here — nobody called anybody — and the surfaces built on
+   * this never render a caller or a recipient for a live encounter.
+   *
+   * Idempotency is decided by the unique index over the encounter rather than
+   * by a prior read, which two clients reaching for media at the same instant
+   * would both pass. The caller reads the winner's session when this returns
+   * `undefined`.
+   */
+  async insertLiveSession(
+    executor: Executor,
+    input: {
+      readonly first: string;
+      readonly id: string;
+      readonly liveEncounterId: string;
+      readonly medium: RtcCallMedium;
+      readonly now: Date;
+      readonly second: string;
+    },
+  ): Promise<RtcSessionRow | undefined> {
+    const pair = orderedPair(input.first, input.second);
+    const inserted = await executor
+      .insert(realtimeSessions)
+      .values({
+        acceptedAt: input.now,
+        authorizationGeneration: 1,
+        createdAt: input.now,
+        id: input.id,
+        initiatorId: pair.low,
+        // A live session has no invitation, so nothing is ever answered against
+        // this deadline. It is written as the creation instant rather than as a
+        // future time so that no sweep, no query, and no reader can mistake a
+        // live session for an invitation that is still standing.
+        invitationExpiresAt: input.now,
+        liveEncounterId: input.liveEncounterId,
+        medium: input.medium,
+        pairHighId: pair.high,
+        pairLowId: pair.low,
+        purpose: 'live_discovery',
+        state: 'accepted',
+        stateEnteredAt: input.now,
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    const session = inserted.at(0);
+    if (session === undefined) return undefined;
+
+    await executor.insert(realtimeParticipants).values([
+      {
+        acceptedAt: input.now,
+        invitedAt: input.now,
+        role: 'caller',
+        sessionId: session.id,
+        userId: pair.low,
+      },
+      {
+        acceptedAt: input.now,
+        invitedAt: input.now,
+        role: 'recipient',
+        sessionId: session.id,
+        userId: pair.high,
+      },
+    ]);
+    return session;
+  }
+
+  /** The session opened for one live encounter, if one has been. */
+  async findByLiveEncounter(
+    executor: Executor,
+    liveEncounterId: string,
+  ): Promise<RtcSessionRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.liveEncounterId, liveEncounterId))
+      .limit(1);
+    return rows.at(0);
   }
 
   /** The live call for a pair, if there is one. */

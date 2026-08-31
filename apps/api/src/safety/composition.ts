@@ -15,6 +15,7 @@ import {
   type IdentityDepictedPersonEvidenceReaderPort,
 } from '../identity/assurance-reader.js';
 import type { ConversationEnforcementPort } from '../messaging/enforcement.js';
+import type { LiveEncounterEnforcementPort } from '../live/enforcement.js';
 import type { RtcCallEnforcementPort } from '../realtime/enforcement.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import type { ConsumerEnforcementPort } from '../users/enforcement.js';
@@ -93,6 +94,8 @@ export function createSafetyRuntime(input: {
    * in progress, inside the transaction that records the decision.
    */
   readonly calls?: RtcCallEnforcementPort;
+  /** LIVE's published enforcement contract, when this composition has one. */
+  readonly liveEncounters?: LiveEncounterEnforcementPort;
   /** PRIVATE CLUBS' answer about what a visitor could have been looking at. */
   readonly catalog: SafetyCatalogTargetPort;
   /** Chooses the consent wording policy; Identity owns verification. */
@@ -128,6 +131,9 @@ export function createSafetyRuntime(input: {
   });
   const service = new SafetyService({
     ...(input.calls === undefined ? {} : { calls: input.calls }),
+    ...(input.liveEncounters === undefined
+      ? {}
+      : { liveEncounters: input.liveEncounters }),
     now,
     repository,
     targets,
@@ -165,6 +171,9 @@ export function createSafetyRuntime(input: {
       accounts: input.accounts,
       authority,
       ...(input.calls === undefined ? {} : { calls: input.calls }),
+      ...(input.liveEncounters === undefined
+        ? {}
+        : { liveEncounters: input.liveEncounters }),
       conversations: input.conversations,
       now,
       repository,

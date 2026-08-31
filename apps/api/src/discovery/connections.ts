@@ -1,5 +1,5 @@
 import type { DatabaseHandle, Executor } from '../database/executor.js';
-import { IntroductionRepository } from './introductions.js';
+import { hasExpired, IntroductionRepository } from './introductions.js';
 
 /**
  * The connection fact DISCOVERY publishes.
@@ -21,6 +21,25 @@ export interface MutualConnection {
   readonly counterpartId: string;
   readonly introductionId: string;
   readonly mutualAt: Date;
+}
+
+/**
+ * Where a pair's introduction stands, from one side of it.
+ *
+ * Narrower than it looks, and deliberately actor-scoped. It says what the
+ * *caller* has done and what has been done to them, which is exactly what the
+ * Introductions screen already shows them and no more: a person is entitled to
+ * know whether they reached out or somebody reached out to them, because both
+ * of those are their own actions and their own inbox.
+ *
+ * `none` covers absent, expired, and closed together, on the rule this whole
+ * contract follows: "they declined you" and "nobody ever signalled" are two
+ * different disclosures about another person's decision and neither is this
+ * caller's to receive, so they are one answer.
+ */
+export interface PairIntroductionStanding {
+  readonly introductionId: string | undefined;
+  readonly state: 'none' | 'requested' | 'received' | 'connected';
 }
 
 export interface ConnectionDirectoryPort {
@@ -59,6 +78,23 @@ export interface ConnectionDirectoryPort {
     readonly first: string;
     readonly second: string;
   }): Promise<boolean>;
+
+  /**
+   * Where the introduction between the caller and one other person stands.
+   *
+   * Added for LIVE, which has to render a Connect control that says whether it
+   * has already been pressed and by whom. It is published here rather than
+   * letting LIVE read `discovery_introductions`, on the rule
+   * `docs/architecture/03-domain-boundaries.md` sets — and it answers in the
+   * four states above rather than returning a row, so no consumer of this
+   * contract can start deciding what `pending` means.
+   */
+  standingFor(input: {
+    readonly actorId: string;
+    readonly counterpartId: string;
+    readonly executor?: Executor;
+    readonly now: Date;
+  }): Promise<PairIntroductionStanding>;
 }
 
 export class ConnectionDirectory implements ConnectionDirectoryPort {
@@ -99,5 +135,31 @@ export class ConnectionDirectory implements ConnectionDirectoryPort {
       second: input.second,
     });
     return row !== undefined;
+  }
+
+  async standingFor(input: {
+    readonly actorId: string;
+    readonly counterpartId: string;
+    readonly executor?: Executor;
+    readonly now: Date;
+  }): Promise<PairIntroductionStanding> {
+    const row = await this.introductions.findUnclosedPair(
+      input.executor ?? this.database,
+      { first: input.actorId, second: input.counterpartId },
+    );
+    if (row === undefined) return { introductionId: undefined, state: 'none' };
+    if (row.state === 'mutual') {
+      return { introductionId: row.id, state: 'connected' };
+    }
+    // An expired signal is reported as absent rather than as pending. It is:
+    // nobody is waiting on an answer to it, and the pair is free to signal
+    // again, which is exactly what `none` tells a surface to offer.
+    if (hasExpired(row, input.now)) {
+      return { introductionId: undefined, state: 'none' };
+    }
+    return {
+      introductionId: row.id,
+      state: row.initiatorId === input.actorId ? 'requested' : 'received',
+    };
   }
 }

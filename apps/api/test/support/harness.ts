@@ -432,6 +432,8 @@ export function testAdminRuntime(input: {
         connections: {
           isMutuallyIntroduced: () => Promise.resolve(false),
           mutualConnectionFor: () => Promise.resolve(undefined),
+          standingFor: () =>
+            Promise.resolve({ introductionId: undefined, state: 'none' }),
         },
         database,
         // Refuses every pair, whatever the configuration says. This runtime

@@ -49,6 +49,8 @@ const realtime = createRealtimeRuntime({
   connections: {
     isMutuallyIntroduced: () => Promise.resolve(false),
     mutualConnectionFor: () => Promise.resolve(undefined),
+    standingFor: () =>
+      Promise.resolve({ introductionId: undefined, state: 'none' as const }),
   },
   database: database.drizzle,
   eligibility: { mayCall: () => Promise.resolve(false) },

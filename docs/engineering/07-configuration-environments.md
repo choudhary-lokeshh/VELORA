@@ -171,6 +171,8 @@ than on a missing capability.
 |---|---|---|---|---|
 | `REALTIME_CALL_ELIGIBILITY` | No | Blocked in production | `unavailable` | `composed`, built from DISCOVERY and TRUST & SAFETY |
 | `REALTIME_RTC_PROVIDER` | No | Future provider; blocked in production | `unavailable` | `local-test`, in-process, no network, no media |
+| `LIVE_DISCOVERY_MODE` | No | Blocked in production | `unavailable` | `open`, admits eligible accounts to the random matching pool |
+| `LIVE_DISCOVERY_SIMULATION` | No | Blocked in production | `unavailable` | `local-test`, stands a seeded local account in for a second person |
 | `REALTIME_SIGNAL_TRANSPORT` | No | Safe default, permitted in every environment | `unavailable` | `redis`, fan-out over ephemeral Redis |
 
 The first two refuse for independent reasons and either alone stops a call.

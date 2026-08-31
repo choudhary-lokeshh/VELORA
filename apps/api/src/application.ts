@@ -81,6 +81,10 @@ import {
   type MessagingRuntime,
 } from './messaging/composition.js';
 import { RtcCallEnforcement } from './realtime/enforcement.js';
+import { createLiveRuntime, type LiveRuntime } from './live/composition.js';
+import { LiveEncounterDirectory } from './live/directory.js';
+import { LiveEncounterEnforcement } from './live/enforcement.js';
+import type { LiveRoutes } from './live/routes.js';
 import {
   createRealtimeRuntime,
   type RealtimeRuntime,
@@ -144,6 +148,13 @@ export interface ApplicationDependencies {
   readonly ephemeralRedis: HealthDependency;
   readonly logger: SafeLogger;
   readonly identity: IdentityRuntime;
+  /**
+   * Present in every composition that owns its database, which is every
+   * production one. A test that injects its own runtimes may omit it, and then
+   * publishes no live-discovery routes rather than publishing ones wired to a
+   * database it did not supply.
+   */
+  readonly live?: LiveRuntime;
   readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
   /**
@@ -219,6 +230,7 @@ export function createApplication(
   const injectedIdentity = options.dependencies?.identity;
   const injectedMessaging = options.dependencies?.messaging;
   const injectedRealtime = options.dependencies?.realtime;
+  const injectedLive = options.dependencies?.live;
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
@@ -237,6 +249,7 @@ export function createApplication(
   let identity: IdentityRuntime;
   let messaging: MessagingRuntime;
   let realtime: RealtimeRuntime | undefined;
+  let live: LiveRuntime | undefined;
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
@@ -406,6 +419,11 @@ export function createApplication(
         // therefore composed after it.
         calls: new RtcCallEnforcement(ownedDatabase.database),
         catalog: new ClubSafetyDirectory(),
+        // Ending a live encounter authorizes nothing either, and is built the
+        // same way and for the same reason: LIVE consumes SAFETY's eligibility
+        // answer and is therefore composed after it, so taking this from the
+        // live runtime would be a cycle needing a late setter.
+        liveEncounters: new LiveEncounterEnforcement(ownedDatabase.database),
         config,
         consumerContext: users.consumerContext,
         consumers: users.existence,
@@ -445,12 +463,23 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
+    // Built once and handed to both DISCOVERY and REALTIME. It is LIVE's two
+    // published facts about a pair, and it is constructed from the database
+    // handle rather than from LIVE's runtime precisely so both can be composed
+    // before LIVE exists — LIVE consumes contracts from both of them.
+    const liveEncounters = new LiveEncounterDirectory(ownedDatabase.database);
     discovery =
       injectedDiscovery ??
       createDiscoveryRuntime({
         consumerContext: users.consumerContext,
         database: ownedDatabase.database,
         directory: users.directory,
+        // Being put together live is a second reason two people may be
+        // introduced. Without it, Connect would silently fail after a good
+        // conversation whenever the peer was not a candidate of the caller's —
+        // a different language, a closed availability window — which is most of
+        // them.
+        liveEncounters,
         logger,
         onboarding: users.onboarding,
         safety: safety.directory,
@@ -477,8 +506,39 @@ export function createApplication(
         database: ownedDatabase.database,
         directory: users.directory,
         enforcement: safety.eligibility,
+        liveEncounters,
         logger,
         onboarding: users.onboarding,
+        safety: safety.directory,
+        standing: users.standing,
+      });
+    // LIVE last among the consumer domains, because it consumes a published
+    // contract from every one of them: USERS' admission and directory,
+    // DISCOVERY's introduction signal and pair standing, MESSAGING's
+    // conversation opener, TRUST & SAFETY's pairwise and enforcement answers,
+    // and REALTIME's live-session contract. It owns none of what they decide.
+    live =
+      injectedLive ??
+      createLiveRuntime({
+        accounts: users.service,
+        admission: users.onboarding,
+        config,
+        connections: discovery.connections,
+        consumerContext: users.consumerContext,
+        conversations: messaging.service,
+        database: ownedDatabase.database,
+        directory: users.directory,
+        enforcement: safety.eligibility,
+        introductions: {
+          // Adapted rather than passed, because DISCOVERY's own method takes a
+          // candidate and LIVE's port is named for what it does. The narrow
+          // shape is what stops LIVE acquiring the rest of the discovery
+          // service by accident.
+          signal: async (actor, counterpartId) =>
+            discovery.service.signalIntroduction(actor, counterpartId),
+        },
+        logger,
+        realtime: realtime.liveSessions,
         safety: safety.directory,
         standing: users.standing,
       });
@@ -588,6 +648,7 @@ export function createApplication(
     identity = injectedIdentity;
     messaging = injectedMessaging;
     realtime = injectedRealtime;
+    live = injectedLive;
     notifications = injectedNotifications;
     payouts = injectedPayouts;
     safety = injectedSafety;
@@ -626,6 +687,7 @@ export function createApplication(
     ephemeralRedis,
     logger,
     identity,
+    ...(live === undefined ? {} : { live }),
     media,
     messaging,
     notifications,
@@ -683,6 +745,28 @@ export function createApplication(
    * always has the runtime, so this refusal is reachable only from a test
    * composition that injected its own.
    */
+  /**
+   * Wraps one live-discovery handler on exactly the same terms as `rtcRoute`.
+   *
+   * The paths exist even where the runtime does not, because an absent route
+   * and a route that cannot serve are different facts and a client deserves the
+   * second one.
+   */
+  function liveRoute(
+    run: (routes: LiveRoutes, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (live === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(live.routes, input);
+    };
+  }
+
   function rtcRoute(
     run: (routes: RtcRoutes, input: RouteRequest) => Promise<RouteResult>,
   ): (input: RouteRequest) => Promise<RouteResult> {
@@ -1511,6 +1595,38 @@ export function createApplication(
     .post(
       apiRoutePaths.rtcCallTermination,
       admitted(rtcRoute(async (routes, input) => routes.endCall(input))),
+    )
+    .get(
+      apiRoutePaths.liveSessions,
+      admitted(liveRoute(async (routes, input) => routes.getState(input))),
+    )
+    .post(
+      apiRoutePaths.liveSessions,
+      admitted(liveRoute(async (routes, input) => routes.startSearch(input))),
+    )
+    .post(
+      apiRoutePaths.liveTransitions,
+      admitted(liveRoute(async (routes, input) => routes.advance(input))),
+    )
+    .post(
+      apiRoutePaths.liveDepartures,
+      admitted(liveRoute(async (routes, input) => routes.leave(input))),
+    )
+    .get(
+      apiRoutePaths.liveMessages,
+      admitted(liveRoute(async (routes, input) => routes.getMessages(input))),
+    )
+    .post(
+      apiRoutePaths.liveMessages,
+      admitted(liveRoute(async (routes, input) => routes.sendMessage(input))),
+    )
+    .post(
+      apiRoutePaths.liveConnections,
+      admitted(liveRoute(async (routes, input) => routes.connect(input))),
+    )
+    .post(
+      apiRoutePaths.liveSimulation,
+      admitted(liveRoute(async (routes, input) => routes.simulate(input))),
     )
     .post(
       apiRoutePaths.rtcCallJoinAuthorization,
