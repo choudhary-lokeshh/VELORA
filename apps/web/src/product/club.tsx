@@ -24,7 +24,7 @@ import {
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
-import { backTarget } from '../app/navigation';
+import { backTarget, signInHref } from '../app/navigation';
 import { useApi, useSession } from '../app/providers';
 import {
   cadenceLabels,
@@ -347,7 +347,7 @@ function LockedClub({
                 <Link
                   className="v-btn v-btn--primary"
                   data-testid="club-join-signin"
-                  href={`/sign-in?returnTo=${encodeURIComponent(`/c/${handle}/club/${slug}`)}`}
+                  href={signInHref(`/c/${handle}/club/${slug}`)}
                 >
                   Sign in to join
                 </Link>

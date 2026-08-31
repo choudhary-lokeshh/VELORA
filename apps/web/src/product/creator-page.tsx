@@ -36,7 +36,7 @@ import {
   ErrorMessage,
   Skeleton,
 } from '../design/primitives';
-import { backTarget } from '../app/navigation';
+import { backTarget, signInHref } from '../app/navigation';
 import { useApi, useSession, useToast } from '../app/providers';
 import {
   cadenceLabels,
@@ -283,7 +283,7 @@ function GiftPicker({
           <div>
             <Link
               className="v-btn v-btn--secondary"
-              href={`/sign-in?returnTo=${encodeURIComponent(`/c/${handle}`)}`}
+              href={signInHref(`/c/${handle}`)}
             >
               Sign in to choose
             </Link>
@@ -816,7 +816,7 @@ function MembershipCard({
             <Link
               className="v-btn v-btn--primary"
               data-testid={`club-join-signin-${club.slug}`}
-              href={`/sign-in?returnTo=${encodeURIComponent(`/c/${handle}`)}`}
+              href={signInHref(`/c/${handle}`)}
             >
               Sign in to join
             </Link>

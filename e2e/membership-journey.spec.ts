@@ -121,6 +121,44 @@ test.describe('Buying a membership', () => {
     const shopper = await page.context().browser()?.newContext();
     if (shopper === undefined) throw new Error('no browser for the buyer');
     try {
+      /* ------------------ the visitor who is not signed in -------------- */
+
+      // Before the buyer, the stranger. A creator's page is public, so the
+      // sign-in control on it is the first step of the purchase for anybody who
+      // arrived from the creator's own link -- and it has to come back here,
+      // because a stranger dropped on Discover has lost the creator they came
+      // for and the product has no way to offer them back.
+      //
+      // Asserted through the control rather than through an address written
+      // here: the parameter carrying the destination had two names for a while,
+      // only one of which anything read, and a test naming either would have
+      // agreed with whichever half was wrong.
+      //
+      // Its own context, because signing in is the thing being measured and a
+      // session shared with the buyer below would decide the outcome first.
+      for (const address of [`/c/${handle}`, `/c/${handle}/club/inner`]) {
+        const strangers = await page.context().browser()?.newContext();
+        if (strangers === undefined)
+          throw new Error('no browser for a visitor');
+        try {
+          const stranger = await strangers.newPage();
+          await stranger.goto(`${consumerWebOrigin}${address}`);
+          const control = stranger.locator('a[href^="/sign-in"]').first();
+          await expect(control).toBeVisible({ timeout: 30_000 });
+          await control.click();
+          await stranger.waitForURL(/\/sign-in/u, { timeout: 30_000 });
+          await stranger.getByTestId('sign-in-subject').fill(buyer.subject);
+          await stranger.getByTestId('sign-in-subject').press('Enter');
+          await stranger.waitForURL(
+            (url) => !url.pathname.startsWith('/sign-in'),
+            { timeout: 30_000 },
+          );
+          expect(new URL(stranger.url()).pathname).toBe(address);
+        } finally {
+          await strangers.close();
+        }
+      }
+
       const visitor = await shopper.newPage();
       await visitor.goto(`${consumerWebOrigin}/sign-in`);
       await visitor.getByTestId('sign-in-subject').fill(buyer.subject);

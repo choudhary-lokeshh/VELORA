@@ -7,6 +7,9 @@ import {
   destinations,
   nestedHref,
   parentOf,
+  returnParameter,
+  safeReturnPath,
+  signInHref,
 } from '../src/app/navigation';
 import { AppShell } from '../src/app/shell';
 import { admittedState, createApiDouble } from './support/api-double';
@@ -198,6 +201,57 @@ describe('the address a link carries', () => {
     const href = nestedHref('/c/aurora', from);
     const carried = new URL(href, 'http://web.test').searchParams.get('from');
     expect(backTarget('/c/aurora', carried)).toBe('/discover?show=creators');
+  });
+});
+
+/**
+ * The destination somebody was headed for when they were asked to sign in.
+ *
+ * It had two names and only one reader. The gate wrote `next`; the three public
+ * pages that offer a sign-in control wrote `returnTo`, and `returnTo` was read
+ * by nothing — so pressing "Sign in to join" on a creator's page signed you in
+ * and landed you on Discover, having dropped the creator you came for. These
+ * assertions are about the writer and the reader being the same thing, which is
+ * the only property that would have caught it.
+ */
+describe('the destination sign-in comes back to', () => {
+  it('writes it under the name the sign-in page reads', () => {
+    const href = signInHref('/c/ember_vale');
+    const carried = new URL(href, 'http://web.test').searchParams.get(
+      returnParameter,
+    );
+    expect(carried).toBe('/c/ember_vale');
+    expect(safeReturnPath(carried)).toBe('/c/ember_vale');
+  });
+
+  it('round-trips every public page that offers a sign-in control', () => {
+    for (const destination of [
+      '/c/ember_vale',
+      '/c/ember_vale/club/inner-circle',
+      '/welcome',
+      '/you/memberships',
+    ]) {
+      const href = signInHref(destination);
+      const carried = new URL(href, 'http://web.test').searchParams.get(
+        returnParameter,
+      );
+      expect(safeReturnPath(carried)).toBe(destination);
+    }
+  });
+
+  it('still refuses somebody else’s address', () => {
+    for (const hostile of [
+      'https://evil.test/steal',
+      '//evil.test/steal',
+      String.raw`/\evil.test`,
+      'javascript:alert(1)',
+    ]) {
+      const carried = new URL(
+        signInHref(hostile),
+        'http://web.test',
+      ).searchParams.get(returnParameter);
+      expect(safeReturnPath(carried)).toBeUndefined();
+    }
   });
 });
 

@@ -7,7 +7,7 @@ import { journeyStage } from '@velora/consumer-client';
 
 import { Button, EmptyState } from '../design/primitives';
 import { AppShell } from './shell';
-import { safeReturnPath } from './navigation';
+import { returnParameter, safeReturnPath, signInHref } from './navigation';
 import { useAccount, useSession } from './providers';
 
 /**
@@ -79,7 +79,7 @@ export function AppGate({
 
   useEffect(() => {
     if (session.known && !session.signedIn) {
-      router.replace(`/sign-in?next=${encodeURIComponent(pathname)}`);
+      router.replace(signInHref(pathname));
       return;
     }
     if (needsWelcome) router.replace('/welcome');
@@ -135,7 +135,7 @@ export function PublicGate({
   const router = useRouter();
   const session = useSession();
   const parameters = useSearchParams();
-  const requested = safeReturnPath(parameters.get('next'));
+  const requested = safeReturnPath(parameters.get(returnParameter));
 
   useEffect(() => {
     if (session.signedIn) router.replace(requested ?? redirectTo);
@@ -165,7 +165,7 @@ export function WelcomeGate({ children }: { readonly children: ReactNode }) {
 
   useEffect(() => {
     if (session.known && !session.signedIn) {
-      router.replace('/sign-in?next=%2Fwelcome');
+      router.replace(signInHref('/welcome'));
       return;
     }
     if (ready) router.replace('/discover');

@@ -172,6 +172,35 @@ export function backTarget(
 }
 
 /**
+ * The name the intended destination travels under, written once.
+ *
+ * It had two names. The gate sent people to sign in with `next`, and the three
+ * public pages that offer a sign-in control — a creator, a club, and the gift
+ * control on a creator — built theirs with `returnTo`. Only `next` was ever
+ * read, so every one of those three carried a destination that was silently
+ * dropped: somebody who pressed "Sign in to join" on a creator's page arrived
+ * at Discover, having lost the creator they came for. Those are the highest
+ * intent entry points on the site and the two immediately before money.
+ *
+ * A constant and a builder rather than a literal at each call site, so the two
+ * halves cannot drift apart again: the only thing that writes the parameter is
+ * the only thing that reads it.
+ */
+export const returnParameter = 'next';
+
+/**
+ * A sign-in address that comes back to where it was pressed.
+ *
+ * The destination is this origin's own path, which is what
+ * {@link safeReturnPath} then re-checks on the way out — written here as a path
+ * and validated again before it is followed, because a value that has been in
+ * an address bar is somebody else's string by the time it comes back.
+ */
+export function signInHref(destination: string): string {
+  return `/sign-in?${returnParameter}=${encodeURIComponent(destination)}`;
+}
+
+/**
  * Whether a deep link may be followed after authentication.
  *
  * Only a path on this origin. A value starting with two slashes or a scheme is
