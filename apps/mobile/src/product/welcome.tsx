@@ -185,6 +185,49 @@ export function UnavailableScreen() {
   );
 }
 
+/**
+ * A session that is real, and an account nobody could read.
+ *
+ * The distinction this screen exists to keep is between *there is no account*
+ * and *we could not ask*. They arrive here identically — a session, and no
+ * account value — and rendering the onboarding ladder for both told somebody
+ * who has been on VELORA for a year that there is no account behind their
+ * sign-in, over a failed request, next to a button that would then try to
+ * create the account they already have.
+ *
+ * A 404 is not this. The account reads map an absent account to a successful
+ * empty answer precisely because the client is asking about itself and already
+ * knows which it is, so the ladder still belongs to somebody who genuinely has
+ * no account. This is only for a read that failed.
+ *
+ * Consumer Web says the same thing on the same condition, and offers the same
+ * retry. The sentence is the server's own, not one invented here.
+ */
+export function AccountUnreadableScreen({
+  message,
+  onRetry,
+}: {
+  readonly message: string;
+  readonly onRetry?: (() => void) | undefined;
+}) {
+  return (
+    <View style={styles.launch} testID="account-failed">
+      <Wordmark />
+      <Text align="center" variant="small">
+        We could not load your account
+      </Text>
+      <Text align="center" tone="secondary" variant="small">
+        {message}
+      </Text>
+      {onRetry === undefined ? null : (
+        <Button onPress={onRetry} testID="account-failed-retry" tone="primary">
+          Try again
+        </Button>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1, gap: space[8], justifyContent: 'space-between' },
   form: { paddingBottom: space[4] },

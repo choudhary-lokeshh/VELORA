@@ -20,6 +20,7 @@ import type * as OnboardingModule from '../src/product/onboarding';
 import {
   admittedState,
   createMobileApiDouble,
+  type MobileApiDouble,
   type MobileApiState,
 } from './support/api-double';
 import { renderScreen } from './support/render';
@@ -103,6 +104,8 @@ function Product() {
 }
 
 async function launch(options?: {
+  /** An already-built double, when a test has to arrange it before mounting. */
+  readonly double?: MobileApiDouble;
   /** Called on every render of the onboarding ladder, before it renders. */
   readonly onboardingProbe?: () => void;
   readonly signedIn?: boolean;
@@ -110,7 +113,8 @@ async function launch(options?: {
   readonly store?: SecureTokenStore;
 }) {
   mockLadderProbe = options?.onboardingProbe;
-  const double = createMobileApiDouble(options?.state ?? admittedState());
+  const double =
+    options?.double ?? createMobileApiDouble(options?.state ?? admittedState());
   const store = options?.store ?? createInMemorySecureTokenStore();
   if (options?.signedIn !== false) {
     await store.write({
@@ -257,6 +261,35 @@ describe('the gate', () => {
       expect(view.getByTestId('product')).toBeTruthy();
     });
     expect(renders).toHaveLength(0);
+  });
+
+  /**
+   * "There is no account" and "we could not ask" are different sentences.
+   *
+   * They arrive at the gate identically -- a live session and no account value
+   * -- and only one of them is ever true of a member. Rendering the ladder for
+   * both told somebody who has been here a year that there is nothing behind
+   * their sign-in, over a failed request, beside a control that would then try
+   * to create the account they already have.
+   */
+  it('says the account could not be read rather than offering to create one', async () => {
+    const double = createMobileApiDouble(admittedState());
+    double.refuseNext('/v1/users/me', 500, 'INTERNAL');
+    const { view } = await launch({ double });
+
+    await waitFor(() => {
+      expect(view.getByTestId('account-failed')).toBeTruthy();
+    });
+    expect(view.queryByTestId('onboarding-screen')).toBeNull();
+    expect(view.queryByTestId('create-account')).toBeNull();
+    expect(view.queryByTestId('product')).toBeNull();
+
+    // And it is a retry rather than a dead end: the read is offered again and
+    // the product appears when it answers.
+    await fireEvent.press(view.getByTestId('account-failed-retry'));
+    await waitFor(() => {
+      expect(view.getByTestId('product')).toBeTruthy();
+    });
   });
 
   it('shows the onboarding ladder to somebody with no account yet', async () => {

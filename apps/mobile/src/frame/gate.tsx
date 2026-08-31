@@ -2,6 +2,7 @@ import { journeyStage } from '@velora/consumer-client';
 import type { ReactNode } from 'react';
 
 import {
+  AccountUnreadableScreen,
   LaunchScreen,
   UnavailableScreen,
   WelcomeScreen,
@@ -53,6 +54,23 @@ export function ConsumerGate({ children }: { readonly children: ReactNode }) {
   // answered, so coming back to the foreground never returns somebody to a
   // launch screen while the reads refresh underneath them.
   if (!account.settled || !onboarding.settled) return <LaunchScreen />;
+
+  // Either read failing is the same thing to somebody standing here: the
+  // surface cannot tell whether they are admitted. It is *not* the same as
+  // there being no account -- an absent account comes back as a successful
+  // empty answer, because these three reads are the account asking about
+  // itself. Falling through to the ladder on a failure told a member of a year
+  // that there is no account behind their sign-in, and offered them a button
+  // that would try to create the one they already have.
+  const failure = account.error ?? onboarding.error;
+  if (failure !== undefined && account.value === undefined) {
+    return (
+      <AccountUnreadableScreen
+        message={failure}
+        onRetry={session.account.reloadAll}
+      />
+    );
+  }
 
   if (account.value === undefined) return <OnboardingScreen />;
   if (journeyStage(onboarding.value) !== 'ready') return <OnboardingScreen />;
