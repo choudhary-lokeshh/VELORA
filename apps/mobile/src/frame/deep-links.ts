@@ -1,5 +1,12 @@
 import {
+  submittedClubSlugPattern,
+  submittedCreatorHandlePattern,
+} from '@velora/validation/address-bounds';
+
+import {
+  clubPath,
   conversationPath,
+  creatorPath,
   discoverPath,
   introductionsPath,
   messagesPath,
@@ -160,7 +167,9 @@ export function resolveDeepLink(url: string): ResolvedLink {
   const owner = foreignAddresses[first];
   if (owner !== undefined) return { kind: 'ignored', owner };
 
-  if (extra.length > 0)
+  // Every destination but a club is at most two segments deep, so depth is
+  // checked once here and the one route that is deeper checks its own.
+  if (extra.length > 0 && first !== 'c')
     return refused('That link does not lead anywhere here.');
 
   switch (first) {
@@ -197,6 +206,48 @@ export function resolveDeepLink(url: string): ResolvedLink {
         return refused('That link does not lead anywhere here.');
       }
       return { kind: 'route', path: personPath(second) };
+    }
+
+    /*
+     * A creator, and one of their clubs.
+     *
+     * The one address on this platform somebody is expected to *send*. It is
+     * the address Consumer Web serves, it is what a creator puts next to their
+     * name, and both screens behind it already exist here and are already
+     * reached by tapping — `app/c/[handle]/index.tsx` says in its own comment
+     * that it is reachable by deep link. It was not: this parser refused it,
+     * and because a refusal navigates, following a perfectly good creator link
+     * on a phone landed on Notices under a sentence saying the link led
+     * nowhere. That is the `memberships` failure again, from the same cause —
+     * a screen that exists for somebody tapping and not for somebody arriving.
+     *
+     * Handle and slug are matched against the *submitted* repertoire rather
+     * than the canonical one. The server folds case, so `@Ember_Vale` is a real
+     * address that a person writes down and another person types, and refusing
+     * it here would make a working link work on one surface and not the other.
+     * They are validated, not sanitized: a value that does not match is not
+     * repaired into one that does.
+     */
+    case 'c': {
+      if (second === undefined || !submittedCreatorHandlePattern.test(second)) {
+        return refused('That link does not lead anywhere here.');
+      }
+      if (extra.length === 0)
+        return { kind: 'route', path: creatorPath(second) };
+      // `c/<handle>/club/<slug>` and nothing else at this depth. The literal
+      // `club` is required rather than assumed, so a third segment naming
+      // something this application does not serve is refused instead of being
+      // read as a slug.
+      const [marker, slug, ...beyond] = extra;
+      if (
+        marker !== 'club' ||
+        beyond.length > 0 ||
+        slug === undefined ||
+        !submittedClubSlugPattern.test(slug)
+      ) {
+        return refused('That link does not lead anywhere here.');
+      }
+      return { kind: 'route', path: clubPath(second, slug) };
     }
 
     case 'you': {

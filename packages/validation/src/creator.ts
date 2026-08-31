@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import {
+  creatorHandlePattern,
+  maximumCreatorHandleLength,
+  minimumCreatorHandleLength,
+  submittedCreatorHandlePattern,
+} from './address-bounds.js';
 import { mediaOwnerStateSchema, mediaRejectionReasonSchema } from './media.js';
 
 /**
@@ -178,10 +184,17 @@ export type CreatorPolicyAcknowledgementRequest = z.infer<
  * A handle starts and ends with a letter or digit, so no handle is a bare
  * separator, ends in punctuation, or reads differently with a trailing dash
  * trimmed by something downstream.
+ *
+ * The lengths and the repertoire live in `address-bounds.ts`, which carries no
+ * schema library, so a client can recognise an address without importing every
+ * schema in this package to do it. They are re-exported here because this is
+ * where a reader looks for them.
  */
-export const minimumCreatorHandleLength = 3;
-export const maximumCreatorHandleLength = 30;
-export const creatorHandlePattern = /^[a-z0-9][a-z0-9_-]{1,28}[a-z0-9]$/u;
+export {
+  creatorHandlePattern,
+  maximumCreatorHandleLength,
+  minimumCreatorHandleLength,
+} from './address-bounds.js';
 
 /**
  * Handles nobody may claim.
@@ -301,8 +314,7 @@ export const creatorHandleSchema = z
  * worse than saying no. Reserved names are checked against the canonical form,
  * so `Admin` and `ADMIN` are refused by the same entry.
  */
-export const submittedCreatorHandlePattern =
-  /^[A-Za-z0-9][A-Za-z0-9_-]{1,28}[A-Za-z0-9]$/u;
+export { submittedCreatorHandlePattern } from './address-bounds.js';
 
 export const submittedCreatorHandleSchema = z
   .string()

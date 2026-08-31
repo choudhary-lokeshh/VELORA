@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import {
+  clubSlugPattern,
+  maximumClubSlugLength,
+  minimumClubSlugLength,
+  submittedClubSlugPattern,
+} from './address-bounds.js';
 import { mediaOwnerStateSchema, mediaRejectionReasonSchema } from './media.js';
 import { maximumContentMedia } from './profile-bounds.js';
 
@@ -223,8 +229,13 @@ export type PublicCreatorCatalogResponse = z.infer<
 export const minimumClubNameLength = 2;
 export const maximumClubNameLength = 80;
 export const maximumClubDescriptionLength = 600;
-export const minimumClubSlugLength = 3;
-export const maximumClubSlugLength = 40;
+// In `address-bounds.ts` with the creator handle, and re-exported here: a slug
+// appears in a public address, so a client has to be able to recognise one
+// without importing a schema library to do it.
+export {
+  maximumClubSlugLength,
+  minimumClubSlugLength,
+} from './address-bounds.js';
 
 /**
  * What a creator promises a member, as short lines rather than as prose.
@@ -256,9 +267,7 @@ export const clubBenefitSchema = z
  * compete for the name would make the first club anybody opened valuable for
  * no product reason.
  */
-export const clubSlugPattern = /^[a-z0-9][a-z0-9_-]{1,38}[a-z0-9]$/u;
-export const submittedClubSlugPattern =
-  /^[A-Za-z0-9][A-Za-z0-9_-]{1,38}[A-Za-z0-9]$/u;
+export { clubSlugPattern, submittedClubSlugPattern } from './address-bounds.js';
 
 export const clubSlugSchema = z
   .string()

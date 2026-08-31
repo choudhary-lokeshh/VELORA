@@ -60,6 +60,64 @@ describe('a deep link', () => {
       kind: 'route',
       path: `/people/${personId}`,
     });
+    // The one address somebody is expected to send. Both screens have existed
+    // and been reachable by tapping since the surface was built, and this
+    // parser refused them — so a creator's own link landed on Notices under a
+    // sentence saying it led nowhere, on the surface most likely to be handed
+    // the link in the first place.
+    expect(resolveDeepLink('velora://c/ember_vale')).toEqual({
+      kind: 'route',
+      path: '/c/ember_vale',
+    });
+    expect(resolveDeepLink('velora://c/ember_vale/club/inner-circle')).toEqual({
+      kind: 'route',
+      path: '/c/ember_vale/club/inner-circle',
+    });
+  });
+
+  /**
+   * A handle written the way a person writes it.
+   *
+   * The server folds case, so `@Ember_Vale` and `@ember_vale` are one creator
+   * and Consumer Web serves both. A phone that refused the capitalised form
+   * would make a link work on one surface and fail on the other, which is
+   * indistinguishable from a broken link to whoever was sent it.
+   */
+  it('accepts a handle and a slug in the case they were written', () => {
+    expect(resolveDeepLink('velora://c/Ember_Vale')).toEqual({
+      kind: 'route',
+      path: '/c/Ember_Vale',
+    });
+    expect(resolveDeepLink('velora://c/Ember_Vale/club/Inner-Circle')).toEqual({
+      kind: 'route',
+      path: '/c/Ember_Vale/club/Inner-Circle',
+    });
+  });
+
+  /**
+   * The creator route is the only one deeper than two segments, so it is the
+   * only one that can be walked past its own leaves.
+   */
+  it('refuses a creator address that is not one of the two it serves', () => {
+    for (const url of [
+      // No creator listing exists, so a bare `c` leads nowhere.
+      'velora://c',
+      // `/c/<handle>/club` is not an address this application serves.
+      'velora://c/ember_vale/club',
+      // The `club` segment is required rather than assumed, so a third
+      // segment naming something else is not read as a slug.
+      'velora://c/ember_vale/posts/1',
+      // Nothing lives below a club.
+      'velora://c/ember_vale/club/inner/extra',
+      // Outside the repertoire a handle or a slug can hold.
+      'velora://c/-ember-',
+      'velora://c/ember_vale/club/-inner-',
+      'velora://c/em',
+    ]) {
+      const resolved = resolveDeepLink(url);
+      expect(resolved.kind).toBe('refused');
+      if (resolved.kind === 'refused') expect(resolved.path).toBe('/notices');
+    }
   });
 
   it('reads the three spellings the platform actually produces', () => {

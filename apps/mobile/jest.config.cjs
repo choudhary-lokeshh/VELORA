@@ -7,6 +7,8 @@ module.exports = {
   // rather than by loosening export conditions globally, which would also flip
   // third-party CommonJS dependencies to their ESM builds.
   moduleNameMapper: {
+    '^@velora/validation/address-bounds$':
+      '<rootDir>/../../packages/validation/dist/address-bounds.js',
     '^@velora/api-client$': '<rootDir>/../../packages/api-client/dist/index.js',
     '^@velora/config/client$': '<rootDir>/../../packages/config/dist/client.js',
     '^@velora/consumer-client$':

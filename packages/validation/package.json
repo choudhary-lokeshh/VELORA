@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./address-bounds": {
+      "types": "./dist/address-bounds.d.ts",
+      "import": "./dist/address-bounds.js"
+    },
     "./money": {
       "types": "./dist/money.d.ts",
       "import": "./dist/money.js"
