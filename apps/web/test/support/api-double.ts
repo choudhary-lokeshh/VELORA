@@ -271,17 +271,36 @@ export interface ApiDoubleState {
       endedAt?: string;
       id: string;
       messageSequence: number;
-      peer: { displayName: string; id: string };
+      peer: LivePersonBody;
       startedAt: string;
     } | null;
+    /** Requests to meet, in both directions, exactly as the server reports. */
+    invitations: {
+      createdAt: string;
+      direction: 'outgoing' | 'incoming';
+      expiresAt: string;
+      id: string;
+      medium: 'voice' | 'video';
+      person: LivePersonBody;
+      state:
+        | 'pending'
+        | 'accepted'
+        | 'met'
+        | 'declined'
+        | 'cancelled'
+        | 'expired';
+    }[];
+    languageOptions: string[];
     medium?: 'voice' | 'video';
     messages: {
       body: string;
       id: string;
+      kind: 'text' | 'reaction';
       self: boolean;
       sentAt: string;
       sequence: number;
     }[];
+    preferences: { language?: string; region: 'any' | 'same' };
     /** Whether a stand-in is available, exactly as the server reports it. */
     simulated: boolean;
     /** Set by a test to make the next search find nobody. */
@@ -380,6 +399,15 @@ export interface ApiDouble {
 const iso = (offsetMilliseconds = 0) =>
   new Date(Date.UTC(2026, 7, 14, 12, 0, 0) + offsetMilliseconds).toISOString();
 
+/** The minimized public profile a peer or an invited person is published in. */
+export interface LivePersonBody {
+  bio?: string;
+  displayName: string;
+  id: string;
+  region?: string;
+  sharedLanguages: string[];
+}
+
 export const otherPersonId = '22222222-2222-4222-8222-222222222222';
 export const secondPeerId = '77777777-7777-4777-8777-777777777777';
 export const liveEncounterId = '88888888-8888-4888-8888-888888888888';
@@ -415,7 +443,10 @@ export function emptyState(): ApiDoubleState {
     live: {
       admission: 'eligible',
       encounter: null,
+      invitations: [],
+      languageOptions: ['en'],
       messages: [],
+      preferences: { region: 'any' },
       simulated: false,
       standInAvailable: true,
       state: 'idle',
@@ -581,14 +612,36 @@ function liveBody(state: ApiDoubleState): unknown {
               : { endedAt: encounter.endedAt }),
             id: encounter.id,
             messageSequence: encounter.messageSequence,
-            peer: encounter.peer,
+            peer: personBody(encounter.peer),
             startedAt: encounter.startedAt,
           },
         }),
+    invitations: state.live.invitations.map((invitation) => ({
+      ...invitation,
+      person: personBody(invitation.person),
+    })),
+    languageOptions: state.live.languageOptions,
     ...(state.live.medium === undefined ? {} : { medium: state.live.medium }),
+    preferences: {
+      ...(state.live.preferences.language === undefined
+        ? {}
+        : { language: state.live.preferences.language }),
+      region: state.live.preferences.region,
+    },
     ...(state.live.state === 'searching' ? { searchingSince: iso() } : {}),
     simulated: state.live.simulated,
     state: state.live.state,
+  };
+}
+
+/** The minimized public profile, with absent fields genuinely absent. */
+function personBody(person: LivePersonBody): unknown {
+  return {
+    ...(person.bio === undefined ? {} : { bio: person.bio }),
+    displayName: person.displayName,
+    id: person.id,
+    ...(person.region === undefined ? {} : { region: person.region }),
+    sharedLanguages: person.sharedLanguages,
   };
 }
 
@@ -600,19 +653,21 @@ function liveBody(state: ApiDoubleState): unknown {
  * a double is allowed to implement them at all.
  */
 function applyLiveScenario(state: ApiDoubleState, scenario: string): void {
-  const encounter = state.live.encounter;
   if (scenario === 'nobody_available') {
     state.live.standInAvailable = false;
     return;
   }
   state.live.standInAvailable = true;
-  if (encounter === null) return;
+  // The two invitation scenarios and the two message ones come before the
+  // encounter guard, because a request to meet is about the state *before*
+  // there is an encounter.
   if (scenario === 'peer_message') {
     state.live.messages = [
       ...state.live.messages,
       {
         body: 'Hey — this is the local stand-in saying something back.',
         id: `peer-${String(state.live.messages.length + 1)}`,
+        kind: 'text',
         self: false,
         sentAt: iso(),
         sequence: state.live.messages.length + 1,
@@ -620,6 +675,49 @@ function applyLiveScenario(state: ApiDoubleState, scenario: string): void {
     ];
     return;
   }
+  if (scenario === 'peer_reaction') {
+    state.live.messages = [
+      ...state.live.messages,
+      {
+        body: 'wave',
+        id: `peer-${String(state.live.messages.length + 1)}`,
+        kind: 'reaction',
+        self: false,
+        sentAt: iso(),
+        sequence: state.live.messages.length + 1,
+      },
+    ];
+    return;
+  }
+  if (scenario === 'peer_invitation') {
+    state.live.invitations = [
+      ...state.live.invitations,
+      {
+        createdAt: iso(),
+        direction: 'incoming',
+        expiresAt: iso(7_200_000),
+        id: 'invitation-incoming',
+        medium: 'video',
+        person: {
+          displayName: 'Robin',
+          id: otherPersonId,
+          sharedLanguages: ['en'],
+        },
+        state: 'pending',
+      },
+    ];
+    return;
+  }
+  if (scenario === 'peer_accepts_invitation') {
+    state.live.invitations = state.live.invitations.map((invitation) =>
+      invitation.direction === 'outgoing' && invitation.state === 'pending'
+        ? { ...invitation, state: 'accepted' as const }
+        : invitation,
+    );
+    return;
+  }
+  const encounter = state.live.encounter;
+  if (encounter === null) return;
   if (scenario === 'peer_connect') {
     encounter.connection =
       encounter.connection.state === 'requested'
@@ -1151,7 +1249,12 @@ export function createApiDouble(
         connection: { state: 'none' },
         id: liveEncounterId,
         messageSequence: 0,
-        peer: { displayName: 'Robin', id: otherPersonId },
+        peer: {
+          displayName: 'Robin',
+          id: otherPersonId,
+          region: 'PT',
+          sharedLanguages: ['en'],
+        },
         startedAt: iso(),
       };
       return json(200, liveBody(state));
@@ -1178,12 +1281,89 @@ export function createApiDouble(
             connection: { state: 'none' },
             id: secondEncounterId,
             messageSequence: 0,
-            peer: { displayName: 'Sam', id: secondPeerId },
+            peer: {
+              displayName: 'Sam',
+              id: secondPeerId,
+              region: 'IE',
+              sharedLanguages: ['en'],
+            },
             startedAt: iso(1000),
           };
         }
       }
       return json(200, liveBody(state));
+    }
+    if (path === '/v1/live/reactions' && method === 'POST') {
+      const input = body as {
+        clientMessageId: string;
+        encounterId: string;
+        reaction: string;
+      };
+      if (state.live.encounter?.id !== input.encounterId) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      // Stored on the same channel a message is, because it is the same thing
+      // to moderate, and rendered completely differently by the surface.
+      state.live.messages = [
+        ...state.live.messages,
+        {
+          body: input.reaction,
+          id: `live-${input.clientMessageId}`,
+          kind: 'reaction',
+          self: true,
+          sentAt: iso(),
+          sequence: state.live.messages.length + 1,
+        },
+      ];
+      return json(200, {
+        encounterId: input.encounterId,
+        messages: state.live.messages,
+      });
+    }
+    if (path === '/v1/live/invitations' && method === 'POST') {
+      const input = body as { candidateId: string; medium: 'voice' | 'video' };
+      // Idempotent per pair, as the partial unique index makes it: asking twice
+      // answers with the request that already stands.
+      if (
+        !state.live.invitations.some(
+          (invitation) => invitation.person.id === input.candidateId,
+        )
+      ) {
+        state.live.invitations = [
+          ...state.live.invitations,
+          {
+            createdAt: iso(),
+            direction: 'outgoing',
+            expiresAt: iso(7_200_000),
+            id: `invitation-${input.candidateId}`,
+            medium: input.medium,
+            person: {
+              displayName: 'Robin',
+              id: input.candidateId,
+              sharedLanguages: ['en'],
+            },
+            state: 'pending',
+          },
+        ];
+      }
+      return json(200, { invitations: state.live.invitations });
+    }
+    if (path === '/v1/live/invitation-responses' && method === 'POST') {
+      const input = body as {
+        invitationId: string;
+        response: 'accept' | 'decline' | 'cancel';
+      };
+      state.live.invitations =
+        input.response === 'accept'
+          ? state.live.invitations.map((invitation) =>
+              invitation.id === input.invitationId
+                ? { ...invitation, state: 'accepted' as const }
+                : invitation,
+            )
+          : state.live.invitations.filter(
+              (invitation) => invitation.id !== input.invitationId,
+            );
+      return json(200, { invitations: state.live.invitations });
     }
     if (path === '/v1/live/departures' && method === 'POST') {
       state.live.encounter = null;
@@ -1222,6 +1402,7 @@ export function createApiDouble(
           {
             body: input.body,
             id: `live-${input.clientMessageId}`,
+            kind: 'text',
             self: true,
             sentAt: iso(),
             sequence: state.live.messages.length + 1,

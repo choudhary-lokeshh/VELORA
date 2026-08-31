@@ -53,11 +53,14 @@ export function Bootstrap({ label = 'VELORA' }: { readonly label?: string }) {
  */
 export function AppGate({
   children,
+  immersive = false,
   narrow = false,
   title,
 }: {
   readonly children: ReactNode;
   /** Settings-shaped pages read better at a bounded measure than at full width. */
+  /** Handed to the shell: a page whose subject is a picture, not a column. */
+  readonly immersive?: boolean;
   readonly narrow?: boolean;
   readonly title: string;
 }) {
@@ -94,7 +97,7 @@ export function AppGate({
   const failure = account.account.error ?? account.onboarding.error;
   if (failure !== undefined) {
     return (
-      <AppShell narrow={narrow} title={title}>
+      <AppShell immersive={immersive} narrow={narrow} title={title}>
         <EmptyState
           actions={
             <Button onClick={account.reloadAll} tone="primary">
@@ -113,7 +116,7 @@ export function AppGate({
   if (!admitted) return <Bootstrap />;
 
   return (
-    <AppShell narrow={narrow} title={title}>
+    <AppShell immersive={immersive} narrow={narrow} title={title}>
       {children}
     </AppShell>
   );

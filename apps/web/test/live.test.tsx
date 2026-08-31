@@ -94,6 +94,20 @@ const click = async (testId: string) => {
   });
 };
 
+/**
+ * Applies one local scenario.
+ *
+ * The panel is collapsed until somebody opens it, because it is a developer's
+ * tool sitting on the product's primary screen. Opening it is part of using it,
+ * so it is part of this helper rather than repeated at seven call sites.
+ */
+const scenario = async (name: string) => {
+  if (screen.queryByTestId(`live-sim-${name}`) === null) {
+    await click('live-sim-toggle');
+  }
+  await click(`live-sim-${name}`);
+};
+
 describe('the door', () => {
   it('opens no camera until somebody asks for one', async () => {
     installCamera('granted');
@@ -119,8 +133,8 @@ describe('the door', () => {
 
     // Several more renders: a poll answering, a scenario applying, a message
     // arriving. None of them is a reason to reopen a device.
-    await click('live-sim-peer_message');
-    await click('live-sim-peer_message');
+    await scenario('peer_message');
+    await scenario('peer_message');
 
     const devices = globalThis.navigator.mediaDevices as unknown as {
       getUserMedia: { mock: { calls: unknown[] } };
@@ -165,7 +179,7 @@ describe('searching', () => {
     // would be one the screen invented — and a person who found that out would
     // be right to distrust everything else on it.
     const searching = screen.getByTestId('live-searching').textContent;
-    expect(searching).toContain('Finding someone');
+    expect(searching).toMatch(/looking/iu);
     expect(/\d/u.test(searching)).toBe(false);
   });
 });
@@ -181,11 +195,15 @@ describe('an encounter', () => {
     expect((await screen.findByTestId('live-peer-name')).textContent).toBe(
       'Robin',
     );
+    // Held behind the reveal, which is why this waits: a match arrives rather
+    // than appearing, and during the arrival the screen says the session is
+    // connecting — which is what the session state actually is.
+    const transport = await screen.findByTestId('live-no-media', undefined, {
+      timeout: 3000,
+    });
     // The honest sentence, in words, rather than a black rectangle implying a
     // connection that does not exist.
-    expect(screen.getByTestId('live-no-media').textContent).toContain(
-      'no approved provider exists yet',
-    );
+    expect(transport.textContent).toContain('no approved provider exists yet');
   });
 
   it('keeps live chat out of the Inbox, and says so', async () => {
@@ -260,15 +278,15 @@ describe('connecting', () => {
       );
     });
     // The other person asks too, through the scenario that acts as them.
-    await click('live-sim-peer_connect');
+    await scenario('peer_connect');
     await waitFor(() => {
       expect(screen.getByTestId('live-connection').textContent).toBe(
-        'You are connected',
+        'Connected',
       );
     });
 
     // And when the encounter ends, the relationship is what survives.
-    await click('live-sim-peer_next');
+    await scenario('peer_next');
     const link = await screen.findByTestId('live-ended-conversation');
     expect(link.getAttribute('href')).toContain(liveConversationId);
   });
@@ -282,7 +300,7 @@ describe('when the other person moves on', () => {
     await click('live-start-video');
     await screen.findByTestId('live-peer-name');
 
-    await click('live-sim-peer_next');
+    await scenario('peer_next');
 
     const ended = await screen.findByTestId('live-ended');
     expect(ended.textContent).toContain('They moved on');
@@ -297,7 +315,7 @@ describe('when the other person moves on', () => {
     await click('live-start-video');
     await screen.findByTestId('live-peer-name');
 
-    await click('live-sim-peer_disconnect');
+    await scenario('peer_disconnect');
 
     const ended = await screen.findByTestId('live-ended');
     expect(ended.textContent).toContain('You lost each other');

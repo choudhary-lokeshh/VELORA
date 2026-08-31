@@ -56,6 +56,28 @@
   max-width: 760px;
 }
 
+/*
+ * A page that owns the whole area rather than sitting in the measure.
+ *
+ * One surface uses it: Live, whose subject is a camera and a person's face. The
+ * reading column that makes every other screen legible is the wrong container
+ * for either, and the padding that gives a document air is what turns a video
+ * product into a document with a video in it.
+ *
+ * The view still keeps its bottom room for the tab bar on a phone, because the
+ * bar is still there and a control underneath it is a control nobody can press.
+ */
+.v-view--immersive {
+  display: flex;
+  padding: var(--space-4);
+}
+
+.v-view--immersive .v-view__inner {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+}
+
 /* ---------------------------------------------------------------- phone -- */
 
 .v-topbar {
@@ -213,6 +235,18 @@
       var(--tabbar-height) + var(--space-8) + env(safe-area-inset-bottom)
     );
   }
+
+  /*
+   * On a phone the immersive view is the viewport minus the two bars, and it
+   * does not scroll. A camera product that scrolls is a document.
+   */
+  .v-view--immersive {
+    padding-bottom: calc(
+      var(--tabbar-height) + var(--space-2) + env(safe-area-inset-bottom)
+    );
+    padding-inline: var(--space-3);
+    padding-top: var(--space-2);
+  }
 }
 
 /* ---------------------------------------------- tablet and desktop rail -- */
@@ -369,6 +403,10 @@
 
   .v-view {
     padding: var(--space-8) var(--space-6) var(--space-12);
+  }
+
+  .v-view--immersive {
+    padding: var(--space-5);
   }
 
   /* Rail: the label sits under the mark rather than beside it. */

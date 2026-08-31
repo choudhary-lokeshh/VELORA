@@ -44,10 +44,20 @@ const signalLabels: Readonly<
 
 export function AppShell({
   children,
+  immersive = false,
   narrow = false,
   title,
 }: {
   readonly children: ReactNode;
+  /**
+   * Whether the page owns the whole area rather than sitting in the measure.
+   *
+   * One surface uses it: Live, whose subject is a camera. The reading column
+   * that makes every other screen legible is the wrong container for a picture
+   * of a person, and letting the page opt out here is smaller and more honest
+   * than a page fighting its own shell with negative margins.
+   */
+  readonly immersive?: boolean;
   /** Settings-shaped pages read better at a bounded measure than at full width. */
   readonly narrow?: boolean;
   /** Shown in the phone header, where there is no room for a sidebar. */
@@ -187,7 +197,12 @@ export function AppShell({
           </Link>
         </header>
 
-        <main className={`v-view${narrow ? ' v-view--narrow' : ''}`} id="main">
+        <main
+          className={`v-view${narrow ? ' v-view--narrow' : ''}${
+            immersive ? ' v-view--immersive' : ''
+          }`}
+          id="main"
+        >
           <div className="v-view__inner">
             <PageHeadingWatcher onChange={watchHeading}>
               {children}
