@@ -37,6 +37,8 @@ test.describe('Consumer Web navigation', () => {
     if (person === undefined) throw new Error('the cohort needs a person');
 
     await signInAdmitted(page, person.subject);
+    // Live is where an admitted account lands; Discover is where the feed is.
+    await navigateTo(page, 'discover');
 
     const candidate = page.locator('[data-testid^="candidate-open-"]').first();
     await expect(candidate).toBeVisible();
@@ -140,6 +142,7 @@ test.describe('Consumer Web navigation', () => {
     // Signed in, then sent straight to a nested address the way a notification
     // or a shared link would. There is no feed behind this page to pop back to.
     await signInAdmitted(page, person.subject);
+    await navigateTo(page, 'discover');
     const candidate = page.locator('[data-testid^="candidate-open-"]').first();
     await expect(candidate).toBeVisible();
     const href = await candidate.getAttribute('href');
@@ -222,6 +225,10 @@ test.describe('Consumer Web navigation', () => {
     // printing the same word is the state this replaced.
     await page.setViewportSize({ height: 740, width: 390 });
     await signInAdmitted(page, person.subject);
+    // Discover rather than Live, because this asserts a scrolling page and the
+    // heading it hands to the bar; Live is a fixed screen with nothing to
+    // scroll.
+    await navigateTo(page, 'discover');
 
     const heading = page.getByRole('heading', { level: 1, name: 'Discover' });
     await expect(heading).toBeVisible();

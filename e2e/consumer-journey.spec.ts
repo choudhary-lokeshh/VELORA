@@ -175,7 +175,10 @@ test.describe('Consumer Web product journey', () => {
     // page for five seconds at a time.
     await expect(async () => {
       await page.reload();
-      await expect(page).toHaveURL(/\/discover$/u, { timeout: 2_000 });
+      // Live, which is where the gate sends an admitted account since
+      // ADR-0040. What is being waited on is admission itself, not this
+      // destination in particular.
+      await expect(page).toHaveURL(/\/live$/u, { timeout: 2_000 });
     }).toPass({ timeout: 120_000 });
 
     // And the profile screen, which does not move underneath an assertion,
@@ -435,6 +438,8 @@ test.describe('Consumer Web product journey', () => {
     }
 
     await signInAdmitted(page, person.subject);
+    // The safety control lives beside the person, which is on the feed.
+    await navigateTo(page, 'discover');
     await page.getByTestId(`safety-menu-${spare.id}`).click();
     await page.getByTestId('safety-open-block').click();
     await page.getByTestId('block-person-accept').click();
@@ -455,9 +460,9 @@ test.describe('Consumer Web product journey', () => {
 
     await signInAdmitted(page, person.subject);
     await page.reload();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Discover',
-    );
+    // The same page after a reload, which is Live: the session survived, so
+    // the gate does not send this person back to the door.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Live');
 
     await page.goto(`${consumerWebOrigin}/you/settings`);
     await page.getByTestId('auth-sign-out').click();
@@ -493,6 +498,8 @@ test.describe('Consumer Web product journey', () => {
     if (person === undefined) throw new Error('the cohort has nobody in it');
 
     await signInAdmitted(page, person.subject);
+    // The failing read belongs to Discover, so this has to be standing on it.
+    await navigateTo(page, 'discover');
     await page.route('**/v1/discovery/candidates*', async (route) => {
       await route.abort('failed');
     });

@@ -5,7 +5,7 @@ import {
   signInAdmitted,
   skipWhenCookieRequiresHttps,
 } from './consumer.js';
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures.js';
 
@@ -38,6 +38,25 @@ import { expect, test } from './fixtures.js';
  * feature. Leaving first is what a person does, and it goes through the real
  * departure route.
  */
+/**
+ * Grants the capture permissions, where the browser has a name for them.
+ *
+ * Chromium's driver knows `camera` and `microphone`; Firefox's does not, and
+ * `grantPermissions` throws `Unknown permission: camera` there. Firefox is
+ * configured instead through `media.navigator.permission.disabled` and
+ * `media.navigator.streams.fake` in `playwright.config.ts`, so the capture is
+ * already permitted and there is nothing to grant.
+ */
+async function allowCapture(
+  context: BrowserContext,
+  browserName: string,
+): Promise<void> {
+  if (browserName !== 'chromium') return;
+  await context.grantPermissions(['camera', 'microphone'], {
+    origin: consumerWebOrigin,
+  });
+}
+
 async function atTheDoor(page: Page): Promise<void> {
   const door = page.getByTestId('live-door');
   if (await door.isVisible()) return;
@@ -88,9 +107,7 @@ test.describe('Live discovery', () => {
     // Granted here rather than left to a prompt, because a browser automation
     // context has nobody to answer one. What is being proved is that the
     // surface asks at the right moment and does something real with the answer.
-    await context.grantPermissions(['camera', 'microphone'], {
-      origin: consumerWebOrigin,
-    });
+    await allowCapture(context, testInfo.project.name);
     await signInAdmitted(page, person.subject);
     await atTheDoor(page);
 
@@ -156,9 +173,7 @@ test.describe('Live discovery', () => {
   }, testInfo) => {
     const [person] = cohortFor(testInfo.project.name).people;
     if (person === undefined) throw new Error('the cohort has nobody in it');
-    await context.grantPermissions(['camera', 'microphone'], {
-      origin: consumerWebOrigin,
-    });
+    await allowCapture(context, testInfo.project.name);
     await signInAdmitted(page, person.subject);
     await atTheDoor(page);
     await page.getByTestId('live-start-video').click();
@@ -178,17 +193,28 @@ test.describe('Live discovery', () => {
      */
     const badge = page.getByTestId('live-connection');
     const before = await badge.textContent();
-    await page.getByTestId('live-connect').click();
 
-    if (before === 'They want to connect') {
-      await expect(badge).toHaveText('You are connected', { timeout: 30_000 });
-    } else {
-      expect(before).toBe('Connect');
+    if (before === 'Connect') {
+      // A fresh pair. One tap is not a connection.
+      await page.getByTestId('live-connect').click();
       await expect(badge).toHaveText('Waiting for them', { timeout: 30_000 });
 
       // The other person asks too, independently. Only now is it mutual.
       await page.getByTestId('live-sim-peer_connect').click();
       await expect(badge).toHaveText('You are connected', { timeout: 30_000 });
+    } else if (before === 'They want to connect') {
+      // The other person asked first, which is the same rule from the other
+      // side: this person's single tap completes it and nothing before it did.
+      await page.getByTestId('live-connect').click();
+      await expect(badge).toHaveText('You are connected', { timeout: 30_000 });
+    } else {
+      // Already connected, which a persistent world genuinely produces: these
+      // two have met before. There is nothing to press — the control is
+      // disabled, which is itself the assertion that a connection is not
+      // something this surface can re-make — and what still has to hold is
+      // everything below about the conversation surviving.
+      expect(before).toBe('You are connected');
+      await expect(page.getByTestId('live-connect')).toBeDisabled();
     }
 
     // They move on. The relationship is what survives the encounter.
@@ -220,9 +246,7 @@ test.describe('Live discovery', () => {
   }, testInfo) => {
     const [person] = cohortFor(testInfo.project.name).people;
     if (person === undefined) throw new Error('the cohort has nobody in it');
-    await context.grantPermissions(['camera', 'microphone'], {
-      origin: consumerWebOrigin,
-    });
+    await allowCapture(context, testInfo.project.name);
     await signInAdmitted(page, person.subject);
     await atTheDoor(page);
     await page.getByTestId('live-start-video').click();
