@@ -168,6 +168,93 @@ export const maximumLiveClientMessageIdCharacters = 128;
  */
 export const liveCandidateScanLimit = 20;
 
+
+/**
+ * How wide a net the matcher casts, as the pool stores it.
+ *
+ * The same two values the contract publishes, restated here on the rule the
+ * message bounds above follow: a schema module may not import the validation
+ * package, and `test/unit/live-policy.test.ts` asserts these equal the
+ * published vocabulary so drift fails the build.
+ */
+export const livePreferredRegions = ['any', 'same'] as const;
+export type LivePreferredRegion = (typeof livePreferredRegions)[number];
+
+/**
+ * What a line in an encounter is.
+ *
+ * A typed message and a tapped reaction share one table because both are
+ * ordered, idempotent, and answerable when somebody reports the conversation.
+ * They are never rendered alike, and a reaction body is one of
+ * {@link liveReactions} rather than free text.
+ */
+export const liveMessageKinds = ['text', 'reaction'] as const;
+export type LiveMessageKind = (typeof liveMessageKinds)[number];
+
+/** The closed set of things a person can send without typing. */
+export const liveReactions = [
+  'wave',
+  'smile',
+  'laugh',
+  'heart',
+  'fire',
+  'clap',
+] as const;
+export type LiveReaction = (typeof liveReactions)[number];
+
+/**
+ * The lifecycle of one person asking one other person to meet live.
+ *
+ * `accepted` is the honest state that makes selected matching possible without
+ * lying: two people agreeing to meet does not put them in a live session, it
+ * makes them the matcher's first choice the next time they are both here.
+ * `met` is terminal and spent — an accepted request produces at most one
+ * encounter, which is what stops one acceptance being redeemed repeatedly.
+ */
+export const liveInvitationStates = [
+  'pending',
+  'accepted',
+  'met',
+  'declined',
+  'cancelled',
+  'expired',
+] as const;
+export type LiveInvitationState = (typeof liveInvitationStates)[number];
+
+/** The states in which a request to meet is still worth acting on. */
+export const liveInvitationOpenStates: readonly LiveInvitationState[] = [
+  'pending',
+  'accepted',
+];
+
+/**
+ * How long a request to meet live stays answerable.
+ *
+ * Deliberately short. "Would you like to talk right now" stops being a true
+ * question within a few hours, and a request that outlived its meaning would
+ * put somebody in a live session with a stranger who asked yesterday. Expiry is
+ * evaluated on read rather than swept, so a request is never answerable past
+ * this bound even if nothing has run.
+ */
+export const liveInvitationExpiryMilliseconds = 7_200_000;
+
+/**
+ * How many requests to meet one person may have outstanding at once.
+ *
+ * Small, because the product intent is choosing somebody rather than
+ * broadcasting to everybody. What it stops is a client turning Pick into a
+ * mailshot, which is the exact behaviour that would make receiving one
+ * worthless.
+ */
+export const maximumOpenLiveInvitations = 10;
+
+/**
+ * How many requests to meet one person may send in the abuse window.
+ *
+ * Counted over {@link liveAbuseWindowMilliseconds} like every other bound here.
+ */
+export const maximumLiveInvitationsPerWindow = 30;
+
 /**
  * What has to be decided or built before live discovery may be enabled in a
  * deployed environment. Each entry is a real blocker, not a caution.

@@ -1,14 +1,18 @@
 import {
   apiQueryParameters,
+  createLiveInvitationRequestSchema,
   liveConnectionResponseSchema,
   liveEncounterActionRequestSchema,
+  liveInvitationListResponseSchema,
   liveMessageListResponseSchema,
   liveSearchRequestSchema,
   liveSimulationRequestSchema,
   liveSimulationResponseSchema,
   liveStateResponseSchema,
   productErrorCodes,
+  respondToLiveInvitationRequestSchema,
   sendLiveMessageRequestSchema,
+  sendLiveReactionRequestSchema,
   type LiveEndReason as WireLiveEndReason,
 } from '@velora/validation';
 
@@ -27,7 +31,9 @@ import type { LiveMessageRow } from './repository.js';
 import type { LiveSimulator } from './simulation.js';
 import type {
   LiveEncounterView,
+  LiveInvitationView,
   LiveOutcome,
+  LivePersonView,
   LiveService,
   LiveStateView,
 } from './service.js';
@@ -77,6 +83,12 @@ export class LiveRoutes {
       await this.dependencies.live.search(
         resolved.context.account,
         parsed.value.medium,
+        parsed.value.preferences === undefined
+          ? undefined
+          : {
+              language: parsed.value.preferences.language,
+              region: parsed.value.preferences.region,
+            },
       ),
     );
   }
@@ -137,6 +149,56 @@ export class LiveRoutes {
         clientMessageId: parsed.value.clientMessageId,
         encounterId: parsed.value.encounterId,
       }),
+    );
+  }
+
+  async sendReaction(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(sendLiveReactionRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+    return this.messages(
+      input,
+      resolved.context.account.id,
+      await this.dependencies.live.sendReaction(resolved.context.account, {
+        clientMessageId: parsed.value.clientMessageId,
+        encounterId: parsed.value.encounterId,
+        reaction: parsed.value.reaction,
+      }),
+    );
+  }
+
+  async invite(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(createLiveInvitationRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+    return this.invitations(
+      input,
+      await this.dependencies.live.invite(resolved.context.account, {
+        candidateId: parsed.value.candidateId,
+        medium: parsed.value.medium,
+      }),
+    );
+  }
+
+  async respondToInvitation(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(
+      respondToLiveInvitationRequestSchema,
+      input.body,
+    );
+    if (!parsed.ok) return this.invalid(input);
+    return this.invitations(
+      input,
+      await this.dependencies.live.respondToInvitation(
+        resolved.context.account,
+        {
+          invitationId: parsed.value.invitationId,
+          response: parsed.value.response,
+        },
+      ),
     );
   }
 
@@ -322,6 +384,57 @@ export class LiveRoutes {
     }
   }
 
+  private invitations(
+    input: RouteRequest,
+    outcome: Awaited<ReturnType<LiveService['invite']>>,
+  ): RouteResult {
+    switch (outcome.kind) {
+      case 'invitations': {
+        return {
+          body: liveInvitationListResponseSchema.parse({
+            invitations: outcome.views.map(invitationBody),
+          }),
+          status: 200,
+        };
+      }
+      case 'not_found': {
+        return routeFailure(
+          404,
+          productErrorCodes.notFound,
+          input.correlationId,
+        );
+      }
+      case 'unavailable': {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      case 'rate_limited': {
+        return routeFailure(
+          409,
+          productErrorCodes.rateLimited,
+          input.correlationId,
+        );
+      }
+      case 'not_eligible': {
+        return routeFailure(
+          409,
+          productErrorCodes.accountNotEligible,
+          input.correlationId,
+        );
+      }
+      default: {
+        return routeFailure(
+          409,
+          productErrorCodes.actionNotPermitted,
+          input.correlationId,
+        );
+      }
+    }
+  }
+
   private requireConsumer(input: RouteRequest): Promise<ConsumerRouteContext> {
     return requireConsumerAccount(this.dependencies.consumerContext, input);
   }
@@ -349,9 +462,32 @@ function messageBody(message: LiveMessageRow, viewerId: string): unknown {
   return {
     body: message.body,
     id: message.id,
+    kind: message.kind,
     self: message.senderId === viewerId,
     sentAt: message.createdAt.toISOString(),
     sequence: message.sequence,
+  };
+}
+
+function personBody(person: LivePersonView): unknown {
+  return {
+    ...(person.bio === undefined ? {} : { bio: person.bio }),
+    displayName: person.displayName,
+    id: person.id,
+    ...(person.region === undefined ? {} : { region: person.region }),
+    sharedLanguages: person.sharedLanguages,
+  };
+}
+
+function invitationBody(view: LiveInvitationView): unknown {
+  return {
+    createdAt: view.createdAt.toISOString(),
+    direction: view.direction,
+    expiresAt: view.expiresAt.toISOString(),
+    id: view.id,
+    medium: view.medium,
+    person: personBody(view.person),
+    state: view.state,
   };
 }
 
@@ -411,7 +547,7 @@ function encounterBody(view: LiveEncounterView): unknown {
       : { endedAt: view.endedAt.toISOString() }),
     id: view.id,
     messageSequence: view.messageSequence,
-    peer: view.peer,
+    peer: personBody(view.peer),
     startedAt: view.startedAt.toISOString(),
   };
 }
@@ -422,7 +558,15 @@ function stateBody(view: LiveStateView): unknown {
     ...(view.encounter === undefined
       ? {}
       : { encounter: encounterBody(view.encounter) }),
+    invitations: view.invitations.map(invitationBody),
+    languageOptions: view.languageOptions,
     ...(view.medium === undefined ? {} : { medium: view.medium }),
+    preferences: {
+      ...(view.preferences.language === undefined
+        ? {}
+        : { language: view.preferences.language }),
+      region: view.preferences.region,
+    },
     ...(view.searchingSince === undefined
       ? {}
       : { searchingSince: view.searchingSince.toISOString() }),

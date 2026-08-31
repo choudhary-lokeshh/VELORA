@@ -11,8 +11,12 @@ import type {
   CancelSubscriptionBody,
   Call,
   LiveConnectionResult,
+  LiveInvitationList,
+  LiveInvitationResponse,
   LiveMedium,
   LiveMessageList,
+  LivePreferences,
+  LiveReaction,
   LiveSimulationScenario,
   LiveState,
   CheckoutResponse,
@@ -288,7 +292,10 @@ export interface ConsumerApi {
    * It names a medium and never a person. There is deliberately no way to ask
    * for a particular stranger, so this client cannot express one.
    */
-  startLiveSearch(medium: LiveMedium): Promise<ApiResult<LiveState>>;
+  startLiveSearch(
+    medium: LiveMedium,
+    preferences?: LivePreferences,
+  ): Promise<ApiResult<LiveState>>;
   /**
    * Next: ends the named encounter and resumes searching.
    *
@@ -314,6 +321,34 @@ export interface ConsumerApi {
     readonly clientMessageId: string;
     readonly encounterId: string;
   }): Promise<ApiResult<LiveMessageList>>;
+  /**
+   * One of the six reactions, into the live encounter.
+   *
+   * It costs nothing and credits nobody. Gifting is deliberately not attached
+   * to a conversation between two strangers, and this client cannot express it.
+   */
+  sendLiveReaction(input: {
+    readonly clientMessageId: string;
+    readonly encounterId: string;
+    readonly reaction: LiveReaction;
+  }): Promise<ApiResult<LiveMessageList>>;
+  /**
+   * Asks one person to meet live.
+   *
+   * The one live call that names somebody, and it promises a request rather
+   * than a meeting: both people still have to be here at the same time, and
+   * every predicate the random matcher composes is composed again when they
+   * are.
+   */
+  inviteToLive(input: {
+    readonly candidateId: string;
+    readonly medium: LiveMedium;
+  }): Promise<ApiResult<LiveInvitationList>>;
+  /** Accepts, declines, or withdraws a request to meet live. */
+  respondToLiveInvitation(input: {
+    readonly invitationId: string;
+    readonly response: LiveInvitationResponse;
+  }): Promise<ApiResult<LiveInvitationList>>;
   /**
    * Connect: signals this person's own interest, once.
    *
@@ -740,11 +775,14 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     liveState: async (signal) =>
       attempt(async () => api.GET('/v1/live/sessions', await reading(signal))),
 
-    startLiveSearch: async (medium) =>
+    startLiveSearch: async (medium, preferences) =>
       attempt(async () =>
         api.POST('/v1/live/sessions', {
           ...(await writing()),
-          body: { medium },
+          body: {
+            medium,
+            ...(preferences === undefined ? {} : { preferences }),
+          },
         }),
       ),
 
@@ -778,6 +816,37 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
             body: input.body,
             clientMessageId: input.clientMessageId,
             encounterId: input.encounterId,
+          },
+        }),
+      ),
+
+    sendLiveReaction: async (input) =>
+      attempt(async () =>
+        api.POST('/v1/live/reactions', {
+          ...(await writing()),
+          body: {
+            clientMessageId: input.clientMessageId,
+            encounterId: input.encounterId,
+            reaction: input.reaction,
+          },
+        }),
+      ),
+
+    inviteToLive: async (input) =>
+      attempt(async () =>
+        api.POST('/v1/live/invitations', {
+          ...(await writing()),
+          body: { candidateId: input.candidateId, medium: input.medium },
+        }),
+      ),
+
+    respondToLiveInvitation: async (input) =>
+      attempt(async () =>
+        api.POST('/v1/live/invitation-responses', {
+          ...(await writing()),
+          body: {
+            invitationId: input.invitationId,
+            response: input.response,
           },
         }),
       ),

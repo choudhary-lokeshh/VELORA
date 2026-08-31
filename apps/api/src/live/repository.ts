@@ -3,6 +3,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
   gte,
   inArray,
@@ -19,15 +20,31 @@ import type {
 } from '../database/executor.js';
 import { orderedPair } from '../realtime/repository.js';
 import {
+  liveInvitationOpenStates,
   liveParticipationLiveStates,
   type LiveEndReason,
+  type LiveInvitationState,
   type LiveMedium,
+  type LiveMessageKind,
+  type LivePreferredRegion,
 } from './policy.js';
-import { liveEncounters, liveMessages, liveParticipations } from './schema.js';
+import {
+  liveEncounters,
+  liveInvitations,
+  liveMessages,
+  liveParticipations,
+} from './schema.js';
 
 export type LiveParticipationRow = typeof liveParticipations.$inferSelect;
 export type LiveEncounterRow = typeof liveEncounters.$inferSelect;
+export type LiveInvitationRow = typeof liveInvitations.$inferSelect;
 export type LiveMessageRow = typeof liveMessages.$inferSelect;
+
+/** How wide a net a search casts, as the caller asked for it. */
+export interface LivePreferences {
+  readonly language: string | undefined;
+  readonly region: LivePreferredRegion;
+}
 
 export { orderedPair };
 
@@ -116,6 +133,7 @@ export class LiveRepository {
       readonly id: string;
       readonly medium: LiveMedium;
       readonly now: Date;
+      readonly preferences: LivePreferences;
       readonly userId: string;
     },
   ): Promise<LiveParticipationRow | undefined> {
@@ -125,6 +143,8 @@ export class LiveRepository {
         id: input.id,
         joinedAt: input.now,
         medium: input.medium,
+        preferredLanguage: input.preferences.language ?? null,
+        preferredRegion: input.preferences.region,
         seenAt: input.now,
         state: 'searching',
         stateEnteredAt: input.now,
@@ -134,6 +154,39 @@ export class LiveRepository {
       .onConflictDoNothing()
       .returning();
     return inserted.at(0);
+  }
+
+  /**
+   * Records the preferences this search is being made under.
+   *
+   * Separate from the heartbeat, and deliberately does not move
+   * `stateEnteredAt` either: broadening a search is not restarting it, and
+   * somebody who has waited two minutes and then widened their net should keep
+   * their place rather than going to the back of the queue for it.
+   */
+  async setPreferences(
+    executor: Executor,
+    input: {
+      readonly id: string;
+      readonly now: Date;
+      readonly preferences: LivePreferences;
+    },
+  ): Promise<LiveParticipationRow | undefined> {
+    const updated = await executor
+      .update(liveParticipations)
+      .set({
+        preferredLanguage: input.preferences.language ?? null,
+        preferredRegion: input.preferences.region,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(liveParticipations.id, input.id),
+          ne(liveParticipations.state, 'left'),
+        ),
+      )
+      .returning();
+    return updated.at(0);
   }
 
   /**
@@ -537,6 +590,7 @@ export class LiveRepository {
       readonly clientMessageId: string;
       readonly encounterId: string;
       readonly id: string;
+      readonly kind: LiveMessageKind;
       readonly now: Date;
       readonly senderId: string;
       readonly sequence: number;
@@ -550,6 +604,7 @@ export class LiveRepository {
         createdAt: input.now,
         encounterId: input.encounterId,
         id: input.id,
+        kind: input.kind,
         senderId: input.senderId,
         sequence: input.sequence,
       })
@@ -750,5 +805,255 @@ export class LiveRepository {
       )
       .limit(1);
     return rows.length === 1;
+  }
+
+  /**
+   * The people this person has agreed to meet and has not met yet.
+   *
+   * The matcher's first question, asked before the general pool scan. It
+   * returns pool rows rather than identifiers, so a counterpart who agreed and
+   * then closed the tab simply is not here — which is the truthful outcome and
+   * needs no special case.
+   *
+   * Only `accepted` counts. A request nobody has answered is not an agreement,
+   * and pairing on one would mean a tap on somebody's name put them into a live
+   * session with whoever tapped it.
+   */
+  async findAgreedCandidates(
+    executor: TransactionHandle,
+    input: {
+      readonly limit: number;
+      readonly medium: LiveMedium;
+      readonly now: Date;
+      readonly seenSince: Date;
+      readonly userId: string;
+    },
+  ): Promise<readonly LiveParticipationRow[]> {
+    const agreed = executor
+      .select({ id: liveInvitations.id })
+      .from(liveInvitations)
+      .where(
+        and(
+          eq(liveInvitations.state, 'accepted'),
+          gt(liveInvitations.expiresAt, input.now),
+          or(
+            and(
+              eq(liveInvitations.pairLowId, input.userId),
+              eq(liveInvitations.pairHighId, liveParticipations.userId),
+            ),
+            and(
+              eq(liveInvitations.pairHighId, input.userId),
+              eq(liveInvitations.pairLowId, liveParticipations.userId),
+            ),
+          ),
+        ),
+      );
+    return executor
+      .select()
+      .from(liveParticipations)
+      .where(
+        and(
+          eq(liveParticipations.state, 'searching'),
+          eq(liveParticipations.medium, input.medium),
+          ne(liveParticipations.userId, input.userId),
+          gte(liveParticipations.seenAt, input.seenSince),
+          exists(agreed),
+        ),
+      )
+      .orderBy(asc(liveParticipations.stateEnteredAt))
+      .limit(input.limit)
+      .for('update', { skipLocked: true });
+  }
+
+  /**
+   * Records a request to meet, or returns nothing when one is already open.
+   *
+   * Idempotency is the partial unique index over the open pair, not a prior
+   * read: two taps a few milliseconds apart both pass a read and only one
+   * passes the index.
+   */
+  async insertInvitation(
+    executor: Executor,
+    input: {
+      readonly expiresAt: Date;
+      readonly id: string;
+      readonly inviterId: string;
+      readonly medium: LiveMedium;
+      readonly now: Date;
+      readonly subjectId: string;
+    },
+  ): Promise<LiveInvitationRow | undefined> {
+    const pair = orderedPair(input.inviterId, input.subjectId);
+    const inserted = await executor
+      .insert(liveInvitations)
+      .values({
+        createdAt: input.now,
+        expiresAt: input.expiresAt,
+        id: input.id,
+        inviterId: input.inviterId,
+        medium: input.medium,
+        pairHighId: pair.high,
+        pairLowId: pair.low,
+        state: 'pending',
+        updatedAt: input.now,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted.at(0);
+  }
+
+  /** The open request between these two, if there is one. */
+  async findOpenInvitationForPair(
+    executor: Executor,
+    input: {
+      readonly first: string;
+      readonly forUpdate?: boolean;
+      readonly second: string;
+    },
+  ): Promise<LiveInvitationRow | undefined> {
+    const pair = orderedPair(input.first, input.second);
+    const query = executor
+      .select()
+      .from(liveInvitations)
+      .where(
+        and(
+          eq(liveInvitations.pairLowId, pair.low),
+          eq(liveInvitations.pairHighId, pair.high),
+          inArray(liveInvitations.state, [...liveInvitationOpenStates]),
+        ),
+      )
+      .limit(1);
+    const rows = await (input.forUpdate === true ? query.for('update') : query);
+    return rows.at(0);
+  }
+
+  async findInvitation(
+    executor: Executor,
+    input: { readonly forUpdate?: boolean; readonly id: string },
+  ): Promise<LiveInvitationRow | undefined> {
+    const query = executor
+      .select()
+      .from(liveInvitations)
+      .where(eq(liveInvitations.id, input.id))
+      .limit(1);
+    const rows = await (input.forUpdate === true ? query.for('update') : query);
+    return rows.at(0);
+  }
+
+  /**
+   * Every request to meet that is still open for this person, either way round.
+   *
+   * Expiry is applied by the caller on read rather than by a sweep, so a
+   * request is never answerable past its bound even in an environment where
+   * nothing has run.
+   */
+  async listOpenInvitations(
+    executor: Executor,
+    input: { readonly limit: number; readonly userId: string },
+  ): Promise<readonly LiveInvitationRow[]> {
+    return executor
+      .select()
+      .from(liveInvitations)
+      .where(
+        and(
+          inArray(liveInvitations.state, [...liveInvitationOpenStates]),
+          or(
+            eq(liveInvitations.pairLowId, input.userId),
+            eq(liveInvitations.pairHighId, input.userId),
+          ),
+        ),
+      )
+      .orderBy(desc(liveInvitations.createdAt))
+      .limit(input.limit);
+  }
+
+  /**
+   * Moves a request to a state it can only reach from the one named.
+   *
+   * Guarded on the state expected, like every other transition here, so two
+   * people racing an accept and a cancel produce one outcome and the loser
+   * observes it.
+   */
+  async transitionInvitation(
+    executor: Executor,
+    input: {
+      readonly from: readonly LiveInvitationState[];
+      readonly id: string;
+      readonly now: Date;
+      readonly to: LiveInvitationState;
+    },
+  ): Promise<LiveInvitationRow | undefined> {
+    const resolved = input.to === 'pending' || input.to === 'accepted';
+    const updated = await executor
+      .update(liveInvitations)
+      .set({
+        resolvedAt: resolved ? null : input.now,
+        state: input.to,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(liveInvitations.id, input.id),
+          inArray(liveInvitations.state, [...input.from]),
+        ),
+      )
+      .returning();
+    return updated.at(0);
+  }
+
+  /** Spends the open request between two people who have just been paired. */
+  async markInvitationMet(
+    executor: Executor,
+    input: {
+      readonly first: string;
+      readonly now: Date;
+      readonly second: string;
+    },
+  ): Promise<void> {
+    const pair = orderedPair(input.first, input.second);
+    await executor
+      .update(liveInvitations)
+      .set({ resolvedAt: input.now, state: 'met', updatedAt: input.now })
+      .where(
+        and(
+          eq(liveInvitations.pairLowId, pair.low),
+          eq(liveInvitations.pairHighId, pair.high),
+          inArray(liveInvitations.state, [...liveInvitationOpenStates]),
+        ),
+      );
+  }
+
+  /** How many requests to meet this person has sent in the window. */
+  async countInvitationsSince(
+    executor: Executor,
+    input: { readonly since: Date; readonly userId: string },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: sql<number>`count(*)::int` })
+      .from(liveInvitations)
+      .where(
+        and(
+          eq(liveInvitations.inviterId, input.userId),
+          gte(liveInvitations.createdAt, input.since),
+        ),
+      );
+    return rows.at(0)?.total ?? 0;
+  }
+
+  /** How many of this person's requests are still open. */
+  async countOpenInvitations(
+    executor: Executor,
+    input: { readonly userId: string },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ total: sql<number>`count(*)::int` })
+      .from(liveInvitations)
+      .where(
+        and(
+          eq(liveInvitations.inviterId, input.userId),
+          inArray(liveInvitations.state, [...liveInvitationOpenStates]),
+        ),
+      );
+    return rows.at(0)?.total ?? 0;
   }
 }

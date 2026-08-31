@@ -498,6 +498,13 @@
       "when": 1788175993514,
       "tag": "0070_live-discovery",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1788193826438,
+      "tag": "0071_live-discovery-v2",
+      "breakpoints": true
     }
   ]
 }

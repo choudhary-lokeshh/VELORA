@@ -149,6 +149,19 @@ export type LiveEndReason = NonNullable<LiveEncounter['endReason']>;
 export type LiveMedium = NonNullable<LiveState['medium']>;
 export type LiveMessageList = JsonBody<'/v1/live/messages', 'get', 200>;
 export type LiveMessage = LiveMessageList['messages'][number];
+export type LivePerson = LiveEncounter['peer'];
+/** How wide a net the matcher is casting. A preference, never a promise. */
+export type LivePreferences = LiveState['preferences'];
+export type LiveInvitation = LiveState['invitations'][number];
+export type LiveInvitationList = JsonBody<'/v1/live/invitations', 'post', 200>;
+export type LiveReaction = RequestBody<
+  '/v1/live/reactions',
+  'post'
+>['reaction'];
+export type LiveInvitationResponse = RequestBody<
+  '/v1/live/invitation-responses',
+  'post'
+>['response'];
 export type LiveConnectionResult = JsonBody<
   '/v1/live/connections',
   'post',

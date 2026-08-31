@@ -1916,6 +1916,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/live/reactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sends one of the six reactions into the live encounter. It costs nothing and credits nobody: gifting is deliberately not attached to a random encounter. */
+        post: operations["sendLiveReaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/live/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Asks one person to meet live. It promises a request, never a connection: the two still have to be here at the same time, and every eligibility, standing, and safety predicate is asked again when they are. */
+        post: operations["createLiveInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/live/invitation-responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accepts, declines, or withdraws a request to meet live. Accept is only the recipient’s to send and cancel only the sender’s. */
+        post: operations["respondToLiveInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/live/connections": {
         parameters: {
             query?: never;
@@ -4401,6 +4452,12 @@ export interface components {
             /** Format: uuid */
             callId: string;
         };
+        CreateLiveInvitationRequest: {
+            /** Format: uuid */
+            candidateId: string;
+            /** @enum {string} */
+            medium: "voice" | "video";
+        };
         LiveConnectionResponse: {
             connection: {
                 /** Format: uuid */
@@ -4417,6 +4474,30 @@ export interface components {
             /** Format: uuid */
             encounterId: string;
         };
+        LiveInvitationListResponse: {
+            invitations: {
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                direction: "outgoing" | "incoming";
+                /** Format: date-time */
+                expiresAt: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                medium: "voice" | "video";
+                person: {
+                    bio?: string;
+                    displayName: string;
+                    /** Format: uuid */
+                    id: string;
+                    region?: string;
+                    sharedLanguages: string[];
+                };
+                /** @enum {string} */
+                state: "pending" | "accepted" | "met" | "declined" | "cancelled" | "expired";
+            }[];
+        };
         LiveMessageListResponse: {
             /** Format: uuid */
             encounterId: string;
@@ -4424,6 +4505,8 @@ export interface components {
                 body: string;
                 /** Format: uuid */
                 id: string;
+                /** @enum {string} */
+                kind: "text" | "reaction";
                 /** Format: date-time */
                 sentAt: string;
                 self: boolean;
@@ -4433,15 +4516,33 @@ export interface components {
         LiveSearchRequest: {
             /** @enum {string} */
             medium: "voice" | "video";
+            preferences?: {
+                language?: string;
+                /** @enum {string} */
+                region: "any" | "same";
+            };
+        };
+        RespondToLiveInvitationRequest: {
+            /** Format: uuid */
+            invitationId: string;
+            /** @enum {string} */
+            response: "accept" | "decline" | "cancel";
+        };
+        SendLiveReactionRequest: {
+            clientMessageId: string;
+            /** Format: uuid */
+            encounterId: string;
+            /** @enum {string} */
+            reaction: "wave" | "smile" | "laugh" | "heart" | "fire" | "clap";
         };
         LiveSimulationRequest: {
             /** @enum {string} */
-            scenario: "peer_message" | "peer_connect" | "peer_next" | "peer_disconnect" | "nobody_available";
+            scenario: "peer_message" | "peer_connect" | "peer_reaction" | "peer_invitation" | "peer_accepts_invitation" | "peer_next" | "peer_disconnect" | "nobody_available";
         };
         LiveSimulationResponse: {
             applied: boolean;
             /** @enum {string} */
-            scenario: "peer_message" | "peer_connect" | "peer_next" | "peer_disconnect" | "nobody_available";
+            scenario: "peer_message" | "peer_connect" | "peer_reaction" | "peer_invitation" | "peer_accepts_invitation" | "peer_next" | "peer_disconnect" | "nobody_available";
         };
         LiveStateResponse: {
             /** @enum {string} */
@@ -4472,15 +4573,46 @@ export interface components {
                 id: string;
                 messageSequence: number;
                 peer: {
+                    bio?: string;
                     displayName: string;
                     /** Format: uuid */
                     id: string;
+                    region?: string;
+                    sharedLanguages: string[];
                 };
                 /** Format: date-time */
                 startedAt: string;
             };
+            invitations: {
+                /** Format: date-time */
+                createdAt: string;
+                /** @enum {string} */
+                direction: "outgoing" | "incoming";
+                /** Format: date-time */
+                expiresAt: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                medium: "voice" | "video";
+                person: {
+                    bio?: string;
+                    displayName: string;
+                    /** Format: uuid */
+                    id: string;
+                    region?: string;
+                    sharedLanguages: string[];
+                };
+                /** @enum {string} */
+                state: "pending" | "accepted" | "met" | "declined" | "cancelled" | "expired";
+            }[];
+            languageOptions: string[];
             /** @enum {string} */
             medium?: "voice" | "video";
+            preferences: {
+                language?: string;
+                /** @enum {string} */
+                region: "any" | "same";
+            };
             /** Format: date-time */
             searchingSince?: string;
             simulated: boolean;
@@ -18675,6 +18807,363 @@ export interface operations {
                 };
             };
             /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    sendLiveReaction: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendLiveReactionRequest"];
+            };
+        };
+        responses: {
+            /** @description The encounter’s lines after the reaction, in the same shape a message is read in. A reaction is one of a small closed set and never free text. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveMessageListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No encounter of the caller matches that identifier. Somebody else’s encounter, an encounter that never existed, and one the caller has already left are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The encounter is over, or the pair may no longer interact. The body is an ApiError, and it never says which. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createLiveInvitation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLiveInvitationRequest"];
+            };
+        };
+        responses: {
+            /** @description This person’s requests to meet after the new one was recorded, in both directions. Repeating it against the same person returns the existing request rather than writing a second. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveInvitationListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No such person, or nobody this caller holds a reason to ask. Deliberately the same answer, so an identifier cannot be probed. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The pair may not meet right now, or a bound was reached. The body is an ApiError, and it never says which. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    respondToLiveInvitation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RespondToLiveInvitationRequest"];
+            };
+        };
+        responses: {
+            /** @description This person’s requests to meet after the answer. Accepting does not itself open a live session; it makes the pair the matcher’s first choice once both are here. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveInvitationListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No such request, or one belonging to two other people. Deliberately the same answer. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The request is no longer answerable, or this caller is not the side entitled to that answer. The body is an ApiError, and it never says which. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

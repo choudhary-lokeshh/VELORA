@@ -132,9 +132,10 @@ const truncationRoots = [
   // sessions, objects, and obligations follow by cascade.
   // LIVE references consumer accounts, the RTC session carrying an encounter,
   // and the introduction two people may have signalled by opaque identifier
-  // with no foreign key, so nothing cascades into it and both of its roots are
-  // listed. Messages follow the encounter by cascade.
+  // with no foreign key, so nothing cascades into it and all three of its roots
+  // are listed. Messages follow the encounter by cascade.
   'live_encounters',
+  'live_invitations',
   'live_participations',
   'media_assets',
   'messaging_conversations',

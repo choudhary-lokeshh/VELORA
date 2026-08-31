@@ -14,15 +14,22 @@ import { inList, timestamptz } from '../database/columns.js';
 import {
   liveEncounterStates,
   liveEndReasons,
+  liveInvitationStates,
   liveMediums,
+  liveMessageKinds,
   liveParticipationStates,
+  livePreferredRegions,
+  liveReactions,
   maximumLiveClientMessageIdCharacters,
   maximumLiveMessageBodyCharacters,
   minimumLiveClientMessageIdCharacters,
   type LiveEncounterState,
   type LiveEndReason,
+  type LiveInvitationState,
   type LiveMedium,
+  type LiveMessageKind,
   type LiveParticipationState,
+  type LivePreferredRegion,
 } from './policy.js';
 
 /**
@@ -89,6 +96,25 @@ export const liveParticipations = pgTable(
     joinedAt: timestamptz('joined_at').notNull(),
     /** What this person entered the pool for. Never changed by a match. */
     medium: text('medium').notNull().$type<LiveMedium>(),
+    /**
+     * How wide a net to cast for this person, as they asked for it.
+     *
+     * A preference the matcher applies, kept on the participation rather than
+     * on the account, because it is a property of *this* search: somebody who
+     * narrowed to one language yesterday should not silently still be narrowed
+     * tomorrow. It is re-declared every time the pool is entered, and entering
+     * without one means `any`.
+     *
+     * Only the preference is stored. Which country somebody is in and what
+     * they speak stay in USERS and are asked of it per batch of candidates —
+     * a copy here would be this domain holding a fact it does not own, and one
+     * that would go stale the moment somebody moved or learned a language.
+     */
+    preferredLanguage: text('preferred_language'),
+    preferredRegion: text('preferred_region')
+      .notNull()
+      .$type<LivePreferredRegion>()
+      .default('any'),
     /** Last time this person's client was heard from. Presence, not a lease. */
     seenAt: timestamptz('seen_at').notNull(),
     /** Durable total order; timestamps and random UUIDs can tie. */
@@ -133,6 +159,10 @@ export const liveParticipations = pgTable(
     check(
       'live_participations_medium_check',
       inList(table.medium, liveMediums),
+    ),
+    check(
+      'live_participations_preferred_region_check',
+      inList(table.preferredRegion, livePreferredRegions),
     ),
     // Being in or just out of an encounter, and naming one, are the same fact.
     // A `searching` row holding an encounter identifier would be a person the
@@ -297,6 +327,16 @@ export const liveMessages = pgTable(
       .notNull()
       .references(() => liveEncounters.id, { onDelete: 'cascade' }),
     id: uuid('id').primaryKey(),
+    /**
+     * Whether this line was typed or tapped.
+     *
+     * One table for both, because both are things one of these two people sent
+     * the other during this encounter and both have to be ordered, idempotent,
+     * and answerable when somebody reports the conversation. What separates
+     * them is rendering, not storage: a reaction is a moment on the video, not
+     * a line of transcript.
+     */
+    kind: text('kind').notNull().$type<LiveMessageKind>().default('text'),
     senderId: uuid('sender_id').notNull(),
     sequence: bigint('sequence', { mode: 'number' }).notNull(),
   },
@@ -318,6 +358,104 @@ export const liveMessages = pgTable(
     check(
       'live_messages_client_id_check',
       sql`char_length(${table.clientMessageId}) between ${sql.raw(String(minimumLiveClientMessageIdCharacters))} and ${sql.raw(String(maximumLiveClientMessageIdCharacters))}`,
+    ),
+    check('live_messages_kind_check', inList(table.kind, liveMessageKinds)),
+    // A reaction's body is one of the closed set and never anything else. The
+    // route refuses everything else first; this is what makes "a reaction is
+    // not a text channel" a property of the database rather than of whichever
+    // handler happened to be called.
+    check(
+      'live_messages_reaction_body_check',
+      sql`${table.kind} <> 'reaction' or ${sql.raw(
+        `body in (${liveReactions.map((reaction) => `'${reaction}'`).join(', ')})`,
+      )}`,
+    ),
+  ],
+);
+
+/**
+ * One person asking one other person to meet live.
+ *
+ * The counterpart to the pool: the pool is the server choosing, and this is a
+ * person choosing. It is a *request*, and every state below is a truthful
+ * position in the life of one — including `accepted`, which means both people
+ * agreed and are not both here yet. Accepting cannot conjure a live session out
+ * of somebody who has closed the tab, so the model says so rather than
+ * pretending.
+ *
+ * The pair is normalized to an ordered low and high identifier like every other
+ * pair in this repository, and `inviterId` records which of the two asked. The
+ * partial unique index is what makes asking twice idempotent and what stops two
+ * people asking each other producing two competing requests: whoever writes
+ * first owns the open one, and the other side answers it rather than opening a
+ * second.
+ *
+ * **It authorizes nothing.** An accepted request is a reason to pair these two
+ * *first*; every eligibility, standing, block, enforcement, and RTC predicate
+ * the random matcher asks is asked again, in the same order, when the encounter
+ * is allocated. There is deliberately no column here that could be read as a
+ * grant.
+ */
+export const liveInvitations = pgTable(
+  'live_invitations',
+  {
+    createdAt: timestamptz('created_at').notNull(),
+    /** When this stops being answerable. Evaluated on read, never swept. */
+    expiresAt: timestamptz('expires_at').notNull(),
+    id: uuid('id').primaryKey(),
+    /** Which of the two asked. Always one of the pair. */
+    inviterId: uuid('inviter_id').notNull(),
+    /** What the asker offered. The answerer accepts that or nothing. */
+    medium: text('medium').notNull().$type<LiveMedium>(),
+    pairHighId: uuid('pair_high_id').notNull(),
+    pairLowId: uuid('pair_low_id').notNull(),
+    /** When it stopped being open, whichever way it stopped. */
+    resolvedAt: timestamptz('resolved_at'),
+    sequence: bigserial('sequence', { mode: 'number' }).notNull(),
+    state: text('state').notNull().$type<LiveInvitationState>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+  },
+  (table) => [
+    // One open request per pair, in either direction. Two people asking each
+    // other at the same instant produce one request that one of them then
+    // accepts, rather than two neither can resolve.
+    uniqueIndex('live_invitations_open_pair_uk')
+      .on(table.pairLowId, table.pairHighId)
+      .where(sql`${table.state} in ('pending', 'accepted')`),
+    // The read behind the surface: what is open for this person, either way.
+    index('live_invitations_low_open_idx')
+      .on(table.pairLowId, table.updatedAt)
+      .where(sql`${table.state} in ('pending', 'accepted')`),
+    index('live_invitations_high_open_idx')
+      .on(table.pairHighId, table.updatedAt)
+      .where(sql`${table.state} in ('pending', 'accepted')`),
+    // "How many has this person sent lately", which is what the bound asks.
+    index('live_invitations_inviter_recency_idx').on(
+      table.inviterId,
+      table.createdAt,
+    ),
+    uniqueIndex('live_invitations_sequence_uk').on(table.sequence),
+    check(
+      'live_invitations_state_check',
+      inList(table.state, liveInvitationStates),
+    ),
+    check('live_invitations_medium_check', inList(table.medium, liveMediums)),
+    check(
+      'live_invitations_pair_order_check',
+      sql`${table.pairLowId} < ${table.pairHighId}`,
+    ),
+    check(
+      'live_invitations_inviter_check',
+      sql`${table.inviterId} in (${table.pairLowId}, ${table.pairHighId})`,
+    ),
+    // Open and resolved are the two shapes, and a row is exactly one of them.
+    check(
+      'live_invitations_resolved_shape_check',
+      sql`(${table.state} in ('pending', 'accepted')) = (${table.resolvedAt} is null)`,
+    ),
+    check(
+      'live_invitations_expiry_order_check',
+      sql`${table.expiresAt} > ${table.createdAt}`,
     ),
   ],
 );

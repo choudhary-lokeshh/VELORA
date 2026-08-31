@@ -174,6 +174,10 @@ const live = createLiveRuntime({
   database: database.drizzle,
   directory: users.directory,
   enforcement: safety.eligibility,
+  introducibility: {
+    mayBeIntroducedTo: async (viewer, candidateId, at) =>
+      discovery.service.mayBeIntroducedTo(viewer, candidateId, at),
+  },
   introductions: {
     signal: async (actor, counterpartId) =>
       discovery.service.signalIntroduction(actor, counterpartId),
@@ -960,6 +964,10 @@ describe('when live discovery is switched off', () => {
       database: database.drizzle,
       directory: users.directory,
       enforcement: safety.eligibility,
+      introducibility: {
+        mayBeIntroducedTo: async (viewer, candidateId, at) =>
+          discovery.service.mayBeIntroducedTo(viewer, candidateId, at),
+      },
       introductions: {
         signal: async (actor, counterpartId) =>
           discovery.service.signalIntroduction(actor, counterpartId),

@@ -721,6 +721,30 @@ export class DiscoveryService {
   }
 
   /** Revalidates the target at the moment of the action, not when it was shown. */
+  /**
+   * Whether this viewer could legitimately be introduced to this person now.
+   *
+   * Published so another domain can gate an action that *would* lead to an
+   * introduction without performing one. It is the same predicate a signal is
+   * revalidated against — discoverability, availability, language overlap,
+   * region rotation, adult standing, and Trust and Safety — asked as a question
+   * rather than as a side effect.
+   *
+   * It deliberately answers a plain boolean. A caller learns whether the action
+   * it is about to offer is permitted and never why it is not, which keeps
+   * "not discoverable", "not available", "blocked", and "does not exist" a
+   * single indistinguishable answer wherever this is used.
+   */
+  async mayBeIntroducedTo(
+    viewer: UserAccountRow,
+    candidateId: string,
+    now: Date,
+  ): Promise<boolean> {
+    if (candidateId === viewer.id) return false;
+    if (!(await this.mayBrowse(viewer))) return false;
+    return this.isIntroducible(viewer, candidateId, now);
+  }
+
   private async isIntroducible(
     viewer: UserAccountRow,
     candidateId: string,

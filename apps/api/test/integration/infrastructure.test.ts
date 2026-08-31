@@ -215,6 +215,7 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'identity_reconciliation_findings',
         'identity_subjects',
         'live_encounters',
+        'live_invitations',
         'live_messages',
         'live_participations',
         'media_assets',

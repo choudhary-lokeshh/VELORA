@@ -2,7 +2,7 @@ import { and, asc, desc, eq, exists, gt, inArray, ne, sql } from 'drizzle-orm';
 
 import type { IdentityAdultAssuranceReaderPort } from '../identity/assurance-reader.js';
 import { adultAssuranceDecisionOf } from './onboarding.js';
-import type { UsersDatabase } from './repository.js';
+import type { UsersDatabase, UsersExecutor } from './repository.js';
 import {
   userAccounts,
   userAdultDeclarations,
@@ -397,6 +397,70 @@ export class ConsumerDirectory {
       .from(userAccounts)
       .innerJoin(userProfiles, eq(userProfiles.userId, userAccounts.id))
       .where(inArray(userAccounts.id, [...ids]));
+  }
+
+  /**
+   * Which of these accounts satisfy a narrowing another domain was asked for.
+   *
+   * A membership answer and nothing more. It takes identifiers the caller
+   * already holds and hands back the subset that matches, so the caller learns
+   * nothing about anybody it did not already name — no region is disclosed, no
+   * language list, and nobody outside the set can be discovered by asking.
+   *
+   * It exists so a domain that lets somebody narrow a search does not have to
+   * keep a copy of where people are or what they speak. A copy would be this
+   * repository's own rule broken twice over: a `users_` table read from
+   * outside, or a duplicate that goes stale the moment somebody moves.
+   *
+   * Both criteria are optional and both are conjunctive. Supplying neither is a
+   * question with a trivial answer, and it is answered rather than refused.
+   */
+  async matchingAmong(input: {
+    /**
+     * The caller's own connection, when it is asking inside a transaction.
+     *
+     * Taken rather than assumed, because the matcher asks this while holding a
+     * transaction of its own — and a read that opened a second pooled
+     * connection there would let one in-flight request hold two at once, which
+     * is the pool deadlock `walkCandidates` records in DISCOVERY.
+     */
+    readonly executor?: UsersDatabase | UsersExecutor;
+    readonly ids: readonly string[];
+    readonly language: string | undefined;
+    readonly region: string | undefined;
+  }): Promise<ReadonlySet<string>> {
+    if (input.ids.length === 0) return new Set<string>();
+    if (input.language === undefined && input.region === undefined) {
+      return new Set(input.ids);
+    }
+    const executor = input.executor ?? this.database;
+    const speaksLanguage =
+      input.language === undefined
+        ? undefined
+        : exists(
+            executor
+              .select({ language: userProfileLanguages.language })
+              .from(userProfileLanguages)
+              .where(
+                and(
+                  eq(userProfileLanguages.userId, userAccounts.id),
+                  eq(userProfileLanguages.language, input.language),
+                ),
+              ),
+          );
+    const rows = await executor
+      .select({ id: userAccounts.id })
+      .from(userAccounts)
+      .where(
+        and(
+          inArray(userAccounts.id, [...input.ids]),
+          ...(input.region === undefined
+            ? []
+            : [eq(userAccounts.region, input.region)]),
+          ...(speaksLanguage === undefined ? [] : [speaksLanguage]),
+        ),
+      );
+    return new Set(rows.map((row) => row.id));
   }
 
   /**

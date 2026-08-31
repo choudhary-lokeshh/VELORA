@@ -152,10 +152,14 @@ import {
   joinAuthorizationSchema,
 } from './realtime.js';
 import {
+  createLiveInvitationRequestSchema,
   liveConnectionResponseSchema,
   liveEncounterActionRequestSchema,
+  liveInvitationListResponseSchema,
   liveMessageListResponseSchema,
   liveSearchRequestSchema,
+  respondToLiveInvitationRequestSchema,
+  sendLiveReactionRequestSchema,
   liveSimulationRequestSchema,
   liveSimulationResponseSchema,
   liveStateResponseSchema,
@@ -396,7 +400,10 @@ export const apiRoutePaths = {
   rtcProviderEvents: '/v1/rtc/provider-events',
   liveConnections: '/v1/live/connections',
   liveDepartures: '/v1/live/departures',
+  liveInvitationResponses: '/v1/live/invitation-responses',
+  liveInvitations: '/v1/live/invitations',
   liveMessages: '/v1/live/messages',
+  liveReactions: '/v1/live/reactions',
   liveSessions: '/v1/live/sessions',
   liveSimulation: '/v1/live/simulation',
   liveTransitions: '/v1/live/transitions',
@@ -573,10 +580,14 @@ export const apiSchemas = {
   IntroductionReferenceRequest: introductionReferenceRequestSchema,
   Call: callSchema,
   CallActionRequest: callActionRequestSchema,
+  CreateLiveInvitationRequest: createLiveInvitationRequestSchema,
   LiveConnectionResponse: liveConnectionResponseSchema,
   LiveEncounterActionRequest: liveEncounterActionRequestSchema,
+  LiveInvitationListResponse: liveInvitationListResponseSchema,
   LiveMessageListResponse: liveMessageListResponseSchema,
   LiveSearchRequest: liveSearchRequestSchema,
+  RespondToLiveInvitationRequest: respondToLiveInvitationRequestSchema,
+  SendLiveReactionRequest: sendLiveReactionRequestSchema,
   LiveSimulationRequest: liveSimulationRequestSchema,
   LiveSimulationResponse: liveSimulationResponseSchema,
   LiveStateResponse: liveStateResponseSchema,
@@ -3540,6 +3551,91 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'Writes into the live encounter. Nothing written here reaches the Inbox; durable messaging begins at mutual connection and not before.',
+  },
+  {
+    method: 'post',
+    operationId: 'sendLiveReaction',
+    path: apiRoutePaths.liveReactions,
+    requestSchemaName: 'SendLiveReactionRequest',
+    responses: {
+      '200': {
+        description:
+          'The encounter\u2019s lines after the reaction, in the same shape a message is read in. A reaction is one of a small closed set and never free text.',
+        schemaName: 'LiveMessageListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The encounter is over, or the pair may no longer interact. The body is an ApiError, and it never says which.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': liveEncounterNotFoundResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Sends one of the six reactions into the live encounter. It costs nothing and credits nobody: gifting is deliberately not attached to a random encounter.',
+  },
+  {
+    method: 'post',
+    operationId: 'createLiveInvitation',
+    path: apiRoutePaths.liveInvitations,
+    requestSchemaName: 'CreateLiveInvitationRequest',
+    responses: {
+      '200': {
+        description:
+          'This person\u2019s requests to meet after the new one was recorded, in both directions. Repeating it against the same person returns the existing request rather than writing a second.',
+        schemaName: 'LiveInvitationListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The pair may not meet right now, or a bound was reached. The body is an ApiError, and it never says which.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description:
+          'No such person, or nobody this caller holds a reason to ask. Deliberately the same answer, so an identifier cannot be probed.',
+        schemaName: 'ApiError',
+      },
+      '503': liveDiscoveryUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Asks one person to meet live. It promises a request, never a connection: the two still have to be here at the same time, and every eligibility, standing, and safety predicate is asked again when they are.',
+  },
+  {
+    method: 'post',
+    operationId: 'respondToLiveInvitation',
+    path: apiRoutePaths.liveInvitationResponses,
+    requestSchemaName: 'RespondToLiveInvitationRequest',
+    responses: {
+      '200': {
+        description:
+          'This person\u2019s requests to meet after the answer. Accepting does not itself open a live session; it makes the pair the matcher\u2019s first choice once both are here.',
+        schemaName: 'LiveInvitationListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The request is no longer answerable, or this caller is not the side entitled to that answer. The body is an ApiError, and it never says which.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '404': {
+        description:
+          'No such request, or one belonging to two other people. Deliberately the same answer.',
+        schemaName: 'ApiError',
+      },
+      '503': liveDiscoveryUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Accepts, declines, or withdraws a request to meet live. Accept is only the recipient\u2019s to send and cancel only the sender\u2019s.',
   },
   {
     method: 'post',

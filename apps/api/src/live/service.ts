@@ -11,20 +11,30 @@ import type { UserAccountRow } from '../users/repository.js';
 import {
   liveAbuseWindowMilliseconds,
   liveCandidateScanLimit,
+  liveInvitationExpiryMilliseconds,
+  liveInvitationOpenStates,
   livePresenceGraceMilliseconds,
   liveRematchSuppressionMilliseconds,
   liveSearchGraceMilliseconds,
   maximumLiveEncountersPerUser,
+  maximumLiveInvitationsPerWindow,
   maximumLiveMessagesPerEncounter,
+  maximumOpenLiveInvitations,
   type LiveEndReason,
+  type LiveInvitationState,
   type LiveMedium,
+  type LiveReaction,
 } from './policy.js';
 import {
   type LiveEncounterRow,
+  type LiveInvitationRow,
   type LiveMessageRow,
   type LiveParticipationRow,
+  type LivePreferences,
   type LiveRepository,
 } from './repository.js';
+
+export type { LivePreferences };
 
 /**
  * What a surface renders, assembled once by the domain that knows all of it.
@@ -53,18 +63,49 @@ export interface LiveEncounterView {
   readonly endedByViewer: boolean;
   readonly id: string;
   readonly messageSequence: number;
-  readonly peer: { readonly displayName: string; readonly id: string };
+  readonly peer: LivePersonView;
   readonly startedAt: Date;
+}
+
+/** The other person, in the minimized public shape USERS publishes them in. */
+export interface LivePersonView {
+  readonly bio: string | undefined;
+  readonly displayName: string;
+  readonly id: string;
+  readonly region: string | undefined;
+  readonly sharedLanguages: readonly string[];
+}
+
+export interface LiveInvitationView {
+  readonly createdAt: Date;
+  readonly direction: 'outgoing' | 'incoming';
+  readonly expiresAt: Date;
+  readonly id: string;
+  readonly medium: LiveMedium;
+  readonly person: LivePersonView;
+  readonly state: LiveInvitationState;
 }
 
 export interface LiveStateView {
   readonly admission: 'eligible' | 'not_eligible' | 'unavailable';
   readonly encounter: LiveEncounterView | undefined;
+  readonly invitations: readonly LiveInvitationView[];
+  /** The languages this person may narrow to, which are their own. */
+  readonly languageOptions: readonly string[];
   readonly medium: LiveMedium | undefined;
+  readonly preferences: LivePreferences;
   readonly searchingSince: Date | undefined;
   readonly simulated: boolean;
   readonly state: 'idle' | 'searching' | 'matched' | 'ended';
 }
+
+export type LiveInvitationsOutcome =
+  | { readonly kind: 'invitations'; readonly views: readonly LiveInvitationView[] }
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'not_permitted' }
+  | { readonly kind: 'rate_limited' }
+  | { readonly kind: 'not_eligible' }
+  | { readonly kind: 'unavailable' };
 
 export type LiveOutcome =
   | { readonly kind: 'state'; readonly view: LiveStateView }
@@ -205,11 +246,46 @@ export interface LiveConversationPort {
   >;
 }
 
-/** USERS' published directory, for the one thing a peer is shown: a name. */
+/**
+ * USERS' published directory, for the little this domain shows about a person.
+ *
+ * Four questions, and each is one another domain owns the answer to. LIVE keeps
+ * no copy of any of them: a display name, a region, and a language list are
+ * USERS' facts, and a copy here would be a fact that went stale the moment
+ * somebody moved, renamed themselves, or learned a language — while also being
+ * the cross-domain read `docs/architecture/03-domain-boundaries.md` forbids.
+ *
+ * `matchingAmong` is deliberately a membership answer over identifiers the
+ * caller already holds. It never returns a region or a language, so applying a
+ * preference cannot become a way to read where somebody lives.
+ */
 export interface LiveDirectoryPort {
+  /** The caller's own languages, which bound what they may narrow to. */
+  languagesOf(userId: string): Promise<readonly string[]>;
+  /** Which of these people satisfy the narrowing a search asked for. */
+  matchingAmong(input: {
+    /** The matcher's own connection. A second one would deadlock the pool. */
+    readonly executor: Executor;
+    readonly ids: readonly string[];
+    readonly language: string | undefined;
+    readonly region: string | undefined;
+  }): Promise<ReadonlySet<string>>;
   namesFor(
     ids: readonly string[],
   ): Promise<readonly { readonly displayName: string; readonly id: string }[]>;
+  /** The minimized public profile, as one consumer may see another's. */
+  profilesFor(input: {
+    readonly ids: readonly string[];
+    readonly viewerLanguages: readonly string[];
+  }): Promise<
+    readonly {
+      readonly bio: string | null;
+      readonly displayName: string;
+      readonly id: string;
+      readonly region: string | null;
+      readonly sharedLanguages: readonly string[];
+    }[]
+  >;
 }
 
 /**
@@ -235,12 +311,35 @@ export interface LiveSimulationPort {
   }): Promise<UserAccountRow | undefined>;
 }
 
+/**
+ * DISCOVERY's answer to "may these two be introduced right now".
+ *
+ * Asked before one person may ask another to meet live, and asked of the domain
+ * that owns the question rather than re-derived here. Picking somebody is the
+ * one action in this domain that names a person, so it is the one action that
+ * needs the predicate ordinary discovery applies — otherwise a harvested
+ * identifier would reach somebody who has turned discoverability off.
+ *
+ * Random matching deliberately does *not* consult this: the matcher puts
+ * together people who were never each other's candidates, which is the whole
+ * point of it, and requiring feed eligibility there would quietly turn random
+ * discovery into a second Discover feed.
+ */
+export interface LiveIntroducibilityPort {
+  mayBeIntroducedTo(
+    viewer: UserAccountRow,
+    candidateId: string,
+    now: Date,
+  ): Promise<boolean>;
+}
+
 export interface LiveServiceDependencies {
   readonly admission: LiveAdmissionPort;
   readonly connections: ConnectionDirectoryPort;
   readonly conversations: LiveConversationPort;
   readonly directory: LiveDirectoryPort;
   readonly enforcement: LiveEnforcementPort;
+  readonly introducibility: LiveIntroducibilityPort;
   readonly introductions: LiveIntroductionPort;
   readonly logger: SafeLogger;
   /** `false` where configuration has not switched live discovery on. */
@@ -357,6 +456,7 @@ export class LiveService {
   async search(
     actor: UserAccountRow,
     medium: LiveMedium,
+    preferences?: LivePreferences,
   ): Promise<LiveOutcome> {
     if (this.dependencies.mode === 'unavailable') {
       return { kind: 'unavailable' };
@@ -364,6 +464,11 @@ export class LiveService {
     if (!(await this.mayUseLive(actor))) return { kind: 'not_eligible' };
 
     const now = this.dependencies.now();
+    // Narrowed to what this person actually speaks before it reaches storage.
+    // A language somebody does not speak is not a preference, it is a filter
+    // over other people, and the contract is deliberately unable to express one
+    // — this is where that stops being a comment and starts being enforced.
+    const wanted = await this.narrowedPreferences(actor, preferences);
     let outcome: 'limited' | { readonly encounterId: string | undefined };
     try {
       outcome = await this.dependencies.repository.transaction(
@@ -375,7 +480,7 @@ export class LiveService {
           // acyclic — every other transaction in this domain takes a pair lock
           // and nothing else.
           await this.dependencies.repository.lockMatchmaking(executor);
-          return this.enterAndAllocate(executor, actor, medium, now);
+          return this.enterAndAllocate(executor, actor, medium, now, wanted);
         },
       );
     } catch (error) {
@@ -516,6 +621,27 @@ export class LiveService {
       readonly encounterId: string;
     },
   ): Promise<LiveMessagesOutcome> {
+    return this.writeLine(actor, { ...input, kind: 'text' });
+  }
+
+  /**
+   * One line into an encounter, typed or tapped.
+   *
+   * Shared by both because both are the same write with the same guarantees:
+   * one bounded body, one idempotency key, one position allocated from the
+   * encounter's own counter under its row lock, and safety re-composed inside
+   * the transaction so a block landing mid-conversation refuses the line being
+   * sent rather than the one after it.
+   */
+  private async writeLine(
+    actor: UserAccountRow,
+    input: {
+      readonly body: string;
+      readonly clientMessageId: string;
+      readonly encounterId: string;
+      readonly kind: 'text' | 'reaction';
+    },
+  ): Promise<LiveMessagesOutcome> {
     if (this.dependencies.mode === 'unavailable') {
       return { kind: 'unavailable' };
     }
@@ -569,6 +695,7 @@ export class LiveService {
           clientMessageId: input.clientMessageId,
           encounterId: held.id,
           id: crypto.randomUUID(),
+          kind: input.kind,
           now,
           senderId: actor.id,
           sequence,
@@ -848,6 +975,7 @@ export class LiveService {
     actor: UserAccountRow,
     medium: LiveMedium,
     now: Date,
+    preferences: LivePreferences,
   ): Promise<'limited' | { readonly encounterId: string | undefined }> {
     const existing = await this.dependencies.repository.findLiveParticipation(
       executor,
@@ -882,6 +1010,7 @@ export class LiveService {
           id: crypto.randomUUID(),
           medium,
           now,
+          preferences,
           userId: actor.id,
         })) ??
         (await this.dependencies.repository.findLiveParticipation(executor, {
@@ -895,6 +1024,21 @@ export class LiveService {
         id: participation.id,
         now,
       });
+      // Broadening or narrowing mid-search takes effect on the next attempt,
+      // which is this one. It deliberately does not restart the wait: somebody
+      // who has been looking for two minutes and then widens their net should
+      // keep their place in the queue rather than pay for having tried.
+      if (
+        participation.preferredRegion !== preferences.region ||
+        (participation.preferredLanguage ?? undefined) !== preferences.language
+      ) {
+        participation =
+          (await this.dependencies.repository.setPreferences(executor, {
+            id: participation.id,
+            now,
+            preferences,
+          })) ?? participation;
+      }
       // Somebody sitting on a finished encounter has just asked to meet
       // somebody else, which is the whole meaning of pressing the control. They
       // go back into the pool here rather than staying held on the encounter —
@@ -938,6 +1082,10 @@ export class LiveService {
         id: crypto.randomUUID(),
         medium: participation.medium,
         now,
+        // The stand-in casts the widest net there is. It stands in for whoever
+        // would have been there, and a stand-in that had preferences of its own
+        // would make the local walkthrough disagree with the product.
+        preferences: { language: undefined, region: 'any' },
         userId: standIn.id,
       }));
     if (standInParticipation?.state !== 'searching') {
@@ -968,15 +1116,41 @@ export class LiveService {
     participation: LiveParticipationRow,
     now: Date,
   ): Promise<string | undefined> {
-    const candidates = await this.dependencies.repository.findWaitingCandidates(
+    const seenSince = new Date(now.getTime() - liveSearchGraceMilliseconds);
+    // People who already agreed to meet this person come first, and they are a
+    // separate read rather than a sort key over the pool: an agreement is a
+    // reason to pair two people, and folding it into the ordering of a scan
+    // that is bounded at twenty would mean an agreement quietly falling off the
+    // end of a busy pool.
+    const agreed = await this.dependencies.repository.findAgreedCandidates(
       executor,
       {
         limit: liveCandidateScanLimit,
         medium: participation.medium,
-        seenSince: new Date(now.getTime() - liveSearchGraceMilliseconds),
+        now,
+        seenSince,
         userId: actor.id,
       },
     );
+    const agreedIds = new Set(agreed.map((row) => row.userId));
+    const pool = await this.dependencies.repository.findWaitingCandidates(
+      executor,
+      {
+        limit: liveCandidateScanLimit,
+        medium: participation.medium,
+        seenSince,
+        userId: actor.id,
+      },
+    );
+    // A preference narrows the pool and never the people who chose each other.
+    // Two people who agreed to meet have already answered the question a
+    // preference asks, and a filter that then kept them apart would be the
+    // product overruling both of them.
+    const narrowed = await this.narrowPool(executor, actor, participation, pool);
+    const candidates = [
+      ...agreed,
+      ...narrowed.filter((row) => !agreedIds.has(row.userId)),
+    ];
     if (candidates.length === 0) return undefined;
 
     const candidateIds = candidates.map((row) => row.userId);
@@ -999,7 +1173,14 @@ export class LiveService {
       // refusal costs nothing. It is asked again below under the lock, because
       // this answer was taken before it.
       if (blocked.has(candidate.userId)) continue;
-      if (recentlyMet.has(candidate.userId)) continue;
+      // Rematch suppression stops the *matcher* handing back somebody you just
+      // moved on from. It deliberately does not apply to a pair who asked to
+      // meet: they named each other, and refusing them because they met an hour
+      // ago would be suppression acting as a rule about people rather than
+      // about randomness. A block still refuses them, above and below.
+      if (!agreedIds.has(candidate.userId) && recentlyMet.has(candidate.userId)) {
+        continue;
+      }
 
       await lockPair(executor, actor.id, candidate.userId);
       if (
@@ -1062,6 +1243,15 @@ export class LiveService {
         // half-written survives: the whole transaction is discarded.
         throw new LiveAllocationLost();
       }
+      // Any request to meet between these two is spent, however they came to be
+      // paired. An agreement that survived the meeting it asked for would be
+      // redeemable again an hour later, against somebody who has since moved
+      // on from wanting it.
+      await this.dependencies.repository.markInvitationMet(executor, {
+        first: actor.id,
+        now,
+        second: candidate.userId,
+      });
       return encounter.id;
     }
     return undefined;
@@ -1153,11 +1343,407 @@ export class LiveService {
     return eligibility.step === 'completed';
   }
 
-  private emptyState(admission: LiveStateView['admission']): LiveStateView {
+
+  /**
+   * The subset of the pool this person asked the matcher to consider.
+   *
+   * Both criteria are asked of USERS, on the matcher's own connection, and both
+   * come back as a membership answer over identifiers this domain already had —
+   * so applying a preference never becomes a way to read where somebody lives
+   * or what they speak.
+   *
+   * A narrowing that leaves nobody is answered as nobody. The surface says the
+   * search is still narrowed and offers to broaden it; what it never does is
+   * quietly ignore the preference and hand over somebody who does not match,
+   * which is the failure that would make the control worthless.
+   */
+  private async narrowPool(
+    executor: TransactionHandle,
+    actor: UserAccountRow,
+    participation: LiveParticipationRow,
+    pool: readonly LiveParticipationRow[],
+  ): Promise<readonly LiveParticipationRow[]> {
+    const language = participation.preferredLanguage ?? undefined;
+    // `same` means the region this account is in. Somebody whose account has no
+    // region cannot ask for people in it, and the honest reading of that is
+    // "no narrowing" rather than "nobody" — a person with no region set would
+    // otherwise be silently unable to match at all.
+    const region =
+      participation.preferredRegion === 'same'
+        ? (actor.region ?? undefined)
+        : undefined;
+    if (pool.length === 0) return pool;
+    if (language === undefined && region === undefined) return pool;
+    const matching = await this.dependencies.directory.matchingAmong({
+      executor,
+      ids: pool.map((row) => row.userId),
+      language,
+      region,
+    });
+    return pool.filter((row) => matching.has(row.userId));
+  }
+
+  /**
+   * The preferences this search will actually be made under.
+   *
+   * A language the caller does not speak is dropped rather than refused: the
+   * request is well-formed, the narrowing is simply not one this product
+   * offers, and the state that comes back says which preferences are being
+   * applied — so a surface shows the truth rather than a control that appears
+   * to have taken effect.
+   */
+  private async narrowedPreferences(
+    actor: UserAccountRow,
+    wanted: LivePreferences | undefined,
+  ): Promise<LivePreferences> {
+    if (wanted === undefined) return { language: undefined, region: 'any' };
+    if (wanted.language === undefined) {
+      return { language: undefined, region: wanted.region };
+    }
+    const spoken = await this.dependencies.directory.languagesOf(actor.id);
+    return {
+      language: spoken.includes(wanted.language) ? wanted.language : undefined,
+      region: wanted.region,
+    };
+  }
+
+  /**
+   * Asks one person to meet live.
+   *
+   * The one action in this domain that names somebody, and it is gated on
+   * DISCOVERY's own answer to whether these two may be introduced right now —
+   * so an identifier harvested from anywhere reaches somebody who has turned
+   * discoverability off exactly as often as a signal from the feed would, which
+   * is never.
+   *
+   * It promises a request and never a meeting. Both people still have to be
+   * here at the same time, and when they are, every predicate the random
+   * matcher composes is composed again in the same order.
+   */
+  async invite(
+    actor: UserAccountRow,
+    input: { readonly candidateId: string; readonly medium: LiveMedium },
+  ): Promise<LiveInvitationsOutcome> {
+    if (this.dependencies.mode === 'unavailable') {
+      return { kind: 'unavailable' };
+    }
+    if (!(await this.mayUseLive(actor))) return { kind: 'not_eligible' };
+    if (input.candidateId === actor.id) return { kind: 'not_found' };
+
+    const now = this.dependencies.now();
+    // Asked before the transaction, because it is DISCOVERY's read over its own
+    // tables and this domain holds no lock worth keeping across it. It is a
+    // point-in-time answer, and everything that authorizes an actual encounter
+    // is asked again under the pair lock when one is allocated.
+    if (
+      !(await this.dependencies.introducibility.mayBeIntroducedTo(
+        actor,
+        input.candidateId,
+        now,
+      ))
+    ) {
+      return { kind: 'not_found' };
+    }
+
+    const outcome = await this.dependencies.repository.transaction(
+      async (executor): Promise<'sent' | 'denied' | 'limited'> => {
+        await lockPair(executor, actor.id, input.candidateId);
+        if (
+          !(await this.dependencies.safety.mayInteract({
+            executor,
+            first: actor.id,
+            now,
+            second: input.candidateId,
+          }))
+        ) {
+          return 'denied';
+        }
+        if (
+          !(await this.dependencies.standing.isDeliverable({
+            executor,
+            userId: input.candidateId,
+          }))
+        ) {
+          return 'denied';
+        }
+        const decision = await this.dependencies.enforcement.decide({
+          capability: 'consumer_interaction',
+          executor,
+          now,
+          subjectId: input.candidateId,
+        });
+        if (!decision.allowed) return 'denied';
+
+        const existing =
+          await this.dependencies.repository.findOpenInvitationForPair(
+            executor,
+            { first: actor.id, forUpdate: true, second: input.candidateId },
+          );
+        // An open request between these two already carries this intent,
+        // whichever of them opened it. Asking again is answered with what
+        // stands rather than with a second request neither could resolve.
+        if (existing !== undefined && existing.expiresAt > now) return 'sent';
+
+        // Counted inside the writing transaction, like every other bound here.
+        const open = await this.dependencies.repository.countOpenInvitations(
+          executor,
+          { userId: actor.id },
+        );
+        if (open >= maximumOpenLiveInvitations) return 'limited';
+        const sent = await this.dependencies.repository.countInvitationsSince(
+          executor,
+          {
+            since: new Date(now.getTime() - liveAbuseWindowMilliseconds),
+            userId: actor.id,
+          },
+        );
+        if (sent >= maximumLiveInvitationsPerWindow) return 'limited';
+
+        // An expired request is retired before a new one is written, because
+        // the open-pair index does not know about time and would otherwise
+        // refuse the second request for ever.
+        if (existing !== undefined) {
+          await this.dependencies.repository.transitionInvitation(executor, {
+            from: [...liveInvitationOpenStates],
+            id: existing.id,
+            now,
+            to: 'expired',
+          });
+        }
+        const written = await this.dependencies.repository.insertInvitation(
+          executor,
+          {
+            expiresAt: new Date(
+              now.getTime() + liveInvitationExpiryMilliseconds,
+            ),
+            id: crypto.randomUUID(),
+            inviterId: actor.id,
+            medium: input.medium,
+            now,
+            subjectId: input.candidateId,
+          },
+        );
+        // Lost the index to a concurrent identical request. That request is
+        // this request, so the answer is the same.
+        return written === undefined ? 'sent' : 'sent';
+      },
+    );
+    if (outcome === 'denied') return { kind: 'not_permitted' };
+    if (outcome === 'limited') return { kind: 'rate_limited' };
+    return { kind: 'invitations', views: await this.invitationsFor(actor) };
+  }
+
+  /**
+   * Accepts, declines, or withdraws a request to meet.
+   *
+   * Accepting does not open a live session, and deliberately says so by moving
+   * to a state that means "agreed, and not both here yet". The alternative —
+   * allocating an encounter on the spot — would be a product that puts somebody
+   * into a live video call because a person who is not there tapped a button.
+   *
+   * Which answer each side may give is decided here rather than trusted from
+   * the request: accept is the recipient's and cancel is the sender's, and the
+   * wrong one is refused rather than reinterpreted as the right one.
+   */
+  async respondToInvitation(
+    actor: UserAccountRow,
+    input: {
+      readonly invitationId: string;
+      readonly response: 'accept' | 'decline' | 'cancel';
+    },
+  ): Promise<LiveInvitationsOutcome> {
+    if (this.dependencies.mode === 'unavailable') {
+      return { kind: 'unavailable' };
+    }
+    if (!(await this.mayUseLive(actor))) return { kind: 'not_eligible' };
+
+    const now = this.dependencies.now();
+    const outcome = await this.dependencies.repository.transaction(
+      async (executor): Promise<'applied' | 'unknown' | 'denied'> => {
+        const found = await this.dependencies.repository.findInvitation(
+          executor,
+          { id: input.invitationId },
+        );
+        if (found === undefined || !isInvitationParticipant(found, actor.id)) {
+          return 'unknown';
+        }
+        await lockPair(executor, found.pairLowId, found.pairHighId);
+        const held = await this.dependencies.repository.findInvitation(
+          executor,
+          { forUpdate: true, id: input.invitationId },
+        );
+        if (held === undefined) return 'unknown';
+        if (!isInvitationOpen(held)) return 'denied';
+        // Expired on read. There is no sweep, so a request past its bound is
+        // retired the moment somebody looks at it rather than answered.
+        if (held.expiresAt <= now) {
+          await this.dependencies.repository.transitionInvitation(executor, {
+            from: [...liveInvitationOpenStates],
+            id: held.id,
+            now,
+            to: 'expired',
+          });
+          return 'denied';
+        }
+
+        const sender = held.inviterId === actor.id;
+        if (input.response === 'cancel' && !sender) return 'denied';
+        if (input.response !== 'cancel' && sender) return 'denied';
+        if (input.response === 'accept' && held.state !== 'pending') {
+          return 'denied';
+        }
+        if (input.response === 'accept') {
+          // Re-composed at the moment of agreement rather than trusted from
+          // when the request was sent. A block or a restriction that landed in
+          // between refuses the acceptance, and says no more than that.
+          if (
+            !(await this.dependencies.safety.mayInteract({
+              executor,
+              first: held.pairLowId,
+              now,
+              second: held.pairHighId,
+            }))
+          ) {
+            return 'denied';
+          }
+        }
+        const applied =
+          await this.dependencies.repository.transitionInvitation(executor, {
+            from: [...liveInvitationOpenStates],
+            id: held.id,
+            now,
+            to:
+              input.response === 'accept'
+                ? 'accepted'
+                : input.response === 'decline'
+                  ? 'declined'
+                  : 'cancelled',
+          });
+        return applied === undefined ? 'denied' : 'applied';
+      },
+    );
+    if (outcome === 'unknown') return { kind: 'not_found' };
+    if (outcome === 'denied') return { kind: 'not_permitted' };
+    return { kind: 'invitations', views: await this.invitationsFor(actor) };
+  }
+
+  /**
+   * Every request to meet that is still worth showing this person.
+   *
+   * Expiry is applied here rather than by a sweep, so an environment where
+   * nothing has run still shows the truth.
+   */
+  private async invitationsFor(
+    actor: UserAccountRow,
+  ): Promise<readonly LiveInvitationView[]> {
+    const now = this.dependencies.now();
+    const rows = await this.dependencies.repository.listOpenInvitations(
+      this.dependencies.repository.transactionless,
+      { limit: maximumOpenLiveInvitations * 4, userId: actor.id },
+    );
+    const live = rows.filter((row) => row.expiresAt > now);
+    if (live.length === 0) return [];
+    const people = await this.peopleFor(
+      actor,
+      live.map((row) => counterpartOfPair(row, actor.id)),
+    );
+    return live.map((row) => {
+      const personId = counterpartOfPair(row, actor.id);
+      return {
+        createdAt: row.createdAt,
+        direction: row.inviterId === actor.id ? 'outgoing' : 'incoming',
+        expiresAt: row.expiresAt,
+        id: row.id,
+        medium: row.medium,
+        person: people.get(personId) ?? unknownPerson(personId),
+        state: row.state,
+      };
+    });
+  }
+
+  /**
+   * Sends one of the six reactions.
+   *
+   * The same write a message is, through the same bound, the same idempotency
+   * key, and the same safety re-composition — because it is the same thing to
+   * moderate. What differs is entirely in the rendering: a reaction is a moment
+   * on the video and never a line of transcript.
+   */
+  async sendReaction(
+    actor: UserAccountRow,
+    input: {
+      readonly clientMessageId: string;
+      readonly encounterId: string;
+      readonly reaction: LiveReaction;
+    },
+  ): Promise<LiveMessagesOutcome> {
+    return this.writeLine(actor, {
+      body: input.reaction,
+      clientMessageId: input.clientMessageId,
+      encounterId: input.encounterId,
+      kind: 'reaction',
+    });
+  }
+
+  /** The minimized public profile of each of these people, keyed by id. */
+  private async peopleFor(
+    actor: UserAccountRow,
+    ids: readonly string[],
+  ): Promise<ReadonlyMap<string, LivePersonView>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const languages = await this.dependencies.directory.languagesOf(actor.id);
+    // `profilesFor` narrows languages to the overlap with the viewer, and
+    // answers nothing at all for a viewer who has declared none. A person still
+    // has to be nameable in that case, so the name is read separately and the
+    // context is simply absent — which is the truthful rendering of "this
+    // platform knows of no shared language".
+    const profiles =
+      languages.length === 0
+        ? []
+        : await this.dependencies.directory.profilesFor({
+            ids: unique,
+            viewerLanguages: languages,
+          });
+    const byId = new Map<string, LivePersonView>();
+    for (const profile of profiles) {
+      byId.set(profile.id, {
+        bio: profile.bio ?? undefined,
+        displayName: profile.displayName,
+        id: profile.id,
+        region: profile.region ?? undefined,
+        sharedLanguages: profile.sharedLanguages,
+      });
+    }
+    const missing = unique.filter((id) => !byId.has(id));
+    if (missing.length > 0) {
+      for (const name of await this.dependencies.directory.namesFor(missing)) {
+        byId.set(name.id, {
+          bio: undefined,
+          displayName: name.displayName,
+          id: name.id,
+          region: undefined,
+          sharedLanguages: [],
+        });
+      }
+    }
+    return byId;
+  }
+
+  private emptyState(
+    admission: LiveStateView['admission'],
+    extra?: {
+      readonly invitations: readonly LiveInvitationView[];
+      readonly languageOptions: readonly string[];
+    },
+  ): LiveStateView {
     return {
       admission,
       encounter: undefined,
+      invitations: extra?.invitations ?? [],
+      languageOptions: extra?.languageOptions ?? [],
       medium: undefined,
+      preferences: { language: undefined, region: 'any' },
       searchingSince: undefined,
       simulated: this.dependencies.simulation !== undefined,
       state: 'idle',
@@ -1177,18 +1763,32 @@ export class LiveService {
     participation: LiveParticipationRow | undefined,
   ): Promise<LiveStateView> {
     const simulated = this.dependencies.simulation !== undefined;
+    // Sequential, not concurrent. Each of these reads takes its own pooled
+    // connection, so running them together lets one in-flight request hold
+    // several at once — the pool deadlock DISCOVERY's candidate walk records.
+    const languageOptions = await this.dependencies.directory.languagesOf(
+      actor.id,
+    );
+    const invitations = await this.invitationsFor(actor);
+    const preferences: LivePreferences = {
+      language: participation?.preferredLanguage ?? undefined,
+      region: participation?.preferredRegion ?? 'any',
+    };
     if (participation === undefined) {
       // Nobody in the pool. The last encounter, if there was one, is not
       // reported: somebody who left is idle, and showing them the person they
       // walked away from would be a surface remembering something the product
       // deliberately does not.
-      return this.emptyState('eligible');
+      return this.emptyState('eligible', { invitations, languageOptions });
     }
     if (participation.state === 'searching') {
       return {
         admission: 'eligible',
         encounter: undefined,
+        invitations,
+        languageOptions,
         medium: participation.medium,
+        preferences,
         searchingSince: participation.stateEnteredAt,
         simulated,
         state: 'searching',
@@ -1200,19 +1800,24 @@ export class LiveService {
       // The shape check on the table makes this unreachable. Answered rather
       // than thrown, because a surface that cannot render is worse than one
       // that renders the truthful minimum.
-      return this.emptyState('eligible');
+      return this.emptyState('eligible', { invitations, languageOptions });
     }
     const encounter = await this.dependencies.repository.findEncounter(
       this.dependencies.repository.transactionless,
       encounterId,
     );
-    if (encounter === undefined) return this.emptyState('eligible');
+    if (encounter === undefined) {
+      return this.emptyState('eligible', { invitations, languageOptions });
+    }
 
     const view = await this.encounterView(actor, encounter);
     return {
       admission: 'eligible',
       encounter: view,
+      invitations,
+      languageOptions,
       medium: encounter.medium,
+      preferences,
       searchingSince: undefined,
       simulated,
       // Taken from where this *person* is rather than from the encounter, so a
@@ -1228,7 +1833,7 @@ export class LiveService {
     encounter: LiveEncounterRow,
   ): Promise<LiveEncounterView> {
     const peerId = counterpartOf(encounter, actor.id);
-    const [peer] = await this.dependencies.directory.namesFor([peerId]);
+    const people = await this.peopleFor(actor, [peerId]);
     const sessionState =
       encounter.realtimeSessionId === null
         ? undefined
@@ -1251,13 +1856,10 @@ export class LiveService {
       endedByViewer: encounter.endedById === actor.id,
       id: encounter.id,
       messageSequence: encounter.messageSequence,
-      peer: {
-        // A name this platform could not read is rendered as unavailable rather
-        // than as an empty string, so a surface never presents a nameless
-        // person as though that were their name.
-        displayName: peer?.displayName ?? 'Unavailable',
-        id: peerId,
-      },
+      // A person this platform could not read is rendered as unavailable rather
+      // than as an empty string, so a surface never presents a nameless person
+      // as though that were their name.
+      peer: people.get(peerId) ?? unknownPerson(peerId),
       startedAt: encounter.createdAt,
     };
   }
@@ -1309,4 +1911,40 @@ function counterpartOf(encounter: LiveEncounterRow, actorId: string): string {
   return encounter.pairLowId === actorId
     ? encounter.pairHighId
     : encounter.pairLowId;
+}
+
+function counterpartOfPair(
+  row: { readonly pairHighId: string; readonly pairLowId: string },
+  actorId: string,
+): string {
+  return row.pairLowId === actorId ? row.pairHighId : row.pairLowId;
+}
+
+function isInvitationParticipant(
+  invitation: LiveInvitationRow,
+  userId: string,
+): boolean {
+  return (
+    invitation.pairLowId === userId || invitation.pairHighId === userId
+  );
+}
+
+function isInvitationOpen(invitation: LiveInvitationRow): boolean {
+  return liveInvitationOpenStates.includes(invitation.state);
+}
+
+/**
+ * Somebody this platform could not read.
+ *
+ * A named absence rather than an empty string, so no surface can present a
+ * missing name as though it were the person's name.
+ */
+function unknownPerson(id: string): LivePersonView {
+  return {
+    bio: undefined,
+    displayName: 'Unavailable',
+    id,
+    region: undefined,
+    sharedLanguages: [],
+  };
 }

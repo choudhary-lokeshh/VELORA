@@ -153,6 +153,44 @@ export class LiveSimulator implements LiveSimulationPort {
     const service = this.service;
     if (service === undefined) return false;
 
+    // The two invitation scenarios come before the encounter check, because
+    // both are about the state *before* there is an encounter — which is the
+    // half of Pick that would otherwise need a second person to walk.
+    if (input.scenario === 'peer_invitation') {
+      const inviter = await this.standInFor({
+        executor: this.dependencies.repository.transactionless,
+        now: new Date(),
+        viewerId: input.actor.id,
+      });
+      if (inviter === undefined) return false;
+      const outcome = await service.invite(inviter, {
+        candidateId: input.actor.id,
+        medium: 'video',
+      });
+      return outcome.kind === 'invitations';
+    }
+    if (input.scenario === 'peer_accepts_invitation') {
+      const current = await service.read(input.actor);
+      // Only a request this person sent, and only one nobody has answered.
+      // Accepting on somebody's behalf is exactly the thing this adapter must
+      // not be able to do, so it finds the invitation and calls the published
+      // method as the person entitled to answer it.
+      const outgoing = current.invitations.find(
+        (invitation) =>
+          invitation.direction === 'outgoing' && invitation.state === 'pending',
+      );
+      if (outgoing === undefined) return false;
+      const invitee = await this.dependencies.accounts.findAccountById(
+        outgoing.person.id,
+      );
+      if (invitee === undefined) return false;
+      const outcome = await service.respondToInvitation(invitee, {
+        invitationId: outgoing.id,
+        response: 'accept',
+      });
+      return outcome.kind === 'invitations';
+    }
+
     const state = await service.read(input.actor);
     const encounter = state.encounter;
     if (encounter === undefined || state.state !== 'matched') return false;
@@ -182,6 +220,16 @@ export class LiveSimulator implements LiveSimulationPort {
       case 'peer_connect': {
         const outcome = await service.connect(peer, encounter.id);
         return outcome.kind === 'connection';
+      }
+      case 'peer_reaction': {
+        const outcome = await service.sendReaction(peer, {
+          clientMessageId: `sim-${encounter.id}-${String(
+            encounter.messageSequence + 1,
+          )}`,
+          encounterId: encounter.id,
+          reaction: 'wave',
+        });
+        return outcome.kind === 'messages';
       }
       case 'peer_next': {
         const outcome = await service.next(peer, encounter.id);

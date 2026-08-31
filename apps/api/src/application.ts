@@ -529,6 +529,13 @@ export function createApplication(
         database: ownedDatabase.database,
         directory: users.directory,
         enforcement: safety.eligibility,
+        introducibility: {
+          // Adapted for the same reason the signal below is: LIVE's port is
+          // named for the question it asks, and taking DISCOVERY's service
+          // wholesale would hand this domain every other decision it makes.
+          mayBeIntroducedTo: async (viewer, candidateId, now) =>
+            discovery.service.mayBeIntroducedTo(viewer, candidateId, now),
+        },
         introductions: {
           // Adapted rather than passed, because DISCOVERY's own method takes a
           // candidate and LIVE's port is named for what it does. The narrow
@@ -1619,6 +1626,20 @@ export function createApplication(
     .post(
       apiRoutePaths.liveMessages,
       admitted(liveRoute(async (routes, input) => routes.sendMessage(input))),
+    )
+    .post(
+      apiRoutePaths.liveReactions,
+      admitted(liveRoute(async (routes, input) => routes.sendReaction(input))),
+    )
+    .post(
+      apiRoutePaths.liveInvitations,
+      admitted(liveRoute(async (routes, input) => routes.invite(input))),
+    )
+    .post(
+      apiRoutePaths.liveInvitationResponses,
+      admitted(
+        liveRoute(async (routes, input) => routes.respondToInvitation(input)),
+      ),
     )
     .post(
       apiRoutePaths.liveConnections,

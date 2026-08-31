@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { clientMessageIdSchema, messageBodySchema } from './messaging.js';
+import { profileLanguageSchema } from './profile.js';
+import { regionSchema } from './users.js';
 
 /**
  * Live discovery contract.
@@ -127,11 +129,97 @@ export const liveConnectionStateSchema = z.enum([
  */
 export const liveMediaTransportSchema = z.enum(['none', 'provider']);
 
-/** The other person, and nothing that explains why they were chosen. */
+/**
+ * How wide a net the matcher casts for this person.
+ *
+ * A *preference*, not a promise, and the vocabulary is deliberately tiny. Two
+ * dimensions, both drawn from what a person already published about themselves:
+ * where they are, and what they speak. Nothing here is a protected or sensitive
+ * characteristic, nothing here is inferred, and there is no shape below in
+ * which a compatibility score, an age band, a body attribute, or anything
+ * purchasable could be expressed.
+ *
+ * `region` is `any` or `same` rather than a country picker. "People near me" is
+ * a preference a person holds about themselves; "people in a country I chose
+ * from a list" is a filter over a population, and publishing a shape that could
+ * hold one would make the second expressible whether or not a surface offered
+ * it.
+ *
+ * `language` is one of the caller's *own* profile languages, and it means the
+ * other person must also speak it. Asking for a language you do not speak is
+ * meaningless, so the contract cannot express it.
+ *
+ * Applying a preference narrows the pool, and a narrower pool takes longer.
+ * That is the honest cost and the surface says so; it is never presented as a
+ * guarantee that somebody matching exists.
+ */
+export const livePreferredRegionSchema = z.enum(['any', 'same']);
+
+export const livePreferencesSchema = z
+  .object({
+    language: profileLanguageSchema.optional(),
+    region: livePreferredRegionSchema,
+  })
+  .strict();
+
+/**
+ * The small, fixed set of things a person can send without typing.
+ *
+ * Six, chosen to be unambiguous across cultures and impossible to aim as an
+ * insult. There is no open emoji field: an arbitrary glyph channel is a channel
+ * for whatever somebody can express in glyphs, and moderating one is
+ * unanswerable. Adding to this list is a product decision, which is why it is a
+ * closed enumeration here rather than a string a client picks.
+ *
+ * A reaction is not a gift. Nothing here costs anything, nothing here credits
+ * anybody, and attaching VELORA's gifting to a conversation between two
+ * strangers is a separate product and safety decision that has not been taken.
+ */
+export const liveReactionSchema = z.enum([
+  'wave',
+  'smile',
+  'laugh',
+  'heart',
+  'fire',
+  'clap',
+]);
+
+/**
+ * Whether a line in a live encounter is something somebody typed or something
+ * they tapped.
+ *
+ * One channel rather than two, because both are "a thing one of these two
+ * people sent the other during this encounter" and both have to be orderable,
+ * idempotent, and answerable when somebody reports the conversation. A surface
+ * renders them completely differently — a reaction is a moment, not a line of
+ * transcript — and that is a rendering decision rather than a storage one.
+ */
+export const liveMessageKindSchema = z.enum(['text', 'reaction']);
+
+/**
+ * The other person, and nothing that explains why they were chosen.
+ *
+ * The same minimized public shape DISCOVERY publishes a candidate in, minus its
+ * imagery. Photographs are deliberately absent: whether one consumer may see
+ * another's pictures is DISCOVERY's `mayViewProfileMedia` question, and two
+ * strangers put together by the matcher hold neither of the two reasons that
+ * answers yes. Broadening that here to decorate a card would be a privacy
+ * decision taken for a layout reason. The live video is the picture.
+ *
+ * What is here is what a person needs to decide whether to talk to somebody:
+ * their name, roughly where they are, what languages the two of you share, and
+ * whatever they chose to write about themselves. Every field is one the person
+ * published about themselves, and `sharedLanguages` is the overlap rather than
+ * everything they speak — the same narrowing DISCOVERY applies for the same
+ * reason.
+ */
 export const livePeerSchema = z
   .object({
+    bio: z.string().optional(),
     displayName: z.string(),
     id: z.uuid(),
+    region: regionSchema.optional(),
+    sharedLanguages: z.array(profileLanguageSchema).max(8),
   })
   .strict();
 
@@ -176,6 +264,88 @@ export const liveEncounterSchema = z
   .strict();
 
 /**
+ * Choosing somebody, and what the platform will and will not promise about it.
+ *
+ * Instant live discovery is the server choosing; this is a person choosing, and
+ * the two are deliberately different shapes with different lifecycles rather
+ * than one endpoint with a flag. Picking somebody is a *request to meet*, and
+ * the states below are the honest lifecycle of one:
+ *
+ * `pending` — sent, and the other person has not answered.
+ * `accepted` — they said yes, and the two of you are not both here yet. This is
+ *   the state that keeps the product honest: accepting cannot conjure a live
+ *   session out of somebody who has closed the tab, so it says so and waits.
+ * `met` — an encounter was allocated for the pair and the request is spent.
+ * `declined` / `cancelled` / `expired` — the three ways it ends without a
+ *   meeting. A decline is reported to the person who sent it, because a request
+ *   left hanging for ever is worse than a no.
+ *
+ * Nothing here bypasses anything. An accepted invitation is a *reason to pair
+ * these two first*, and every eligibility, standing, safety, block, and RTC
+ * predicate the random matcher asks is asked again, in the same order, at the
+ * moment the encounter is allocated.
+ */
+export const liveInvitationStateSchema = z.enum([
+  'pending',
+  'accepted',
+  'met',
+  'declined',
+  'cancelled',
+  'expired',
+]);
+
+/** Which end of the request the caller is on. */
+export const liveInvitationDirectionSchema = z.enum(['outgoing', 'incoming']);
+
+export const liveInvitationSchema = z
+  .object({
+    createdAt: z.iso.datetime(),
+    direction: liveInvitationDirectionSchema,
+    /** When this request stops being one. Requests to meet go stale quickly. */
+    expiresAt: z.iso.datetime(),
+    id: z.uuid(),
+    medium: liveMediumSchema,
+    /** The other person, in the same shape a peer is published in. */
+    person: livePeerSchema,
+    state: liveInvitationStateSchema,
+  })
+  .strict();
+
+export const liveInvitationListResponseSchema = z
+  .object({ invitations: z.array(liveInvitationSchema).max(40) })
+  .strict();
+
+/**
+ * Asking one person to meet.
+ *
+ * The candidate is named because a person named them, which is the entire
+ * difference between this and searching. It is refused unless that person is
+ * somebody this caller could legitimately be introduced to right now — the same
+ * predicate DISCOVERY applies to a signal — so a harvested identifier buys
+ * nothing.
+ */
+export const createLiveInvitationRequestSchema = z
+  .object({
+    candidateId: z.uuid(),
+    medium: liveMediumSchema,
+  })
+  .strict();
+
+/**
+ * Answering, withdrawing, or refusing one.
+ *
+ * `accept` is only the recipient's to send and `cancel` only the sender's;
+ * naming which is not the client's business, and a request sending the wrong
+ * one is refused rather than reinterpreted.
+ */
+export const respondToLiveInvitationRequestSchema = z
+  .object({
+    invitationId: z.uuid(),
+    response: z.enum(['accept', 'decline', 'cancel']),
+  })
+  .strict();
+
+/**
  * Everything a live surface renders, in one read.
  *
  * One shape rather than several, because the states are mutually exclusive and
@@ -188,7 +358,25 @@ export const liveStateResponseSchema = z
   .object({
     admission: liveAdmissionSchema,
     encounter: liveEncounterSchema.optional(),
+    /**
+     * Requests to meet, in both directions, that are still worth showing.
+     *
+     * Carried in the same authoritative read as everything else for the reason
+     * the read exists: a surface that fetched these separately could render an
+     * invitation to somebody it has just been matched with.
+     */
+    invitations: z.array(liveInvitationSchema).max(40),
+    /**
+     * The languages this person may narrow to, which are their own.
+     *
+     * Published so a surface can offer the choice without asking a second
+     * service what somebody speaks — and bounded to their own profile, so the
+     * control cannot offer a language the contract would then refuse.
+     */
+    languageOptions: z.array(profileLanguageSchema).max(8),
     medium: liveMediumSchema.optional(),
+    /** The preferences the matcher is currently applying for this person. */
+    preferences: livePreferencesSchema,
     /** When the current search began. Absent unless searching. */
     searchingSince: z.iso.datetime().optional(),
     /** Whether a deterministic stand-in may be matched in this environment. */
@@ -197,10 +385,37 @@ export const liveStateResponseSchema = z
   })
   .strict();
 
-/** Entering the pool. Names a medium and nothing else. */
+/**
+ * Entering the pool. Names a medium and how wide a net to cast, and nothing
+ * else.
+ *
+ * Still no person. Preferences describe the kind of person the matcher should
+ * look for, drawn from what people published about themselves; they cannot
+ * name anybody, and they cannot be narrowed to one. Choosing a specific person
+ * is a different act with a different shape and a different lifecycle — see
+ * {@link createLiveInvitationRequestSchema} — precisely so that "I would like
+ * to meet Ana" can never be smuggled through the shape that means "find me
+ * somebody".
+ */
 export const liveSearchRequestSchema = z
   .object({
     medium: liveMediumSchema,
+    preferences: livePreferencesSchema.optional(),
+  })
+  .strict();
+
+/**
+ * Sending a reaction.
+ *
+ * Separate from a message rather than a variant of one, so a body can never be
+ * smuggled through a reaction or the other way round. `clientMessageId` makes a
+ * retry idempotent on exactly the same terms.
+ */
+export const sendLiveReactionRequestSchema = z
+  .object({
+    clientMessageId: clientMessageIdSchema,
+    encounterId: z.uuid(),
+    reaction: liveReactionSchema,
   })
   .strict();
 
@@ -220,8 +435,14 @@ export const liveEncounterActionRequestSchema = z
 
 export const liveMessageSchema = z
   .object({
+    /**
+     * What was sent. For a `text` line this is what the person typed; for a
+     * `reaction` it is one of {@link liveReactionSchema}'s names, so a client
+     * that does not know a name renders nothing rather than the raw word.
+     */
     body: z.string().min(1),
     id: z.uuid(),
+    kind: liveMessageKindSchema,
     sentAt: z.iso.datetime(),
     /** Whether this person wrote it. Derived, never claimed. */
     self: z.boolean(),
@@ -287,6 +508,12 @@ export const liveSimulationScenarioSchema = z.enum([
   'peer_message',
   /** The stand-in presses Connect. */
   'peer_connect',
+  /** The stand-in taps a reaction. */
+  'peer_reaction',
+  /** The stand-in asks to meet, so an incoming request can be walked. */
+  'peer_invitation',
+  /** The stand-in accepts a request this person sent from Pick. */
+  'peer_accepts_invitation',
   /** The stand-in presses Next, ending this encounter from the other side. */
   'peer_next',
   /** The stand-in stops answering; presence lapses and the encounter times out. */
@@ -309,6 +536,15 @@ export const liveSimulationResponseSchema = z
   .strict();
 
 export type LiveAdmission = z.infer<typeof liveAdmissionSchema>;
+export type LiveInvitation = z.infer<typeof liveInvitationSchema>;
+export type LiveInvitationDirection = z.infer<
+  typeof liveInvitationDirectionSchema
+>;
+export type LiveInvitationState = z.infer<typeof liveInvitationStateSchema>;
+export type LiveMessageKind = z.infer<typeof liveMessageKindSchema>;
+export type LivePreferences = z.infer<typeof livePreferencesSchema>;
+export type LivePreferredRegion = z.infer<typeof livePreferredRegionSchema>;
+export type LiveReaction = z.infer<typeof liveReactionSchema>;
 export type LiveCall = z.infer<typeof liveCallSchema>;
 export type LiveConnection = z.infer<typeof liveConnectionSchema>;
 export type LiveConnectionState = z.infer<typeof liveConnectionStateSchema>;

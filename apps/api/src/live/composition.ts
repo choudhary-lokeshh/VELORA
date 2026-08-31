@@ -21,6 +21,7 @@ import {
   type LiveConversationPort,
   type LiveDirectoryPort,
   type LiveEnforcementPort,
+  type LiveIntroducibilityPort,
   type LiveIntroductionPort,
   type LiveRtcSessionPort,
   type LiveSafetyPort,
@@ -114,6 +115,7 @@ export function createLiveRuntime(input: {
   readonly database: DatabaseHandle;
   readonly directory: LiveDirectoryPort;
   readonly enforcement: LiveEnforcementPort;
+  readonly introducibility: LiveIntroducibilityPort;
   readonly introductions: LiveIntroductionPort;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
@@ -135,6 +137,7 @@ export function createLiveRuntime(input: {
     conversations: input.conversations,
     directory: input.directory,
     enforcement: input.enforcement,
+    introducibility: input.introducibility,
     introductions: input.introductions,
     logger: input.logger,
     // The product gate, read once at composition. A mode this registry does not
