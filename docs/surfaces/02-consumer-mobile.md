@@ -115,6 +115,18 @@ Every capability this build does not have is stated on the screen it would have 
 The conversation screen is a pushed route with system Back. It marks the newest loaded server sequence read through the monotonic API, keeps a failed body available for an idempotent retry, blocks double-send through one in-flight action, accepts and wraps the published maximum body, and states that the composer is text only, has no attachments, and is not end-to-end encrypted. Voice/video call entry is bound to the conversation's published mutual-introduction relationship; the existing call lifecycle remains server-authoritative and still opens no microphone, camera, route, peer connection, or provider.
 - **No account closure**, because every retention schedule it depends on is an open legal decision.
 
+### Live, as a camera product
+
+Live is the only screen that does not scroll while it is in use, and that is the point of it. One full-bleed canvas with absolute layers over it: the camera is the ground while there is nobody to look at, and becomes a picture-in-picture the moment somebody is found. The picture can be dragged and snaps to the nearest corner, through a pan gesture claimed only after a finger has travelled — so a tap on it is still a tap, and nothing outside the preview ever sees the touch, which is why it cannot fight the tab bar or the system back gesture.
+
+The dock is fixed above the tab bar inside the safe area, and nothing that grows can push it away: not a long name, not a permission notice, not a chat filling up. Next is the widest control because it is the most frequent act in the product and it acknowledges before the server answers; Connect takes the accent only when the other person is waiting on it; the devices are at the thumb end and End is at the other, obvious without being loud.
+
+Chat is a bottom sheet bounded to part of the screen rather than a card in a column, which is the only arrangement that survives a keyboard — and the hardware Back closes the sheet before it leaves the screen, because that is what Back is for on this platform.
+
+The door explains itself once per launch and is then the fast door. That is a module flag rather than stored state on purpose: the honest alternative is a new persistence dependency for one boolean about a nicety, and this build pins its Expo tree too carefully to spend that on shortening a screen.
+
+**No microphone is requested, and `RECORD_AUDIO` stays blocked in the merged manifest.** The camera opens so the person somebody meets can see them. Nothing records, and no approved provider carries audio anywhere, so asking for a microphone would be asking for a permission this build cannot use. The mute control still exists and is still authoritative over intent, and the screen says plainly that nothing is carrying audio yet — which is also why an emulator walk showing `CAMERA` granted and `RECORD_AUDIO` absent is the product behaving correctly rather than a defect.
+
 ## Implemented: the phone-specific behaviour
 
 A cold launch restores from the platform keystore before asking the server anything, and the launch state is real and rendered rather than skipped. An offline launch keeps the stored session and reports that the service could not be reached, rather than claiming somebody is signed out. A session the server has ended drops local material and says which of the two happened.

@@ -8,7 +8,7 @@ It owns none of the facts an encounter depends on. AUTH owns the principal and t
 
 It does not own profiles, photographs, conversations, message history, call lifecycle, provider state, presence projections, recordings, or transcripts. **Nothing here is media**: no recording, transcript, frame, SDP, ICE candidate, TURN credential, or participant address has a column.
 
-V1 is one-to-one random discovery between two adults. Group rooms, broadcast, audiences, spectators, paid sessions, and recording are out of scope and unbuilt. [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) is the architecture authority.
+V1 is one-to-one random discovery between two adults. Group rooms, broadcast, audiences, spectators, paid sessions, and recording are out of scope and unbuilt. [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) is the architecture authority, and [ADR-0041](../decisions/ADR-0041-live-discovery-preferences-choice-and-presence.md) adds preferences, choosing somebody, reactions, and the presence sweep.
 
 ## The three facts an encounter is made of
 
@@ -16,7 +16,9 @@ V1 is one-to-one random discovery between two adults. Group rooms, broadcast, au
 
 **An encounter** records that the server put two specific people together, when, and what became of it. There may be many encounters per pair over time — meeting is an event, not a relationship — so the uniqueness constraint is scoped to the live one.
 
-**A live message** records something one of them typed inside that encounter. It is not a conversation and never becomes one.
+**A live message** records something one of them typed — or tapped — inside that encounter. Its `kind` is `text` or `reaction`, and both are the same write with the same bound, the same idempotency key, the same server-allocated position, and the same safety re-composition, because both are equally the subject of a report about the encounter. What differs is rendering: a reaction is a moment on the picture and is never shown in the chat. It is not a conversation and never becomes one.
+
+**A request to meet** records one person asking one other person to meet live. It is the counterpart to the pool — the pool is the server choosing, this is a person choosing — and it is a *request*, with the lifecycle a request honestly has. `accepted` means both agreed and are not both here yet, because accepting cannot conjure a live session out of somebody who has closed the tab. It authorizes nothing: an accepted request is a reason to pair two people *first*, and every predicate below is asked again when an encounter is allocated.
 
 What is deliberately *not* a fact here: whether either person's camera is open. The server has no opinion about that, and a client that told it so would be asserting something about itself that the platform would then store and act on.
 
@@ -43,11 +45,15 @@ A candidate is refused unless every one of these holds at that instant:
 - the pair is not blocked in either direction — asked of TRUST & SAFETY, in batch first for cost and again per candidate under the pair lock for authorization;
 - the candidate's account is in a standing that permits interaction — asked of USERS;
 - no live enforcement denies consumer interaction to the candidate — asked of TRUST & SAFETY;
-- the two have not met live within the rematch-suppression window.
+- the two have not met live within the rematch-suppression window, unless they asked to meet each other — suppression stops the *matcher* handing back somebody you just moved on from, and refusing two people who named each other would be suppression acting as a rule about people rather than about randomness.
 
-The last is not a block and not a judgement. The pair may still find each other through Discover, may still connect, and are free to meet again afterwards; being handed back the person you just moved on from is simply the fastest way to make random discovery feel broken.
+The rematch rule is not a block and not a judgement. The pair may still find each other through Discover, may still connect, and are free to meet again afterwards; being handed back the person you just moved on from is simply the fastest way to make random discovery feel broken.
 
-Finding nobody is a complete answer. It renders as "still searching", which is true, and the next poll tries again.
+People who agreed to meet are considered before the pool is scanned, as a separate read rather than a sort key: an agreement is a reason to pair two people, and folding it into the ordering of a scan bounded at twenty would mean an agreement quietly falling off the end of a busy pool.
+
+**Preferences narrow the pool and promise nothing.** A search may be narrowed to people in the caller's own region and to one language the caller already speaks. Both are stored on the participation rather than on the account, because they describe *this* search. Neither is evaluated here: which country somebody is in and what they speak are USERS' facts, and LIVE asks USERS a membership question over identifiers it already holds, on the matcher's own connection — a copy would be a fact this domain does not own, and a second pooled connection inside the matching transaction would be the deadlock [ADR-0019](../decisions/ADR-0019-database-connection-admission.md) exists to prevent. A language the caller does not speak is dropped rather than honoured, and the state that comes back says which preferences are being applied.
+
+Finding nobody is a complete answer. It renders as "still searching", which is true, and the next poll tries again. No surface says nobody matching exists, because no surface can know that.
 
 ## Eligibility
 
@@ -85,11 +91,21 @@ It is durable anyway, because a report about what somebody said is unanswerable 
 
 Ordering is a server fact. The position comes from the encounter's own allocator under a row lock, so two people typing at the same instant get distinct adjacent positions and neither client's clock participates. A repeated client identifier writes nothing and answers the same list, decided by a unique index rather than by a prior read that two concurrent retries would both pass.
 
+## What a peer may be shown about a peer
+
+An encounter publishes the other person's display name, region, the languages the two of them share, and whatever they wrote about themselves — the same minimized shape, with the same narrowing, that DISCOVERY publishes a candidate in. Every field is one that person published about themselves, and all of it is read through USERS' published directory at render time rather than copied.
+
+Photographs are deliberately absent. Whether one consumer may see another's imagery is DISCOVERY's `mayViewProfileMedia` question, which answers yes for exactly two reasons — the pair holds a live introduction, or the subject is a candidate the viewer could be shown right now — and two strangers the matcher put together hold neither. The live video is the picture.
+
+Nothing published here says whether anybody is available, online, or how often they are here.
+
 ## Presence
 
 There is no presence projection, no gateway, and no heartbeat endpoint. A client that is reading the live state is present; one that has stopped reading is not.
 
 That is the only mechanism by which "the other person closed the tab" becomes visible at all: a closed tab, a phone that lost signal, and a killed process all send exactly nothing, so absence is measured rather than announced. A sweep closes participations whose client has gone quiet, and the encounter they were in ends for `presence_lapsed` — never for a departure, because nobody decided anything and telling the other side "they moved on" would be a claim about a decision that was never taken.
+
+**The sweep runs on the worker**, in a composition of this domain that can admit nobody: every port it is handed that could match, introduce, open a conversation, or authorize a session refuses. It ends encounters and closes participations and does nothing else, because a worker able to do any of the rest would be a second way in that no request path guards. Under ADR-0040 the sweep existed and nothing called it, which meant the presence model was true only in the sense that the code for it was written.
 
 **No count of anybody is ever published.** Not who is waiting, not who is online, not how many people the platform has. The contract carries no shape that could hold one, because a number there would be invented.
 
@@ -106,6 +122,12 @@ What a participant may be told is coarse. `safety_block` and `safety_enforcement
 ## What is never recorded
 
 **No live encounter is recorded, stored, transcoded, or transcribed.** No code path does any of those things, no configuration value enables one, and no surface may claim or imply that a live session is recorded or could be. Enabling recording would be a separate architecture with its own consent, indication, retention, moderation, evidence, deletion, and jurisdiction decisions, none of which exists.
+
+## Translation
+
+Nothing translates anything, and no surface offers or implies that it does.
+
+The seam exists: the AI gateway carries capability manifests, per-capability activation, and a provider that is `unavailable` by default and refused in staging and production, and a translation capability would sit behind it unchanged. It is not taken because no provider is approved — a control that never works is worse than an absent one, and text labelled as translated when nothing translated it is worse than either. Recorded as an open decision in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
 ## Configuration and blockers
 

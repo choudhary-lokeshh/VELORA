@@ -51,6 +51,22 @@ The writing assist is folded away inside a conversation and open on the profile 
 
 Exact visual specification remains `DESIGN REQUIRED` in Figma. What exists in code is the approved Master Visual Language filled in for the Consumer expression under ADR-0027, which records both the values and the bound on them. Public creator pages remain separate from Social Discovery. The canonical public creator address is `/c/{handle}`, resolved against the explicitly public projection CREATORS publishes; an unknown handle, an unpublished profile, and a creator who is not active are one indistinguishable answer. Its public profile/catalog reads require no session. Separately, an authenticated Consumer Web session may ask BILLING for the creator's virtual-gift catalog under [ADR-0032](../decisions/ADR-0032-provider-neutral-virtual-gifting.md), review an immutable price, and send support through local/test commerce. That control widens neither the public creator projection nor club access, and it is unavailable in production while provider and commercial gates remain closed. Published clubs remain metadata only — a name and a description — with no member count, no member list, and no control implying a gift or payment joins one.
 
+### Live
+
+Live is a stage rather than a page, and it is the one surface that leaves the reading measure: once somebody has asked for their camera it is the ground of the screen, and everything else — the other person's name and context, the controls, the chat, the safety control — floats over it. A measure that makes a paragraph legible is the wrong container for a face, so the shell is told rather than fought with negative margins.
+
+Nothing opens a camera because a page loaded. The door says what pressing it will do, offers voice and video as separate controls, and explains itself once; every device is released when the screen is left, the tab is hidden, or the page goes away.
+
+The camera is the ground only while there is nobody to look at. The moment somebody is found, the other person owns the canvas and this person's own picture becomes a corner of it — the movement every video product makes, and what makes a match read as an arrival rather than a layout change. A short reveal holds while the session state is read; it measures nothing and claims nothing about the session becoming ready.
+
+Controls are weighted by frequency and cost rather than laid out in a row. Next is the heaviest control on the screen because it is the most frequent act in the product, and it acknowledges before the server answers — the teardown underneath still names the encounter it ends and still discards a late answer about a previous one. Connect is quieter and takes the accent only when the other person is waiting on it. End is obvious without being loud, safety is one press away in the same place every time, and nothing is behind a menu.
+
+Chat is an overlay over the picture and never a column beside it; the canvas and the corner preview give up exactly the room it takes. Reactions rise over the picture and are never rendered as chat.
+
+Two things this screen refuses to say. It publishes no count of who is waiting or who is online, because no presence projection exists and any number would be invented here. And it draws no empty video pane for the remote participant: with no approved provider it says so in words, over the person's real name and the real, public things they wrote about themselves.
+
+Choosing somebody is the second way in, built on the discovery feed this product already has. Nothing in it is labelled online, because availability is not published and this surface cannot prove it — what it offers instead is honest: ask, and be told truthfully whether they have answered.
+
 ### Calling
 
 Calling is offered from a mutual introduction and from nothing else. The screen has no field that takes a person as a value — no identifier, no handle lookup, no dialler — because the server derives the other party from the relationship and refuses a request that names one; a control here that accepted a person would be offering something the API has no route for. Voice and video are separate controls rather than one control with a medium toggle: agreeing to be heard is not agreeing to be seen, and a toggle carrying the last choice forward would make the more exposing option the default for somebody who never chose it.
