@@ -916,6 +916,34 @@ function LiveStage({
   const [bursts, setBursts] = useState<readonly Burst[]>([]);
   const [celebrated, setCelebrated] = useState(false);
   const [scenariosOpen, setScenariosOpen] = useState(false);
+  /*
+   * How tall the dock actually is, measured rather than guessed.
+   *
+   * Everything anchored above it — the preview, the chat sheet, a notice, the
+   * connection moment — has to clear it, and the dock's height changes with the
+   * text size, the safe area, and whether a reaction row is open. A constant
+   * here is a constant that is wrong on somebody's phone, which is exactly what
+   * a device showed: the preview sat on top of the controls.
+   */
+  const [dockHeight, setDockHeight] = useState(0);
+  /*
+   * And how tall the chat sheet is, for the same reason.
+   *
+   * The sheet takes the bottom of the screen, which is where the preview also
+   * lives. A device showed the two on top of each other; measuring the sheet is
+   * what lets the preview step over it rather than a guess that is wrong at
+   * every text size but one.
+   */
+  const [chatHeight, setChatHeight] = useState(0);
+  const aboveDock = dockHeight + space[3];
+  /*
+   * How far up the picture-in-picture has been pushed by an open chat sheet.
+   *
+   * The canvas reserves this as well as the preview's own height, because the
+   * preview moving up without the words moving up is the same overlap in a new
+   * place — which is what a device showed the first time the sheet opened.
+   */
+  const previewLift = chatOpen && live ? chatHeight + space[2] : 0;
 
   /*
    * Pressing Next acknowledges before the server has answered.
@@ -986,7 +1014,12 @@ function LiveStage({
       style={styles.stage}
       testID="live-room"
     >
-      <LocalCamera media={media} medium={medium} pip={aboutSomebody} />
+      <LocalCamera
+        bottom={aboveDock + previewLift}
+        media={media}
+        medium={medium}
+        pip={aboutSomebody}
+      />
 
       <View
         pointerEvents="box-none"
@@ -994,7 +1027,8 @@ function LiveStage({
           styles.canvas,
           {
             paddingBottom:
-              (aboutSomebody ? previewHeight : 0) + space[16] + insets.bottom,
+              (aboutSomebody ? previewHeight + space[4] + previewLift : 0) +
+              aboveDock,
             paddingTop: insets.top + space[12],
           },
         ]}
@@ -1019,7 +1053,7 @@ function LiveStage({
 
       <View
         pointerEvents="none"
-        style={[styles.bursts, { bottom: space[20] + insets.bottom }]}
+        style={[styles.bursts, { bottom: aboveDock + space[8] }]}
       >
         {bursts.map((burst) => (
           <ReactionBurst
@@ -1040,7 +1074,7 @@ function LiveStage({
 
       {showing && mutual && !celebrated ? (
         <ConnectedMoment
-          bottom={space[20] + insets.bottom}
+          bottom={aboveDock}
           conversationId={conversationId}
           displayName={encounter.peer.displayName}
           onDismiss={() => {
@@ -1050,13 +1084,12 @@ function LiveStage({
         />
       ) : null}
 
-      <NoticeLayer
-        bottom={space[20] + insets.bottom}
-        media={media}
-        message={message}
-      />
+      <NoticeLayer aboveDock={aboveDock} media={media} message={message} />
 
       <View
+        onLayout={(event) => {
+          setDockHeight(event.nativeEvent.layout.height);
+        }}
         style={[
           styles.dock,
           { paddingBottom: Math.max(insets.bottom, space[2]) },
@@ -1087,19 +1120,20 @@ function LiveStage({
 
       {showing ? (
         <LiveChat
-          bottom={space[20] + insets.bottom}
+          bottom={aboveDock}
           encounter={encounter}
           onBurst={showBurst}
           onClose={() => {
             setChatOpen(false);
           }}
+          onMeasure={setChatHeight}
           onUnread={setUnread}
           open={chatOpen}
         />
       ) : null}
 
-      {simulated ? (
-        <View style={[styles.scenarios, { top: insets.top + space[2] }]}>
+      {simulated && !chatOpen ? (
+        <View style={[styles.scenarios, { bottom: aboveDock }]}>
           <Pressable
             accessibilityRole="button"
             onPress={() => {
@@ -1415,10 +1449,13 @@ function ConnectedMoment({
  * component ever sees the touch.
  */
 function LocalCamera({
+  bottom,
   media,
   medium,
   pip,
 }: {
+  /** How far above the bottom the picture-in-picture sits. Measured, not guessed. */
+  readonly bottom: number;
   readonly media: LiveMediaState;
   readonly medium: LiveMedium;
   readonly pip: boolean;
@@ -1496,7 +1533,7 @@ function LocalCamera({
       style={[
         styles.pip,
         corner === 'left' ? styles.pipLeft : styles.pipRight,
-        { transform: drag.getTranslateTransform() },
+        { bottom, transform: drag.getTranslateTransform() },
       ]}
       testID="live-local"
       {...responder.panHandlers}
@@ -1863,11 +1900,11 @@ function Dock({
  * rather than in a column that would have to scroll.
  */
 function NoticeLayer({
-  bottom,
+  aboveDock,
   media,
   message,
 }: {
-  readonly bottom: number;
+  readonly aboveDock: number;
   readonly media: LiveMediaState;
   readonly message: string | undefined;
 }) {
@@ -1876,7 +1913,10 @@ function NoticeLayer({
   if (permission === undefined && message === undefined) return null;
 
   return (
-    <View pointerEvents="box-none" style={[styles.notices, { bottom }]}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.notices, { bottom: aboveDock }]}
+    >
       {message === undefined ? null : (
         <ErrorMessage testID="live-message">{message}</ErrorMessage>
       )}
@@ -1924,6 +1964,7 @@ function LiveChat({
   encounter,
   onBurst,
   onClose,
+  onMeasure,
   onUnread,
   open,
 }: {
@@ -1931,6 +1972,8 @@ function LiveChat({
   readonly encounter: LiveEncounter;
   readonly onBurst: (reaction: string, self: boolean) => void;
   readonly onClose: () => void;
+  /** Reports the sheet's measured height, so the preview can clear it. */
+  readonly onMeasure: (height: number) => void;
   readonly onUnread: (count: number) => void;
   readonly open: boolean;
 }) {
@@ -2031,7 +2074,13 @@ function LiveChat({
   if (!open) return null;
 
   return (
-    <View style={[styles.chat, { bottom }]} testID="live-chat">
+    <View
+      onLayout={(event) => {
+        onMeasure(event.nativeEvent.layout.height);
+      }}
+      style={[styles.chat, { bottom }]}
+      testID="live-chat"
+    >
       <View style={styles.chatHead}>
         <Icon color={color.textTertiary} name="clock" size="sm" />
         <Text style={styles.step} tone="tertiary" variant="caption">
@@ -2426,7 +2475,6 @@ const styles = StyleSheet.create({
     borderColor: color.borderSoft,
     borderRadius: radius.md,
     borderWidth: 1,
-    bottom: space[20],
     height: previewHeight,
     overflow: 'hidden',
     position: 'absolute',
@@ -2480,7 +2528,7 @@ const styles = StyleSheet.create({
     left: space[3],
     position: 'absolute',
     right: space[3],
-    zIndex: 2,
+    zIndex: 3,
   },
   /* The wash that keeps words readable over whatever the camera is pointed at. */
   scrim: {
