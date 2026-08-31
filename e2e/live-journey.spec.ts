@@ -336,27 +336,51 @@ test.describe('Live discovery', () => {
     await page.getByTestId('segment-choose').click();
     const people = page.getByTestId('live-choose');
     await expect(people).toBeVisible({ timeout: 30_000 });
+    // Waited for, rather than read while the feed is still being fetched. A
+    // list that has not arrived yet is neither "people to ask" nor "nobody to
+    // show", and branching on it before it answers tests the loading state.
+    await expect(people).not.toContainText('Loading people', {
+      timeout: 30_000,
+    });
 
     // Real profiles from the discovery feed, and nothing on any of them claims
     // anybody is online: availability is not published and this surface has no
     // way to prove it.
     await expect(people).not.toContainText('Online');
+    /*
+     * Three legitimate worlds, and the assertion is the same in all of them:
+     * a request is a request.
+     *
+     * The cohort is shared and serial, so by the time this runs the feed may be
+     * empty, or every person in it may already have been asked by an earlier
+     * run. Assuming a fresh feed would make this a test of the seed rather than
+     * of the product.
+     */
     const ask = people.getByRole('button', { name: 'Ask to meet' }).first();
+    const requests = page.getByTestId('live-invitations');
     if ((await ask.count()) === 0) {
-      // A cohort whose feed is empty is a legitimate world state, and the
-      // surface says so rather than pretending otherwise.
-      await expect(page.getByTestId('live-choose-empty')).toBeVisible();
+      if ((await requests.count()) > 0) {
+        await expect(requests).toContainText('answered');
+      } else {
+        // A cohort whose feed is empty is a legitimate world state, and the
+        // surface says so rather than pretending otherwise.
+        await expect(page.getByTestId('live-choose-empty')).toBeVisible();
+      }
+      await expect(page.getByTestId('live-room')).toHaveCount(0);
       return;
     }
 
     await ask.click();
     // A request, and the surface says exactly that: not "connecting", not
     // "waiting to join", and no live session anywhere.
-    await expect(page.getByTestId('live-invitations')).toContainText(
-      'They have not answered yet',
-      { timeout: 30_000 },
-    );
+    await expect(requests).toContainText('They have not answered yet', {
+      timeout: 30_000,
+    });
     await expect(page.getByTestId('live-room')).toHaveCount(0);
+
+    // Withdrawn, so this leaves the shared cohort as it found it.
+    await requests.getByRole('button', { name: 'Withdraw' }).first().click();
+    await expect(requests).toHaveCount(0, { timeout: 30_000 });
   });
 
   test('moves on immediately, over and over, without leaking anything', async ({
@@ -381,20 +405,29 @@ test.describe('Live discovery', () => {
      */
     for (let cycle = 0; cycle < 3; cycle += 1) {
       const next = page.getByTestId('live-next');
-      if ((await next.count()) === 0) {
-        // Nobody available is a legitimate outcome of a real matcher against a
-        // real pool, and searching again is what a person does.
-        const again = page.getByTestId('live-search-again');
-        if ((await again.count()) > 0) await again.click();
+      if (await next.isVisible()) {
+        await next.click();
+        // Acknowledged at once: the previous stranger is gone from the screen
+        // before the server has answered.
+        await expect(page.getByTestId('live-peer-name')).toHaveCount(0, {
+          timeout: 5_000,
+        });
+        await expect(page.getByTestId('live-room')).toBeVisible();
         continue;
       }
-      await next.click();
-      // Acknowledged at once: the previous stranger is gone from the screen
-      // before the server has answered.
-      await expect(page.getByTestId('live-peer-name')).toHaveCount(0, {
-        timeout: 5_000,
-      });
-      await expect(page.getByTestId('live-room')).toBeVisible();
+      /*
+       * Nobody available, which a real matcher against a real pool genuinely
+       * produces. Searching again is what a person does — but only when the
+       * control is idle. Clicking one that is mid-flight is clicking an element
+       * that is about to be replaced, and Playwright's retry then races the
+       * re-render until the test times out, which is how this first failed.
+       */
+      const again = page.getByTestId('live-search-again');
+      if ((await again.count()) > 0 && (await again.isEnabled())) {
+        await again.click();
+      }
+      // One poll interval, so the next cycle sees a settled screen.
+      await page.waitForTimeout(2_500);
     }
 
     // Exactly one preview element after all of it. A cycle that leaked one

@@ -2256,6 +2256,9 @@
   cursor: pointer;
   display: flex;
   gap: var(--space-2);
+  /* A target, not a line of text. It is a developer's control and it is still
+     a control, which the responsive gate is right to hold it to. */
+  min-block-size: 40px;
   padding: 0;
   text-align: start;
 }
