@@ -16,6 +16,7 @@ import {
   type SecureTokenStore,
 } from '../src/auth/secure-storage';
 import { ConsumerGate } from '../src/frame/gate';
+import type * as OnboardingModule from '../src/product/onboarding';
 import {
   admittedState,
   createMobileApiDouble,
@@ -38,6 +39,32 @@ import { renderScreen } from './support/render';
  */
 
 /**
+ * A hook into every render of the onboarding ladder.
+ *
+ * The real screen is rendered — this wraps it rather than replacing it — so a
+ * test that asserts the ladder appears still asserts the ladder, and a test
+ * that asserts it never appears is counting real renders rather than a mock's.
+ */
+/*
+ * `mock`-prefixed because Jest hoists `jest.mock` above every declaration in
+ * the file and refuses a factory that closes over anything else.
+ */
+let mockLadderProbe: (() => void) | undefined;
+
+jest.mock('../src/product/onboarding', () => {
+  const actual = jest.requireActual<typeof OnboardingModule>(
+    '../src/product/onboarding',
+  );
+  return {
+    ...actual,
+    OnboardingScreen: () => {
+      mockLadderProbe?.();
+      return actual.OnboardingScreen();
+    },
+  };
+});
+
+/**
  * The app-state listeners the surface registered.
  *
  * The platform emitter is native, so the harness stands in for it and calls the
@@ -52,6 +79,7 @@ beforeEach(async () => {
   // mounts keeps its own app-state listeners and in-flight reads alive — which
   // is enough to hold the incoming tree's `waitFor` open until it times out.
   await cleanup();
+  mockLadderProbe = undefined;
   foregroundListeners.length = 0;
   jest
     .spyOn(AppState, 'addEventListener')
@@ -75,10 +103,13 @@ function Product() {
 }
 
 async function launch(options?: {
+  /** Called on every render of the onboarding ladder, before it renders. */
+  readonly onboardingProbe?: () => void;
   readonly signedIn?: boolean;
   readonly state?: MobileApiState;
   readonly store?: SecureTokenStore;
 }) {
+  mockLadderProbe = options?.onboardingProbe;
   const double = createMobileApiDouble(options?.state ?? admittedState());
   const store = options?.store ?? createInMemorySecureTokenStore();
   if (options?.signedIn !== false) {
@@ -202,6 +233,32 @@ describe('launch', () => {
 });
 
 describe('the gate', () => {
+  /**
+   * The ladder must never appear on the way to the product.
+   *
+   * `waitFor` cannot see this: it polls until the tree settles, and what went
+   * wrong here lasted exactly one committed frame. So the ladder counts its own
+   * renders instead, and the assertion is that there were none — a cold launch
+   * of an admitted account passes through the launch screen and nothing else.
+   *
+   * The frame was real. A cold launch reads the keystore before it can enable
+   * the account reads, so the render in which the session first becomes real
+   * had both reads enabled, unasked, and empty; a gate consulting `loading`
+   * saw "answered, and there is no account" and painted "create your account"
+   * at somebody who has had one for a year.
+   */
+  it('never shows the ladder to an admitted account on a cold launch', async () => {
+    const renders: string[] = [];
+    const { view } = await launch({
+      onboardingProbe: () => renders.push('ladder'),
+    });
+
+    await waitFor(() => {
+      expect(view.getByTestId('product')).toBeTruthy();
+    });
+    expect(renders).toHaveLength(0);
+  });
+
   it('shows the onboarding ladder to somebody with no account yet', async () => {
     const state = admittedState();
     // Both reads 404 for somebody who has authenticated and never created an

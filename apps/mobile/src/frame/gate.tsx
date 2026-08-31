@@ -38,12 +38,21 @@ export function ConsumerGate({ children }: { readonly children: ReactNode }) {
 
   const { account, onboarding } = session.account;
 
-  // The account read has not answered yet. Rendering the ladder here would
-  // flash "create your account" at somebody who has one.
-  if (account.loading && account.value === undefined) return <LaunchScreen />;
-  if (onboarding.loading && onboarding.value === undefined) {
-    return <LaunchScreen />;
-  }
+  // Neither read has answered yet. Rendering the ladder here would flash
+  // "create your account" at somebody who has one.
+  //
+  // `settled` rather than `loading`, and the difference is a frame somebody
+  // sees. A cold launch reads the keystore before it can enable these reads,
+  // so the render in which the session first becomes real is the render in
+  // which both are enabled, unasked, `loading: false` and empty — which is
+  // indistinguishable from answered-and-absent to anything consulting
+  // `loading` alone. Every cold launch of an admitted account painted the
+  // ladder for that frame, and the effect that starts the reads runs after it.
+  //
+  // A revalidation is unaffected: `settled` stays true once the server has
+  // answered, so coming back to the foreground never returns somebody to a
+  // launch screen while the reads refresh underneath them.
+  if (!account.settled || !onboarding.settled) return <LaunchScreen />;
 
   if (account.value === undefined) return <OnboardingScreen />;
   if (journeyStage(onboarding.value) !== 'ready') return <OnboardingScreen />;

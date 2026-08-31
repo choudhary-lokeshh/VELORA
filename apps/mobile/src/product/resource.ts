@@ -21,6 +21,21 @@ export interface Resource<T> {
   /** Re-reads from the server, superseding any request already in flight. */
   readonly reload: () => void;
   readonly retryable: boolean;
+  /**
+   * Whether the server has answered at least once since this resource was
+   * enabled.
+   *
+   * `loading` alone cannot carry this. A resource that starts disabled reports
+   * `loading: false`, and a caller reading only `value === undefined` in that
+   * moment would conclude the value is absent when nobody has asked yet. On a
+   * phone that is not a theoretical window: a cold launch reads the keystore
+   * before it can enable anything, so the frame after the session becomes real
+   * is exactly the frame in which every account read is enabled-but-unasked,
+   * and a gate acting on it sends an admitted account back to the beginning of
+   * onboarding for a frame the person can see. Nothing may act on an absent
+   * value until this is true.
+   */
+  readonly settled: boolean;
   readonly value: T | undefined;
 }
 
@@ -49,6 +64,7 @@ export function useResource<T>(
   const [error, setError] = useState<string | undefined>(undefined);
   const [retryable, setRetryable] = useState(false);
   const [loading, setLoading] = useState(enabled);
+  const [settled, setSettled] = useState(false);
   const inFlight = useRef<AbortController | undefined>(undefined);
   const expired = useRef(onUnauthenticated);
   expired.current = onUnauthenticated;
@@ -62,6 +78,7 @@ export function useResource<T>(
     void load(controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       setLoading(false);
+      setSettled(true);
       if (result.kind === 'ok') {
         setValue(result.value);
         setError(undefined);
@@ -77,15 +94,20 @@ export function useResource<T>(
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
+      setSettled(false);
       return undefined;
     }
+    // Set here rather than left to the read: a caller rendering between the
+    // moment this resource is enabled and the moment the request starts must
+    // see "asking", never "asked and empty".
+    setLoading(true);
     reload();
     return () => {
       inFlight.current?.abort();
     };
   }, [enabled, reload]);
 
-  return { error, loading, reload, retryable, value };
+  return { error, loading, reload, retryable, settled, value };
 }
 
 /**
