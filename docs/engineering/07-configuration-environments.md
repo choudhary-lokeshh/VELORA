@@ -170,7 +170,10 @@ than on a missing capability.
 | Variable | Secret | Classification | Default | Local alternative |
 |---|---|---|---|---|
 | `REALTIME_CALL_ELIGIBILITY` | No | Blocked in production | `unavailable` | `composed`, built from DISCOVERY and TRUST & SAFETY |
-| `REALTIME_RTC_PROVIDER` | No | Future provider; blocked in production | `unavailable` | `local-test`, in-process, no network, no media |
+| `REALTIME_RTC_PROVIDER` | No | Future provider; blocked in production | `unavailable` | `local-test`, in-process, no network, no media; `livekit`, a real provider carrying real media |
+| `REALTIME_LIVEKIT_URL` | No | Required when the provider is `livekit` | none | The project's public `wss://` address. Startup fails when `REALTIME_RTC_PROVIDER=livekit` and it is absent or is not a WebSocket address |
+| `REALTIME_LIVEKIT_API_KEY` | Yes | Required when the provider is `livekit` | none | Backend only. Never carries a client-public prefix, is returned by no route, and appears in no redacted configuration |
+| `REALTIME_LIVEKIT_API_SECRET` | Yes | Required when the provider is `livekit` | none | Backend only, and the whole of this platform's authority over the project: anybody holding it can mint a token for any room |
 | `LIVE_DISCOVERY_MODE` | No | Blocked in production | `unavailable` | `open`, admits eligible accounts to the random matching pool |
 | `LIVE_DISCOVERY_SIMULATION` | No | Blocked in production | `unavailable` | `local-test`, stands a seeded local account in for a second person |
 | `REALTIME_SIGNAL_TRANSPORT` | No | Safe default, permitted in every environment | `unavailable` | `redis`, fan-out over ephemeral Redis |
@@ -179,6 +182,48 @@ The first two refuse for independent reasons and either alone stops a call.
 `REALTIME_SIGNAL_TRANSPORT` is transport only: it holds no call state, decides
 nothing, and losing it loses no durable fact, which is why it is the one
 realtime field a deployed environment may set.
+
+`livekit` is refused in staging and production for a recorded reason rather
+than a missing implementation. [RTC provider
+eligibility](../compliance/10-rtc-provider-eligibility.md) assesses LiveKit
+Cloud as the closest technical fit and **NOT APPROVED**: its acceptable-use
+policy reserves unbounded discretion over "otherwise objectionable" content,
+which is exactly what VELORA is, so written use-case confirmation is mandatory
+and has not been obtained. Selecting it locally is how the integration is proved
+against a real provider before that answer exists.
+
+There is no fallback between the three values. A `livekit` selection missing any
+of its credentials fails to compose rather than degrading to simulation, because
+an environment that simulated media while claiming a provider would present "no
+approved provider exists" to one developer and a working call to the next, from
+the same commit, with nothing saying which they had.
+
+### Coins
+
+| Variable | Secret | Classification | Default | Local alternative |
+|---|---|---|---|---|
+| `WALLET_COIN_LEDGER` | No | Blocked in production | `unavailable` | `enabled`, builds the coin ledger and the paid matching preference |
+| `WALLET_ANDROID_ACQUISITION` | No | Future provider; blocked in production | `unavailable` | `local-test`, verifies a token it shaped itself through the same server-side path a store purchase would take |
+
+Coins are a whole-number entitlement unit with no ISO 4217 currency. What one is
+worth, whether a balance expires, whether it is refundable, and how a virtual
+balance is treated for consumer-protection and tax purposes are all undecided,
+which is why the ledger is refused in deployed environments rather than merely
+unused. `WALLET_ANDROID_ACQUISITION` requires the ledger: a channel that
+credited a balance nothing holds is a configuration error rather than a channel
+that quietly does nothing.
+
+There is deliberately no `google-play` value. The port it would implement is
+declared in full, so adding one is an adapter and a credential rather than a
+redesign — but no Play Console project, product identifier, application signing
+key, or service-account credential exists to verify a purchase against, and a
+channel that could be selected and could not verify would mint currency on a
+client's word.
+
+Web acquisition has no variable of its own. It is BILLING's payment provider,
+which no environment approves, and it additionally needs a platform-owned coin
+pack that BILLING's creator-scoped offer model cannot currently express — an
+owner decision recorded in `DECISIONS_REQUIRED`.
 
 ### Notifications
 
@@ -246,6 +291,7 @@ Platform Admin.
 | `VELORA_API_BASE_URL` | No | Safe default locally, required now when deployed | `http://127.0.0.1:4000` | The environment's API origin | Local and test fall back to the loopback API. Staging and production throw at startup, and a loopback value there is refused outright |
 | `VELORA_BIND_HOST` | No | Safe default | blank | Container/host interface if not `0.0.0.0` (start) or `127.0.0.1` (dev) | The `start` scripts default `0.0.0.0` and `dev` scripts default `127.0.0.1`. Read by `package.json` only, never by application code |
 | `VELORA_MEDIA_DELIVERY_ORIGIN` | No | Optional everywhere | blank | The origin serving media bytes, when it is not the API's own | The API origin is assumed to serve the bytes, which is true of every environment with no approved storage or delivery provider. A loopback value is refused outside local and test, exactly as the API base URL is |
+| `VELORA_REALTIME_ENDPOINT` | No | Optional everywhere | blank, or the same value as `REALTIME_LIVEKIT_URL` | The realtime project's `wss://` address, when one is configured | `connect-src` names no media project, so a live encounter cannot connect. It is blank in every environment with no approved provider, and the resulting policy is exactly what it was before the field existed |
 
 `VELORA_API_BASE_URL` is also a server field, and the only thing that reads it
 there is the `local-test` storage adapter, which has no provider origin of its
@@ -263,6 +309,17 @@ environment sets. It is named when they differ: an approved delivery provider
 with an origin of its own, or the local domain topology below, where each
 surface calls the API on its own hostname while one origin issues the bytes. It
 is added to `connect-src` and `img-src` as an exact origin, never a wildcard.
+
+`VELORA_REALTIME_ENDPOINT` is the third such origin and exists for the same
+reason: the Next.js surfaces set their own security headers and do not load the
+API's server configuration, so the provider address the API is configured with
+has to be told to them separately. Both schemes are derived from the one value
+— a media provider negotiates over a socket and reads its own settings over
+HTTP on the same host — so there is one thing to set and no way for the two to
+disagree. A malformed value contributes nothing rather than throwing, which
+narrows the policy rather than widening it. Set it to the same value as
+`REALTIME_LIVEKIT_URL` whenever a provider is configured; without it the browser
+refuses the socket *after* the person has already granted a camera.
 
 All of these are read at request time and none carries a `NEXT_PUBLIC_` prefix,
 on purpose: a build-inlined value would bake one environment's endpoint into the

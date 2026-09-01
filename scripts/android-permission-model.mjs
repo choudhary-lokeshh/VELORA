@@ -31,6 +31,7 @@ export const declaredPermissions = new Map([
   ['android.permission.INTERNET', { maxSdkVersion: undefined }],
   ['android.permission.POST_NOTIFICATIONS', { maxSdkVersion: undefined }],
   ['android.permission.READ_EXTERNAL_STORAGE', { maxSdkVersion: '32' }],
+  ['android.permission.RECORD_AUDIO', { maxSdkVersion: undefined }],
   ['android.permission.VIBRATE', { maxSdkVersion: undefined }],
   ['android.permission.WRITE_EXTERNAL_STORAGE', { maxSdkVersion: '32' }],
 ]);
@@ -46,6 +47,10 @@ export const mergedPermissions = new Map([
   [
     'android.permission.ACCESS_NETWORK_STATE',
     'The push client reads connectivity before deciding a token registration failed.',
+  ],
+  [
+    'android.permission.MODIFY_AUDIO_SETTINGS',
+    'Routing a live encounter\u2019s audio between the earpiece and the speaker. Contributed by the RTC library, and required for the call to be audible at all on a phone held to an ear.',
   ],
   [
     'android.permission.WAKE_LOCK',
@@ -90,8 +95,16 @@ export const developmentOnlyPermissions = new Set([
  */
 export const blockedPermissions = new Map([
   [
-    'android.permission.RECORD_AUDIO',
-    'expo-image-picker and expo-camera, for video capture this product does not do. Live discovery opens the camera for a preview and records nothing, and no approved provider exists to carry audio anywhere, so a microphone permission would be one this build cannot use.',
+    'android.permission.BLUETOOTH',
+    'The RTC library, for headset routing on Android 11 and older. Whether VELORA asks anybody for Bluetooth access is a product decision nobody has made, and a live encounter routes to the earpiece and the speaker without it.',
+  ],
+  [
+    'android.permission.BLUETOOTH_ADMIN',
+    'The same, and the older spelling of it.',
+  ],
+  [
+    'android.permission.FOREGROUND_SERVICE',
+    'The RTC library, for media that continues behind other applications. A live encounter deliberately does not: the preview closes and the session ends when this application leaves the foreground, so a service that outlived it would be a call nobody could see they were still in.',
   ],
   [
     'android.permission.RECEIVE_BOOT_COMPLETED',

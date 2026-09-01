@@ -154,6 +154,21 @@ export type LivePerson = LiveEncounter['peer'];
 export type LivePreferences = LiveState['preferences'];
 export type LiveInvitation = LiveState['invitations'][number];
 export type LiveInvitationList = JsonBody<'/v1/live/invitations', 'post', 200>;
+/** The paid narrowing in force, when one is. Never shown to the other person. */
+export type LivePremiumNarrowing = NonNullable<LiveState['premium']>;
+
+/**
+ * Everything a coin surface renders, in one authoritative answer.
+ *
+ * The balance here is the balance. A client never computes one from a delta:
+ * every wallet operation answers with this same shape, so what is rendered
+ * after an activation is what a fresh read would say.
+ */
+export type WalletState = JsonBody<'/v1/wallet', 'get', 200>;
+export type CoinBalance = NonNullable<WalletState['balance']>;
+export type LivePreferenceEntitlement = NonNullable<
+  WalletState['livePreference']
+>;
 export type LiveReaction = RequestBody<
   '/v1/live/reactions',
   'post'

@@ -25,6 +25,7 @@ const clientConfigInputSchema = z
     appEnvironment: appEnvironmentSchema,
     localDefaultApiBaseUrl: clientHttpUrlSchema.optional(),
     mediaDeliveryOrigin: clientOriginSchema.optional(),
+    realtimeEndpoint: z.string().optional(),
   })
   .strict();
 
@@ -33,6 +34,17 @@ const clientConfigSchema = z
     apiBaseUrl: clientHttpUrlSchema,
     appEnvironment: appEnvironmentSchema,
     mediaDeliveryOrigin: clientOriginSchema.optional(),
+    /**
+     * The realtime media address a surface's policy must permit.
+     *
+     * Not validated as an origin here, and deliberately: it is a `ws://` or
+     * `wss://` address, `clientOriginSchema` describes an HTTP one, and a
+     * schema that accepted both would be a schema that accepted the wrong one
+     * for either field. Its shape is checked where it is used, by
+     * `realtimeConnectSources`, which contributes nothing for a value it cannot
+     * read — so a malformed address narrows the policy rather than widening it.
+     */
+    realtimeEndpoint: z.string().optional(),
   })
   .readonly();
 
@@ -43,6 +55,7 @@ export interface ClientConfigInput {
   readonly appEnvironment: string;
   readonly localDefaultApiBaseUrl?: string | undefined;
   readonly mediaDeliveryOrigin?: string | undefined;
+  readonly realtimeEndpoint?: string | undefined;
 }
 
 /**
@@ -107,6 +120,10 @@ export function loadClientConfig(input: ClientConfigInput): ClientConfig {
     apiBaseUrl: url.toString().replace(/\/$/, ''),
     appEnvironment: parsed.appEnvironment,
     ...(mediaDeliveryOrigin === undefined ? {} : { mediaDeliveryOrigin }),
+    ...(parsed.realtimeEndpoint === undefined ||
+    parsed.realtimeEndpoint.length === 0
+      ? {}
+      : { realtimeEndpoint: parsed.realtimeEndpoint }),
   });
 }
 
@@ -128,6 +145,7 @@ export interface SurfaceEnvironment {
   readonly VELORA_API_BASE_URL?: string | undefined;
   readonly VELORA_APP_ENV?: string | undefined;
   readonly VELORA_MEDIA_DELIVERY_ORIGIN?: string | undefined;
+  readonly VELORA_REALTIME_ENDPOINT?: string | undefined;
 }
 
 /**
@@ -146,6 +164,7 @@ export function resolveSurfaceConfig(
   // and an environment file writes the blank form, so they resolve alike here
   // rather than failing an origin parse on the empty string.
   const mediaDeliveryOrigin = environment.VELORA_MEDIA_DELIVERY_ORIGIN;
+  const realtimeEndpoint = environment.VELORA_REALTIME_ENDPOINT;
   return loadClientConfig({
     apiBaseUrl: environment.VELORA_API_BASE_URL,
     appEnvironment:
@@ -155,6 +174,9 @@ export function resolveSurfaceConfig(
     ...(mediaDeliveryOrigin === undefined || mediaDeliveryOrigin.length === 0
       ? {}
       : { mediaDeliveryOrigin }),
+    ...(realtimeEndpoint === undefined || realtimeEndpoint.length === 0
+      ? {}
+      : { realtimeEndpoint }),
   });
 }
 
@@ -184,6 +206,23 @@ export interface BrowserSecurityHeaderOptions {
    * on that hostname, while the bytes come from wherever delivery issues them.
    */
   readonly mediaDeliveryOrigin?: string | undefined;
+  /**
+   * Exact address of the realtime media project this surface may reach, when
+   * one is configured.
+   *
+   * Named separately from the API and from delivery because it is a third,
+   * genuinely different fact: a provider's media endpoint is not this
+   * platform's origin, and a `connect-src` that did not name it would refuse
+   * the WebSocket *after* somebody had already granted a camera. Both schemes
+   * derived from the one value are permitted — the socket carries the session
+   * and the same host answers the provider's own HTTP setup calls — so there is
+   * one thing to configure and no way for the two to disagree.
+   *
+   * Omitted in every environment with no approved provider, which is every
+   * deployed one, and the resulting policy is then exactly what it was before
+   * this option existed.
+   */
+  readonly realtimeEndpoint?: string | undefined;
   /**
    * Whether this surface may open a camera and a microphone at all.
    *
@@ -347,6 +386,32 @@ function permitsDevelopmentEval(
  * every surface that has not asked for them, and `(self)` — this origin, never
  * a frame — for the one that has.
  */
+/**
+ * The two addresses a realtime media endpoint is reached at, from the one that
+ * is configured.
+ *
+ * A malformed value contributes nothing rather than throwing, on the same rule
+ * `withOrigins` follows: a configuration mistake must not turn every route into
+ * a 500, and a policy naming one fewer origin fails closed.
+ */
+function realtimeConnectSources(
+  endpoint: string | undefined,
+): readonly string[] {
+  if (endpoint === undefined || endpoint.length === 0) return [];
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    return [];
+  }
+  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') return [];
+  const secure = parsed.protocol === 'wss:';
+  return [
+    `${secure ? 'wss' : 'ws'}://${parsed.host}`,
+    `${secure ? 'https' : 'http'}://${parsed.host}`,
+  ];
+}
+
 function permissionsPolicy(options: BrowserSecurityHeaderOptions): string {
   const capture = options.mediaCapture === 'self' ? '(self)' : '()';
   return `camera=${capture}, geolocation=(), microphone=${capture}`;
@@ -362,7 +427,16 @@ export function browserSecurityHeaders(
       "object-src 'none'",
       "frame-ancestors 'none'",
       "form-action 'self'",
-      `connect-src ${withOrigins("'self'", options.apiBaseUrl, options.mediaDeliveryOrigin)}`,
+      `connect-src ${withOrigins(
+        "'self'",
+        options.apiBaseUrl,
+        options.mediaDeliveryOrigin,
+        // Both, from one configured address. A media provider negotiates over a
+        // socket and reads its own settings over HTTP on the same host, and a
+        // policy naming only the socket fails at a point where the person has
+        // already been asked for their camera.
+        ...realtimeConnectSources(options.realtimeEndpoint),
+      )}`,
       // The API origin is named here as well as in `connect-src`, because a
       // consumer photograph is fetched from it: delivery issues a signed,
       // short-lived address on the origin that serves the bytes, and a policy

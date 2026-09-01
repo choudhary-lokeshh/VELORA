@@ -166,6 +166,12 @@ import {
   sendLiveMessageRequestSchema,
 } from './live.js';
 import {
+  activateLivePreferenceRequestSchema,
+  androidCoinPurchaseRequestSchema,
+  coinGrantRequestSchema,
+  walletStateResponseSchema,
+} from './wallet.js';
+import {
   markNotificationsReadRequestSchema,
   notificationListResponseSchema,
   notificationPreferencesResponseSchema,
@@ -244,6 +250,7 @@ export * from './product.js';
 export * from './profile.js';
 export * from './safety.js';
 export * from './users.js';
+export * from './wallet.js';
 
 export const dependencyStateSchema = z.enum(['up', 'down']);
 
@@ -407,6 +414,11 @@ export const apiRoutePaths = {
   liveSessions: '/v1/live/sessions',
   liveSimulation: '/v1/live/simulation',
   liveTransitions: '/v1/live/transitions',
+  wallet: '/v1/wallet',
+  walletAndroidPurchases: '/v1/wallet/android-purchases',
+  walletGrants: '/v1/wallet/grants',
+  walletLivePreference: '/v1/wallet/live-preference',
+  walletLivePreferenceCancellation: '/v1/wallet/live-preference/cancellation',
   notifications: '/v1/notifications',
   notificationDeviceRevocations: '/v1/notifications/devices/revocations',
   notificationDevices: '/v1/notifications/devices',
@@ -591,6 +603,10 @@ export const apiSchemas = {
   LiveSimulationRequest: liveSimulationRequestSchema,
   LiveSimulationResponse: liveSimulationResponseSchema,
   LiveStateResponse: liveStateResponseSchema,
+  ActivateLivePreferenceRequest: activateLivePreferenceRequestSchema,
+  AndroidCoinPurchaseRequest: androidCoinPurchaseRequestSchema,
+  CoinGrantRequest: coinGrantRequestSchema,
+  WalletStateResponse: walletStateResponseSchema,
   SendLiveMessageRequest: sendLiveMessageRequestSchema,
   Conversation: conversationSchema,
   CreateCallRequest: createCallRequestSchema,
@@ -3502,6 +3518,122 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'Leaves live discovery entirely. It takes no body: there is one place a person can be, and the server already knows which.',
+  },
+  {
+    method: 'get',
+    operationId: 'getWallet',
+    path: apiRoutePaths.wallet,
+    responses: {
+      '200': {
+        description:
+          'Everything a wallet surface renders: whether this environment has a coin ledger at all, what the caller holds and what is committed, the paid matching window they currently hold if any, and what one costs. It carries no count of matching people, no estimated wait, and no probability, because none of those is a number this platform has.',
+        schemaName: 'WalletStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'The one authoritative read behind coins. The balance a client holds is a rendering; this is the balance.',
+  },
+  {
+    method: 'post',
+    operationId: 'activateLivePreference',
+    path: apiRoutePaths.walletLivePreference,
+    requestSchemaName: 'ActivateLivePreferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'Wallet state after opening a bounded window in which the matcher narrows to the named declared region. The coins it costs move from available to reserved; they are charged when the window produces an encounter and returned in full when it does not. Repeating the request while a window is open returns the open one rather than charging again. It narrows a search and authorizes nothing: every eligibility, standing, block, and enforcement predicate is asked identically whether or not anybody paid.',
+        schemaName: 'WalletStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `A window is already open, the balance will not cover it — code ${productErrorCodes.insufficientFunds} in that case — or an activation bound has been reached, code ${productErrorCodes.rateLimited}. A refusal for balance says only that: how much is missing is not disclosed, because a sequence of refusals would otherwise read somebody's balance.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': {
+        description: `No coin ledger exists in this environment, so nothing can be activated. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Opens a paid, bounded window of narrowed matching. The request names one declared region and never a price, a duration, or a person.',
+  },
+  {
+    method: 'post',
+    operationId: 'cancelLivePreference',
+    path: apiRoutePaths.walletLivePreferenceCancellation,
+    responses: {
+      '200': {
+        description:
+          'Wallet state after closing the open window. The reserved coins return in full: changing your mind inside the window you paid for is not a consumption of it. Repeating it is safe and cancelling nothing is not an error.',
+        schemaName: 'WalletStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+      '503': {
+        description: `No coin ledger exists in this environment. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Closes the caller\u2019s open matching window and returns the coins it held.',
+  },
+  {
+    method: 'post',
+    operationId: 'redeemAndroidCoinPurchase',
+    path: apiRoutePaths.walletAndroidPurchases,
+    requestSchemaName: 'AndroidCoinPurchaseRequest',
+    responses: {
+      '200': {
+        description:
+          'Wallet state after a purchase the server verified with the store. The token is evidence and never authority: the coin amount comes from the platform\u2019s own catalogue keyed by the product the store confirmed, and the credit is idempotent on the store\u2019s own purchase identity, so a redelivered acknowledgement or a reinstall credits once.',
+        schemaName: 'WalletStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description:
+          'The store did not confirm a completed purchase of that product for that token. The body is an ApiError, and it does not say which part failed.',
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': {
+        description: `No Android acquisition channel is configured for this environment, so no purchase can be verified. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. This is the deployed answer: no Play Console project, product identifier, or service-account credential exists.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Redeems a verified Android store purchase for coins. There is no field in which a client can say what a purchase was worth.',
+  },
+  {
+    method: 'post',
+    operationId: 'grantCoins',
+    path: apiRoutePaths.walletGrants,
+    requestSchemaName: 'CoinGrantRequest',
+    responses: {
+      '200': {
+        description:
+          'Wallet state after a development grant. It posts to the same ledger a purchase does and is idempotent on the supplied reference, so a retry credits once; what makes it a grant rather than a purchase is the reason recorded against the transaction.',
+        schemaName: 'WalletStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': {
+        description: `Refused. This operation exists for local development and is answered with an ApiError carrying code ${productErrorCodes.dependencyUnavailable} in every environment other than local and test, and wherever no coin ledger exists.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Credits coins without a purchase. Available only where the environment is local or test; refused everywhere else.',
   },
   {
     method: 'get',

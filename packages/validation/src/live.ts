@@ -145,6 +145,15 @@ export const liveMediaTransportSchema = z.enum(['none', 'provider']);
  * hold one would make the second expressible whether or not a surface offered
  * it.
  *
+ * That rule survives the arrival of the paid, targeted region narrowing, and
+ * this shape is why. A specific region is *not* expressible here and never
+ * becomes so: it is bought as a bounded window through
+ * {@link activateLivePreferenceRequestSchema}, recorded against a ledger
+ * reservation, and read by the matcher from that record. So a client can never
+ * simply ask to filter a population — it can only hold a window that somebody
+ * deliberately opened, that expires, and that this response reports as
+ * {@link liveStateResponseSchema}'s `premium`.
+ *
  * `language` is one of the caller's *own* profile languages, and it means the
  * other person must also speak it. Asking for a language you do not speak is
  * meaningless, so the contract cannot express it.
@@ -377,6 +386,27 @@ export const liveStateResponseSchema = z
     medium: liveMediumSchema.optional(),
     /** The preferences the matcher is currently applying for this person. */
     preferences: livePreferencesSchema,
+    /**
+     * The paid narrowing currently in force, when there is one.
+     *
+     * Reported here as well as by the wallet read, because a surface must be
+     * able to say what the search is actually doing without a second request —
+     * a stage that showed a plain spinner while a bought, expiring window ran
+     * would be hiding the thing somebody paid for.
+     *
+     * It is a *statement about this caller's own search*. It carries no count
+     * of matching people, no estimated wait, and no probability, because none
+     * of those is a number this platform has. And it is never rendered to the
+     * other person: nobody is told why they were selected.
+     */
+    premium: z
+      .object({
+        /** When the window closes and the coins return if nothing matched. */
+        expiresAt: z.iso.datetime(),
+        region: regionSchema,
+      })
+      .strict()
+      .optional(),
     /** When the current search began. Absent unless searching. */
     searchingSince: z.iso.datetime().optional(),
     /** Whether a deterministic stand-in may be matched in this environment. */

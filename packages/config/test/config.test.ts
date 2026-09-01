@@ -760,6 +760,36 @@ describe('browser security headers', () => {
     );
   });
 
+  it('permits the realtime project both schemes, from one configured address', () => {
+    const csp = policy({
+      apiBaseUrl: 'https://api.velora.test',
+      realtimeEndpoint: 'wss://velora.livekit.cloud',
+    });
+    // A media provider negotiates over a socket and reads its own settings over
+    // HTTP on the same host. A policy naming only the socket fails at the point
+    // where the person has already granted a camera, so both are derived from
+    // the one value and neither can disagree with the other.
+    expect(csp).toContain('wss://velora.livekit.cloud');
+    expect(csp).toContain('https://velora.livekit.cloud');
+    expect(csp).not.toContain('*');
+    // And it reaches `connect-src` only. A media project is not an image host.
+    expect(csp).toContain("img-src 'self' data: https://api.velora.test;");
+  });
+
+  it('narrows rather than widens when the realtime address is unusable', () => {
+    // A malformed value, and an address that is not a WebSocket, both
+    // contribute nothing. A configuration mistake must not turn every route
+    // into a 500, and the failure direction is a policy that permits less.
+    for (const endpoint of ['', 'not a url', 'https://velora.livekit.cloud']) {
+      const csp = policy({
+        apiBaseUrl: 'https://api.velora.test',
+        realtimeEndpoint: endpoint,
+      });
+      expect(csp).toContain("connect-src 'self' https://api.velora.test;");
+      expect(csp).not.toContain('livekit');
+    }
+  });
+
   it('lets a page render an image from the origin it may call', () => {
     // Media delivery issues a signed address on whichever origin serves the
     // bytes, and today that is the API's own. A policy permitting the surface

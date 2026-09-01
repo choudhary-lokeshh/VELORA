@@ -132,9 +132,19 @@ export const callActionRequestSchema = z
  * never be logged. `expiresAt` is minutes away by policy, and re-issuance is a
  * fresh authorization rather than an extension.
  *
- * There is deliberately no room identifier, no participant identifier, no relay
- * address, and no scope field: everything a client needs to join is inside the
- * credential the provider issued, and everything else is the server's business.
+ * There is deliberately no room identifier, no participant identifier, and no
+ * scope field: everything about *who* this credential admits and *where* it
+ * admits them is inside the credential the provider issued, and everything else
+ * is the server's business.
+ *
+ * `transport` is the one thing a client cannot derive. It says which adapter
+ * minted the credential and the public address to present it at, because a
+ * browser cannot open a connection without one — and it is absent whenever the
+ * composed adapter carries no media, which is what lets a surface tell "there
+ * is a session and nothing is carrying it" from "connect here". It is not a
+ * second credential: the address is a media project's public endpoint, it
+ * admits nobody on its own, and no field here or anywhere else carries a
+ * provider API key or secret.
  */
 export const joinAuthorizationSchema = z
   .object({
@@ -142,6 +152,13 @@ export const joinAuthorizationSchema = z
     credential: z.string().min(1),
     expiresAt: z.iso.datetime(),
     medium: callMediumSchema,
+    transport: z
+      .object({
+        provider: z.string().min(1).max(64),
+        url: z.string().min(1).max(512),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

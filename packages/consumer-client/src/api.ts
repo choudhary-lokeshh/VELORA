@@ -56,6 +56,7 @@ import type {
   PolicyDocument,
   ProfileMediaUpload,
   PushDeviceList,
+  WalletState,
   RegisterPushDeviceBody,
   RedeemClubInviteBody,
   Report,
@@ -369,6 +370,47 @@ export interface ConsumerApi {
   applyLiveSimulation(
     scenario: LiveSimulationScenario,
   ): Promise<ApiResult<{ readonly applied: boolean }>>;
+  /**
+   * The one authoritative read behind coins.
+   *
+   * A client's copy of a balance is a rendering hint and nothing else. Every
+   * wallet call below answers with this same shape, so a surface never computes
+   * a new balance from a delta it applied itself.
+   */
+  wallet(signal?: AbortSignal): Promise<ApiResult<WalletState>>;
+  /**
+   * Opens a paid, bounded window in which the matcher narrows to one declared
+   * region.
+   *
+   * It names a region and nothing else: what it costs and how long it lasts are
+   * server constants. It narrows a search and authorizes nothing — every
+   * eligibility, standing, block, and enforcement predicate is asked identically
+   * whether or not anybody paid.
+   */
+  activateLivePreference(region: string): Promise<ApiResult<WalletState>>;
+  /** Closes the open window and returns the coins it held, in full. */
+  cancelLivePreference(): Promise<ApiResult<WalletState>>;
+  /**
+   * Redeems an Android store purchase the server verifies with the store.
+   *
+   * The token is evidence and never authority: there is no field here in which
+   * a client can say what a purchase was worth.
+   */
+  redeemAndroidCoinPurchase(input: {
+    readonly productReference: string;
+    readonly purchaseToken: string;
+  }): Promise<ApiResult<WalletState>>;
+  /**
+   * Credits coins without a purchase.
+   *
+   * Local development only. The server refuses it in every environment other
+   * than local and test, which is why a surface offers it only where
+   * `wallet().acquisition` says no real channel exists.
+   */
+  grantCoins(input: {
+    readonly coins: string;
+    readonly reference: string;
+  }): Promise<ApiResult<WalletState>>;
   candidates(
     query: PageQuery,
     signal?: AbortSignal,
@@ -774,6 +816,44 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
 
     liveState: async (signal) =>
       attempt(async () => api.GET('/v1/live/sessions', await reading(signal))),
+
+    wallet: async (signal) =>
+      attempt(async () => api.GET('/v1/wallet', await reading(signal))),
+
+    activateLivePreference: async (region) =>
+      attempt(async () =>
+        api.POST('/v1/wallet/live-preference', {
+          ...(await writing()),
+          body: { region },
+        }),
+      ),
+
+    // No body, because there is one open window per person and the server
+    // already knows which. A cancellation that named the wrong one would be a
+    // cancellation that did not cancel.
+    cancelLivePreference: async () =>
+      attempt(async () =>
+        api.POST('/v1/wallet/live-preference/cancellation', await writing()),
+      ),
+
+    redeemAndroidCoinPurchase: async (input) =>
+      attempt(async () =>
+        api.POST('/v1/wallet/android-purchases', {
+          ...(await writing()),
+          body: {
+            productReference: input.productReference,
+            purchaseToken: input.purchaseToken,
+          },
+        }),
+      ),
+
+    grantCoins: async (input) =>
+      attempt(async () =>
+        api.POST('/v1/wallet/grants', {
+          ...(await writing()),
+          body: { coins: input.coins, reference: input.reference },
+        }),
+      ),
 
     startLiveSearch: async (medium, preferences) =>
       attempt(async () =>

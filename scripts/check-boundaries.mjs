@@ -56,6 +56,13 @@ const approvedBackendRuntimeDependencies = new Map([
       'drizzle-orm',
       'elysia',
       'ioredis',
+      // The RTC transport SDK, in-process behind `RtcProviderPort`. It is
+      // reached only from `src/realtime/livekit-provider.ts`, which is the one
+      // adapter that speaks to a media provider, and it is selected by
+      // configuration that refuses it in staging and production. It mints
+      // tokens and calls one vendor's room API; nothing else in the repository
+      // imports it, and no domain outside REALTIME may.
+      'livekit-server-sdk',
       'pino',
       // The platform's image decoder and encoder, in-process behind
       // `MediaImageProcessor`. A library rather than a provider: no bytes leave

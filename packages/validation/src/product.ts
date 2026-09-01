@@ -24,6 +24,14 @@ export const productErrorCodes = {
   creatorSurfaceRequired: 'CREATOR_SURFACE_REQUIRED',
   /** The same idempotency key was reused with different input. */
   idempotencyMismatch: 'IDEMPOTENCY_KEY_MISMATCH',
+  /**
+   * The caller's balance will not cover what they asked for.
+   *
+   * It says only that. How much is missing, and how much is held against
+   * something already open, are deliberately absent: a refusal that reported
+   * either would let a sequence of failed attempts read somebody's balance.
+   */
+  insufficientFunds: 'INSUFFICIENT_FUNDS',
   /** A bounded per-account collection is already full. */
   limitReached: 'LIMIT_REACHED',
   /** Privacy-safe not found. It never distinguishes absent from unauthorized. */

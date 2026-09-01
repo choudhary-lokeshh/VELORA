@@ -303,6 +303,30 @@ export const redisSignalTransport = 'redis';
 
 export const unavailableRtcProvider = 'unavailable';
 export const localTestRtcProvider = 'local-test';
+/**
+ * The first adapter that actually carries a packet.
+ *
+ * `livekit` mints real, per-participant, room-scoped access tokens against a
+ * LiveKit project and verifies real callbacks over their exact raw bytes. It is
+ * a *transport* selection and nothing else: VELORA still decides who meets
+ * whom, who may join, and when a credential stops working.
+ *
+ * It is refused in staging and production by the guard below, and the reason is
+ * recorded rather than implied. `docs/compliance/10-rtc-provider-eligibility.md`
+ * assesses LiveKit Cloud as the closest technical fit and **NOT APPROVED**: its
+ * acceptable-use policy reserves unbounded discretion over "otherwise
+ * objectionable" content, which is exactly what VELORA is, so written use-case
+ * confirmation is mandatory and has not been obtained. Selecting it locally is
+ * how the integration is proved against a real provider before that answer
+ * exists; selecting it in a deployed environment would be reading silence as
+ * permission.
+ *
+ * There is deliberately no fallback. A `livekit` selection whose credentials
+ * are absent is a startup failure, never a quiet downgrade to `local-test` —
+ * an environment that simulated media while claiming a provider would be the
+ * single most misleading state this platform could be in.
+ */
+export const livekitRtcProvider = 'livekit';
 
 /**
  * Whether anybody may be admitted to random live discovery, and whether a
@@ -334,6 +358,55 @@ export const unavailableLiveDiscovery = 'unavailable';
 export const openLiveDiscovery = 'open';
 export const unavailableLiveSimulation = 'unavailable';
 export const localTestLiveSimulation = 'local-test';
+
+/**
+ * Whether the platform keeps a coin balance for anybody at all.
+ *
+ * Coins are an entitlement unit, not money: they are counted in whole units,
+ * they have no ISO 4217 currency, and they buy nothing outside VELORA. What
+ * makes them worth gating is the other half — buying them is a payment, and
+ * what a virtual balance is worth, whether it expires, whether it is
+ * refundable, and how it is treated for consumer-protection and tax purposes
+ * are all undecided commercial and legal questions in `DECISIONS_REQUIRED`.
+ *
+ * `unavailable` means no account holds a balance, no preference can be paid
+ * for, and every wallet operation refuses — which is the only behaviour a
+ * deployed environment may have while those answers are missing. `enabled`
+ * builds the ledger and is refused outside local and test by the guard below.
+ *
+ * It gates the *ledger*, not an acquisition channel. How coins are bought is
+ * decided separately: on the Web by `BILLING_PAYMENT_PROVIDER`, which refuses
+ * in every environment, and on Android by the value below.
+ */
+export const unavailableCoinLedger = 'unavailable';
+export const enabledCoinLedger = 'enabled';
+
+/**
+ * How the Android application acquires coins.
+ *
+ * Deliberately separate from the Web channel rather than sharing it. Google
+ * Play requires digital goods consumed inside a Play-distributed application to
+ * be sold through Play Billing, and a Play purchase is proved by a server-side
+ * verification against Google's own API — never by a client saying it
+ * succeeded. Those are different mechanisms with different proofs, so they are
+ * different adapters.
+ *
+ * `unavailable` refuses every acquisition, which is what a deployed
+ * environment gets: no Play Console project, no product identifiers, no
+ * service-account credentials, and no owner decision about any of them exist.
+ * `local-test` credits a fixed grant through the same server-side path a
+ * verified purchase would take, so the wallet, the entitlement, and the
+ * matching that depends on them are walkable on a device; it is refused
+ * outside local and test.
+ *
+ * A `google-play` adapter is deliberately absent rather than stubbed. The port
+ * it would implement is declared in full, so adding one is an adapter and a
+ * credential rather than a redesign — but a name that could be selected and
+ * could not verify anything would be a channel that mints currency on a
+ * client's word.
+ */
+export const unavailableCoinAcquisition = 'unavailable';
+export const localTestCoinAcquisition = 'local-test';
 
 /**
  * Notification delivery channels. No email, push, or SMS provider is approved —
@@ -517,6 +590,12 @@ export const serverConfigSchema = z
     LIVE_DISCOVERY_SIMULATION: z
       .enum([unavailableLiveSimulation, localTestLiveSimulation])
       .default(unavailableLiveSimulation),
+    WALLET_COIN_LEDGER: z
+      .enum([unavailableCoinLedger, enabledCoinLedger])
+      .default(unavailableCoinLedger),
+    WALLET_ANDROID_ACQUISITION: z
+      .enum([unavailableCoinAcquisition, localTestCoinAcquisition])
+      .default(unavailableCoinAcquisition),
     LOG_LEVEL: logLevelSchema.default('info'),
     MESSAGING_SAFETY_ELIGIBILITY: z
       .enum([unavailableSafetyEligibility, trustAndSafetyEligibility])
@@ -539,8 +618,28 @@ export const serverConfigSchema = z
       .enum([unavailableCallEligibility, composedCallEligibility])
       .default(unavailableCallEligibility),
     REALTIME_RTC_PROVIDER: z
-      .enum([unavailableRtcProvider, localTestRtcProvider])
+      .enum([unavailableRtcProvider, localTestRtcProvider, livekitRtcProvider])
       .default(unavailableRtcProvider),
+    /**
+     * Where a LiveKit project answers, as a client reaches it.
+     *
+     * Not a secret: it is handed to browsers and to the Android application so
+     * they know where to present the credential the server minted for them.
+     * Required when, and only when, the `livekit` adapter is selected.
+     */
+    REALTIME_LIVEKIT_URL: optionalTextSchema,
+    /**
+     * The LiveKit API key and secret, which sign every participant token and
+     * verify every callback.
+     *
+     * **Backend only, both of them.** Neither carries a client-public prefix,
+     * neither is returned by any route, neither appears in
+     * {@link redactServerConfig}, and `pnpm env:check` refuses a public prefix
+     * on either. The secret is the whole of the platform's authority over a
+     * LiveKit project: anybody holding it can mint a token for any room.
+     */
+    REALTIME_LIVEKIT_API_KEY: optionalTextSchema,
+    REALTIME_LIVEKIT_API_SECRET: optionalTextSchema,
     REALTIME_SIGNAL_TRANSPORT: z
       .enum([unavailableSignalTransport, redisSignalTransport])
       .default(unavailableSignalTransport),
@@ -730,8 +829,22 @@ export const serverConfigSchema = z
     if (config.REALTIME_RTC_PROVIDER !== unavailableRtcProvider) {
       context.addIssue({
         code: 'custom',
-        message: `REALTIME_RTC_PROVIDER is not usable in ${config.APP_ENV}: no RTC provider is approved, and a provider whose terms prohibit what Velora is, offers no isolation between unrelated calls, or cannot be read at all has given no answer rather than permission; see the RTC provider eligibility record and DECISIONS_REQUIRED`,
+        message: `REALTIME_RTC_PROVIDER is not usable in ${config.APP_ENV}: no RTC provider is approved, and a provider whose terms prohibit what Velora is, offers no isolation between unrelated calls, reserves unbounded discretion over "otherwise objectionable" content, or cannot be read at all has given no answer rather than permission; see the RTC provider eligibility record and DECISIONS_REQUIRED`,
         path: ['REALTIME_RTC_PROVIDER'],
+      });
+    }
+    if (config.WALLET_COIN_LEDGER !== unavailableCoinLedger) {
+      context.addIssue({
+        code: 'custom',
+        message: `WALLET_COIN_LEDGER is not usable in ${config.APP_ENV}: what a coin is worth, whether a balance expires, whether it is refundable, and how a virtual balance is treated for consumer-protection and tax purposes are all undecided; see DECISIONS_REQUIRED`,
+        path: ['WALLET_COIN_LEDGER'],
+      });
+    }
+    if (config.WALLET_ANDROID_ACQUISITION !== unavailableCoinAcquisition) {
+      context.addIssue({
+        code: 'custom',
+        message: `WALLET_ANDROID_ACQUISITION is not usable in ${config.APP_ENV}: it credits coins without verifying a purchase against Google Play, and no Play Console project, product identifier, or service-account credential exists to verify one against; see DECISIONS_REQUIRED`,
+        path: ['WALLET_ANDROID_ACQUISITION'],
       });
     }
     if (
@@ -783,11 +896,65 @@ export const serverConfigSchema = z
     }
   })
   .superRefine((config, context) => {
-    // Runs in every environment, unlike the guard above. Selecting the
-    // development media adapter without telling it where to keep objects or
-    // what to sign with must fail at startup: an adapter that quietly fell back
-    // to a temporary directory or a generated key would work on one process and
-    // fail across two, which is the failure mode hardest to find later.
+    // Runs in every environment, unlike the guard above. A `livekit` selection
+    // with any of its three values missing is a startup failure rather than a
+    // downgrade: an adapter that fell back to simulation would present "no
+    // approved provider exists" to one developer and a working call to the
+    // next, from the same commit, with nothing saying which they had.
+    //
+    // The key and the secret are read here and nowhere else. Nothing in the
+    // application reads `process.env` for either, so there is one place that
+    // decides whether they are present and one place that hands them to the
+    // adapter.
+    if (config.REALTIME_RTC_PROVIDER === livekitRtcProvider) {
+      for (const path of [
+        'REALTIME_LIVEKIT_URL',
+        'REALTIME_LIVEKIT_API_KEY',
+        'REALTIME_LIVEKIT_API_SECRET',
+      ] as const) {
+        if (config[path] === undefined) {
+          context.addIssue({
+            code: 'custom',
+            message: `${path} is required when REALTIME_RTC_PROVIDER is ${livekitRtcProvider}`,
+            path: [path],
+          });
+        }
+      }
+      const url = config.REALTIME_LIVEKIT_URL;
+      // A LiveKit project is reached over a WebSocket. Refusing anything else
+      // here means a browser is never handed an address it will fail on after
+      // the user has already granted a camera.
+      if (
+        url !== undefined &&
+        !url.startsWith('wss://') &&
+        !url.startsWith('ws://')
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'REALTIME_LIVEKIT_URL must be a WebSocket address beginning ws:// or wss://',
+          path: ['REALTIME_LIVEKIT_URL'],
+        });
+      }
+    }
+    // A coin acquisition channel with no ledger behind it would credit a
+    // balance nothing holds. Selecting one without the other is a
+    // configuration error rather than a channel that quietly does nothing.
+    if (
+      config.WALLET_ANDROID_ACQUISITION !== unavailableCoinAcquisition &&
+      config.WALLET_COIN_LEDGER === unavailableCoinLedger
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `WALLET_ANDROID_ACQUISITION requires WALLET_COIN_LEDGER to be ${enabledCoinLedger}`,
+        path: ['WALLET_ANDROID_ACQUISITION'],
+      });
+    }
+    // Selecting the development media adapter without telling it where to keep
+    // objects or what to sign with must fail at startup: an adapter that
+    // quietly fell back to a temporary directory or a generated key would work
+    // on one process and fail across two, which is the failure mode hardest to
+    // find later.
     if (config.MEDIA_STORAGE_PROVIDER !== localTestMediaStorage) return;
     if (config.MEDIA_LOCAL_STORAGE_DIRECTORY === undefined) {
       context.addIssue({
@@ -902,7 +1069,17 @@ export function redactServerConfig(config: ServerConfig) {
     port: config.PORT,
     rtcCallEligibility: config.REALTIME_CALL_ELIGIBILITY,
     rtcProvider: config.REALTIME_RTC_PROVIDER,
+    // Whether the three LiveKit values are present, never any of them. The URL
+    // is not itself a secret, but reporting it here would put a project
+    // address into every startup log for no operational gain, and the key and
+    // the secret must never be rendered anywhere at all.
+    rtcProviderCredentialsConfigured:
+      config.REALTIME_LIVEKIT_URL !== undefined &&
+      config.REALTIME_LIVEKIT_API_KEY !== undefined &&
+      config.REALTIME_LIVEKIT_API_SECRET !== undefined,
     rtcSignalTransport: config.REALTIME_SIGNAL_TRANSPORT,
+    walletAndroidAcquisition: config.WALLET_ANDROID_ACQUISITION,
+    walletCoinLedger: config.WALLET_COIN_LEDGER,
     safetyEligibility: config.MESSAGING_SAFETY_ELIGIBILITY,
     privilegedAuthenticatorVerifier:
       config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,
