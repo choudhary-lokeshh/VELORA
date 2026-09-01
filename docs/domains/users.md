@@ -72,7 +72,9 @@ A caller with no consumer account receives the same answer as a caller addressin
 
 `0004_users_profile` adds the four tables the approved V1 consumer policy needs: the profile itself, the languages it speaks, its images, and its self-managed preferences.
 
-The minimum discoverable profile is a display name, a coarse region, at least one language, and at least one image in the `ready` state. Nothing else gates being seen. Date of birth, precise location, gender, and orientation are deliberately absent: a person is never asked to hand over sensitive data as the price of appearing in discovery, and none of it is needed to introduce two adults to each other.
+The minimum discoverable profile is a display name, a coarse region, at least one language, and at least one image in the `ready` state. Nothing else gates being seen. Date of birth, precise location, and orientation are deliberately absent: a person is never asked to hand over sensitive data as the price of appearing in discovery, and none of it is needed to introduce two adults to each other.
+
+A declared matching category exists and is **not** part of that minimum — see below.
 
 A consumer profile is not a public page. It is served to its owner and, through the projections other domains build, only to authenticated consumers whose relationship permits it. Public creator storefront behaviour belongs to CREATORS and must not reach this model.
 
@@ -101,6 +103,24 @@ The delegation direction matters. USERS declares the shape it needs and DISCOVER
 The cached readiness answer is refreshed by a sweep that reads least-recently-checked first, so a never-checked slot is picked up before a stale one and every projection is revisited within a bounded period. Its index has to be declared `nulls first` to match, and for a long time it was not: a b-tree ASC index stores nulls **last**, so the index could not serve that ordering at all and the planner answered every cycle with a sequential scan and a sort of every attached slot on the platform. The comment above the query claimed the index served it, which is the part that made the defect invisible. Corrected in `0044_scale_indexes`, and held there by an assertion that disables both sequential and bitmap scans so it discriminates without needing volume.
 
 `USERS_PROFILE_MEDIA_STORAGE` selects the adapter and defaults to `unavailable`, which refuses every upload and every inspection. Staging and production reject any other value while no storage provider is approved in [open decisions](../decisions/DECISIONS_REQUIRED.md), so a deployed environment cannot accept an image and therefore cannot produce a discoverable account. That is the intended outcome: an empty discovery surface is better than one running on unverified media. The `local-test` adapter keeps objects in process memory for development and tests; it verifies magic bytes and size and performs no malware or moderation scanning, so its acceptance is never evidence about real user content.
+
+### Declared matching category
+
+`0073_declared-matching-gender` adds `users_matching_declarations`: one optional, self-declared category per account — `woman`, `man`, `non_binary`, or `undisclosed` — collected under [ADR-0044](../decisions/ADR-0044-declared-matching-categories-and-premium-preference-sets.md).
+
+**It is never inferred.** No camera, face, body, name, voice, model, pronoun, location, or behavioural signal contributes to it, and there is no code path anywhere that derives a value for it. That is a property of the shape rather than a promise: there is exactly one writer, and it takes its subject from the authenticated principal, so no request can declare something about somebody else.
+
+**Its own table, not a column on the profile.** A nullable column would have been swept into every projection that already selects that row, and the difference between "declined to say" and "never asked" would have survived only as a convention about `NULL`. Every peer-facing view of a person in this repository is built from `users_profiles`, `users_profile_languages`, and `users_profile_media`; none joins this table, and a new one would have to be written on purpose.
+
+**No backfill and no default.** Every account that existed when the migration ran has no row, which is the state that means nobody has been asked. Choosing for somebody would be the exact inference this exists to avoid.
+
+**It is optional and gates nothing.** No completeness rule reads it, discoverability does not depend on it, and an account that never answers is complete, discoverable, and matched by `Everyone` exactly as before. What it changes is only whether somebody else's paid, narrowed search can reach you — [WALLET](wallet.md) sells that and [LIVE](live.md) applies it.
+
+**It is never displayed.** The server publishes it in one place: the owner reading their own profile. It appears in no discovery card, live encounter, creator page, RTC session, provider payload, or log.
+
+The one reader outside this domain is `matchingAmong`, which answers "which of these identifiers declared this" over a candidate list the caller supplies — never "what is this person". With a single identifier the answer is a membership bit the caller had to guess first, and the routes that reach it pass a pool the caller did not choose.
+
+Erasure follows the account: the row cascades with `users_accounts`, so a declaration cannot outlive the person who made it and nothing has to remember to remove one.
 
 ### Preferences
 

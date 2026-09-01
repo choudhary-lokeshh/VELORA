@@ -8,7 +8,7 @@ It owns none of the facts a coin depends on. AUTH owns the principal and the ses
 
 It does not own prices in money, payment instruments, provider state, offers, or entitlements to anything other than the one thing coins currently buy. **A coin is not money**: it has no ISO 4217 currency, no minor unit, no exchange rate, and no denomination outside VELORA.
 
-[ADR-0043](../decisions/ADR-0043-livekit-transport-coins-and-paid-live-preferences.md) is the architecture authority, and [ADR-0011](../decisions/ADR-0011-payments-payouts.md) is the rule it follows: owner-specific append-only balanced journals, never a shared ledger.
+[ADR-0043](../decisions/ADR-0043-livekit-transport-coins-and-paid-live-preferences.md) built this domain and [ADR-0044](../decisions/ADR-0044-declared-matching-categories-and-premium-preference-sets.md) is the current architecture authority; [ADR-0011](../decisions/ADR-0011-payments-payouts.md) is the rule both follow: owner-specific append-only balanced journals, never a shared ledger.
 
 ## Why this is a second journal rather than a currency in BILLING's
 
@@ -52,31 +52,41 @@ One guarantee is deliberately outside the schema: `TRUNCATE` fires no row trigge
 
 **Reserve on activation, capture on the first filtered match, release in full on expiry.**
 
-The coins leave the spendable balance the instant the window opens and are held. They are captured when the window produces an encounter, and released in full when it does not — by the worker, on a cycle far shorter than the window itself, whether or not anybody is watching.
+The coins leave the spendable balance the instant the window opens and are held. They are captured **once**, when the window produces the first encounter the narrowing actually made, and released in full when it produces none — by the worker, on a cycle far shorter than the window itself, whether or not anybody is watching.
+
+A charged window keeps running. `captured` is an open state, not a terminal one: the narrowing applies until the window expires and every further match inside it is free. An entitlement that stopped applying the instant it was charged would be a per-match fee wearing a window's clothes, and the person pressing Next would silently be handed the whole pool a second later.
 
 Charging on tap would mean paying for a pool that turned out to be empty. Charging only after a successful match would mean the platform running a narrowed, more expensive search for free for anybody who never matched, and would make what somebody paid depend on how busy the product happened to be.
 
-Two consequences are deliberate. Cancelling inside the window returns everything, because changing your mind is not a consumption of what you bought. And a pair who had already agreed to meet bypasses the narrowed pool by design, so that match does not capture — charging for a match the filter did not make would be charging for the filter not being used.
+Three consequences are deliberate. Cancelling a window that never found anybody returns everything, because changing your mind is not a consumption of what you bought; cancelling one that already found somebody returns nothing, because it was charged then and ending it early gives up only the time it had left. A pair who had already agreed to meet bypasses the narrowed pool by design, so that match does not capture — charging for a match the filter did not make would be charging for the filter not being used. And a closed window that was charged becomes `expired` rather than `released`, because a released window is one nobody paid for and collapsing the two would make "how often does a paid window find nobody" unanswerable.
 
 ## What the paid preference is, and what it is not
 
-One supported attribute: a declared ISO 3166-1 alpha-2 region, which a person set themselves during onboarding, which USERS owns, and which the matcher already reads for the free `same` narrowing.
+Three supported attributes, and every one is a field a person set about themselves: a declared matching category, a declared ISO 3166-1 alpha-2 region, and a declared profile language. USERS owns all three.
 
-Nothing is inferred. No camera, face, name, voice, model, or location proxy contributes to any value, and `livePremiumPreferenceKinds` is a closed list of one, so the absence of anything else is checkable rather than asserted here.
+A selection is a *conjunction*. "Women, in France, who speak French" is one window and one price — the sum of the kinds in it, read from a server-owned catalogue both surfaces render rather than restate. A flat price whatever is selected would mean the person who narrows on one thing subsidising the person who narrows on three.
 
-A declared-gender preference has no field to read — the minimum discoverable profile deliberately excludes gender so that nobody is asked to hand over sensitive data as the price of being seen — and adding one is a product, policy, and legal decision recorded in `DECISIONS_REQUIRED.md`.
+Nothing is inferred. No camera, face, body, name, voice, model, pronoun, or location proxy contributes to any value, and `livePremiumPreferenceKinds` is a closed list, so the absence of an age band, a body attribute, an appearance, an orientation, or a compatibility score is checkable rather than asserted here.
 
-The free preference contract is unchanged and still cannot express a specific region. The paid narrowing is bought as a bounded window and read by the matcher from that record, so a client can never simply ask to filter a population; it can only hold a window somebody deliberately opened, that expires.
+`undisclosed` is not sellable. A preference for people who declined to say would turn declining into an answer with consequences; somebody who declined, and somebody who was never asked, are matched by `Everyone` and by nothing narrower.
+
+A `language` preference must be one the buyer speaks. Asking for people who speak a language you do not speak is a search that means nothing, so it is refused before it is sold rather than sold and quietly dropped.
+
+The free preference contract is unchanged and still cannot express a specific region or a category. The paid narrowing is bought as a bounded window and read by the matcher from that record, so a client can never simply ask to filter a population; it can only hold a window somebody deliberately opened, that expires.
+
+Widening a running window is free and is its own operation, because it can only ever ask for *less*. Adding a preference, or swapping one value for another, is a different window and is sold as one.
 
 ## Paying narrows a pool and authorizes nothing
 
 The window is applied to the candidate pool, before any safety, standing, enforcement, or eligibility predicate is asked, and it can only make the pool smaller. Every one of those predicates is asked identically, in the same order, under the same pair lock, whether or not anybody paid.
 
+It applies from **both** sides of a pair. The matcher reads every candidate's own window and asks USERS, as a membership question about the actor, whether the pair satisfies it — so somebody who paid to meet only women is never handed a man by his search, and a window that did the work is charged whichever side's poll allocated. LIVE learns one bit per window and never learns what anybody declared, including the actor.
+
 That is why the contract this domain publishes to LIVE has no method a safety decision consults, and why a blocked pair stays refused — and uncharged — to somebody who paid to find them.
 
 ## Acquisition
 
-**Web** is BILLING's. A coin pack is an ordinary offer, checkout is ordinary checkout, and all this domain adds is what a settled payment does to a balance and what a reversal undoes. The seam exists and is inert: nothing yet emits a `coins` resource type, because BILLING's offer model is creator-scoped and a platform-owned product is an open decision.
+**Web** is BILLING's. A coin pack is an ordinary **platform-owned** offer — `billing_offers.owner_type` is `platform` and its `creator_id` is null — checkout is ordinary checkout, and all this domain adds is the coin count and what a settled payment does to a balance. A platform sale credits no creator payable, publishes no revenue fact, and appears in nobody's earnings. Where VELORA sells its own products from is undecided, so the commerce authority refuses the seller gate outside local and test, and `WALLET_WEB_ACQUISITION` is refused there too.
 
 **Android** is a separate port, because Google Play requires digital goods consumed inside a Play-distributed application to be sold through Play Billing and a Play purchase is proved by a server-side verification against Google's own API. Verify, then credit, then acknowledge — never the reverse, because Play refunds an unacknowledged purchase and acknowledging first would acknowledge a delivery that had not happened.
 
