@@ -14,6 +14,7 @@ import { MessagesScreen } from '../src/product/messages';
 import { NoticesScreen } from '../src/product/notices';
 import { AvailabilityScreen, ProfileScreen } from '../src/product/profile';
 import { SafetyScreen } from '../src/product/safety';
+import { WalletScreen } from '../src/product/wallet';
 import {
   admittedState,
   conversationId,
@@ -1368,5 +1369,128 @@ describe('you', () => {
         view.getByText(/no approved way to deliver an image/u),
       ).toBeTruthy();
     });
+  });
+});
+
+/**
+ * The coin screen on a phone.
+ *
+ * The same rules the web screen is held to, asserted the same way: an
+ * environment with no ledger is not somebody with no coins, held coins are
+ * never presented as spendable, and nothing offers a purchase this application
+ * cannot complete — including, deliberately, a link to a web checkout, which
+ * Android may not use for a digital good consumed inside it.
+ */
+describe('coins', () => {
+  function walletState(
+    overrides: Partial<MobileApiState['wallet']> = {},
+  ): MobileApiState {
+    const base = admittedState();
+    return {
+      ...base,
+      wallet: { ...base.wallet, enabled: true, ...overrides },
+    };
+  }
+
+  it('tells an environment with no ledger apart from somebody with no coins', async () => {
+    const { view } = await mount(<WalletScreen onBack={nothing} />);
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-unavailable')).toBeTruthy();
+    });
+    expect(view.queryByTestId('wallet-grant')).toBeNull();
+  });
+
+  it('renders the balance the server holds and never one it worked out', async () => {
+    const { view } = await mount(
+      <WalletScreen onBack={nothing} />,
+      walletState({ balance: { available: '75', reserved: '25' } }),
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-available')).toHaveTextContent(
+        /75 coins/u,
+      );
+    });
+    // Held coins are never presented as spendable.
+    expect(view.getByTestId('wallet-reserved')).toHaveTextContent(
+      /25 more are held/u,
+    );
+  });
+
+  it('offers no purchase and no web checkout where nothing can take money', async () => {
+    const { view } = await mount(
+      <WalletScreen onBack={nothing} />,
+      walletState({ balance: { available: '0', reserved: '0' } }),
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-acquisition')).toHaveTextContent(
+        /no way to buy coins in this application/u,
+      );
+    });
+    // The one control that exists here says what it is, and the server refuses
+    // it outside local and test.
+    expect(view.getByTestId('wallet-grant')).toHaveTextContent(/Developer/u);
+    // And no link out. Sending somebody to a browser to buy a digital good
+    // consumed inside this application is exactly what Play forbids.
+    expect(view.queryByText(/checkout/iu)).toBeNull();
+    expect(view.queryByText(/velora\.(app|com)/iu)).toBeNull();
+  });
+
+  it('tells the story of a grant in words rather than in ledger terms', async () => {
+    const { view } = await mount(
+      <WalletScreen onBack={nothing} />,
+      walletState({ balance: { available: '0', reserved: '0' } }),
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-grant')).toBeTruthy();
+    });
+    await fireEvent.press(view.getByTestId('wallet-grant'));
+
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-history')).toHaveTextContent(
+        /Development grant/u,
+      );
+    });
+    expect(view.getByTestId('wallet-history')).toHaveTextContent(
+      /100 coins added/u,
+    );
+  });
+
+  it('says the right thing about a charged window and about an uncharged one', async () => {
+    const running = {
+      charged: false,
+      coins: '25',
+      expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      region: 'FR',
+    };
+    const { view } = await mount(
+      <WalletScreen onBack={nothing} />,
+      walletState({
+        balance: { available: '75', reserved: '25' },
+        livePreference: running,
+      }),
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-window')).toHaveTextContent(
+        /held, not spent/u,
+      );
+    });
+    await cleanup();
+
+    const charged = await mount(
+      <WalletScreen onBack={nothing} />,
+      walletState({
+        balance: { available: '75', reserved: '0' },
+        livePreference: { ...running, charged: true },
+      }),
+    );
+    // Opposite promises, and the screen has to make the right one: a charged
+    // window returns nothing, an uncharged one returns everything.
+    await waitFor(() => {
+      expect(charged.view.getByTestId('wallet-window')).toHaveTextContent(
+        /nothing more is charged/u,
+      );
+    });
+    expect(charged.view.queryByText(/returned in full/u)).toBeNull();
   });
 });

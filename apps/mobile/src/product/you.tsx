@@ -71,6 +71,12 @@ const entries: readonly Entry[] = [
     label: 'Gifts',
   },
   {
+    caption: 'Your balance and what you have spent it on.',
+    icon: 'globe',
+    id: 'wallet',
+    label: 'Coins',
+  },
+  {
     caption: 'What VELORA tells you about, and where.',
     icon: 'bell',
     id: 'notices',

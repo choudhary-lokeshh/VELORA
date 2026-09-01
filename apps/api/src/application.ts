@@ -1671,6 +1671,10 @@ export function createApplication(
       apiRoutePaths.wallet,
       admitted(walletRoute(async (routes, input) => routes.getState(input))),
     )
+    .get(
+      apiRoutePaths.walletActivity,
+      admitted(walletRoute(async (routes, input) => routes.getActivity(input))),
+    )
     .post(
       apiRoutePaths.walletLivePreference,
       admitted(

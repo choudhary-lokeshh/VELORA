@@ -5,16 +5,49 @@ import type {
   Executor,
   TransactionHandle,
 } from '../database/executor.js';
+import { coinAccountId } from './ledger.js';
 import { livePreferenceEntitlementOpenStates } from './policy.js';
 import type {
   LivePreferenceEntitlementState,
   LivePremiumGenderValue,
+  WalletTransactionReason,
 } from './policy.js';
 import { livePreferenceEntitlements, walletAcquisitions } from './schema.js';
 
 export type LivePreferenceEntitlementRow =
   typeof livePreferenceEntitlements.$inferSelect;
 export type WalletAcquisitionRow = typeof walletAcquisitions.$inferSelect;
+
+/**
+ * One movement of one person's coins, as the history query produces it.
+ *
+ * Deliberately not a ledger row. It carries what moved and why, and nothing
+ * about the accounts either side of it — the shape is the first thing standing
+ * between a history somebody may read and the book behind it.
+ */
+export interface WalletActivityRow {
+  readonly coins: bigint;
+  readonly gender: string | null;
+  readonly id: string;
+  readonly language: string | null;
+  readonly occurredAt: Date;
+  readonly reason: WalletTransactionReason;
+  readonly region: string | null;
+  /** The keyset position this line was read at. Opaque outside this domain. */
+  readonly sequence: number;
+}
+
+/** The raw shape the history statement returns, before it is given names. */
+interface WalletActivityQueryRow {
+  readonly coins: string;
+  readonly id: string;
+  readonly occurred_at: string;
+  readonly preference_gender: string | null;
+  readonly preference_language: string | null;
+  readonly preference_region: string | null;
+  readonly reason: WalletTransactionReason;
+  readonly sequence: string;
+}
 
 /**
  * WALLET's storage.
@@ -339,6 +372,82 @@ export class WalletRepository {
       .where(eq(livePreferenceEntitlements.userId, input.userId))
       .orderBy(desc(livePreferenceEntitlements.sequence))
       .limit(input.limit);
+  }
+
+  /**
+   * One page of somebody's own coin history, newest first.
+   *
+   * Written as one statement rather than as a read-then-enrich, because the
+   * alternative is N queries for the preference behind N lines, inside a route
+   * a person refreshes.
+   *
+   * Two rules make it safe to hand to a client. It is anchored on this person's
+   * *own* two accounts, so a transaction that never touched their balance is
+   * not in the answer however it was posted — a capture credits
+   * `platform_revenue`, and the platform's side of it is not this person's
+   * business. And it selects the movement rather than the postings: what comes
+   * back is a reason, an instant, a magnitude, and the preference the window
+   * named, never an account, a direction, or a transaction identifier.
+   *
+   * Keyset paging on `sequence`, which never moves once written, so a page
+   * boundary cannot shift under a reader part-way through.
+   */
+  async listActivity(
+    executor: Executor,
+    input: {
+      readonly before?: number | undefined;
+      readonly limit: number;
+      readonly userId: string;
+    },
+  ): Promise<readonly WalletActivityRow[]> {
+    const balanceAccount = coinAccountId({
+      category: 'consumer_balance',
+      subjectId: input.userId,
+    });
+    const reservedAccount = coinAccountId({
+      category: 'consumer_reserved',
+      subjectId: input.userId,
+    });
+    const rows = await executor.execute(sql`
+      select
+        t.id as id,
+        t.reason as reason,
+        t.occurred_at as occurred_at,
+        t.sequence as sequence,
+        greatest(
+          abs(coalesce(sum(case when e.account_id = ${balanceAccount}
+                                then case when e.direction = 'credit' then e.amount else -e.amount end
+                                else 0 end), 0)),
+          abs(coalesce(sum(case when e.account_id = ${reservedAccount}
+                                then case when e.direction = 'credit' then e.amount else -e.amount end
+                                else 0 end), 0))
+        ) as coins,
+        max(w.preference_gender) as preference_gender,
+        max(w.preference_language) as preference_language,
+        max(w.preference_region) as preference_region
+      from wallet_transactions t
+      join wallet_entries e on e.transaction_id = t.id
+      left join wallet_live_preference_entitlements w
+        on w.user_id = ${input.userId}
+        and t.business_reference = w.id::text
+      where e.account_id in (${balanceAccount}, ${reservedAccount})
+        ${input.before === undefined ? sql`` : sql`and t.sequence < ${input.before}`}
+      group by t.id, t.reason, t.occurred_at, t.sequence
+      order by t.sequence desc
+      limit ${input.limit}
+    `);
+    return (rows as unknown as readonly WalletActivityQueryRow[]).map(
+      (row) => ({
+        coins: BigInt(row.coins),
+        gender: row.preference_gender,
+        id: row.id,
+        language: row.preference_language,
+        occurredAt: new Date(row.occurred_at),
+        reason: row.reason,
+        region: row.preference_region,
+        sequence: Number(row.sequence),
+      }),
+    );
   }
 
   /**

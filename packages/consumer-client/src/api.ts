@@ -57,6 +57,7 @@ import type {
   PolicyDocument,
   ProfileMediaUpload,
   PushDeviceList,
+  WalletActivityList,
   WalletState,
   RegisterPushDeviceBody,
   RedeemClubInviteBody,
@@ -380,6 +381,17 @@ export interface ConsumerApi {
    * a new balance from a delta it applied itself.
    */
   wallet(signal?: AbortSignal): Promise<ApiResult<WalletState>>;
+  /**
+   * What happened to this account's coins, newest first.
+   *
+   * Paged, because a history grows for as long as an account is active and
+   * nothing in it expires — a financial record that vanished would make a
+   * dispute unanswerable.
+   */
+  walletActivity(
+    query?: PageQuery,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<WalletActivityList>>;
   /**
    * Opens a paid, bounded window in which the matcher narrows to the declared
    * preferences named.
@@ -847,6 +859,14 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
 
     wallet: async (signal) =>
       attempt(async () => api.GET('/v1/wallet', await reading(signal))),
+
+    walletActivity: async (query = {}, signal) =>
+      attempt(async () =>
+        api.GET('/v1/wallet/activity', {
+          ...(await reading(signal)),
+          params: { query: pageParameters(query) },
+        }),
+      ),
 
     activateLivePreference: async (selection) =>
       attempt(async () =>

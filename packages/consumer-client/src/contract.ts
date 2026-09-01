@@ -235,6 +235,16 @@ export type SaveMatchingGenderBody = RequestBody<
   '/v1/users/me/matching-gender',
   'post'
 >;
+/**
+ * One page of somebody's own coin history, and one line of it.
+ *
+ * A record of what happened to their coins in product terms — never the ledger
+ * behind it. There is no provider name, no payment identifier, no store token,
+ * and no transaction identifier in this shape.
+ */
+export type WalletActivityList = JsonBody<'/v1/wallet/activity', 'get', 200>;
+export type WalletActivity = WalletActivityList['activity'][number];
+
 /** The closed set of declarations, as the server publishes it. */
 export type MatchingGender = NonNullable<ConsumerProfile['matchingGender']>;
 

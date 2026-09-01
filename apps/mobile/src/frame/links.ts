@@ -47,6 +47,7 @@ export const youSections = [
   'notices',
   'profile',
   'safety',
+  'wallet',
 ] as const;
 
 export type YouSection = (typeof youSections)[number];

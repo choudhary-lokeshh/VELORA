@@ -170,6 +170,7 @@ import {
   androidCoinPurchaseRequestSchema,
   broadenLivePreferenceRequestSchema,
   coinGrantRequestSchema,
+  walletActivityListResponseSchema,
   walletStateResponseSchema,
 } from './wallet.js';
 import {
@@ -420,6 +421,7 @@ export const apiRoutePaths = {
   wallet: '/v1/wallet',
   walletAndroidPurchases: '/v1/wallet/android-purchases',
   walletGrants: '/v1/wallet/grants',
+  walletActivity: '/v1/wallet/activity',
   walletLivePreference: '/v1/wallet/live-preference',
   walletLivePreferenceBroadening: '/v1/wallet/live-preference/broadening',
   walletLivePreferenceCancellation: '/v1/wallet/live-preference/cancellation',
@@ -611,6 +613,7 @@ export const apiSchemas = {
   AndroidCoinPurchaseRequest: androidCoinPurchaseRequestSchema,
   BroadenLivePreferenceRequest: broadenLivePreferenceRequestSchema,
   CoinGrantRequest: coinGrantRequestSchema,
+  WalletActivityListResponse: walletActivityListResponseSchema,
   WalletStateResponse: walletStateResponseSchema,
   SendLiveMessageRequest: sendLiveMessageRequestSchema,
   Conversation: conversationSchema,
@@ -3561,6 +3564,32 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'The one authoritative read behind coins. The balance a client holds is a rendering; this is the balance.',
+  },
+  {
+    method: 'get',
+    operationId: 'getWalletActivity',
+    path: apiRoutePaths.walletActivity,
+    requestQuery: [
+      { description: 'Opaque position from a previous page', name: 'cursor' },
+      { description: 'How many entries to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "One page of the caller's own coin history, newest first: what happened, when, how many coins, and which matching window a line belongs to. It carries no provider name, no payment identifier, no store token, and no ledger transaction identifier — none of them is something a person needs, and each is something a leaked history would hand to somebody who should not have it.",
+        schemaName: 'WalletActivityListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+      '503': {
+        description: `No coin ledger exists in this environment, so there is no history to read. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'What happened to this account\u2019s coins, in product terms rather than in the ledger\u2019s.',
   },
   {
     method: 'post',

@@ -247,6 +247,23 @@ export function You() {
             <li>
               <ListRow
                 aside={<Icon name="chevronRight" size="sm" />}
+                href="/you/wallet"
+                testId="link-wallet"
+              >
+                <span className="v-notification__mark">
+                  <Icon name="globe" size="md" />
+                </span>
+                <span className="v-row__body">
+                  <span className="v-subheading">Coins</span>
+                  <span className="v-caption v-quiet">
+                    Your balance and what you have spent it on
+                  </span>
+                </span>
+              </ListRow>
+            </li>
+            <li>
+              <ListRow
+                aside={<Icon name="chevronRight" size="sm" />}
                 href="/you/safety"
                 testId="link-safety"
               >

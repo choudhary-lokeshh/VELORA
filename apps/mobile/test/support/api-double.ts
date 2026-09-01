@@ -294,6 +294,14 @@ export interface MobileApiState {
       region?: string;
     };
   };
+  /** What has happened to this account's coins, newest first. */
+  walletActivity: {
+    coins: string;
+    id: string;
+    kind: string;
+    occurredAt: string;
+    preference?: { gender?: string; language?: string; region?: string };
+  }[];
   introductions: {
     counterpart: {
       displayName: string;
@@ -515,6 +523,7 @@ export function admittedState(): MobileApiState {
       },
       enabled: false,
     },
+    walletActivity: [],
     candidates: [
       {
         displayName: 'Robin',
@@ -646,6 +655,44 @@ interface WalletSelection {
   gender?: string;
   language?: string;
   region?: string;
+}
+
+/**
+ * Appends the history line the server would write for one movement.
+ *
+ * Written here rather than derived when the history is read, because that is
+ * the order the server does it in: a line exists because something moved, and a
+ * screen that rendered a history assembled from a balance would pass against a
+ * double that agreed with it and fail against a server that did not.
+ */
+function recordActivity(
+  state: { walletActivity: WalletActivityLine[] },
+  entry: {
+    coins: string;
+    kind: string;
+    preference?: WalletSelection;
+  },
+): void {
+  state.walletActivity = [
+    {
+      coins: entry.coins,
+      id: `activity-${String(state.walletActivity.length + 1)}`,
+      kind: entry.kind,
+      occurredAt: iso(),
+      ...(entry.preference === undefined || !narrowsSomething(entry.preference)
+        ? {}
+        : { preference: entry.preference }),
+    },
+    ...state.walletActivity,
+  ];
+}
+
+interface WalletActivityLine {
+  coins: string;
+  id: string;
+  kind: string;
+  occurredAt: string;
+  preference?: WalletSelection;
 }
 
 function narrowsSomething(selection: WalletSelection): boolean {
@@ -1133,6 +1180,13 @@ export function createMobileApiDouble(
     if (path === '/v1/wallet' && method === 'GET') {
       return json(200, walletBody(state));
     }
+    if (path === '/v1/wallet/activity' && method === 'GET') {
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      // Newest first, and no cursor: the double holds a short history and a
+      // second page would be a paging mechanism this file invented rather than
+      // the server's.
+      return json(200, { activity: state.walletActivity });
+    }
     if (path === '/v1/wallet/live-preference' && method === 'POST') {
       const input = body as WalletSelection;
       if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
@@ -1158,6 +1212,11 @@ export function createMobileApiDouble(
         id: livePreferenceId,
         ...selectionOf(input),
       };
+      recordActivity(state, {
+        coins: price.toString(),
+        kind: 'reservation',
+        preference: selectionOf(input),
+      });
       state.live.premium = {
         charged: false,
         expiresAt: state.wallet.livePreference.expiresAt,
@@ -1214,6 +1273,11 @@ export function createMobileApiDouble(
               BigInt(state.wallet.balance.reserved) - BigInt(held.coins)
             ).toString(),
           };
+          recordActivity(state, {
+            coins: held.coins,
+            kind: 'release',
+            preference: selectionOf(held),
+          });
         }
         delete state.wallet.livePreference;
         delete state.live.premium;
@@ -1230,6 +1294,7 @@ export function createMobileApiDouble(
           BigInt(state.wallet.balance.available) + BigInt(input.coins)
         ).toString(),
       };
+      recordActivity(state, { coins: input.coins, kind: 'grant' });
       return json(200, walletBody(state));
     }
     if (path === '/v1/live/sessions' && method === 'POST') {

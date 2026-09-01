@@ -3,7 +3,10 @@ import {
   androidCoinPurchaseRequestSchema,
   broadenLivePreferenceRequestSchema,
   coinGrantRequestSchema,
+  defaultPageSize,
+  pageSizeSchema,
   productErrorCodes,
+  walletActivityListResponseSchema,
   walletStateResponseSchema,
 } from '@velora/validation';
 
@@ -19,6 +22,7 @@ import {
   type ConsumerRouteContext,
 } from '../users/context.js';
 import type { CoinAcquisitionPort } from './acquisition.js';
+import { decodeActivityCursor, encodeActivityCursor } from './cursor.js';
 import {
   livePreferenceEntitlementDurationMilliseconds,
   livePremiumPreferenceCatalogue,
@@ -67,6 +71,66 @@ export class WalletRoutes {
     const resolved = await this.requireConsumer(input);
     if ('failure' in resolved) return resolved.failure;
     return this.state(resolved.context.account.id);
+  }
+
+  /**
+   * What happened to this account's coins, newest first.
+   *
+   * The caller is the subject and there is no shape in which it is anybody
+   * else: the account comes from the resolved consumer context, so a history is
+   * only ever readable by the person whose history it is.
+   */
+  async getActivity(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const query = new URL(input.request.url).searchParams;
+    const rawSize = query.get('pageSize');
+    const size =
+      rawSize === null ? defaultPageSize : pageSizeSchema.safeParse(rawSize);
+    if (typeof size !== 'number' && !size.success) return this.invalid(input);
+    const rawCursor = query.get('cursor');
+    const before =
+      rawCursor === null ? undefined : decodeActivityCursor(rawCursor);
+    // A cursor this domain did not issue is a malformed request rather than a
+    // silent first page: a reader whose position was quietly reset would page
+    // through the same lines for ever without being told why.
+    if (rawCursor !== null && before === undefined) return this.invalid(input);
+
+    const activity = await this.dependencies.wallet.activity({
+      before,
+      limit: typeof size === 'number' ? size : size.data,
+      userId: resolved.context.account.id,
+    });
+    if (activity === undefined) return this.refusal(input, 'unavailable');
+    return {
+      body: walletActivityListResponseSchema.parse({
+        activity: activity.entries.map((entry) => ({
+          coins: entry.coins.toString(),
+          id: entry.id,
+          kind: entry.kind,
+          occurredAt: entry.occurredAt.toISOString(),
+          ...(entry.preference === undefined
+            ? {}
+            : {
+                preference: {
+                  ...(entry.preference.gender === undefined
+                    ? {}
+                    : { gender: entry.preference.gender }),
+                  ...(entry.preference.language === undefined
+                    ? {}
+                    : { language: entry.preference.language }),
+                  ...(entry.preference.region === undefined
+                    ? {}
+                    : { region: entry.preference.region }),
+                },
+              }),
+        })),
+        ...(activity.nextBefore === undefined
+          ? {}
+          : { nextCursor: encodeActivityCursor(activity.nextBefore) }),
+      }),
+      status: 200,
+    };
   }
 
   async activateLivePreference(input: RouteRequest): Promise<RouteResult> {

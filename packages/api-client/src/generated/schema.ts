@@ -1933,6 +1933,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/wallet/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What happened to this account’s coins, in product terms rather than in the ledger’s. */
+        get: operations["getWalletActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/wallet/live-preference": {
         parameters: {
             query?: never;
@@ -4766,6 +4783,24 @@ export interface components {
         CoinGrantRequest: {
             coins: string;
             reference: string;
+        };
+        WalletActivityListResponse: {
+            activity: {
+                coins: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "grant" | "purchase" | "purchase_reversed" | "reservation" | "spend" | "release" | "correction";
+                /** Format: date-time */
+                occurredAt: string;
+                preference?: {
+                    /** @enum {string} */
+                    gender?: "woman" | "man" | "non_binary";
+                    language?: string;
+                    region?: string;
+                };
+            }[];
+            nextCursor?: string;
         };
         WalletStateResponse: {
             acquisition: {
@@ -18990,6 +19025,113 @@ export interface operations {
                     "x-correlation-id"?: string;
                     /** @description Seconds to wait before retrying. Present on a capacity refusal. */
                     "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getWalletActivity: {
+        parameters: {
+            query?: {
+                /** @description Opaque position from a previous page */
+                cursor?: string;
+                /** @description How many entries to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the caller's own coin history, newest first: what happened, when, how many coins, and which matching window a line belongs to. It carries no provider name, no payment identifier, no store token, and no ledger transaction identifier — none of them is something a person needs, and each is something a leaked history would hand to somebody who should not have it. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletActivityListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No coin ledger exists in this environment, so there is no history to read. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
                     [name: string]: unknown;
                 };
                 content: {

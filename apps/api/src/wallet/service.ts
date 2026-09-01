@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { WalletActivityKind } from '@velora/validation';
+
 import type { Executor, TransactionHandle } from '../database/executor.js';
 import type { CoinBalance, CoinLedger, CoinPosting } from './ledger.js';
 import {
@@ -16,6 +18,7 @@ import {
   type LivePremiumGenderValue,
   type LivePremiumPreferenceKind,
 } from './policy.js';
+import type { WalletTransactionReason } from './policy.js';
 import type {
   LivePreferenceEntitlementRow,
   WalletRepository,
@@ -77,6 +80,22 @@ export type ActivateLivePreferenceOutcome =
 export type CreditOutcome =
   | { readonly alreadyCredited: boolean; readonly kind: 'credited' }
   | { readonly kind: 'refused'; readonly reason: WalletRefusal };
+
+/**
+ * One line of somebody's own coin history, in the product's own words.
+ *
+ * Deliberately not a ledger row and deliberately not the repository's row
+ * either: it carries a product reason, an instant, a magnitude, and the window
+ * a line belongs to. There is no account, no direction, and no transaction
+ * identifier anywhere in it.
+ */
+export interface WalletActivityEntry {
+  readonly coins: bigint;
+  readonly id: string;
+  readonly kind: WalletActivityKind;
+  readonly occurredAt: Date;
+  readonly preference: LivePreferenceSelection | undefined;
+}
 
 /**
  * What one sweep cycle did. Counts only, on the same rule the RTC reconciler
@@ -197,6 +216,65 @@ export class WalletService {
       userId,
     );
     return this.inForce(row);
+  }
+
+  /**
+   * What happened to this person's coins, newest first.
+   *
+   * The reasons are translated here rather than at the boundary, because the
+   * ledger's vocabulary and the product's are two different things that
+   * currently mostly coincide — `capture` is a posting and `spend` is what
+   * somebody reads — and the day they stop coinciding, the translation should
+   * already exist rather than be invented in a route.
+   *
+   * One extra row is asked for beyond the page, which is how the answer knows
+   * whether there is another page without counting a history that grows for as
+   * long as an account is active.
+   */
+  async activity(input: {
+    readonly before?: number | undefined;
+    readonly limit: number;
+    readonly userId: string;
+  }): Promise<
+    | {
+        readonly entries: readonly WalletActivityEntry[];
+        readonly nextBefore: number | undefined;
+      }
+    | undefined
+  > {
+    if (!this.dependencies.enabled) return undefined;
+    const rows = await this.dependencies.repository.listActivity(
+      this.dependencies.repository.transactionless,
+      {
+        before: input.before,
+        limit: input.limit + 1,
+        userId: input.userId,
+      },
+    );
+    const page = rows.slice(0, input.limit);
+    return {
+      entries: page.map((row) => ({
+        coins: row.coins,
+        id: row.id,
+        kind: activityKindOf(row.reason),
+        occurredAt: row.occurredAt,
+        // Present only on the lines that belong to a window, and built from
+        // the columns rather than cast: the stored values passed the database's
+        // own vocabulary check, and this is the type system catching up with
+        // that rather than a second rule.
+        preference:
+          row.gender === null && row.language === null && row.region === null
+            ? undefined
+            : {
+                gender: livePremiumGenderValues.find(
+                  (value) => value === row.gender,
+                ),
+                language: row.language ?? undefined,
+                region: row.region ?? undefined,
+              },
+      })),
+      nextBefore: rows.length > input.limit ? page.at(-1)?.sequence : undefined,
+    };
   }
 
   /**
@@ -973,6 +1051,21 @@ export class WalletService {
       region: input.region,
     };
   }
+}
+
+/**
+ * The ledger's reason, in the words a person reads.
+ *
+ * A translation rather than a pass-through, and the one entry that differs is
+ * the point: `capture` is a posting that moves coins out of a reserved
+ * position, and `spend` is what happened as far as the person who bought
+ * something is concerned. Publishing the posting's name would make the product
+ * describe itself in the book's vocabulary, and would make renaming a posting a
+ * change to what a person is shown.
+ */
+function activityKindOf(reason: WalletTransactionReason): WalletActivityKind {
+  if (reason === 'capture') return 'spend';
+  return reason;
 }
 
 /** One stored window's preferences, in the shape everything else speaks. */

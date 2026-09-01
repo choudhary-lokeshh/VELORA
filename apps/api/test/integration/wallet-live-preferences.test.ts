@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import type {
   LivePreferenceSelection,
   LiveStateResponse,
+  WalletActivityListResponse,
   WalletStateResponse,
 } from '@velora/validation';
 
@@ -419,6 +420,24 @@ async function search(caller: Credentials): Promise<LiveStateResponse> {
 async function leave(caller: Credentials): Promise<void> {
   const response = await handle(post('/v1/live/departures', caller, {}));
   expect(response.status).toBe(200);
+}
+
+async function readActivity(
+  caller: Credentials,
+  query: {
+    readonly cursor?: string | undefined;
+    readonly pageSize?: number | undefined;
+  } = {},
+): Promise<WalletActivityListResponse> {
+  const parameters = new URLSearchParams();
+  if (query.cursor !== undefined) parameters.set('cursor', query.cursor);
+  if (query.pageSize !== undefined) {
+    parameters.set('pageSize', String(query.pageSize));
+  }
+  const suffix = parameters.size === 0 ? '' : `?${parameters.toString()}`;
+  const response = await handle(get(`/v1/wallet/activity${suffix}`, caller));
+  expect(response.status).toBe(200);
+  return (await response.json()) as WalletActivityListResponse;
 }
 
 async function readWallet(caller: Credentials): Promise<WalletStateResponse> {
@@ -1561,6 +1580,130 @@ describe('a preference cannot be used to read anybody', () => {
       expect(response.status, JSON.stringify(predicate)).toBe(422);
     }
     expect((await derivedBalance(alex.id)).available).toBe(100n);
+  });
+});
+
+/**
+ * The history somebody reads about their own coins.
+ *
+ * It has to tell the story correctly and tell nothing else: what happened, when,
+ * how much, and which window a line belongs to — and no account, no direction,
+ * no transaction identifier, and nobody else's anything.
+ */
+describe('the history tells the right story and nothing more', () => {
+  it('records a grant, a hold, and a spend, in that order and in words', async () => {
+    const alex = await consumer('history-a@wallet.test');
+    const blair = await consumer('history-b@wallet.test');
+    await grant(alex, '100', 'history-grant-0001');
+    await activate(alex, { gender: 'woman', region: 'ES' });
+    // Blair declares and searches, so the window finds somebody and is charged.
+    await handle(
+      post('/v1/users/me/matching-gender', blair, { matchingGender: 'woman' }),
+    );
+    await search(blair);
+    expect((await search(alex)).state).toBe('matched');
+
+    const history = await readActivity(alex);
+    // Newest first, in the product's own vocabulary rather than the ledger's:
+    // `spend` is what a person reads, `capture` is a posting.
+    expect(history.activity.map((entry) => entry.kind)).toEqual([
+      'spend',
+      'reservation',
+      'grant',
+    ]);
+    const spend = history.activity[0];
+    expect(spend?.preference).toEqual({ gender: 'woman', region: 'ES' });
+    // The magnitude of the movement, never a signed number: which way it went
+    // is what the kind says.
+    expect(Number(spend?.coins)).toBeGreaterThan(0);
+    expect(history.activity[2]?.coins).toBe('100');
+    expect(history.activity[2]?.preference).toBeUndefined();
+  });
+
+  it('records a release when a window found nobody', async () => {
+    const alex = await consumer('history-release@wallet.test');
+    await grant(alex, '100', 'history-grant-0002');
+    await activate(alex, 'FR');
+    clockOffsetMilliseconds = 16 * 60 * 1000;
+    await wallet.service.sweepExpired();
+    clockOffsetMilliseconds = 0;
+
+    const history = await readActivity(alex);
+    expect(history.activity.map((entry) => entry.kind)).toEqual([
+      'release',
+      'reservation',
+      'grant',
+    ]);
+    // The line says which window came back, which is what makes it checkable.
+    expect(history.activity[0]?.preference).toEqual({ region: 'FR' });
+  });
+
+  it('carries no account, no direction, and no ledger identifier', async () => {
+    const alex = await consumer('history-privacy@wallet.test');
+    await grant(alex, '100', 'history-grant-0003');
+    await activate(alex, 'FR');
+    const serialized = JSON.stringify(await readActivity(alex));
+
+    for (const leak of [
+      'consumer_balance',
+      'consumer_reserved',
+      'platform_revenue',
+      'platform_issuance',
+      'debit',
+      'credit',
+      'transactionId',
+      'businessReference',
+      'accountId',
+      'sequence',
+    ]) {
+      expect(serialized, leak).not.toContain(leak);
+    }
+  });
+
+  it('shows one person only their own coins', async () => {
+    const alex = await consumer('history-mine@wallet.test');
+    const blair = await consumer('history-theirs@wallet.test');
+    await grant(alex, '100', 'history-grant-0004');
+    await grant(blair, '55', 'history-grant-0005');
+
+    const mine = await readActivity(alex);
+    expect(mine.activity).toHaveLength(1);
+    expect(mine.activity[0]?.coins).toBe('100');
+    const theirs = await readActivity(blair);
+    expect(theirs.activity).toHaveLength(1);
+    expect(theirs.activity[0]?.coins).toBe('55');
+  });
+
+  it('pages without repeating or losing a line, and refuses a cursor it did not issue', async () => {
+    const alex = await consumer('history-paging@wallet.test');
+    for (let index = 0; index < 5; index += 1) {
+      await grant(alex, '10', `history-page-${String(index)}`);
+    }
+
+    const first = await readActivity(alex, { pageSize: 2 });
+    expect(first.activity).toHaveLength(2);
+    expect(first.nextCursor).toBeDefined();
+    const second = await readActivity(alex, {
+      cursor: first.nextCursor,
+      pageSize: 2,
+    });
+    const third = await readActivity(alex, {
+      cursor: second.nextCursor,
+      pageSize: 2,
+    });
+    const ids = [...first.activity, ...second.activity, ...third.activity].map(
+      (entry) => entry.id,
+    );
+    expect(new Set(ids).size).toBe(5);
+    expect(third.nextCursor).toBeUndefined();
+
+    // A cursor this domain did not issue is refused rather than silently
+    // starting again from the top, which would page somebody through the same
+    // lines for ever without telling them why.
+    const refused = await handle(
+      get('/v1/wallet/activity?cursor=not-a-cursor', alex),
+    );
+    expect(refused.status).toBe(422);
   });
 });
 

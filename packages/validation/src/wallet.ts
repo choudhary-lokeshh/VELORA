@@ -225,6 +225,78 @@ export const broadenLivePreferenceRequestSchema =
   );
 
 /**
+ * What one movement of somebody's coins was, in their terms.
+ *
+ * A closed vocabulary of *product* events rather than the ledger's own reasons,
+ * even where the two currently coincide. A person reading their history needs
+ * to know what happened to their coins and why; they do not need an account
+ * name, a posting direction, a transaction identifier, or the existence of a
+ * double-entry book behind any of it.
+ *
+ * `correction` is the one entry that is deliberately vague, and it is honest
+ * about it: it means the platform repaired an earlier mistake, which is a thing
+ * that should be visible and is not a thing a person can act on.
+ */
+export const walletActivityKinds = [
+  /** Coins the platform gave. Development, support, or promotion. */
+  'grant',
+  /** Coins a verified purchase produced. */
+  'purchase',
+  /** A purchase that came back, and the coins with it. */
+  'purchase_reversed',
+  /** Coins held against a matching window that had not yet found anybody. */
+  'reservation',
+  /** Held coins used, because the window found somebody. */
+  'spend',
+  /** Held coins returned, because the window found nobody. */
+  'release',
+  /** A balanced repair of an earlier movement. */
+  'correction',
+] as const;
+export const walletActivityKindSchema = z.enum(walletActivityKinds);
+
+/**
+ * One line of somebody's own coin history.
+ *
+ * `coins` is a magnitude and never a signed number: which way it went is what
+ * `kind` says, and a surface that had to interpret a sign as well as a kind
+ * would eventually render one of them backwards.
+ *
+ * `preference` is present only on the lines that belong to a matching window,
+ * and it is what makes a history line answerable — "25 coins held" is a fact
+ * nobody can check, and "Women · France — 25 coins held" is one they can.
+ *
+ * There is no provider name, no payment identifier, no store token, no account
+ * category, and no ledger transaction identifier. None of them is something a
+ * person needs, and each is something a leaked history would hand to somebody
+ * who should not have it.
+ */
+export const walletActivitySchema = z
+  .object({
+    coins: coinAmountSchema,
+    id: z.uuid(),
+    kind: walletActivityKindSchema,
+    occurredAt: z.iso.datetime(),
+    /** The window this line belongs to, when it belongs to one. */
+    preference: livePreferenceSelectionSchema.optional(),
+  })
+  .strict();
+
+/**
+ * A page of somebody's own coin history, newest first.
+ *
+ * Paged rather than whole, because a history grows for as long as an account is
+ * active and nothing here expires — a financial record that vanished would make
+ * a dispute unanswerable.
+ */
+export const walletActivityListResponseSchema = z
+  .object({
+    activity: z.array(walletActivitySchema).max(100),
+    nextCursor: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+
+/**
  * Turning an Android store purchase into coins.
  *
  * The token is evidence, never authority. The server verifies it with the
@@ -269,6 +341,11 @@ export type AndroidCoinPurchaseRequest = z.infer<
 >;
 export type BroadenLivePreferenceRequest = z.infer<
   typeof broadenLivePreferenceRequestSchema
+>;
+export type WalletActivity = z.infer<typeof walletActivitySchema>;
+export type WalletActivityKind = z.infer<typeof walletActivityKindSchema>;
+export type WalletActivityListResponse = z.infer<
+  typeof walletActivityListResponseSchema
 >;
 export type CoinBalance = z.infer<typeof coinBalanceSchema>;
 export type CoinGrantRequest = z.infer<typeof coinGrantRequestSchema>;

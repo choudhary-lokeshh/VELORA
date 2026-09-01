@@ -13,6 +13,7 @@ import {
 import { SentGiftsScreen } from '../../src/product/gifts';
 import { MembershipsScreen } from '../../src/product/memberships';
 import { SafetyScreen } from '../../src/product/safety';
+import { WalletScreen } from '../../src/product/wallet';
 import { AccountScreen } from '../../src/product/you';
 
 /**
@@ -51,6 +52,7 @@ const screens: Readonly<
   notices: (onBack) => <NoticePreferencesScreen onBack={onBack} />,
   profile: (onBack) => <ProfileScreen onBack={onBack} />,
   safety: (onBack) => <SafetyScreen onBack={onBack} />,
+  wallet: (onBack) => <WalletScreen onBack={onBack} />,
 };
 
 export default function YouSection() {
