@@ -51,7 +51,8 @@
     "surfaces:assets": "node scripts/generate-surface-icons.mjs",
     "android:verify": "node scripts/check-android-build.mjs",
     "android:build": "node scripts/build-android.mjs",
-    "android:doctor": "node scripts/check-android-toolchain.mjs"
+    "android:doctor": "node scripts/check-android-toolchain.mjs",
+    "rtc:doctor": "node scripts/check-rtc-provider.mjs"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

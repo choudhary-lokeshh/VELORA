@@ -198,6 +198,28 @@ an environment that simulated media while claiming a provider would present "no
 approved provider exists" to one developer and a working call to the next, from
 the same commit, with nothing saying which they had.
 
+Configuration can see that the three values are *present*; it cannot see that
+they are the *right* three, because only the project can answer that. A wrong
+API secret therefore starts cleanly and fails at the first live encounter, where
+it looks like a product fault: two people are matched, a room is asked for, the
+provider refuses, and both surfaces report that media could not be established.
+`pnpm rtc:doctor` asks the configured project directly and separates the two
+refusals, which have different remedies — the project not recognising the key
+(the key belongs to another project, or `REALTIME_LIVEKIT_URL` points at one)
+from the project recognising the key and rejecting the signature (the secret
+does not belong to that key, which is what copying a key and a secret from two
+different key pairs produces). It prints no credential and no token, so the
+output of a failing run is safe to paste anywhere. It is deliberately not a gate
+step: it needs credentials and a network, and a check that passed without a
+project would be the false evidence the `unavailable` adapter exists to prevent.
+
+A refusal is never a fallback. The adapter reports it as a refused credential
+rather than as an ambiguous create — the distinction matters, because an
+ambiguous create is answered by asking the provider what it did with the
+committed idempotency key, and a refusal has nothing to ask about — and the call
+stays connecting until the join timeout closes it. Nothing degrades to
+simulation.
+
 ### Coins
 
 | Variable | Secret | Classification | Default | Local alternative |

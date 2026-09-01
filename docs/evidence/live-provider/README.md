@@ -125,3 +125,63 @@ stream already in state changed nothing anything downstream could observe — an
 the element that mounts when the first video track arrives was never handed the
 stream. Audio arrives before video in the ordinary case, which is why it looked
 like a video element with no picture.
+
+## What LiveKit Cloud has not yet proved
+
+Recorded 2026-09-01, after the above. A LiveKit Cloud project was configured and
+the same specification was run against it. It did not produce media, and the
+reason is not in this repository.
+
+The project answers every server-API call with `401 invalid token`. That is one
+of two refusals LiveKit distinguishes, and the difference is the whole
+diagnosis:
+
+```
+real key + real secret    401 invalid token
+real key + wrong secret   401 invalid token
+bogus key + real secret   401 invalid API key
+```
+
+An unrecognised key never reaches signature verification, so `invalid API key`
+is the answer for a key the project has never heard of. The configured key gets
+past that check and fails the next one, which means the project *knows the key*
+and cannot verify the signature it carries. The configured `REALTIME_LIVEKIT_API_SECRET`
+does not belong to the configured `REALTIME_LIVEKIT_API_KEY` — the failure a key
+and a secret copied from two different key pairs produces, and the only one that
+looks like this.
+
+Nothing in VELORA transforms either value on the way: the probe that produced
+the table above read them from the environment and signed with them directly,
+never touching the configuration layer or the adapter, and failed identically.
+Configuration maps a blank value to "absent" and otherwise passes the string
+through unchanged.
+
+`pnpm rtc:doctor` now asks that question in one command, prints no credential,
+and names which of the two refusals it got. The remedy is to copy the key and
+the secret together from one key pair in the LiveKit console.
+
+Two things follow, and they are separate:
+
+- **Cloud authentication is disproved, not pending.** The project refused the
+  credential this repository is configured with. That is a finding, not a
+  timeout.
+- **Cloud media is unproven.** No frame has crossed a LiveKit Cloud project from
+  this repository. The media evidence above is from a self-hosted server, and
+  the protocol, token format, server API and browser SDK are the same — but that
+  is an argument, not an observation, and it is not recorded here as one.
+
+## What the Cloud attempt found
+
+**A refused credential was being treated as an ambiguous create.** REALTIME
+answers a provider that did not respond by asking it what it did with the
+idempotency key committed before the call — the mechanism that stops a timeout
+from creating two rooms. A `401` is not that: it is a definite answer, nothing
+was created, and asking again with the same credential refuses again for the
+same reason. The operator-facing consequence was the whole cost of it: the log
+said `rtc provider lookup after an ambiguous create also failed`, which names
+neither the credential nor the project, and every call paid two round trips
+instead of one. The adapter now translates a `401` or `403` into a refusal the
+port declares, and the orchestrator reports it as itself and does not look up
+what was never created. The outcome is unchanged and still fail-closed: the
+binding is unresolved, the call stays connecting, the join timeout closes it,
+and nothing falls back to a simulated transport.
