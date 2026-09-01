@@ -188,6 +188,7 @@ describe('AUTH persistence and invariants', () => {
       'users_accounts',
       'users_adult_declarations',
       'users_availability',
+      'users_matching_declarations',
       'users_policy_acknowledgements',
       'users_preferences',
       'users_profile_languages',
