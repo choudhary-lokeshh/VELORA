@@ -889,6 +889,216 @@ describe('moving on and stopping', () => {
   });
 });
 
+/** A bounded wait, for racing against an interleaving that may not arrive. */
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+/**
+ * A promise something else opens, for holding two requests inside one call.
+ *
+ * Written out rather than reached for with a bare `let`, so nothing here is an
+ * empty function waiting to be replaced.
+ */
+function gate(): { readonly open: () => void; readonly passed: Promise<void> } {
+  let release: (() => void) | undefined;
+  const passed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    open: () => {
+      release?.();
+    },
+    passed,
+  };
+}
+
+describe('the session a match publishes', () => {
+  it('reaches the provider before the encounter names the session', async () => {
+    // The ordering, observed from inside the provider call rather than inferred
+    // from the rows afterwards. A room is created exactly once per encounter,
+    // and at that instant the encounter must still name no session: an
+    // identifier published before the room exists is one both clients can read
+    // and neither can join.
+    const provider = realtime.provider;
+    const original = provider.createSession.bind(provider);
+    const boundWhenReached: (string | null)[] = [];
+    provider.createSession = async (request) => {
+      const rows = await rowsOf<{ realtime_session_id: string | null }>(
+        database.sql`select realtime_session_id from live_encounters`,
+      );
+      boundWhenReached.push(rows[0]?.realtime_session_id ?? null);
+      return original(request);
+    };
+
+    try {
+      const alex = await consumer('alex@live.test');
+      const remi = await consumer('remi@live.test');
+      await meet(alex, remi);
+    } finally {
+      provider.createSession = original;
+    }
+
+    expect(boundWhenReached).toEqual([null]);
+  });
+
+  it('publishes a call both people can join the moment they are matched', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const callId = matched.encounter?.call?.id ?? '';
+    expect(callId).not.toBe('');
+
+    // The person who did not trigger the match reads the encounter separately,
+    // which is what a browser polling beside the matcher actually does. Both
+    // reads name the same session and both are joinable — the defect this
+    // guards was that the first of them named a session with no room, and was
+    // refused.
+    const waiting = await readState(alex);
+    expect(waiting.encounter?.call?.id).toBe(callId);
+
+    for (const caller of [alex, remi]) {
+      const authorized = await handle(
+        post('/v1/rtc/calls/join-authorization', caller, { callId }),
+      );
+      expect(authorized.status).toBe(200);
+    }
+  });
+
+  it('survives the other person polling while the provider is being reached', async () => {
+    // Both browsers poll, and a poll by somebody already matched does the same
+    // session work as the request that allocated the encounter — so two runs
+    // for one encounter overlap as a matter of course. They are held inside the
+    // provider call here so the overlap is certain rather than lucky.
+    //
+    // The loser of the bind holds the same session as the winner, because one
+    // encounter has one session by construction. Ending it there tore down a
+    // call the other person had already joined: against a real provider one
+    // browser was connected and publishing while the other's poll ended the
+    // session underneath it, and every credential afterwards was correctly
+    // refused for a call that no longer existed.
+    const provider = realtime.provider;
+    const original = provider.createSession.bind(provider);
+    const first = gate();
+    const both = gate();
+    const held = gate();
+    let entered = 0;
+    provider.createSession = async (request) => {
+      entered += 1;
+      if (entered === 1) first.open();
+      if (entered >= 2) both.open();
+      await held.passed;
+      return original(request);
+    };
+
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    let matched: LiveStateResponse;
+    let polled: LiveStateResponse;
+    try {
+      await search(alex);
+      const allocating = search(remi);
+      await first.passed;
+      const polling = search(alex);
+      // Both inside the provider call is the tightest interleaving, and it is
+      // not the only one worth surviving. Waited for rather than assumed, and
+      // bounded: if the second request took a different path it still polled
+      // while the first was held, which is the window under test, and a proof
+      // must not hang waiting for a stronger version of a race it already has.
+      await Promise.race([both.passed, delay(2000)]);
+      held.open();
+      [polled, matched] = await Promise.all([polling, allocating]);
+    } finally {
+      provider.createSession = original;
+    }
+
+    const callId = matched.encounter?.call?.id ?? '';
+    expect(callId).not.toBe('');
+    expect(polled.encounter?.call?.id).toBe(callId);
+
+    // The session both of them were handed is still the session both of them
+    // can join. Read from the row rather than from a view, because "ended" was
+    // the exact durable state the defect produced.
+    const sessions = await rowsOf<{ end_reason: string | null; state: string }>(
+      database.sql`select state, end_reason from realtime_sessions where id = ${callId}::uuid`,
+    );
+    expect(sessions[0]?.state).not.toBe('ended');
+    expect(sessions[0]?.end_reason).toBeNull();
+
+    for (const caller of [alex, remi]) {
+      const authorized = await handle(
+        post('/v1/rtc/calls/join-authorization', caller, { callId }),
+      );
+      expect(authorized.status).toBe(200);
+    }
+  });
+
+  it('answers a session with no room yet apart from a refusal', async () => {
+    // The remainder the ordering above cannot remove: a create the provider
+    // left unresolved, which reconciliation owns and completes later. The
+    // session is real, both people are in it, and there is no room yet — and
+    // the answer has to say "not yet" rather than "not permitted", because a
+    // client treats the second as final and would never ask again.
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const callId = matched.encounter?.call?.id ?? '';
+
+    // Back to exactly the state `establishProviderSession` leaves behind when
+    // the provider does not answer: accepted, reserved under an idempotency
+    // key, and holding no reference. The reference and the instant it was bound
+    // are cleared together because the table refuses either without the other.
+    await database.sql`update realtime_sessions
+      set state = 'accepted',
+          provider_reference = null,
+          provider_bound_at = null,
+          connected_at = null
+      where id = ${callId}::uuid`;
+
+    const authorized = await handle(
+      post('/v1/rtc/calls/join-authorization', alex, { callId }),
+    );
+    expect(authorized.status).toBe(409);
+    const body = (await authorized.json()) as { code: string };
+    expect(body.code).toBe('STATE_CONFLICT');
+  });
+
+  it('still refuses somebody who may not join a session with no room', async () => {
+    // The ordering inside the issuance, which is what keeps the softer answer
+    // from being a disclosure. A blocked pair is refused for being blocked, not
+    // told that a room is on its way.
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const callId = matched.encounter?.call?.id ?? '';
+
+    // The block first, because it ends the encounter and the session with it.
+    // The session is then put back into the exact state a provider that has not
+    // answered leaves behind, so the issuance below reaches a live session with
+    // no room whose encounter is gone. Eligibility refuses it — the encounter
+    // that authorized it no longer exists — and that refusal has to win over
+    // the softer "not yet", which is the ordering under test.
+    await handle(post('/v1/safety/blocks', remi, { targetId: alex.id }));
+    await database.sql`update realtime_sessions
+      set state = 'accepted',
+          provider_reference = null,
+          provider_bound_at = null,
+          connected_at = null,
+          ended_at = null,
+          end_reason = null
+      where id = ${callId}::uuid`;
+
+    const authorized = await handle(
+      post('/v1/rtc/calls/join-authorization', alex, { callId }),
+    );
+    expect(authorized.status).toBe(409);
+    const body = (await authorized.json()) as { code: string };
+    expect(body.code).toBe('ACTION_NOT_PERMITTED');
+  });
+});
+
 describe('safety inside a live encounter', () => {
   it('ends the encounter and the session the moment a block lands', async () => {
     const alex = await consumer('alex@live.test');

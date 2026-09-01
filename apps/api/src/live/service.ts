@@ -1374,6 +1374,23 @@ export class LiveService {
    * be a room nobody owes anything about. So the encounter is always written
    * first and the session is opened afterwards, and a failure here leaves the
    * encounter intact.
+   *
+   * The provider is reached *before* the session is bound to the encounter, and
+   * that ordering is the whole of what makes the identifier this publishes
+   * usable. Binding first advertises a call identifier to both clients while
+   * the room it names does not exist yet, and REALTIME correctly refuses a join
+   * credential for a session with no room — so the person who read the
+   * encounter inside that window was told they could not join a call they were
+   * in fact in. It was a real race between two real browsers: the person who
+   * did not trigger the match polled 375ms before the room existed, was
+   * refused, and never joined. Reaching the provider first closes the window at
+   * its source rather than asking every client to tolerate it.
+   *
+   * The session is bound whatever the provider answered, because a session that
+   * failed to reach one is a fact the encounter has to carry: the surface reads
+   * that state and says the camera and voice could not be connected, which is
+   * the truth. An encounter with no session at all says something different and
+   * would be a lie here.
    */
   private async ensureSession(encounterId: string): Promise<void> {
     const encounter = await this.dependencies.repository.findEncounter(
@@ -1404,25 +1421,11 @@ export class LiveService {
       return;
     }
 
-    const bound = await this.dependencies.repository.transaction((executor) =>
-      this.dependencies.repository.bindRealtimeSession(executor, {
-        id: encounter.id,
-        now: this.dependencies.now(),
-        realtimeSessionId: opened.session.id,
-      }),
-    );
-    if (bound === undefined) {
-      // Somebody bound it first, or the encounter ended while the session was
-      // being opened. The session is torn down rather than left running,
-      // because nothing will ever reference it again.
-      await this.dependencies.realtime.endLiveSession(opened.session.id);
-      return;
-    }
-
-    // Reaching a provider is a network call and is deliberately not awaited for
-    // correctness: the encounter is already usable for text, Connect, and Next,
-    // and the session's own state reports honestly whether media was ever
-    // carried. A provider that is absent fails the session with
+    // Reaching a provider is a network call, so it happens here rather than in
+    // any transaction. Its outcome does not decide whether the session is
+    // bound: the encounter is usable for text, Connect, and Next either way,
+    // and the session's own state is what reports honestly whether media was
+    // ever carried. A provider that is absent fails the session with
     // `provider_unavailable`, which is what a surface renders.
     try {
       await this.dependencies.realtime.establishProviderSession(
@@ -1433,6 +1436,42 @@ export class LiveService {
         { encounterId: encounter.id, error },
         'live encounter could not reach an rtc provider; the encounter stands',
       );
+    }
+
+    const bound = await this.dependencies.repository.transaction((executor) =>
+      this.dependencies.repository.bindRealtimeSession(executor, {
+        id: encounter.id,
+        now: this.dependencies.now(),
+        realtimeSessionId: opened.session.id,
+      }),
+    );
+    if (bound === undefined) {
+      // Losing this write is the ordinary case, not a failure, and what it
+      // means has to be established rather than assumed.
+      //
+      // Every poll by somebody already matched runs this, so two runs for one
+      // encounter overlap routinely — and `openLiveSession` answers the second
+      // with the *same* session rather than opening a another one, on purpose.
+      // So the session in hand is usually the one the winner has just
+      // published, and ending it would tear down a call the other person is
+      // already in. That is exactly what happened against a real provider: one
+      // browser was connected and publishing, the other's poll lost the bind
+      // and ended the session underneath it, and the platform then correctly
+      // refused every credential for a call that no longer existed.
+      //
+      // So the encounter is asked what it now names. Naming this session is
+      // success by somebody else's hand; naming anything else — or nothing,
+      // because the encounter ended while the provider was being reached —
+      // means nothing will ever reference it, and it is torn down. The room, if
+      // one was created, is discharged by the termination obligation
+      // `establishProviderSession` recorded while the reference was in hand.
+      const current = await this.dependencies.repository.findEncounter(
+        this.dependencies.repository.transactionless,
+        encounter.id,
+      );
+      if (current?.realtimeSessionId === opened.session.id) return;
+      await this.dependencies.realtime.endLiveSession(opened.session.id);
+      return;
     }
   }
 
