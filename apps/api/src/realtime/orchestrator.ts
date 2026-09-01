@@ -6,6 +6,7 @@ import type {
   RtcProviderSessionSnapshot,
 } from './provider.js';
 import type { RtcRepository, RtcSessionRow } from './repository.js';
+import type { RtcService } from './service.js';
 
 export type ProviderBindingOutcome =
   | { readonly kind: 'bound'; readonly session: RtcSessionRow }
@@ -45,8 +46,26 @@ export class RtcProviderOrchestrator {
       readonly now: () => Date;
       readonly provider: RtcProviderPort;
       readonly repository: RtcRepository;
+      /**
+       * Supplied late by the composition root, because the service is built
+       * from this orchestrator and cannot also be handed to it at construction.
+       * Absent in a composition that only binds provider sessions.
+       */
+      service?: RtcService;
     },
   ) {}
+
+  /**
+   * Closes the one cycle in this domain: the service is built from this
+   * orchestrator, and this observes on the service's behalf.
+   *
+   * A setter rather than a constructor argument for the same reason the live
+   * simulator attaches to the service it drives — the alternative is two
+   * objects that cannot both be constructed first.
+   */
+  attach(service: RtcService): void {
+    this.dependencies.service = service;
+  }
 
   /** Which adapter is in force. Configuration, never a request field. */
   get providerName(): string {
@@ -112,6 +131,72 @@ export class RtcProviderOrchestrator {
     return bound === undefined
       ? { kind: 'unresolved' }
       : { kind: 'bound', session: bound };
+  }
+
+  /**
+   * Learns whether media actually started, from the provider rather than from
+   * either endpoint.
+   *
+   * A session reaches `connecting` when the platform has done everything it
+   * can: both people are admitted, a room exists, and credentials have been
+   * issued. Whether anything is flowing is a fact only the transport has, and
+   * the two endpoints are the least trustworthy participants in the call — so
+   * it is asked of the provider, which is what `markConnected` requires.
+   *
+   * Without this a session never leaves `connecting`, and the join timeout
+   * closes every call after thirty seconds. That was invisible while no adapter
+   * carried media — a simulated call has nothing to observe and no test runs
+   * for thirty seconds — and it is the first thing a real one meets.
+   *
+   * Every provider call is made outside a transaction, and the transition it
+   * produces is the same guarded one every other caller uses, so two workers
+   * observing at once produce one transition.
+   */
+  async observeConnections(limit = 20): Promise<{
+    readonly connected: number;
+    readonly examined: number;
+  }> {
+    if (this.dependencies.provider.provider === 'unavailable') {
+      return { connected: 0, examined: 0 };
+    }
+    // Nothing to observe from an adapter that carries no packet. It would
+    // answer faithfully and its answer would mean nothing about media.
+    if (!this.dependencies.provider.capabilities.carriesMedia) {
+      return { connected: 0, examined: 0 };
+    }
+    const waiting = await this.dependencies.repository.findAwaitingConnection(
+      this.dependencies.repository.transactionless,
+      { limit },
+    );
+    let connected = 0;
+    for (const session of waiting) {
+      const reference = session.providerReference;
+      if (reference === null) continue;
+      let snapshot: RtcProviderSessionSnapshot;
+      try {
+        snapshot =
+          await this.dependencies.provider.retrieveCurrentState(reference);
+      } catch (error) {
+        // A provider that will not answer is not evidence about the call. The
+        // session stays `connecting` and the join timeout still applies, which
+        // is the fail-closed direction.
+        this.dependencies.logger.warn(
+          { error, sessionId: session.id },
+          'rtc provider state could not be read',
+        );
+        continue;
+      }
+      // Only `live` moves anything. `pending` is a room nobody has joined,
+      // `unknown` is a room the provider has already collected, and neither is
+      // a statement that media started.
+      if (snapshot.state !== 'live') continue;
+      if (
+        (await this.dependencies.service?.markConnected(session.id)) === true
+      ) {
+        connected += 1;
+      }
+    }
+    return { connected, examined: waiting.length };
   }
 
   private async recoverByIdempotencyKey(

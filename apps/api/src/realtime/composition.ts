@@ -1,5 +1,6 @@
 import {
   composedCallEligibility,
+  livekitRtcProvider,
   localTestRtcProvider,
   redisSignalTransport,
   unavailableCallEligibility,
@@ -29,6 +30,7 @@ import { RtcJoinAuthorizationService } from './authorization.js';
 import { RtcCallEnforcement } from './enforcement.js';
 import { RtcOperations } from './operations.js';
 import { RtcReconciler } from './reconciliation.js';
+import { LiveKitRtcProvider } from './livekit-provider.js';
 import { LocalTestRtcProvider } from './local-test-provider.js';
 import { RtcProviderOrchestrator } from './orchestrator.js';
 import { RtcProviderEventRoutes } from './provider-event-routes.js';
@@ -94,12 +96,39 @@ export interface RealtimeRuntime {
  * production accept, because no provider is approved. `local-test` is
  * deterministic, in-process, and reaches no network; configuration rejects it
  * outside local and test, which is what makes it unreachable rather than
- * merely unused.
+ * merely unused. `livekit` is the one adapter that carries real media, and it
+ * is rejected in the same two environments for a different reason: the vendor's
+ * acceptable-use policy reserves discretion over exactly what Velora is, and no
+ * written confirmation exists. There is no fallback between the three — a
+ * `livekit` selection whose credentials are absent fails to compose rather than
+ * degrading to simulation.
  */
 const rtcProviders: Readonly<
-  Record<string, (now: () => Date) => RtcProviderPort>
+  Record<
+    string,
+    (input: {
+      readonly config: ServerConfig;
+      readonly now: () => Date;
+    }) => RtcProviderPort
+  >
 > = {
-  [localTestRtcProvider]: (now) => new LocalTestRtcProvider(now),
+  [livekitRtcProvider]: ({ config, now }) => {
+    // Configuration has already refused a `livekit` selection missing any of
+    // the three values, so these are present. Asserted rather than assumed
+    // anyway: a composition that silently built an adapter with an empty secret
+    // would mint tokens nothing accepts, and the failure would surface as a
+    // person's camera not connecting rather than as a startup error.
+    const url = config.REALTIME_LIVEKIT_URL;
+    const apiKey = config.REALTIME_LIVEKIT_API_KEY;
+    const apiSecret = config.REALTIME_LIVEKIT_API_SECRET;
+    if (url === undefined || apiKey === undefined || apiSecret === undefined) {
+      throw new Error(
+        `${livekitRtcProvider} RTC provider was configured without REALTIME_LIVEKIT_URL, REALTIME_LIVEKIT_API_KEY, and REALTIME_LIVEKIT_API_SECRET`,
+      );
+    }
+    return new LiveKitRtcProvider({ apiKey, apiSecret, url }, now);
+  },
+  [localTestRtcProvider]: ({ now }) => new LocalTestRtcProvider(now),
   [unavailableRtcProvider]: () => new UnavailableRtcProvider(),
 };
 
@@ -142,7 +171,7 @@ function selectRtcProvider(
       `No RTC provider adapter is registered for ${config.REALTIME_RTC_PROVIDER}`,
     );
   }
-  return build(now);
+  return build({ config, now });
 }
 
 /**
@@ -281,6 +310,10 @@ export function createRealtimeRuntime(input: {
     provider,
     repository,
   });
+  // Closes the one cycle in this domain. The service is built from the
+  // orchestrator, so the orchestrator learns about the service afterwards
+  // rather than both being constructed first.
+  orchestrator.attach(service);
   return {
     authorization,
     eligibility,

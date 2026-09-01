@@ -180,6 +180,22 @@ export function isVerifiedRtcProviderEvent(
 export interface RtcProviderPort {
   readonly account: string;
   readonly capabilities: RtcProviderCapabilities;
+  /**
+   * Where a client presents a credential this adapter mints, when there is
+   * such a place.
+   *
+   * Adapter configuration rather than a per-grant value, because it is a
+   * property of the account this process composed and never of the person
+   * asking: two participants in one session are told the same address, and no
+   * request field, header, or client value contributes to it.
+   *
+   * `undefined` for every adapter that carries no media, which is the honest
+   * answer for one — there is nowhere to present anything. It is not a secret:
+   * it is the public address of a media project, and a browser cannot connect
+   * without it. The credential that goes with it is the secret, and it is
+   * minted per participant, per session, per issuance.
+   */
+  readonly clientEndpoint: string | undefined;
   readonly environment: string;
   readonly provider: string;
   createSession(
@@ -229,6 +245,8 @@ export class RtcProviderUnavailableError extends Error {
  */
 export class UnavailableRtcProvider implements RtcProviderPort {
   readonly account = 'unavailable';
+  /** Nowhere to present anything, because nothing is carried. */
+  readonly clientEndpoint = undefined;
   readonly capabilities: RtcProviderCapabilities = {
     carriesMedia: false,
     ephemeralRelayCredentials: false,

@@ -50,6 +50,12 @@ interface LocalSession {
  */
 export class LocalTestRtcProvider implements RtcProviderPort {
   readonly account = 'default';
+  /**
+   * Nowhere, and never anywhere. This adapter reaches no network, so a surface
+   * that received an address here would connect to nothing and report that it
+   * had — the exact confusion `carriesMedia: false` exists to prevent.
+   */
+  readonly clientEndpoint = undefined;
   readonly capabilities: RtcProviderCapabilities = {
     // Never true. This adapter reaches no network and carries no packet, so a
     // surface reading it is told the truth rather than "a provider exists".

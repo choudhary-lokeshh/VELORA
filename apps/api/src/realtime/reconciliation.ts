@@ -1,11 +1,22 @@
 import type { SafeLogger } from '@velora/observability/server';
 
 import {
+  isTerminalRtcSessionState,
   maximumRtcObligationAttempts,
   rtcObligationBackoffMilliseconds,
   rtcObligationBatchSize,
+  rtcObligationDrainIntervalMilliseconds,
   rtcObligationLeaseMilliseconds,
 } from './policy.js';
+
+/**
+ * How long a not-yet-owed obligation waits before being looked at again.
+ *
+ * One drain interval: the row is put back exactly where it would have been had
+ * the cycle never claimed it, so a call that ends a moment later is torn down
+ * on the next pass rather than on a schedule of its own.
+ */
+const rtcObligationRetryDelay = rtcObligationDrainIntervalMilliseconds;
 import type { RtcProviderPort } from './provider.js';
 import type { RtcProviderObligationRow, RtcRepository } from './repository.js';
 
@@ -23,6 +34,18 @@ export interface RtcReconciliationReport {
   readonly examined: number;
   /** Failed this cycle and will be tried again. */
   readonly deferred: number;
+  /**
+   * Not owed yet, and put back without spending an attempt.
+   *
+   * A teardown obligation is written the instant a call has a room, so that a
+   * crash between ending a call and recording the debt cannot leak one. It is
+   * therefore *pending for the whole life of the call*, and discharging it
+   * while the call is running would end the call — which is exactly what
+   * happened the first time a provider that carries media was pointed at this.
+   * With the in-process fixture it was invisible: the worker holds its own
+   * instance whose map is empty, so every one of these failed harmlessly.
+   */
+  readonly postponed: number;
 }
 
 /**
@@ -70,7 +93,13 @@ export class RtcReconciler {
     if (this.dependencies.provider.provider === 'unavailable') {
       // Nothing is owed to a provider that does not exist. Claiming work here
       // would take a lease nobody could discharge and hold it until it expired.
-      return { abandoned: 0, deferred: 0, discharged: 0, examined: 0 };
+      return {
+        abandoned: 0,
+        deferred: 0,
+        discharged: 0,
+        examined: 0,
+        postponed: 0,
+      };
     }
 
     const claimed = await this.dependencies.repository.transaction((executor) =>
@@ -85,7 +114,29 @@ export class RtcReconciler {
     let abandoned = 0;
     let deferred = 0;
     let discharged = 0;
+    let postponed = 0;
     for (const obligation of claimed) {
+      // Nothing is owed about a call that is still happening.
+      //
+      // The teardown obligation exists from the moment the call has a room, so
+      // that a crash between ending a call and recording the debt cannot leak
+      // one. That makes it pending for the call's whole life, and a reconciler
+      // that discharged it on its next cycle would end every call five seconds
+      // in. Postponed rather than deferred, because nothing failed and an
+      // attempt spent here would abandon a perfectly good obligation after
+      // eight cycles of an ordinary conversation.
+      if (await this.stillRunning(obligation)) {
+        const at = this.dependencies.now();
+        await this.dependencies.repository.transaction((executor) =>
+          this.dependencies.repository.postponeObligation(executor, {
+            availableAt: new Date(at.getTime() + rtcObligationRetryDelay),
+            id: obligation.id,
+            now: at,
+          }),
+        );
+        postponed += 1;
+        continue;
+      }
       // Outside every transaction, deliberately, and one at a time: a provider
       // asked twenty things at once is a provider that rate-limits the
       // twenty-first, and the batch is already bounded.
@@ -136,7 +187,36 @@ export class RtcReconciler {
       }
     }
 
-    return { abandoned, deferred, discharged, examined: claimed.length };
+    return {
+      abandoned,
+      deferred,
+      discharged,
+      examined: claimed.length,
+      postponed,
+    };
+  }
+
+  /**
+   * Whether this obligation is about a call that has not finished.
+   *
+   * Only teardown is held back. A revocation is about one participant the
+   * platform has already decided to remove, and it is owed the instant it is
+   * recorded — holding it would be the platform deciding somebody may stay.
+   *
+   * A session that cannot be read at all is treated as finished: the row
+   * outlives nothing, and refusing to ever discharge an obligation whose
+   * session is gone would leak the room it names.
+   */
+  private async stillRunning(
+    obligation: RtcProviderObligationRow,
+  ): Promise<boolean> {
+    if (obligation.kind !== 'terminate_session') return false;
+    const found = await this.dependencies.repository.findById(
+      this.dependencies.repository.transactionless,
+      obligation.sessionId,
+    );
+    if (found === undefined) return false;
+    return !isTerminalRtcSessionState(found.session.state);
   }
 
   /**

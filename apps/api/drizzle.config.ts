@@ -24,6 +24,7 @@ export default defineConfig({
     './src/realtime/schema.ts',
     './src/safety/schema.ts',
     './src/users/schema.ts',
+    './src/wallet/schema.ts',
   ],
   strict: true,
   verbose: true,

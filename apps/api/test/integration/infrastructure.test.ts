@@ -266,6 +266,12 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'users_profile_languages',
         'users_profile_media',
         'users_profiles',
+        'wallet_accounts',
+        'wallet_acquisitions',
+        'wallet_balances',
+        'wallet_entries',
+        'wallet_live_preference_entitlements',
+        'wallet_transactions',
       ]);
 
       await sql`create temporary table constraint_probe (id integer primary key)`;

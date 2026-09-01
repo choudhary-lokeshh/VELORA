@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -655,6 +655,33 @@ export class RtcRepository {
       .where(eq(realtimeProviderObligations.id, input.id));
   }
 
+  /**
+   * Puts an obligation back without spending an attempt.
+   *
+   * The difference between "this failed" and "this is not owed yet" matters,
+   * and collapsing them is what would abandon a perfectly good obligation
+   * after eight cycles of a call that is simply still running. A postponement
+   * records no failure reason, because nothing failed.
+   */
+  async postponeObligation(
+    executor: Executor,
+    input: {
+      readonly availableAt: Date;
+      readonly id: number;
+      readonly now: Date;
+    },
+  ): Promise<void> {
+    await executor
+      .update(realtimeProviderObligations)
+      .set({
+        availableAt: input.availableAt,
+        leaseExpiresAt: null,
+        leaseOwner: null,
+        updatedAt: input.now,
+      })
+      .where(eq(realtimeProviderObligations.id, input.id));
+  }
+
   /** Settles one obligation. Retained either way; nothing is deleted. */
   async settleObligation(
     executor: Executor,
@@ -833,6 +860,33 @@ export class RtcRepository {
    * One query for both bounded waits, because they are the same question asked
    * of two states: has this call been here longer than it is allowed to be.
    */
+  /**
+   * Sessions waiting to be observed as connected, oldest first.
+   *
+   * `connecting` with a provider reference: the platform has done everything it
+   * can and is waiting to learn whether media actually started. A session with
+   * no reference has nothing to ask about, and is left to the join timeout.
+   *
+   * Bounded and unlocked, because the caller takes each one to a provider
+   * outside every transaction and the transition it then applies is guarded.
+   */
+  async findAwaitingConnection(
+    executor: Executor,
+    input: { readonly limit: number },
+  ): Promise<readonly RtcSessionRow[]> {
+    return executor
+      .select()
+      .from(realtimeSessions)
+      .where(
+        and(
+          eq(realtimeSessions.state, 'connecting'),
+          isNotNull(realtimeSessions.providerReference),
+        ),
+      )
+      .orderBy(realtimeSessions.stateEnteredAt)
+      .limit(input.limit);
+  }
+
   async findExpiredByState(
     executor: Executor,
     input: {

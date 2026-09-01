@@ -23,6 +23,7 @@ import {
   type LiveEnforcementPort,
   type LiveIntroducibilityPort,
   type LiveIntroductionPort,
+  type LivePremiumPreferencePort,
   type LiveRtcSessionPort,
   type LiveSafetyPort,
   type LiveStandingPort,
@@ -119,6 +120,14 @@ export function createLiveRuntime(input: {
   readonly introductions: LiveIntroductionPort;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
+  /**
+   * WALLET's published preference contract.
+   *
+   * Absent where no coin ledger is configured, which is every deployed
+   * environment. Its absence means no search is ever narrowed by a paid
+   * preference and nothing is ever charged.
+   */
+  readonly premium?: LivePremiumPreferencePort;
   readonly realtime: LiveRtcSessionPort;
   readonly safety: LiveSafetyPort;
   readonly standing: LiveStandingPort;
@@ -150,6 +159,7 @@ export function createLiveRuntime(input: {
         ? openLiveDiscovery
         : unavailableLiveDiscovery,
     now,
+    ...(input.premium === undefined ? {} : { premium: input.premium }),
     realtime: input.realtime,
     repository,
     safety: input.safety,

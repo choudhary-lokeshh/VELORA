@@ -176,6 +176,18 @@ const truncationRoots = [
   'safety_depicted_participants',
   'safety_consent_records',
   'users_accounts',
+  // WALLET's coin books. Entries and acquisitions carry `no action` foreign
+  // keys to the transaction they belong to — nothing may delete a posted entry
+  // — so every table is listed, in the order that leaves no dangling
+  // reference. The append-only triggers refuse UPDATE and DELETE and do not
+  // fire on TRUNCATE, which is what lets a suite start from an empty ledger
+  // without weakening the guarantee that made it append-only.
+  'wallet_live_preference_entitlements',
+  'wallet_acquisitions',
+  'wallet_entries',
+  'wallet_transactions',
+  'wallet_accounts',
+  'wallet_balances',
 ];
 
 /**

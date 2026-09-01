@@ -51,6 +51,9 @@ import {
 import { messagingOutbox } from './messaging/schema.js';
 import { createLiveRuntime } from './live/composition.js';
 import { livePresenceSweepIntervalMilliseconds } from './live/policy.js';
+import { createWalletRuntime } from './wallet/composition.js';
+import { walletEntitlementIntakes } from './wallet/entitlement-intake.js';
+import { livePreferenceSweepIntervalMilliseconds } from './wallet/policy.js';
 import { createRealtimeRuntime } from './realtime/composition.js';
 import {
   rtcObligationDrainIntervalMilliseconds,
@@ -210,6 +213,16 @@ export interface WorkerComposition {
   close(): Promise<void>;
   readonly deliverySweep: Poller;
   readonly livePresenceSweep: Poller;
+  /**
+   * Returns the coins held against matching windows whose time is up.
+   *
+   * The half of the charging rule that makes it fair, and it runs whether or
+   * not anybody is watching: somebody who activated a window, matched nobody,
+   * and closed the tab gets their coins back exactly as somebody still on the
+   * screen does. Without it an unsettled window would be coins nobody could
+   * spend and nobody could see a reason for.
+   */
+  readonly livePreferenceSweep: Poller;
   readonly providerFeedbackSweep: Poller;
   /** Resolves ambiguous financial outcomes from provider truth. */
   readonly financialReconciliation: Poller;
@@ -223,6 +236,8 @@ export interface WorkerComposition {
   readonly rtcObligationDrain: Poller;
   /** Closes invitations and calls that ran out of time. */
   readonly rtcSweep: Poller;
+  /** Learns from the provider whether media actually started. */
+  readonly rtcConnectionObservation: Poller;
   /** Records passed takedown deadlines as evidence. Decides nothing. */
   readonly safetyDeadlineSweep: Poller;
   readonly registry: JobRegistry;
@@ -347,6 +362,23 @@ export function createWorkerComposition(input: {
    * the ports that would let it do any of those answer no. A worker able to
    * match two people would be a second matcher no request path guards.
    */
+  /*
+   * WALLET is composed here for one reason, and it is the same shape as the
+   * live presence sweep: a commitment has to be released by something, and
+   * nobody who closed a tab is going to ask for their coins back.
+   *
+   * The composition is deliberately routeless. It publishes no consumer seam,
+   * so nothing here can activate a window, credit a purchase from a request, or
+   * make a grant — this process only settles what is already open and applies
+   * what BILLING has already published.
+   */
+  const wallet = createWalletRuntime({
+    config: input.config,
+    consumerContext: undefined as never,
+    database: handle,
+    now,
+  });
+
   const live = createLiveRuntime({
     accounts: {
       findAccountById: () => Promise.resolve(undefined),
@@ -431,6 +463,16 @@ export function createWorkerComposition(input: {
         journal: billing.journal,
         logger: input.logger,
         now,
+      }),
+      // The same commercial seam again, for the other thing a settled payment
+      // can mean. A coin pack is an ordinary offer and its checkout is ordinary
+      // checkout; all this adds is what a settlement does to a balance, and
+      // what a reversal undoes.
+      ...walletEntitlementIntakes({
+        grantedEvent: entitlementGrantedEvent,
+        logger: input.logger,
+        revokedEvent: entitlementRevokedEvent,
+        wallet: wallet.service,
       }),
     ],
     logger: input.logger,
@@ -893,6 +935,57 @@ export function createWorkerComposition(input: {
     name: 'live-presence-sweep',
   });
 
+  /**
+   * Settles matching windows whose time is up, returning what they held.
+   *
+   * Shorter than the window it settles by design: the gap between "this stopped
+   * being useful" and "these coins are spendable again" should be seconds, not
+   * minutes. It reports what it released so an operator can see it working
+   * rather than inferring it from an absence of complaints.
+   */
+  const livePreferenceSweep = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const swept = await wallet.service.sweepExpired();
+        if (swept.released === 0) return;
+        input.logger.info(
+          { examined: swept.examined, released: swept.released },
+          'live preference sweep cycle',
+        );
+      }),
+    intervalMilliseconds: livePreferenceSweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'live-preference-sweep',
+  });
+
+  /**
+   * Learns whether media actually started, from the provider.
+   *
+   * A session reaches `connecting` when the platform has done everything it
+   * can, and only the transport knows whether anything is flowing. Without this
+   * every call is closed by the join timeout after thirty seconds — which was
+   * invisible while no adapter carried a packet, and is the first thing a real
+   * one meets.
+   *
+   * Deliberately more frequent than the sweep that would close them, so a call
+   * gets several chances to be observed before its deadline. It does nothing at
+   * all under an adapter that carries no media.
+   */
+  const rtcConnectionObservation = new Poller({
+    cycle: async () =>
+      admit(async () => {
+        const observed = await realtime.orchestrator.observeConnections();
+        if (observed.connected === 0) return;
+        input.logger.info(
+          { connected: observed.connected, examined: observed.examined },
+          'rtc connections observed',
+        );
+      }),
+    intervalMilliseconds: rtcSweepIntervalMilliseconds,
+    logger: input.logger,
+    name: 'rtc-connection-observation',
+  });
+
   const deliverySweep = new Poller({
     cycle: async () => admit(async () => notifications.delivery.deliverDue()),
     intervalMilliseconds: deliverySweepIntervalMilliseconds,
@@ -920,9 +1013,11 @@ export function createWorkerComposition(input: {
     billing,
     financialReconciliation,
     livePresenceSweep,
+    livePreferenceSweep,
     subscriptionExpiry,
     rtcObligationDrain,
     rtcSweep,
+    rtcConnectionObservation,
     identity,
     identityProviderEventDrain,
     identityReconciliation,
@@ -944,6 +1039,7 @@ export function createWorkerComposition(input: {
         subscriptionExpiry.stop(),
         rtcObligationDrain.stop(),
         rtcSweep.stop(),
+        rtcConnectionObservation.stop(),
         safetyDeadlineSweep.stop(),
         mediaInspection.stop(),
         mediaProcessing.stop(),
@@ -953,6 +1049,11 @@ export function createWorkerComposition(input: {
         profileMediaReadiness.stop(),
         deliverySweep.stop(),
         providerFeedbackSweep.stop(),
+        // Both sweeps that settle somebody's open commitment. `startBackgroundCycles`
+        // enumerates the composition and starts every poller in it, so anything
+        // returned but not stopped here is a cycle that outlives shutdown.
+        livePresenceSweep.stop(),
+        livePreferenceSweep.stop(),
       ]);
     },
     deliverySweep,
@@ -975,6 +1076,9 @@ export function createWorkerComposition(input: {
       // room left open by the process that died is the one thing here worth
       // being impatient about.
       await rtcObligationDrain.runOnce();
+      // Before the sweep that would close them: a restart must not close a call
+      // that was connected the whole time this process was down.
+      await rtcConnectionObservation.runOnce();
       await rtcSweep.runOnce();
       await mediaUploadSweep.runOnce();
       await mediaInspection.runOnce();
@@ -991,6 +1095,9 @@ export function createWorkerComposition(input: {
       // at a registration this pass was about to retire.
       await providerFeedbackSweep.runOnce();
       await deliverySweep.runOnce();
+      // Last, and after the relay: a restart should not leave anybody's coins
+      // held against a window that expired while the process was down.
+      await livePreferenceSweep.runOnce();
     },
     providerEventDrain,
     registry,

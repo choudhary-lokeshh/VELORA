@@ -570,6 +570,14 @@ function stateBody(view: LiveStateView): unknown {
         : { language: view.preferences.language }),
       region: view.preferences.region,
     },
+    ...(view.premium === undefined
+      ? {}
+      : {
+          premium: {
+            expiresAt: view.premium.expiresAt.toISOString(),
+            region: view.premium.region,
+          },
+        }),
     ...(view.searchingSince === undefined
       ? {}
       : { searchingSince: view.searchingSince.toISOString() }),

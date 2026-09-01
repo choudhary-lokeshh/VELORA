@@ -24,6 +24,17 @@ export interface JoinAuthorization {
   readonly medium: RtcCallMedium;
   readonly providerReference: string;
   readonly sessionId: string;
+  /**
+   * Where to present the credential, and which adapter minted it.
+   *
+   * Absent for every adapter that carries no media, which is what lets a client
+   * tell "there is a session and nothing is carrying it" from "connect here".
+   * Neither field is a secret: the adapter name is already published by the
+   * operations screen, and the address is a media project's public endpoint.
+   * The secret is the credential beside them.
+   */
+  readonly transport:
+    { readonly provider: string; readonly url: string } | undefined;
 }
 
 export type JoinAuthorizationOutcome =
@@ -206,6 +217,7 @@ export class RtcJoinAuthorizationService {
       }),
     );
 
+    const endpoint = this.dependencies.provider.clientEndpoint;
     return {
       kind: 'authorization',
       value: {
@@ -214,6 +226,15 @@ export class RtcJoinAuthorizationService {
         medium: decision.medium,
         providerReference: decision.providerReference,
         sessionId: input.sessionId,
+        // Read from the adapter this process actually composed, never from the
+        // configuration that was meant to select one — the same rule the
+        // operations screen and `mediaTransport` follow, and for the same
+        // reason: a client told to connect somewhere by a process running a
+        // different adapter would fail after the camera was already open.
+        transport:
+          endpoint === undefined
+            ? undefined
+            : { provider: this.dependencies.provider.provider, url: endpoint },
       },
     };
   }

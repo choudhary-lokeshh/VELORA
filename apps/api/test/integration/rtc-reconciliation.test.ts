@@ -84,13 +84,26 @@ beforeEach(async () => {
 
 /** A call bound to a provider room, with a teardown owed against it. */
 async function owedTeardown(
-  input: { readonly reference?: string } = {},
+  input: {
+    readonly reference?: string;
+    /**
+     * The call's state. `ended` by default, because a teardown is normally
+     * owed about a call that has finished — and `connecting` is what a call
+     * that is *still happening* looks like, which is the case the obligation
+     * must not be discharged in.
+     */
+    readonly state?: 'connecting' | 'ended';
+  } = {},
 ): Promise<{
   readonly obligationId: number;
   readonly sessionId: string;
 }> {
   const sessionId = crypto.randomUUID();
   const reference = input.reference ?? crypto.randomUUID();
+  const state = input.state ?? 'ended';
+  // A call that has not ended carries neither instant nor reason: the table's
+  // own shape check refuses a row that says one without the other.
+  const sqlNow = new Date();
   await execute(
     database.sql`insert into realtime_sessions
       (authorization_generation, accepted_at, created_at, id, initiator_id,
@@ -100,7 +113,8 @@ async function owedTeardown(
      values (1, now() - interval '1 second', now() - interval '2 seconds',
        ${sessionId}, ${caller}, now() + interval '1 minute', 'voice',
        ${crypto.randomUUID()}, ${recipient}, ${caller}, 'local-test', now(),
-       ${reference}, 'ended', now(), now(), now(), 'hung_up')`,
+       ${reference}, ${state}, now(), now(),
+       ${state === 'ended' ? sqlNow : null}, ${state === 'ended' ? 'hung_up' : null})`,
   );
   const inserted = await rowsOf<{ id: number }>(
     /**
@@ -231,6 +245,7 @@ describe('a cycle claims, calls, and settles', () => {
       deferred: 0,
       discharged: 1,
       examined: 1,
+      postponed: 0,
     });
     expect(torn).toHaveLength(1);
     const row = await obligationRow(obligationId);
@@ -454,8 +469,41 @@ describe('the reconciler decides nothing about a call', () => {
   });
 
   it('publishes only a drain', () => {
+    // One public method, and two private ones that only read. `stillRunning`
+    // asks whether a call has finished and returns a boolean; it is the reason
+    // a teardown obligation is not discharged while the call it names is
+    // running, and it decides nothing.
     expect(
       Object.getOwnPropertyNames(RtcReconciler.prototype).toSorted(),
-    ).toEqual(['attempt', 'constructor', 'dischargeOnce']);
+    ).toEqual(['attempt', 'constructor', 'dischargeOnce', 'stillRunning']);
+  });
+
+  it('does not tear down a room while its call is still happening', async () => {
+    // The obligation is written the moment a call has a room, so a crash
+    // between ending a call and recording the debt cannot leak one. That makes
+    // it pending for the call's whole life — and discharging it then would end
+    // the call. With an in-process fixture this was invisible, because the
+    // worker holds its own instance whose map is empty and every attempt
+    // failed harmlessly; a provider that carries media ends the call instead.
+    const { obligationId } = await owedTeardown({ state: 'connecting' });
+    const torn: string[] = [];
+    const report = await reconcilerWith({
+      endSession: (reference) => {
+        torn.push(reference);
+        return Promise.resolve();
+      },
+    }).dischargeOnce();
+
+    expect(report.postponed).toBe(1);
+    expect(report.discharged).toBe(0);
+    expect(report.deferred).toBe(0);
+    // Nothing was asked of the provider at all.
+    expect(torn).toHaveLength(0);
+    const row = await obligationRow(obligationId);
+    // Still owed, still pending, and no attempt spent — an ordinary
+    // conversation must not abandon its own teardown after eight cycles.
+    expect(row.state).toBe('pending');
+    expect(row.attempts).toBe(0);
+    expect(row.lease_owner).toBeNull();
   });
 });

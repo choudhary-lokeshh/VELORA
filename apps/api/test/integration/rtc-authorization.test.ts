@@ -170,6 +170,21 @@ describe('a credential names one person and one call', () => {
     expect(first.value.credential).not.toBe(second.value.credential);
   });
 
+  it('names no place to present a credential nothing can carry', async () => {
+    const id = await joinableSession();
+    const issued = await realtime.authorization.issue({
+      actorId: caller,
+      sessionId: id,
+    });
+    if (issued.kind !== 'authorization') throw new Error('expected one');
+    // The `local-test` adapter reaches no network, so there is nowhere to
+    // present anything. An absent transport is what lets a surface tell "there
+    // is a session and nothing is carrying it" from "connect here" — and it is
+    // the reason a passing suite here can never be read as evidence that two
+    // people could see each other.
+    expect(issued.value.transport).toBeUndefined();
+  });
+
   it('answers a non-participant exactly as a call that does not exist', async () => {
     const id = await joinableSession();
     expect(

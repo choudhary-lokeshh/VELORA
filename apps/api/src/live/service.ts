@@ -94,6 +94,15 @@ export interface LiveStateView {
   readonly languageOptions: readonly string[];
   readonly medium: LiveMedium | undefined;
   readonly preferences: LivePreferences;
+  /**
+   * The paid narrowing currently in force, when there is one.
+   *
+   * Reported so a surface can say what the search is actually doing. It is a
+   * statement about this caller's own search and is never shown to the person
+   * they meet: nobody is told why they were selected.
+   */
+  readonly premium:
+    { readonly expiresAt: Date; readonly region: string } | undefined;
   readonly searchingSince: Date | undefined;
   readonly simulated: boolean;
   readonly state: 'idle' | 'searching' | 'matched' | 'ended';
@@ -336,6 +345,59 @@ export interface LiveIntroducibilityPort {
   ): Promise<boolean>;
 }
 
+/**
+ * WALLET's published answer about a paid, bounded narrowing, as the narrowest
+ * slice LIVE needs.
+ *
+ * Two operations. Read what somebody has bought, and say that it produced
+ * something. LIVE cannot open a window, price one, refund one, or read a
+ * balance through this contract — those are WALLET's decisions and a client
+ * asks WALLET for them directly.
+ *
+ * The order the two are used in is the whole design. The narrowing is applied
+ * to the candidate *pool*, before any safety, standing, or enforcement
+ * predicate is asked, so paying can only ever make the pool smaller. Nothing
+ * here is consulted by any predicate that decides whether two people may meet,
+ * which is what makes "paying never overrides safety" a property of the shape
+ * rather than of a comment.
+ */
+export interface LivePremiumPreferencePort {
+  /**
+   * The narrowing this person currently holds, if any.
+   *
+   * Read on the matcher's own executor, inside the transaction that is about to
+   * allocate, so a window that expired a second ago is not applied to a match
+   * made now.
+   */
+  activeLivePreference(
+    executor: Executor,
+    userId: string,
+  ): Promise<
+    | {
+        readonly entitlementId: string;
+        readonly expiresAt: Date;
+        readonly region: string;
+      }
+    | undefined
+  >;
+  /**
+   * Charges the window, because it produced the encounter it was bought for.
+   *
+   * Runs inside the matcher's transaction on purpose: the encounter and the
+   * charge commit together or neither does. A charge without an encounter would
+   * be money for nothing, and an encounter without a charge would be a narrowed
+   * match nobody paid for.
+   */
+  captureLivePreference(
+    executor: TransactionHandle,
+    input: {
+      readonly encounterId: string;
+      readonly entitlementId: string;
+      readonly userId: string;
+    },
+  ): Promise<boolean>;
+}
+
 export interface LiveServiceDependencies {
   readonly admission: LiveAdmissionPort;
   readonly connections: ConnectionDirectoryPort;
@@ -348,6 +410,13 @@ export interface LiveServiceDependencies {
   /** `false` where configuration has not switched live discovery on. */
   readonly mode: 'open' | 'unavailable';
   readonly now: () => Date;
+  /**
+   * Absent where no coin ledger is configured, which is every deployed
+   * environment. Its absence means no search is ever narrowed by a paid
+   * preference and nothing is ever charged — free random matching is the whole
+   * product, exactly as it is today.
+   */
+  readonly premium?: LivePremiumPreferencePort;
   readonly realtime: LiveRtcSessionPort;
   readonly repository: LiveRepository;
   readonly safety: LiveSafetyPort;
@@ -1145,6 +1214,14 @@ export class LiveService {
         userId: actor.id,
       },
     );
+    // What this person has paid to narrow to, read inside the transaction that
+    // is about to allocate. A window that expired a second ago is not applied
+    // to a match made now, and one that is open is applied to the pool only —
+    // never to a safety, standing, or enforcement answer below.
+    const premium = await this.dependencies.premium?.activeLivePreference(
+      executor,
+      actor.id,
+    );
     // A preference narrows the pool and never the people who chose each other.
     // Two people who agreed to meet have already answered the question a
     // preference asks, and a filter that then kept them apart would be the
@@ -1154,6 +1231,7 @@ export class LiveService {
       actor,
       participation,
       pool,
+      premium?.region,
     );
     const candidates = [
       ...agreed,
@@ -1263,6 +1341,25 @@ export class LiveService {
         now,
         second: candidate.userId,
       });
+      // The window produced what it was bought for, so it is charged — in this
+      // transaction, with the encounter, or not at all.
+      //
+      // Only when the narrowing was actually applied. A pair who had already
+      // agreed to meet bypasses the narrowed pool by design, and charging for a
+      // match the filter did not make would be charging for the filter not
+      // being used. That is why the condition is `narrowed`, not "a window was
+      // open".
+      if (
+        premium !== undefined &&
+        this.dependencies.premium !== undefined &&
+        !agreedIds.has(candidate.userId)
+      ) {
+        await this.dependencies.premium.captureLivePreference(executor, {
+          encounterId: encounter.id,
+          entitlementId: premium.entitlementId,
+          userId: actor.id,
+        });
+      }
       return encounter.id;
     }
     return undefined;
@@ -1372,16 +1469,24 @@ export class LiveService {
     actor: UserAccountRow,
     participation: LiveParticipationRow,
     pool: readonly LiveParticipationRow[],
+    premiumRegion?: string,
   ): Promise<readonly LiveParticipationRow[]> {
     const language = participation.preferredLanguage ?? undefined;
-    // `same` means the region this account is in. Somebody whose account has no
-    // region cannot ask for people in it, and the honest reading of that is
-    // "no narrowing" rather than "nobody" — a person with no region set would
-    // otherwise be silently unable to match at all.
+    // A bought window names the region. Otherwise `same` means the region this
+    // account is in — and somebody whose account has no region cannot ask for
+    // people in it, so the honest reading of that is "no narrowing" rather than
+    // "nobody": a person with no region set would otherwise be silently unable
+    // to match at all.
+    //
+    // The paid narrowing wins over the free one when both are present, because
+    // it is the more specific thing the person asked for and it is the one they
+    // paid for. It is still only a narrowing: it removes candidates from the
+    // pool and can never add one.
     const region =
-      participation.preferredRegion === 'same'
+      premiumRegion ??
+      (participation.preferredRegion === 'same'
         ? (actor.region ?? undefined)
-        : undefined;
+        : undefined);
     if (pool.length === 0) return pool;
     if (language === undefined && region === undefined) return pool;
     const matching = await this.dependencies.directory.matchingAmong({
@@ -1747,6 +1852,7 @@ export class LiveService {
     extra?: {
       readonly invitations: readonly LiveInvitationView[];
       readonly languageOptions: readonly string[];
+      readonly premium?: LiveStateView['premium'];
     },
   ): LiveStateView {
     return {
@@ -1756,6 +1862,7 @@ export class LiveService {
       languageOptions: extra?.languageOptions ?? [],
       medium: undefined,
       preferences: { language: undefined, region: 'any' },
+      premium: extra?.premium,
       searchingSince: undefined,
       simulated: this.dependencies.simulation !== undefined,
       state: 'idle',
@@ -1782,6 +1889,17 @@ export class LiveService {
       actor.id,
     );
     const invitations = await this.invitationsFor(actor);
+    // Reported whether or not this person is in the pool. Somebody who
+    // activated a window and then left is still holding one, still being
+    // charged nothing yet, and still owed the truth about it.
+    const held = await this.dependencies.premium?.activeLivePreference(
+      this.dependencies.repository.transactionless,
+      actor.id,
+    );
+    const premium =
+      held === undefined
+        ? undefined
+        : { expiresAt: held.expiresAt, region: held.region };
     const preferences: LivePreferences = {
       language: participation?.preferredLanguage ?? undefined,
       region: participation?.preferredRegion ?? 'any',
@@ -1791,7 +1909,11 @@ export class LiveService {
       // reported: somebody who left is idle, and showing them the person they
       // walked away from would be a surface remembering something the product
       // deliberately does not.
-      return this.emptyState('eligible', { invitations, languageOptions });
+      return this.emptyState('eligible', {
+        invitations,
+        languageOptions,
+        premium,
+      });
     }
     if (participation.state === 'searching') {
       return {
@@ -1801,6 +1923,7 @@ export class LiveService {
         languageOptions,
         medium: participation.medium,
         preferences,
+        premium,
         searchingSince: participation.stateEnteredAt,
         simulated,
         state: 'searching',
@@ -1819,7 +1942,11 @@ export class LiveService {
       encounterId,
     );
     if (encounter === undefined) {
-      return this.emptyState('eligible', { invitations, languageOptions });
+      return this.emptyState('eligible', {
+        invitations,
+        languageOptions,
+        premium,
+      });
     }
 
     const view = await this.encounterView(actor, encounter);
@@ -1830,6 +1957,7 @@ export class LiveService {
       languageOptions,
       medium: encounter.medium,
       preferences,
+      premium,
       searchingSince: undefined,
       simulated,
       // Taken from where this *person* is rather than from the encounter, so a

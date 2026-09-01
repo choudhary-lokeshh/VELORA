@@ -82,6 +82,11 @@ import {
 } from './messaging/composition.js';
 import { RtcCallEnforcement } from './realtime/enforcement.js';
 import { createLiveRuntime, type LiveRuntime } from './live/composition.js';
+import {
+  createWalletRuntime,
+  type WalletRuntime,
+} from './wallet/composition.js';
+import type { WalletRoutes } from './wallet/routes.js';
 import { LiveEncounterDirectory } from './live/directory.js';
 import { LiveEncounterEnforcement } from './live/enforcement.js';
 import type { LiveRoutes } from './live/routes.js';
@@ -170,6 +175,13 @@ export interface ApplicationDependencies {
   readonly queueRedis: HealthDependency;
   readonly safety: SafetyRuntime;
   readonly users: UsersRuntime;
+  /**
+   * Present in every composition that owns its database, which is every
+   * production one. A test that injects its own runtimes may omit it, and then
+   * publishes no wallet routes rather than publishing ones wired to a database
+   * it did not supply.
+   */
+  readonly wallet?: WalletRuntime;
 }
 
 export interface ApplicationOptions {
@@ -231,6 +243,7 @@ export function createApplication(
   const injectedMessaging = options.dependencies?.messaging;
   const injectedRealtime = options.dependencies?.realtime;
   const injectedLive = options.dependencies?.live;
+  const injectedWallet = options.dependencies?.wallet;
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
@@ -250,6 +263,7 @@ export function createApplication(
   let messaging: MessagingRuntime;
   let realtime: RealtimeRuntime | undefined;
   let live: LiveRuntime | undefined;
+  let wallet: WalletRuntime | undefined;
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
@@ -517,6 +531,18 @@ export function createApplication(
     // DISCOVERY's introduction signal and pair standing, MESSAGING's
     // conversation opener, TRUST & SAFETY's pairwise and enforcement answers,
     // and REALTIME's live-session contract. It owns none of what they decide.
+    // WALLET before LIVE, because LIVE consumes its published preference
+    // contract and owns none of what it decides. Nothing flows the other way:
+    // an activation knows nothing about matching, and the capture that charges
+    // for one arrives as a call from the matcher rather than as a read into it.
+    wallet =
+      injectedWallet ??
+      createWalletRuntime({
+        config,
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+      });
+    const walletService = wallet.service;
     live =
       injectedLive ??
       createLiveRuntime({
@@ -545,6 +571,10 @@ export function createApplication(
             discovery.service.signalIntroduction(actor, counterpartId),
         },
         logger,
+        // Supplied only where a ledger actually exists. Its absence means no
+        // search is ever narrowed by a paid preference and nothing is ever
+        // charged, which is the whole product in every deployed environment.
+        ...(walletService.enabled ? { premium: walletService } : {}),
         realtime: realtime.liveSessions,
         safety: safety.directory,
         standing: users.standing,
@@ -656,6 +686,7 @@ export function createApplication(
     messaging = injectedMessaging;
     realtime = injectedRealtime;
     live = injectedLive;
+    wallet = injectedWallet;
     notifications = injectedNotifications;
     payouts = injectedPayouts;
     safety = injectedSafety;
@@ -695,6 +726,7 @@ export function createApplication(
     logger,
     identity,
     ...(live === undefined ? {} : { live }),
+    ...(wallet === undefined ? {} : { wallet }),
     media,
     messaging,
     notifications,
@@ -771,6 +803,30 @@ export function createApplication(
         );
       }
       return run(live.routes, input);
+    };
+  }
+
+  /**
+   * Wraps one wallet handler on exactly the same terms as `liveRoute`.
+   *
+   * The paths exist even where the runtime does not. A composition with no
+   * wallet answers `503` on them rather than omitting them, which is also the
+   * answer a composition *with* a wallet gives when no coin ledger is
+   * configured — so a client sees one consistent "coins are not available
+   * here" whichever of the two applies.
+   */
+  function walletRoute(
+    run: (routes: WalletRoutes, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (wallet === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(wallet.routes, input);
     };
   }
 
@@ -1602,6 +1658,38 @@ export function createApplication(
     .post(
       apiRoutePaths.rtcCallTermination,
       admitted(rtcRoute(async (routes, input) => routes.endCall(input))),
+    )
+    .get(
+      apiRoutePaths.wallet,
+      admitted(walletRoute(async (routes, input) => routes.getState(input))),
+    )
+    .post(
+      apiRoutePaths.walletLivePreference,
+      admitted(
+        walletRoute(async (routes, input) =>
+          routes.activateLivePreference(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.walletLivePreferenceCancellation,
+      admitted(
+        walletRoute(async (routes, input) =>
+          routes.cancelLivePreference(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.walletAndroidPurchases,
+      admitted(
+        walletRoute(async (routes, input) =>
+          routes.redeemAndroidPurchase(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.walletGrants,
+      admitted(walletRoute(async (routes, input) => routes.grant(input))),
     )
     .get(
       apiRoutePaths.liveSessions,

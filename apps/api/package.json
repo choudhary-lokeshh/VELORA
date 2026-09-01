@@ -25,6 +25,7 @@
     "drizzle-orm": "catalog:",
     "elysia": "catalog:",
     "ioredis": "catalog:",
+    "livekit-server-sdk": "catalog:",
     "pino": "catalog:",
     "sharp": "catalog:"
   },

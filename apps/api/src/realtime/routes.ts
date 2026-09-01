@@ -114,6 +114,12 @@ export class RtcRoutes {
             credential: outcome.value.credential,
             expiresAt: outcome.value.expiresAt.toISOString(),
             medium: outcome.value.medium,
+            // Omitted rather than sent as null when nothing carries media, so
+            // a client reading it has one shape to check and a surface cannot
+            // render an address that admits nobody.
+            ...(outcome.value.transport === undefined
+              ? {}
+              : { transport: outcome.value.transport }),
           }),
           status: 200,
         };

@@ -505,6 +505,13 @@
       "when": 1788193826438,
       "tag": "0071_live-discovery-v2",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0072_coin-wallet-and-premium-live-preferences",
+      "breakpoints": true
     }
   ]
 }
