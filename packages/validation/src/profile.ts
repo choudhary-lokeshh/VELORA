@@ -11,7 +11,11 @@ import {
   minimumDisplayNameLength,
   minimumProfileLanguages,
 } from './profile-bounds.js';
-import { profileRequirementSchema, regionSchema } from './users.js';
+import {
+  matchingGenderSchema,
+  profileRequirementSchema,
+  regionSchema,
+} from './users.js';
 
 /**
  * Re-exported so `@velora/validation` keeps publishing them under the name
@@ -38,6 +42,12 @@ export {
  * coarse region, a language, and one image. Date of birth, precise location,
  * gender, and orientation are not part of it, so nobody is asked to hand over
  * sensitive data as the price of being seen.
+ *
+ * A declared matching gender exists here and is *not* part of that minimum.
+ * It is optional, it is never a requirement for discovery, for Live, or for
+ * being matched, and an account that never sets one is complete. What it
+ * changes is only whether somebody else's category-specific preference can
+ * reach you — see {@link saveMatchingGenderRequestSchema}.
  */
 
 export {
@@ -138,6 +148,17 @@ export const profileResponseSchema = z
     discoverable: z.boolean(),
     displayName: displayNameSchema.optional(),
     languages: z.array(profileLanguageSchema),
+    /**
+     * What this person has declared about themselves for matching.
+     *
+     * Absent when they have never been asked, which is not the same as
+     * `undisclosed` — that is somebody who was asked and said no. It appears in
+     * the owner's own read of their own profile and in no projection anybody
+     * else receives: it is not published on a discovery card, a live encounter,
+     * a creator page, or an RTC session, and nothing derives a displayed value
+     * from it.
+     */
+    matchingGender: matchingGenderSchema.optional(),
     media: z.array(profileMediaSchema),
     outstandingRequirements: z.array(profileRequirementSchema),
     preferencesVersion: z.number().int().min(1).optional(),
@@ -169,6 +190,34 @@ export const savePreferencesRequestSchema = z
   .strict();
 
 /**
+ * Declaring, or changing, what somebody says about themselves for matching.
+ *
+ * Its own operation rather than a field on {@link saveProfileRequestSchema},
+ * for three reasons that are all the same reason. Somebody changing only this
+ * must not have to resend their name, bio, and languages, because a write that
+ * carries values it did not intend to change is a write that can silently
+ * revert one. It must not contend on the profile version, because losing a race
+ * with a photo upload is not a sensible way to fail at answering a question
+ * about yourself. And a special-category attribute with exactly one write path
+ * is one that can be audited, rate-limited, and erased on its own.
+ *
+ * There is no shape here for anybody else's declaration, and no shape for a
+ * value the platform worked out. The caller is the subject, always, and the
+ * server takes the subject from the authenticated principal rather than from
+ * this body.
+ *
+ * Withdrawing is `undisclosed` rather than a delete. Somebody who declared and
+ * changed their mind gets the same matching treatment as somebody who never
+ * declared — neither is returned for a category-specific preference — and
+ * saying so explicitly means a surface never has to ask twice.
+ */
+export const saveMatchingGenderRequestSchema = z
+  .object({
+    matchingGender: matchingGenderSchema,
+  })
+  .strict();
+
+/**
  * A short-lived capability to write exactly one object. The client uploads the
  * bytes and then asks the platform to inspect them; it never declares what it
  * uploaded.
@@ -189,6 +238,9 @@ export const profileMediaReferenceRequestSchema = z
   .strict();
 
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
+export type SaveMatchingGenderRequest = z.infer<
+  typeof saveMatchingGenderRequestSchema
+>;
 export type SaveProfileRequest = z.infer<typeof saveProfileRequestSchema>;
 export type SavePreferencesRequest = z.infer<
   typeof savePreferencesRequestSchema

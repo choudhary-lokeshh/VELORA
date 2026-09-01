@@ -18,6 +18,7 @@ import {
   Button,
   Card,
   Chip,
+  Choice,
   ErrorMessage,
   Field,
   ListRow,
@@ -199,6 +200,8 @@ export function You() {
 
         <DiscoverySwitch />
 
+        <MatchingDeclarationCard />
+
         <AvailabilityCard />
 
         <Section raised testId="photos-card" title="Photos">
@@ -329,6 +332,104 @@ function DiscoverySwitch() {
         testId="profile-discoverable"
       />
     </section>
+  );
+}
+
+/**
+ * The declarations somebody may make about themselves, in their own words
+ * rather than in the server's.
+ *
+ * The order is deliberate and it is not alphabetical, not "most common first",
+ * and not ranked by anything. Two named categories, a third that is equally a
+ * category and not an afterthought, and then the option to decline — which is
+ * last because it is the answer to a different question, not the least
+ * important one.
+ */
+const matchingDeclarations = [
+  { label: 'Woman', value: 'woman' },
+  { label: 'Man', value: 'man' },
+  { label: 'Non-binary', value: 'non_binary' },
+  { label: 'Prefer not to say', value: 'undisclosed' },
+] as const;
+
+/**
+ * What you say about yourself, and what it is used for.
+ *
+ * Four rules hold this control together, and each is a way products like this
+ * usually get it wrong.
+ *
+ * **It is optional, and the screen says so where somebody can see it.** Nothing
+ * on VELORA requires an answer: an account with no declaration is complete,
+ * discoverable, and matched by Everyone exactly as it is today. The only thing
+ * it changes is whether somebody else's paid, narrowed search can reach you.
+ *
+ * **It is never displayed to anybody else.** No card, no profile, no encounter,
+ * and no live session carries it, and the server publishes it in exactly one
+ * place: this person reading their own profile.
+ *
+ * **It is never inferred.** There is no path anywhere in this product that
+ * derives it from a photograph, a name, a voice, or a country, and this control
+ * is the only way a value is ever set.
+ *
+ * **Declining is a real answer.** "Prefer not to say" is stored as such and is
+ * treated exactly like no answer for matching, so choosing it stops the
+ * question being asked again without costing anything.
+ */
+function MatchingDeclarationCard() {
+  const api = useApi();
+  const account = useAccount();
+  const toast = useToast();
+  const { busy, run } = useSingleFlight();
+  const profile = account.profile.value;
+  const declared = profile?.matchingGender;
+
+  return (
+    <Section
+      raised
+      testId="matching-declaration-card"
+      title="How you are matched"
+    >
+      <p className="v-caption v-quiet v-measure">
+        Some people pay to narrow who they meet on Live. This is what you tell
+        VELORA about yourself so that search can include you. It is optional, it
+        is never shown to anybody, and nothing about you is ever guessed.
+      </p>
+      <fieldset className="v-fieldset" disabled={busy}>
+        <legend className="v-visually-hidden">
+          How you would like to be matched
+        </legend>
+        {matchingDeclarations.map((option) => (
+          <Choice
+            checked={declared === option.value}
+            key={option.value}
+            label={option.label}
+            name="matchingGender"
+            onSelect={() => {
+              run(async () => {
+                const result = await api.saveMatchingGender({
+                  matchingGender: option.value,
+                });
+                const failure = failureMessage(result);
+                toast.show(
+                  failure ?? 'Saved. It applies to the next person you meet.',
+                  failure === undefined ? 'positive' : 'critical',
+                );
+                account.reloadAll();
+              });
+            }}
+            value={option.value}
+          />
+        ))}
+      </fieldset>
+      {declared === undefined ? (
+        <p
+          className="v-caption v-quiet"
+          data-testid="matching-declaration-unset"
+        >
+          You have not answered this. You do not have to.
+        </p>
+      ) : null}
+    </Section>
   );
 }
 

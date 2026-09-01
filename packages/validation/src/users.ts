@@ -39,6 +39,52 @@ export const regionSchema = z.string().regex(/^[A-Z]{2}$/u);
 /** BCP 47 language with an optional region subtag. */
 export const localeSchema = z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/u);
 
+/**
+ * What somebody has declared about themselves, for matching.
+ *
+ * **It comes from the account owner and from nowhere else.** No camera, face,
+ * body, name, voice, model, pronoun, location, or behavioural signal
+ * contributes to it, none ever may, and the shape is what makes that checkable:
+ * there is exactly one way a value arrives here, and it is a person choosing
+ * one from this list on their own account.
+ *
+ * A closed vocabulary rather than free text, because this value is a *matching
+ * category* — something the server groups people by — and a category somebody
+ * typed cannot be grouped, cannot be translated, and cannot be reasoned about
+ * by anybody deciding whether a filter over it is lawful. What a person calls
+ * themselves in their own words is a different thing with different rules, it
+ * would need a moderation taxonomy nobody has approved, and it is deliberately
+ * not collected here rather than collected and quietly made unfilterable.
+ *
+ * `undisclosed` is a real declaration and not an absence. Somebody who chose it
+ * has answered; somebody with no declaration at all has never been asked. The
+ * two behave identically for matching — neither is ever returned for a
+ * category-specific preference — and they are kept distinct because a surface
+ * that could not tell them apart would have to nag people who had already said
+ * no.
+ */
+export const matchingGenderValues = [
+  'woman',
+  'man',
+  'non_binary',
+  'undisclosed',
+] as const;
+export const matchingGenderSchema = z.enum(matchingGenderValues);
+export type MatchingGender = z.infer<typeof matchingGenderSchema>;
+
+/**
+ * The subset of the above a preference may actually name.
+ *
+ * `undisclosed` is missing on purpose and its absence is load-bearing. A
+ * preference for people who declined to say would be a filter over the act of
+ * declining, which would turn "prefer not to say" into an answer with
+ * consequences and make the option dishonest. Somebody who has not declared is
+ * matched by `Everyone`, exactly as they are today, and by nothing narrower.
+ */
+export const matchableGenderValues = ['woman', 'man', 'non_binary'] as const;
+export const matchableGenderSchema = z.enum(matchableGenderValues);
+export type MatchableGender = z.infer<typeof matchableGenderSchema>;
+
 export const consumerAccountResponseSchema = z
   .object({
     createdAt: z.iso.datetime(),

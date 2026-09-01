@@ -207,6 +207,7 @@ import {
   profileMediaReferenceRequestSchema,
   profileMediaUploadResponseSchema,
   profileResponseSchema,
+  saveMatchingGenderRequestSchema,
   savePreferencesRequestSchema,
   saveAvailabilityRequestSchema,
   saveProfileRequestSchema,
@@ -385,6 +386,7 @@ export const apiRoutePaths = {
   discoveryIntroductionWithdrawal: '/v1/discovery/introductions/withdrawal',
   discoveryIntroductions: '/v1/discovery/introductions',
   discoveryPasses: '/v1/discovery/passes',
+  consumerMatchingGender: '/v1/users/me/matching-gender',
   consumerPreferences: '/v1/users/me/preferences',
   consumerProfile: '/v1/users/me/profile',
   consumerProfileMedia: '/v1/users/me/profile/media',
@@ -649,6 +651,7 @@ export const apiSchemas = {
   SaveAvailabilityRequest: saveAvailabilityRequestSchema,
   ProfileMediaUploadResponse: profileMediaUploadResponseSchema,
   ProfileResponse: profileResponseSchema,
+  SaveMatchingGenderRequest: saveMatchingGenderRequestSchema,
   SavePreferencesRequest: savePreferencesRequestSchema,
   SaveProfileRequest: saveProfileRequestSchema,
   AuthAcknowledgement: authAcknowledgementSchema,
@@ -1299,6 +1302,26 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'expectedVersion is absent exactly when no profile exists yet. Being wrong in either direction is a conflict rather than a silent create or overwrite.',
+  },
+  {
+    method: 'post',
+    operationId: 'saveConsumerMatchingGender',
+    path: apiRoutePaths.consumerMatchingGender,
+    requestSchemaName: 'SaveMatchingGenderRequest',
+    responses: {
+      '200': {
+        description:
+          'The declaration was recorded and the profile is returned. It takes effect on the next candidate the matcher considers and changes nothing about an encounter already allocated.',
+        schemaName: 'ProfileResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': profileNotEligibleResponse,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Declares what the caller says about themselves for matching. It is optional, it is never inferred, it is never shown to anybody else, and it is always about the caller: there is no shape here that names another account.',
   },
   {
     method: 'post',

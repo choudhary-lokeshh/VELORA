@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   acceptedProfileMediaTypes,
   languagePattern,
+  matchableGenderValues,
+  matchingGenderValues,
   maximumBioLength,
   maximumDisplayNameLength,
   maximumProfileMedia,
@@ -40,6 +42,43 @@ describe('profile policy is stated once', () => {
     expect([...schemaPolicy.acceptedProfileMediaTypes]).toEqual([
       ...acceptedProfileMediaTypes,
     ]);
+    expect([...schemaPolicy.matchingGenderValues]).toEqual([
+      ...matchingGenderValues,
+    ]);
+    expect([...schemaPolicy.matchableGenderValues]).toEqual([
+      ...matchableGenderValues,
+    ]);
+  });
+});
+
+/**
+ * The declared matching categories, checked as a shape rather than as a list of
+ * strings somebody happened to type.
+ *
+ * Each assertion here is a product rule that is expensive to get wrong. A
+ * category the database would refuse is a declaration somebody could make and
+ * not have saved; a matchable set that included `undisclosed` would turn
+ * "prefer not to say" into a filterable answer; and an ordering difference
+ * between the two lists would eventually become two different vocabularies.
+ */
+describe('declared matching categories', () => {
+  it('offers a real choice rather than a binary', () => {
+    expect([...matchingGenderValues]).toEqual([
+      'woman',
+      'man',
+      'non_binary',
+      'undisclosed',
+    ]);
+  });
+
+  it('never lets a preference name the people who declined to say', () => {
+    expect(matchableGenderValues).not.toContain('undisclosed');
+    // Every matchable value is a declarable one. A preference that could name a
+    // category nobody can declare would be a filter that matches nobody, for
+    // ever, with no way to find out why.
+    for (const value of matchableGenderValues) {
+      expect(matchingGenderValues).toContain(value);
+    }
   });
 });
 

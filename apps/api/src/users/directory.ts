@@ -2,11 +2,13 @@ import { and, asc, desc, eq, exists, gt, inArray, ne, sql } from 'drizzle-orm';
 
 import type { IdentityAdultAssuranceReaderPort } from '../identity/assurance-reader.js';
 import { adultAssuranceDecisionOf } from './onboarding.js';
+import type { MatchableGenderValue } from './profile-policy.js';
 import type { UsersDatabase, UsersExecutor } from './repository.js';
 import {
   userAccounts,
   userAdultDeclarations,
   userAvailability,
+  userMatchingDeclarations,
   userPreferences,
   userProfileLanguages,
   userProfileMedia,
@@ -412,8 +414,16 @@ export class ConsumerDirectory {
    * repository's own rule broken twice over: a `users_` table read from
    * outside, or a duplicate that goes stale the moment somebody moves.
    *
-   * Both criteria are optional and both are conjunctive. Supplying neither is a
-   * question with a trivial answer, and it is answered rather than refused.
+   * Every criterion is optional and all of them are conjunctive. Supplying none
+   * is a question with a trivial answer, and it is answered rather than refused.
+   *
+   * **This is not an attribute lookup and must never become one.** It answers
+   * "which of these do", never "what is this person", and it says nothing about
+   * why anybody is absent. A caller cannot use it to read a declaration: with a
+   * single identifier the answer is a membership bit the caller had to guess
+   * first, and every route that reaches this passes a pool the caller did not
+   * choose. The declaration itself leaves USERS through exactly one place — the
+   * owner reading their own profile.
    */
   async matchingAmong(input: {
     /**
@@ -425,15 +435,43 @@ export class ConsumerDirectory {
      * is the pool deadlock `walkCandidates` records in DISCOVERY.
      */
     readonly executor?: UsersDatabase | UsersExecutor;
+    /**
+     * A declared matching category, when the caller was asked for one.
+     *
+     * `undisclosed` is not accepted and cannot be: the type is the matchable
+     * subset, so "people who declined to say" is not a question this method can
+     * be asked. Somebody with no declaration, and somebody who declared
+     * `undisclosed`, both fail the `exists` below and are simply absent from
+     * the answer — never silently reclassified into a category.
+     */
+    readonly gender?: MatchableGenderValue | undefined;
     readonly ids: readonly string[];
     readonly language: string | undefined;
     readonly region: string | undefined;
   }): Promise<ReadonlySet<string>> {
     if (input.ids.length === 0) return new Set<string>();
-    if (input.language === undefined && input.region === undefined) {
+    if (
+      input.gender === undefined &&
+      input.language === undefined &&
+      input.region === undefined
+    ) {
       return new Set(input.ids);
     }
     const executor = input.executor ?? this.database;
+    const declaresGender =
+      input.gender === undefined
+        ? undefined
+        : exists(
+            executor
+              .select({ gender: userMatchingDeclarations.matchingGender })
+              .from(userMatchingDeclarations)
+              .where(
+                and(
+                  eq(userMatchingDeclarations.userId, userAccounts.id),
+                  eq(userMatchingDeclarations.matchingGender, input.gender),
+                ),
+              ),
+          );
     const speaksLanguage =
       input.language === undefined
         ? undefined
@@ -458,6 +496,7 @@ export class ConsumerDirectory {
             ? []
             : [eq(userAccounts.region, input.region)]),
           ...(speaksLanguage === undefined ? [] : [speaksLanguage]),
+          ...(declaresGender === undefined ? [] : [declaresGender]),
         ),
       );
     return new Set(rows.map((row) => row.id));

@@ -4,8 +4,10 @@ import {
 } from '@velora/validation';
 import { and, asc, eq, ne, notInArray, sql } from 'drizzle-orm';
 
+import type { MatchingGenderValue } from './profile-policy.js';
 import type { UsersDatabase, UsersExecutor } from './repository.js';
 import {
+  userMatchingDeclarations,
   userPreferences,
   userProfileLanguages,
   userProfileMedia,
@@ -15,6 +17,8 @@ import {
 
 type AnyExecutor = UsersDatabase | UsersExecutor;
 
+export type UserMatchingDeclarationRow =
+  typeof userMatchingDeclarations.$inferSelect;
 export type UserProfileRow = typeof userProfiles.$inferSelect;
 export type UserPreferencesRow = typeof userPreferences.$inferSelect;
 export type UserProfileMediaRow = typeof userProfileMedia.$inferSelect;
@@ -307,6 +311,68 @@ export class ProfileRepository implements ProfileCompletenessReader {
       )
       .returning();
     return updated[0];
+  }
+
+  /**
+   * What this person has declared about themselves, if anything.
+   *
+   * `undefined` means no row, which is "never asked" and is deliberately not
+   * spelled as a value. A caller that wants to know whether somebody declined
+   * reads `undisclosed`; a caller that wants to know whether the question has
+   * been put reads the absence.
+   */
+  async findMatchingDeclaration(
+    executor: AnyExecutor,
+    userId: string,
+  ): Promise<UserMatchingDeclarationRow | undefined> {
+    const rows = await executor
+      .select()
+      .from(userMatchingDeclarations)
+      .where(eq(userMatchingDeclarations.userId, userId))
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Records what somebody says about themselves, replacing whatever they said
+   * before.
+   *
+   * An upsert rather than an insert-or-update pair, because there is no version
+   * to contend on and nothing to conflict about: the latest answer from the
+   * subject is the answer, and two devices submitting the same choice must not
+   * produce an error somebody has to interpret.
+   *
+   * `updatedAt` is clamped against `createdAt` rather than assigned outright.
+   * A retry carrying an earlier instant than the row's creation would otherwise
+   * violate the ordering CHECK and turn a duplicate tap into a 500 — the same
+   * defect this repository has already found twice, once in discovery and once
+   * in notifications, where a conflicting upsert assigned `now` unconditionally.
+   */
+  async saveMatchingDeclaration(
+    executor: AnyExecutor,
+    input: {
+      readonly matchingGender: MatchingGenderValue;
+      readonly now: Date;
+      readonly userId: string;
+    },
+  ): Promise<UserMatchingDeclarationRow | undefined> {
+    const saved = await executor
+      .insert(userMatchingDeclarations)
+      .values({
+        createdAt: input.now,
+        matchingGender: input.matchingGender,
+        updatedAt: input.now,
+        userId: input.userId,
+      })
+      .onConflictDoUpdate({
+        set: {
+          matchingGender: input.matchingGender,
+          updatedAt: sql`greatest(${userMatchingDeclarations.createdAt}, excluded.updated_at)`,
+        },
+        target: userMatchingDeclarations.userId,
+      })
+      .returning();
+    return saved[0];
   }
 
   /**

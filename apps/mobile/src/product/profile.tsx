@@ -15,6 +15,7 @@ import {
   BlockedState,
   Button,
   Card,
+  Choice,
   Divider,
   ErrorState,
   Field,
@@ -184,6 +185,8 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
 
           <ProfilePhotos />
 
+          <MatchingDeclarationCard />
+
           {held === undefined ? null : (
             <Card>
               <Stack gap={3}>
@@ -225,6 +228,90 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
         </Stack>
       )}
     </Screen>
+  );
+}
+
+/**
+ * The declarations somebody may make about themselves, in their own words.
+ *
+ * The same four the web offers, in the same order and with the same meaning,
+ * because they are one product decision rather than two surfaces each choosing
+ * a vocabulary.
+ */
+const matchingDeclarations = [
+  { label: 'Woman', value: 'woman' },
+  { label: 'Man', value: 'man' },
+  { label: 'Non-binary', value: 'non_binary' },
+  { label: 'Prefer not to say', value: 'undisclosed' },
+] as const;
+
+/**
+ * What you say about yourself, and what it is used for.
+ *
+ * The same four rules the web control states and enforces: it is optional and
+ * says so, it is never shown to anybody else, it is never inferred from
+ * anything, and declining is a real answer stored as such. Nothing on this
+ * screen computes a value; the server holds the answer and this renders it.
+ *
+ * A column of radio rows rather than a picker or a segmented strip. Four
+ * options fit a small portrait phone at 200% text as rows and do not as a
+ * horizontal strip, and `accessibilityRole="radio"` on each row is what makes
+ * TalkBack announce the group and the selection rather than four buttons.
+ */
+function MatchingDeclarationCard() {
+  const api = useApi();
+  const session = useSession();
+  const toast = useToast();
+  const { busy, run } = useSingleFlight();
+  const declared = session.account.profile.value?.matchingGender;
+
+  return (
+    <Card testID="matching-declaration-card">
+      <Stack gap={3}>
+        <Text variant="subheading" weight="semibold">
+          How you are matched
+        </Text>
+        <Text tone="secondary" variant="small">
+          Some people pay to narrow who they meet on Live. This is what you tell
+          VELORA about yourself so that search can include you. It is optional,
+          it is never shown to anybody, and nothing about you is ever guessed.
+        </Text>
+        <View accessibilityRole="radiogroup" style={styles.declarations}>
+          {matchingDeclarations.map((option) => (
+            <Choice
+              key={option.value}
+              onPress={() => {
+                if (busy) return;
+                run(async () => {
+                  const result = await api.saveMatchingGender({
+                    matchingGender: option.value,
+                  });
+                  const failure = failureMessage(result);
+                  toast.show(
+                    failure ?? 'Saved. It applies to the next person you meet.',
+                    failure === undefined ? 'positive' : 'critical',
+                  );
+                  session.account.reloadAll();
+                });
+              }}
+              selected={declared === option.value}
+              testID={`matching-declaration-${option.value}`}
+            >
+              <Text variant="body">{option.label}</Text>
+            </Choice>
+          ))}
+        </View>
+        {declared === undefined ? (
+          <Text
+            testID="matching-declaration-unset"
+            tone="tertiary"
+            variant="caption"
+          >
+            You have not answered this. You do not have to.
+          </Text>
+        ) : null}
+      </Stack>
+    </Card>
   );
 }
 
@@ -570,6 +657,12 @@ function PushDeliveryNotice() {
 }
 
 const styles = StyleSheet.create({
+  /*
+   * A column, never a row. Four labels do not fit across a 320 dp phone at
+   * 200% text, and a horizontal strip that has to scroll hides the option
+   * nobody knows is there.
+   */
+  declarations: { gap: 8 },
   preference: {
     alignItems: 'center',
     flexDirection: 'row',

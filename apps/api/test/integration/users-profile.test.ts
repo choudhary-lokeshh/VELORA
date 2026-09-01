@@ -199,6 +199,7 @@ interface ProfileBody {
   readonly discoverable: boolean;
   readonly displayName?: string;
   readonly languages: readonly string[];
+  readonly matchingGender?: string;
   readonly media: readonly {
     readonly contentType?: string;
     readonly id: string;
@@ -289,6 +290,24 @@ async function settleMedia(): Promise<void> {
 }
 
 const realImage = () => image({ format: 'jpeg' });
+
+/**
+ * An admitted account whose minimum discoverable profile is actually complete.
+ *
+ * Written out rather than assumed, because the declaration tests below are
+ * about what a *complete* profile does and does not require, and asserting that
+ * against an incomplete one would prove nothing.
+ */
+async function completeProfile(credentials: Credentials): Promise<void> {
+  const saved = await api.handle(
+    post('/v1/users/me/profile', credentials, {
+      displayName: 'Declared',
+      languages: ['de'],
+    }),
+  );
+  expect(saved.status).toBe(200);
+  await attachImage(credentials);
+}
 
 describe('profile editing and optimistic concurrency', () => {
   it('refuses profile edits before the adult gate and the notices are passed', async () => {
@@ -420,6 +439,154 @@ describe('profile editing and optimistic concurrency', () => {
         'VALIDATION_FAILED',
       );
     }
+  });
+});
+
+/**
+ * The declared matching category.
+ *
+ * Every test here is about a rule that would be invisible if it broke. Nothing
+ * populates this attribute except its owner; the absence of a declaration is a
+ * different fact from declining to make one; declining is never a category
+ * somebody else can filter for; and none of it is a requirement for anything.
+ */
+describe('declared matching gender', () => {
+  it('starts absent and is not required for a complete profile', async () => {
+    const caller = await admittedConsumer('gender-absent@velora.test');
+    await completeProfile(caller);
+
+    const profile = await readProfile(caller);
+    // Absent, not `undisclosed`. Nobody has been asked yet, and a surface has
+    // to be able to tell that apart from somebody who answered.
+    expect(profile.matchingGender).toBeUndefined();
+    expect(profile.complete).toBe(true);
+    expect(profile.outstandingRequirements).toEqual([]);
+
+    // And nothing wrote a row on the way past.
+    const rows = await rowsOf<{ count: string }>(
+      database.sql`select count(*)::text as count from users_matching_declarations`,
+    );
+    expect(rows[0]?.count).toBe('0');
+  });
+
+  it('records what the owner declares and lets them change it', async () => {
+    const caller = await admittedConsumer('gender-declared@velora.test');
+    await completeProfile(caller);
+
+    for (const declared of ['woman', 'non_binary', 'man', 'undisclosed']) {
+      const saved = await api.handle(
+        post('/v1/users/me/matching-gender', caller, {
+          matchingGender: declared,
+        }),
+      );
+      expect(saved.status).toBe(200);
+      expect(((await saved.json()) as ProfileBody).matchingGender).toBe(
+        declared,
+      );
+      expect((await readProfile(caller)).matchingGender).toBe(declared);
+    }
+  });
+
+  it('treats a repeated declaration as the same success', async () => {
+    const caller = await admittedConsumer('gender-repeated@velora.test');
+    await completeProfile(caller);
+
+    // Two devices, or one impatient tap. Neither is an error, and neither
+    // produces a second row.
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, async () =>
+        api.handle(
+          post('/v1/users/me/matching-gender', caller, {
+            matchingGender: 'woman',
+          }),
+        ),
+      ),
+    );
+    for (const response of responses) expect(response.status).toBe(200);
+    expect((await readProfile(caller)).matchingGender).toBe('woman');
+  });
+
+  it('refuses a category outside the published vocabulary', async () => {
+    const caller = await admittedConsumer('gender-invalid@velora.test');
+    await completeProfile(caller);
+
+    for (const attempt of [
+      { matchingGender: 'female' },
+      { matchingGender: 'Woman' },
+      { matchingGender: 'tall' },
+      { matchingGender: '' },
+      { matchingGender: null },
+      // No shape in which one account declares something about another.
+      {
+        matchingGender: 'woman',
+        userId: '00000000-0000-0000-0000-000000000001',
+      },
+    ]) {
+      const response = await api.handle(
+        post('/v1/users/me/matching-gender', caller, attempt),
+      );
+      expect(response.status).toBe(422);
+    }
+    expect((await readProfile(caller)).matchingGender).toBeUndefined();
+  });
+
+  it('refuses a declaration before the account is admitted', async () => {
+    const caller = await signIn('gender-too-early@velora.test');
+    await api.handle(post('/v1/users', caller));
+
+    const response = await api.handle(
+      post('/v1/users/me/matching-gender', caller, {
+        matchingGender: 'man',
+      }),
+    );
+    expect(response.status).toBe(409);
+  });
+
+  it('refuses a declaration from a caller with no consumer credential', async () => {
+    const response = await api.handle(
+      new Request(`${testConsumerOrigin}/v1/users/me/matching-gender`, {
+        body: JSON.stringify({ matchingGender: 'woman' }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it('refuses a category the contract does not publish, at the database', async () => {
+    const caller = await admittedConsumer('gender-constraint@velora.test');
+    await completeProfile(caller);
+    const [account] = await rowsOf<{ id: string }>(
+      database.sql`select id from users_accounts order by created_at desc limit 1`,
+    );
+
+    // The route validates, and so does the column. A path that bypassed the
+    // route entirely still cannot store a category nobody can declare.
+    expect(
+      await refused(() =>
+        execute(
+          database.sql`insert into users_matching_declarations (created_at, matching_gender, updated_at, user_id)
+                       values (now(), 'undecided', now(), ${account?.id ?? ''})`,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('is erased with the account rather than by a second mechanism', async () => {
+    // Asserted as the constraint rather than by deleting an account: account
+    // removal is a coordinated flow across domains, and the property that
+    // matters here is that this table needs no part in it. `c` is
+    // `ON DELETE CASCADE` in `pg_constraint`, so a declaration cannot outlive
+    // the person who made it and nothing has to remember to remove one.
+    const rows = await rowsOf<{ on_delete: string; references: string }>(
+      database.sql`select confdeltype as on_delete, confrelid::regclass::text as "references"
+                   from pg_constraint
+                   where conrelid = 'users_matching_declarations'::regclass
+                     and contype = 'f'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.on_delete).toBe('c');
+    expect(rows[0]?.references).toBe('users_accounts');
   });
 });
 

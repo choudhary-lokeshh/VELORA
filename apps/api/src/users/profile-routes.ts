@@ -3,6 +3,7 @@ import {
   profileMediaReferenceRequestSchema,
   profileMediaUploadResponseSchema,
   profileResponseSchema,
+  saveMatchingGenderRequestSchema,
   savePreferencesRequestSchema,
   saveProfileRequestSchema,
 } from '@velora/validation';
@@ -93,6 +94,34 @@ export class ProfileRoutes {
           discoverable: parsed.value.discoverable,
           expectedVersion: parsed.value.expectedVersion,
         },
+      ),
+      input.correlationId,
+    );
+  }
+
+  /**
+   * Declares what the caller says about themselves for matching.
+   *
+   * The subject is the resolved consumer context and nothing in the body, so
+   * there is no request this handler could accept that declares something about
+   * somebody else. That is the whole of the authorization rule and it is
+   * structural rather than checked.
+   */
+  async saveMatchingGender(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(saveMatchingGenderRequestSchema, input.body);
+    if (!parsed.ok) {
+      return routeFailure(
+        422,
+        productErrorCodes.validationFailed,
+        input.correlationId,
+      );
+    }
+    return this.render(
+      await this.dependencies.profiles.saveMatchingGender(
+        resolved.context.account,
+        parsed.value.matchingGender,
       ),
       input.correlationId,
     );
@@ -225,6 +254,11 @@ export function profileBody(
       ? {}
       : { displayName: view.profile.displayName }),
     languages: [...view.languages],
+    // Present only when the person has actually declared something. An absent
+    // field is "never asked"; `undisclosed` is "asked and declined".
+    ...(view.matchingGender === undefined
+      ? {}
+      : { matchingGender: view.matchingGender }),
     media: view.media.map((media) => ({
       id: media.id,
       position: media.position,

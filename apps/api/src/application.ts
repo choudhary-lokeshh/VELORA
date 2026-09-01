@@ -1176,6 +1176,10 @@ export function createApplication(
       admitted(async (input) => users.profileRoutes.savePreferences(input)),
     )
     .post(
+      apiRoutePaths.consumerMatchingGender,
+      admitted(async (input) => users.profileRoutes.saveMatchingGender(input)),
+    )
+    .post(
       apiRoutePaths.consumerProfileMedia,
       admitted(async (input) => users.profileRoutes.createMediaUpload(input)),
     )

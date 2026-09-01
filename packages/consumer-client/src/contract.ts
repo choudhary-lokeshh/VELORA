@@ -214,6 +214,19 @@ export type SavePreferencesBody = RequestBody<
   '/v1/users/me/preferences',
   'post'
 >;
+/**
+ * What somebody declares about themselves for matching.
+ *
+ * Its own body rather than a field on {@link SaveProfileBody}, so a surface
+ * changing only this cannot resend — and silently revert — a name, a bio, or a
+ * language list it happened to be holding.
+ */
+export type SaveMatchingGenderBody = RequestBody<
+  '/v1/users/me/matching-gender',
+  'post'
+>;
+/** The closed set of declarations, as the server publishes it. */
+export type MatchingGender = NonNullable<ConsumerProfile['matchingGender']>;
 
 /**
  * A private club this person holds or has held, as they may see it.

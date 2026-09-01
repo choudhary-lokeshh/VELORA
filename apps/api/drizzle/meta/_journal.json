@@ -512,6 +512,13 @@
       "when": 1788800000000,
       "tag": "0072_coin-wallet-and-premium-live-preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0073_declared-matching-gender",
+      "breakpoints": true
     }
   ]
 }

@@ -15,10 +15,12 @@ import {
 import { inList, lengthBetween, timestamptz } from '../database/columns.js';
 import {
   languagePattern,
+  matchingGenderValues,
   maximumBioLength,
   maximumDisplayNameLength,
   maximumProfileMedia,
   minimumDisplayNameLength,
+  type MatchingGenderValue,
 } from './profile-policy.js';
 
 /**
@@ -301,6 +303,72 @@ export const userProfileLanguages = pgTable(
     check(
       'users_profile_languages_shape_check',
       sql`${table.language} ~ ${sql.raw(`'${languagePattern.source}'`)}`,
+    ),
+  ],
+);
+
+/**
+ * What somebody has declared about themselves, for matching.
+ *
+ * **Its own table rather than a column on the profile**, and the separation is
+ * the point rather than tidiness. This is a special-category attribute under
+ * every data-protection regime that has a term for one, and keeping it apart
+ * makes four things true structurally instead of by convention: it is written
+ * by exactly one route, it can be read without reading a profile, it can be
+ * erased without touching one, and it can never be swept into a projection by
+ * somebody adding a column to a `select` that already existed. Every peer-facing
+ * view of a person in this repository is built from `users_profiles`,
+ * `users_profile_languages`, and `users_profile_media`; none of them joins this,
+ * and a new one would have to be written on purpose.
+ *
+ * **No row means nobody has been asked.** There is no backfill, no default, and
+ * no inference: existing accounts have no row here and stay that way until
+ * their owner chooses something. `undisclosed` is a different fact — somebody
+ * was asked and declined — and the two are kept apart so a surface can stop
+ * asking without the matcher treating them differently, because it does not:
+ * neither is ever returned for a category-specific preference.
+ *
+ * **The only writer is the subject.** The route that reaches this takes the
+ * account from the authenticated principal, so there is no shape in which one
+ * account declares something about another, and there is no code path anywhere
+ * that derives a value for this column from a face, a name, a voice, a model,
+ * or a location.
+ *
+ * Retention follows the account: the cascade removes it with the profile, so
+ * account deletion erases the declaration without a second mechanism to
+ * remember.
+ */
+export const userMatchingDeclarations = pgTable(
+  'users_matching_declarations',
+  {
+    createdAt: timestamptz('created_at').notNull(),
+    /** One of {@link matchingGenderValues}. Never inferred, never defaulted. */
+    matchingGender: text('matching_gender')
+      .notNull()
+      .$type<MatchingGenderValue>(),
+    updatedAt: timestamptz('updated_at').notNull(),
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => userAccounts.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    // The matcher's own question, and the whole of it: "which of these
+    // identifiers I already hold declared this category". Category first so the
+    // membership test over a bounded candidate list is one index scan, and it
+    // is deliberately not a general index over people by gender — nothing in
+    // this repository selects candidates *from* this table, only intersects a
+    // set against it.
+    index('users_matching_declarations_category_idx').on(
+      table.matchingGender,
+      table.userId,
+    ),
+    check(
+      'users_matching_declarations_gender_check',
+      inList(table.matchingGender, matchingGenderValues),
+    ),
+    check(
+      'users_matching_declarations_updated_after_creation_check',
+      sql`${table.updatedAt} >= ${table.createdAt}`,
     ),
   ],
 );

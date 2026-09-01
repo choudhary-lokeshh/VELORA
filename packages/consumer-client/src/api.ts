@@ -64,6 +64,7 @@ import type {
   SafetyStanding,
   SaveNotificationPreferenceBody,
   SaveAvailabilityBody,
+  SaveMatchingGenderBody,
   SavePreferencesBody,
   SaveProfileBody,
   SendMessageBody,
@@ -529,6 +530,15 @@ export interface ConsumerApi {
   saveAvailability(
     body: SaveAvailabilityBody,
   ): Promise<ApiResult<Availability>>;
+  /**
+   * Declares what the caller says about themselves for matching.
+   *
+   * Answers with the whole profile, like every other write here, so a surface
+   * renders what the server holds rather than what it just sent.
+   */
+  saveMatchingGender(
+    body: SaveMatchingGenderBody,
+  ): Promise<ApiResult<ConsumerProfile>>;
   savePreferences(
     body: SavePreferencesBody,
   ): Promise<ApiResult<ConsumerProfile>>;
@@ -1119,6 +1129,14 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     saveAvailability: async (body) =>
       attempt(async () =>
         api.POST('/v1/users/me/availability', {
+          ...(await writing()),
+          body,
+        }),
+      ),
+
+    saveMatchingGender: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/users/me/matching-gender', {
           ...(await writing()),
           body,
         }),

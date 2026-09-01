@@ -7,7 +7,10 @@ import type {
   MediaReadinessState,
 } from '../media/policy.js';
 import type { OnboardingService } from './onboarding.js';
-import { profileMediaReadinessBatchSize } from './profile-policy.js';
+import {
+  profileMediaReadinessBatchSize,
+  type MatchingGenderValue,
+} from './profile-policy.js';
 import {
   isProfileComplete,
   type ProfileCompleteness,
@@ -43,6 +46,15 @@ export interface ProfileView {
   readonly completeness: ProfileCompleteness;
   readonly discoverable: boolean;
   readonly languages: readonly string[];
+  /**
+   * What this person has declared about themselves for matching.
+   *
+   * `undefined` is "never asked"; `undisclosed` is "asked and declined". Both
+   * are unmatchable by a category-specific preference, and only the owner of
+   * the account ever sees either — no peer projection in this repository is
+   * built from this field.
+   */
+  readonly matchingGender: MatchingGenderValue | undefined;
   readonly media: readonly ProfileMediaView[];
   /** Absent until the account has saved a preference at least once. */
   readonly preferencesVersion: number | undefined;
@@ -235,6 +247,44 @@ export class ProfileService {
   }
 
   /**
+   * Records what somebody says about themselves for matching.
+   *
+   * Gated on the same admission check every other profile write is, and on
+   * nothing else. It is not a requirement for anything: no completeness rule
+   * reads it, discoverability does not depend on it, and an account that never
+   * answers is complete, discoverable, and matchable by `Everyone` exactly as
+   * it is today.
+   *
+   * There is no version and no conflict. The subject is the only writer, the
+   * latest thing they said is what they said, and two devices sending the same
+   * choice must not produce an error somebody has to interpret.
+   *
+   * It changes who the matcher will consider *next*. It deliberately does not
+   * reach into an encounter that has already been allocated: a match made under
+   * the declaration in force at the time stays made, because unwinding it would
+   * mean ending a live conversation over a settings change. Safety decisions
+   * are the different thing that does reach into a live encounter, and they
+   * still do.
+   */
+  async saveMatchingGender(
+    account: UserAccountRow,
+    matchingGender: MatchingGenderValue,
+  ): Promise<ProfileOutcome> {
+    if (!(await this.mayEditProfile(account))) return { kind: 'not_eligible' };
+    const { repository } = this.dependencies;
+    const saved = await repository.saveMatchingDeclaration(
+      repository.transactionless,
+      {
+        matchingGender,
+        now: this.dependencies.now(),
+        userId: account.id,
+      },
+    );
+    if (saved === undefined) return { kind: 'conflict' };
+    return { kind: 'saved', view: await this.buildView(account) };
+  }
+
+  /**
    * Reserves a slot and returns a short-lived, object-bound upload capability.
    *
    * The capability is obtained before anything is written, so an environment
@@ -420,6 +470,10 @@ export class ProfileService {
     const languages = await repository.findLanguages(executor, account.id);
     const slots = await repository.listLiveMedia(executor, account.id);
     const preferences = await repository.findPreferences(executor, account.id);
+    const declaration = await repository.findMatchingDeclaration(
+      executor,
+      account.id,
+    );
 
     // Ask the media platform where its assets have got to, and record what it
     // says. The refresh is here as well as on the sweep because the person
@@ -433,6 +487,10 @@ export class ProfileService {
       completeness,
       discoverable: preferences?.discoverable ?? false,
       languages,
+      // Absent when there is no row, which is "never asked" rather than
+      // "declined to say". The two are different answers and the surface that
+      // decides whether to put the question needs to tell them apart.
+      matchingGender: declaration?.matchingGender,
       media,
       preferencesVersion: preferences?.version,
       profile,
