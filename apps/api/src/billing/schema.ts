@@ -27,11 +27,13 @@ import {
   billingIntervals,
   commercialModes,
   commercialResourceTypes,
+  offerOwnerTypes,
   offerStates,
   priceStates,
   type BillingInterval,
   type CommercialMode,
   type CommercialResourceType,
+  type OfferOwnerType,
   type OfferState,
   type PriceState,
 } from './offer-policy.js';
@@ -167,9 +169,18 @@ export const billingOffers = pgTable(
     activatedAt: timestamptz('activated_at'),
     commercialMode: text('commercial_mode').notNull().$type<CommercialMode>(),
     createdAt: timestamptz('created_at').notNull(),
-    /** Opaque CREATORS reference. No foreign key, by ownership rule. */
-    creatorId: uuid('creator_id').notNull(),
+    /**
+     * Opaque CREATORS reference. No foreign key, by ownership rule.
+     *
+     * Null exactly for a platform offer, and the check below enforces that
+     * pairing. A nullable column rather than a sentinel creator, because a
+     * sentinel is a real identifier somebody eventually joins against — and the
+     * join would say VELORA's own sales belonged to a creator.
+     */
+    creatorId: uuid('creator_id'),
     id: uuid('id').primaryKey(),
+    /** Whose sale this is, and therefore whose money it becomes. */
+    ownerType: text('owner_type').notNull().$type<OfferOwnerType>(),
     /** Opaque reference into the owning product domain. */
     resourceId: uuid('resource_id').notNull(),
     resourceType: text('resource_type')
@@ -186,19 +197,24 @@ export const billingOffers = pgTable(
     // offer's, which is what makes "a subscription price has an interval and a
     // one-time price does not" a structural rule rather than a service check.
     unique('billing_offers_mode_uk').on(table.id, table.commercialMode),
-    // One live offer per resource and mode. A second draft alongside an active
-    // offer would make "the price of this club" ambiguous, and a retired offer
-    // is excluded so a creator may withdraw one and start again.
+    // One live offer per seller, resource, and mode. A second draft alongside
+    // an active offer would make "the price of this club" ambiguous, and a
+    // retired offer is excluded so a seller may withdraw one and start again.
+    //
+    // The seller is coalesced rather than left null, because two platform
+    // offers for the same resource would both have a null creator and NULLs do
+    // not collide in a unique index — so the rule would silently stop applying
+    // to exactly the offers nobody owns.
     uniqueIndex('billing_offers_live_uk')
       .on(
-        table.creatorId,
+        sql`coalesce(${table.creatorId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
         table.resourceType,
         table.resourceId,
         table.commercialMode,
       )
       .where(sql`${table.state} <> 'retired'`),
     index('billing_offers_creator_idx').on(
-      table.creatorId,
+      sql`coalesce(${table.creatorId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
       table.createdAt,
       table.id,
     ),
@@ -210,6 +226,23 @@ export const billingOffers = pgTable(
     check(
       'billing_offers_resource_type_check',
       inList(table.resourceType, commercialResourceTypes),
+    ),
+    check(
+      'billing_offers_owner_type_check',
+      inList(table.ownerType, offerOwnerTypes),
+    ),
+    // A creator offer names a creator and a platform offer must not. Without
+    // this, "whose money is this" would be answerable two ways for the same
+    // row, and the settlement that reads it would pick one.
+    check(
+      'billing_offers_owner_shape_check',
+      sql`(${table.ownerType} = 'creator') = (${table.creatorId} is not null)`,
+    ),
+    // Coins are the platform's own product and nobody else's. A creator
+    // selling them would be a creator selling VELORA's currency.
+    check(
+      'billing_offers_coins_owner_check',
+      sql`${table.resourceType} <> 'coins' or ${table.ownerType} = 'platform'`,
     ),
     // A draft has never been purchasable, so it carries no activation instant,
     // and an active offer must carry one. Deliberately two checks rather than a

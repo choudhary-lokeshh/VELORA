@@ -106,6 +106,9 @@ export class GiftRepository {
           createdAt: input.now,
           creatorId: input.creatorId,
           id: crypto.randomUUID(),
+          // A gift is sold by the creator who receives it. Stated rather than
+          // defaulted, because the column decides whose money the sale becomes.
+          ownerType: 'creator',
           resourceId: item.id,
           resourceType: 'gift',
           state: 'active',

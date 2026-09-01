@@ -11,7 +11,7 @@ import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { RefundRepository, RefundRow } from './refund-repository.js';
-import { clearingAccount, unwindEntries } from './revenue-entries.js';
+import { clearingAccount, sellerOf, unwindEntries } from './revenue-entries.js';
 import { revenueReversedEvent } from './revenue-events.js';
 import type { RefundReasonCode } from './reversal-policy.js';
 import type { GiftRepository } from './gift-repository.js';
@@ -267,8 +267,8 @@ export class RefundService {
       }),
       amount,
       captured: money(input.payment.amountMinor, input.payment.currency),
-      creatorId: offer.creatorId,
       policy: this.dependencies.policy,
+      seller: sellerOf(offer),
     });
     if (unwound === undefined) {
       throw new Error(
@@ -295,7 +295,11 @@ export class RefundService {
     const creatorShare = unwound.entries.find(
       (entry) => entry.account.category === 'creator_payable',
     );
-    if (creatorShare !== undefined) {
+    // Guarded on ownership as well as on the entry. A platform sale unwinds
+    // VELORA's own revenue and produces no creator entry at all, so this is
+    // belt and braces — and it is the belt that reads correctly if somebody
+    // later adds a creator-shaped entry to a platform unwind.
+    if (offer.creatorId !== null && creatorShare !== undefined) {
       await outbox.append(executor as TransactionHandle, {
         ...(settled.correlationId === null
           ? {}

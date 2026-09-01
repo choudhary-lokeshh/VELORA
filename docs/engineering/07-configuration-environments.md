@@ -226,6 +226,7 @@ simulation.
 |---|---|---|---|---|
 | `WALLET_COIN_LEDGER` | No | Blocked in production | `unavailable` | `enabled`, builds the coin ledger and the paid matching preference |
 | `WALLET_ANDROID_ACQUISITION` | No | Future provider; blocked in production | `unavailable` | `local-test`, verifies a token it shaped itself through the same server-side path a store purchase would take |
+| `WALLET_WEB_ACQUISITION` | No | Blocked in production | `unavailable` | `local-test`, publishes platform-owned coin-pack offers with development prices and settles them through the local payment provider |
 
 Coins are a whole-number entitlement unit with no ISO 4217 currency. What one is
 worth, whether a balance expires, whether it is refundable, and how a virtual
@@ -234,6 +235,23 @@ which is why the ledger is refused in deployed environments rather than merely
 unused. `WALLET_ANDROID_ACQUISITION` requires the ledger: a channel that
 credited a balance nothing holds is a configuration error rather than a channel
 that quietly does nothing.
+
+`WALLET_WEB_ACQUISITION` is a gate of its own rather than an inference from
+`BILLING_PAYMENT_PROVIDER`. A payment provider being configured says money can
+move; it does not say VELORA has decided to sell its own currency, at what
+price, from which country, or under whose consumer-protection regime. It
+requires both the ledger and `BILLING_PAYMENT_PROVIDER=local-test`, because it
+is worth nothing without somewhere for the coins to land and something that can
+take the money.
+
+A coin pack is a **platform-owned** commercial offer — `billing_offers.owner_type`
+is `platform`, its `creator_id` is null, and its money is entirely VELORA's. No
+creator is named on it and no creator payable is created by settling one, which
+is what stops VELORA's own product appearing in somebody's earnings. Which
+country VELORA sells its own products from is undecided, so the commerce
+authority answers `undefined` outside local and test and the seller gate refuses
+— a platform offer is unbuyable in a deployed environment even if one existed
+there.
 
 There is deliberately no `google-play` value. The port it would implement is
 declared in full, so adding one is an adapter and a credential rather than a

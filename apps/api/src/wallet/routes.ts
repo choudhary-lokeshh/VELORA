@@ -3,6 +3,7 @@ import {
   androidCoinPurchaseRequestSchema,
   broadenLivePreferenceRequestSchema,
   coinGrantRequestSchema,
+  coinPackListResponseSchema,
   defaultPageSize,
   pageSizeSchema,
   productErrorCodes,
@@ -30,6 +31,20 @@ import {
 } from './policy.js';
 import type { WalletService, WalletRefusal } from './service.js';
 
+/**
+ * One pack on sale: WALLET's coin count beside BILLING's price.
+ *
+ * Assembled by the composition that holds both, so neither domain reads the
+ * other's storage and neither holds a copy of the other's fact.
+ */
+export interface CoinPackOffer {
+  readonly amountMinor: bigint;
+  readonly coins: bigint;
+  readonly currency: string;
+  readonly offerId: string;
+  readonly priceId: string;
+}
+
 export interface WalletRoutesDependencies {
   /** How Android acquires coins in this environment. */
   readonly acquisition: CoinAcquisitionPort;
@@ -43,7 +58,15 @@ export interface WalletRoutesDependencies {
    * that creates coins nobody paid for.
    */
   readonly grantsPermitted: boolean;
-  /** Whether the Web may currently acquire coins. Follows BILLING's provider. */
+  /**
+   * The platform's own coin packs, with the price BILLING published for each.
+   *
+   * A function rather than a list, because prices live in BILLING and this
+   * domain must not hold a copy of one. It is only ever called where the
+   * environment can actually sell.
+   */
+  readonly packs: () => Promise<readonly CoinPackOffer[]>;
+  /** Whether the Web may currently acquire coins. A configured gate of its own. */
   readonly webAcquisition: 'local-test' | 'unavailable';
   readonly wallet: WalletService;
 }
@@ -71,6 +94,46 @@ export class WalletRoutes {
     const resolved = await this.requireConsumer(input);
     if ('failure' in resolved) return resolved.failure;
     return this.state(resolved.context.account.id);
+  }
+
+  /**
+   * What the platform sells its own currency in.
+   *
+   * A read of BILLING's own offers rather than a second catalogue: a coin pack
+   * is an ordinary platform-owned offer with an ordinary price, so buying one
+   * is ordinary checkout and there is no second purchase path to keep correct.
+   * What this adds is the coin count, which is WALLET's fact and never
+   * BILLING's — a price and a coin count that lived together would eventually
+   * be computed from each other.
+   *
+   * An empty list wherever nothing can take money, rather than packs a surface
+   * could render and not sell.
+   */
+  async getCoinPacks(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    if (!this.dependencies.wallet.enabled) {
+      return this.refusal(input, 'unavailable');
+    }
+    const packs =
+      this.dependencies.webAcquisition === 'local-test'
+        ? await this.dependencies.packs()
+        : [];
+    return {
+      body: coinPackListResponseSchema.parse({
+        channel: this.dependencies.webAcquisition,
+        packs: packs.map((pack) => ({
+          coins: pack.coins.toString(),
+          offerId: pack.offerId,
+          price: {
+            amountMinor: pack.amountMinor.toString(),
+            currency: pack.currency,
+          },
+          priceId: pack.priceId,
+        })),
+      }),
+      status: 200,
+    };
   }
 
   /**

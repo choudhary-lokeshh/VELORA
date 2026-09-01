@@ -24833,6 +24833,167 @@
         "summary": "The one authoritative read behind coins. The balance a client holds is a rendering; this is the balance."
       }
     },
+    "/v1/wallet/coin-packs": {
+      "get": {
+        "operationId": "getCoinPacks",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoinPackListResponse"
+                }
+              }
+            },
+            "description": "The coin packs this platform sells and what each costs, or an empty list where nothing can take money. A pack is VELORA’s own product: no creator is named, no creator is owed anything out of it, and no badge, saving, or comparison appears in the shape.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No coin ledger exists in this environment, so there is nothing to sell. The body is an ApiError with code DEPENDENCY_UNAVAILABLE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerAccessToken": []
+          }
+        ],
+        "summary": "What the platform sells its own currency in. Buying one is ordinary checkout against an ordinary offer."
+      }
+    },
     "/v1/wallet/activity": {
       "get": {
         "operationId": "getWalletActivity",
@@ -34539,7 +34700,8 @@
                     "type": "string",
                     "enum": [
                       "club",
-                      "gift"
+                      "gift",
+                      "coins"
                     ]
                   }
                 },
@@ -35453,7 +35615,8 @@
                       "type": "string",
                       "enum": [
                         "club",
-                        "gift"
+                        "gift",
+                        "coins"
                       ]
                     }
                   },
@@ -35614,7 +35777,8 @@
                       "type": "string",
                       "enum": [
                         "club",
-                        "gift"
+                        "gift",
+                        "coins"
                       ]
                     }
                   },
@@ -35766,7 +35930,8 @@
                     "type": "string",
                     "enum": [
                       "club",
-                      "gift"
+                      "gift",
+                      "coins"
                     ]
                   }
                 },
@@ -35954,7 +36119,8 @@
                       "type": "string",
                       "enum": [
                         "club",
-                        "gift"
+                        "gift",
+                        "coins"
                       ]
                     }
                   },
@@ -36177,7 +36343,8 @@
                       "type": "string",
                       "enum": [
                         "club",
-                        "gift"
+                        "gift",
+                        "coins"
                       ]
                     }
                   },
@@ -36597,7 +36764,8 @@
                   "type": "string",
                   "enum": [
                     "club",
-                    "gift"
+                    "gift",
+                    "coins"
                   ]
                 },
                 "state": {
@@ -36721,7 +36889,8 @@
                         "type": "string",
                         "enum": [
                           "club",
-                          "gift"
+                          "gift",
+                          "coins"
                         ]
                       }
                     },
@@ -37749,7 +37918,8 @@
                   "type": "string",
                   "enum": [
                     "club",
-                    "gift"
+                    "gift",
+                    "coins"
                   ]
                 },
                 "retiredAt": {
@@ -38032,7 +38202,8 @@
                 "type": "string",
                 "enum": [
                   "club",
-                  "gift"
+                  "gift",
+                  "coins"
                 ]
               },
               "retiredAt": {
@@ -44970,6 +45141,112 @@
         "required": [
           "coins",
           "reference"
+        ],
+        "additionalProperties": false
+      },
+      "CoinPackListResponse": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "unavailable",
+              "local-test"
+            ]
+          },
+          "packs": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "coins": {
+                  "type": "string",
+                  "pattern": "^(?:0|[1-9][0-9]{0,18})$"
+                },
+                "price": {
+                  "type": "object",
+                  "properties": {
+                    "amountMinor": {
+                      "type": "string",
+                      "pattern": "^(?:0|-?[1-9][0-9]{0,18})$"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "AED",
+                        "AUD",
+                        "BHD",
+                        "BRL",
+                        "CAD",
+                        "CHF",
+                        "CLP",
+                        "CNY",
+                        "COP",
+                        "CZK",
+                        "DKK",
+                        "EUR",
+                        "GBP",
+                        "HKD",
+                        "IDR",
+                        "ILS",
+                        "INR",
+                        "ISK",
+                        "JOD",
+                        "JPY",
+                        "KRW",
+                        "KWD",
+                        "MXN",
+                        "MYR",
+                        "NOK",
+                        "NZD",
+                        "OMR",
+                        "PHP",
+                        "PLN",
+                        "RON",
+                        "SAR",
+                        "SEK",
+                        "SGD",
+                        "THB",
+                        "TND",
+                        "TRY",
+                        "TWD",
+                        "USD",
+                        "VND",
+                        "ZAR"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "amountMinor",
+                    "currency"
+                  ],
+                  "additionalProperties": false
+                },
+                "priceId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "offerId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "required": [
+                "coins",
+                "price",
+                "priceId",
+                "offerId"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "channel",
+          "packs"
         ],
         "additionalProperties": false
       },

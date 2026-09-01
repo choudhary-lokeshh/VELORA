@@ -31,12 +31,25 @@ export type BillingInterval = (typeof billingIntervals)[number];
 /**
  * What an offer sells access to.
  *
- * Only a private club today. `docs/product/01-product-phases.md` puts creator
- * subscriptions, locked posts, and PPV in Phase 2, and the club is the one of
- * those with a real entitlement behind it already.
+ * A private club and a gift are a creator's. `coins` is the platform's own
+ * product, and it is the reason {@link offerOwnerTypes} exists below: a coin
+ * pack is sold by VELORA, its money is VELORA's, and no creator is owed
+ * anything out of it. Selling it as somebody's creator offer would have put a
+ * stranger's name on the sale and a liability on a payable they never earned.
  */
-export const commercialResourceTypes = ['club', 'gift'] as const;
+export const commercialResourceTypes = ['club', 'gift', 'coins'] as const;
 export type CommercialResourceType = (typeof commercialResourceTypes)[number];
+
+/**
+ * Who is selling, restated for the schema on the rule at the top of this file.
+ *
+ * The database enforces the pairing rather than trusting it: a creator offer
+ * names a creator and a platform offer must not, so there is no row in which
+ * "whose money is this" is ambiguous, and no code path that could answer it by
+ * defaulting.
+ */
+export const offerOwnerTypes = ['creator', 'platform'] as const;
+export type OfferOwnerType = (typeof offerOwnerTypes)[number];
 
 /**
  * An offer's lifecycle.

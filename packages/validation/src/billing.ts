@@ -32,13 +32,36 @@ export const billingIntervalValues = ['month', 'year'] as const;
 export const billingIntervalSchema = z.enum(billingIntervalValues);
 export type BillingIntervalValue = z.infer<typeof billingIntervalSchema>;
 
-export const commercialResourceTypeValues = ['club', 'gift'] as const;
+/**
+ * What an offer sells.
+ *
+ * `club` and `gift` are a creator's. `coins` is the platform's own product and
+ * is the reason {@link offerOwnerTypeValues} exists: a coin pack is sold by
+ * VELORA, its money is VELORA's, and no creator is owed anything out of it.
+ * Modelling it as somebody's creator offer would have put a stranger's name on
+ * a sale they had no part in and a liability on a payable they never earned.
+ */
+export const commercialResourceTypeValues = ['club', 'gift', 'coins'] as const;
 export const commercialResourceTypeSchema = z.enum(
   commercialResourceTypeValues,
 );
 export type CommercialResourceTypeValue = z.infer<
   typeof commercialResourceTypeSchema
 >;
+
+/**
+ * Who is selling.
+ *
+ * The distinction is financial rather than descriptive. A `creator` offer's
+ * money is split under approved commercial terms and leaves a payable behind; a
+ * `platform` offer's money is entirely VELORA's and leaves no creator owed
+ * anything. Every downstream posting, payout, and earnings figure follows from
+ * this one field, which is why it is a column rather than an inference from a
+ * resource type somebody could add to.
+ */
+export const offerOwnerTypeValues = ['creator', 'platform'] as const;
+export const offerOwnerTypeSchema = z.enum(offerOwnerTypeValues);
+export type OfferOwnerTypeValue = z.infer<typeof offerOwnerTypeSchema>;
 
 export const offerStateValues = ['draft', 'active', 'retired'] as const;
 export const offerStateSchema = z.enum(offerStateValues);

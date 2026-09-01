@@ -22,7 +22,7 @@ import type { PaymentRepository, PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { PaymentProviderPort } from './provider.js';
 import type { RefundRepository } from './refund-repository.js';
-import { captureEntries } from './revenue-entries.js';
+import { captureEntries, sellerOf } from './revenue-entries.js';
 import { revenueSettledEvent } from './revenue-events.js';
 import type { RefundService } from './refund-service.js';
 import type { GiftRepository } from './gift-repository.js';
@@ -575,11 +575,7 @@ export class WebhookService {
         ...(payment.correlationId === null
           ? {}
           : { correlationId: payment.correlationId }),
-        entries: captureEntries({
-          allocation,
-          creatorId: offer.creatorId,
-          gross,
-        }),
+        entries: captureEntries({ allocation, gross, seller: sellerOf(offer) }),
         occurredAt: event.occurredAt,
         reason: 'payment_captured',
       });
@@ -588,7 +584,13 @@ export class WebhookService {
       // reading a `billing_` row. It is appended in the same transaction that
       // posts the money, so a settled sale that owes a creator something and a
       // published fact saying so cannot exist without each other.
-      if (isPositiveMoney(allocation.creator)) {
+      //
+      // A platform sale owes nobody anything. Publishing a revenue fact for one
+      // would tell PAYOUTS a creator had earned money out of VELORA's own
+      // product — which is the exact failure the ownership column exists to
+      // make impossible, so it is guarded on ownership rather than on the
+      // split being positive.
+      if (offer.creatorId !== null && isPositiveMoney(allocation.creator)) {
         await outbox.append(executor, {
           ...(payment.correlationId === null
             ? {}

@@ -29,6 +29,8 @@ import * as usersPolicy from '../../src/users/profile-policy.js';
 import {
   coinPackCoins,
   coinPackIdentifiers,
+  coinPackResourceId,
+  coinPacks,
 } from '../../src/wallet/catalogue.js';
 import { CoinLedger, CoinLedgerError } from '../../src/wallet/ledger.js';
 import {
@@ -471,13 +473,44 @@ describe('a purchase is proved by a store, never by a client', () => {
 
   it('keeps the web coin catalogue closed and derived from the pack, not a price', () => {
     expect(coinPackIdentifiers.length).toBeGreaterThan(0);
-    for (const pack of coinPackIdentifiers) {
-      expect((coinPackCoins(pack) ?? 0n) > 0n).toBe(true);
+    for (const pack of coinPacks) {
+      expect(pack.coins > 0n).toBe(true);
+      // Looked up by the identity BILLING knows a pack by, which is derived
+      // from the reference rather than allocated — so the same pack is worth
+      // the same coins in every environment with no table to keep in step.
+      expect(coinPackCoins(pack.resourceId)).toBe(pack.coins);
+      expect(pack.resourceId).toBe(coinPackResourceId(pack.reference));
     }
+    // Identities are distinct, which is what stops two packs resolving to one.
+    expect(new Set(coinPacks.map((pack) => pack.resourceId)).size).toBe(
+      coinPacks.length,
+    );
     // A resource this domain does not sell produces nothing rather than a
     // default, so a commercial fact about somebody else's product credits
     // nobody.
-    expect(coinPackCoins('some.club.uuid')).toBeUndefined();
+    expect(
+      coinPackCoins('11111111-1111-4111-8111-111111111111'),
+    ).toBeUndefined();
+    // And a pack reference is not a resource identifier. Confusing the two
+    // would be a credit against a string somebody typed.
+    expect(coinPackCoins('velora.coins.pack.100')).toBeUndefined();
+  });
+
+  it('sells packs that are multiples of each other and never a bundle', () => {
+    // Round multiples, so a larger pack is more coins and not a better deal.
+    // Whether a larger pack should cost proportionally less is a commercial
+    // decision nobody has made, and a catalogue that quietly made it would be a
+    // discount structure arriving through a constant.
+    const counts = coinPacks.map((pack) => Number(pack.coins));
+    expect(counts).toEqual([...counts].sort((left, right) => left - right));
+    expect(new Set(counts).size).toBe(counts.length);
+    // Nothing in the shape can carry a badge, a saving, or a comparison.
+    const serialized = JSON.stringify(
+      coinPacks.map((pack) => Object.keys(pack).sort()),
+    );
+    expect(serialized).not.toContain('bestValue');
+    expect(serialized).not.toContain('saving');
+    expect(serialized).not.toContain('popular');
   });
 });
 

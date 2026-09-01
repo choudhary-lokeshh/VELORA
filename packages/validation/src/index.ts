@@ -170,6 +170,7 @@ import {
   androidCoinPurchaseRequestSchema,
   broadenLivePreferenceRequestSchema,
   coinGrantRequestSchema,
+  coinPackListResponseSchema,
   walletActivityListResponseSchema,
   walletStateResponseSchema,
 } from './wallet.js';
@@ -422,6 +423,7 @@ export const apiRoutePaths = {
   walletAndroidPurchases: '/v1/wallet/android-purchases',
   walletGrants: '/v1/wallet/grants',
   walletActivity: '/v1/wallet/activity',
+  walletCoinPacks: '/v1/wallet/coin-packs',
   walletLivePreference: '/v1/wallet/live-preference',
   walletLivePreferenceBroadening: '/v1/wallet/live-preference/broadening',
   walletLivePreferenceCancellation: '/v1/wallet/live-preference/cancellation',
@@ -613,6 +615,7 @@ export const apiSchemas = {
   AndroidCoinPurchaseRequest: androidCoinPurchaseRequestSchema,
   BroadenLivePreferenceRequest: broadenLivePreferenceRequestSchema,
   CoinGrantRequest: coinGrantRequestSchema,
+  CoinPackListResponse: coinPackListResponseSchema,
   WalletActivityListResponse: walletActivityListResponseSchema,
   WalletStateResponse: walletStateResponseSchema,
   SendLiveMessageRequest: sendLiveMessageRequestSchema,
@@ -3564,6 +3567,27 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'The one authoritative read behind coins. The balance a client holds is a rendering; this is the balance.',
+  },
+  {
+    method: 'get',
+    operationId: 'getCoinPacks',
+    path: apiRoutePaths.walletCoinPacks,
+    responses: {
+      '200': {
+        description:
+          'The coin packs this platform sells and what each costs, or an empty list where nothing can take money. A pack is VELORA\u2019s own product: no creator is named, no creator is owed anything out of it, and no badge, saving, or comparison appears in the shape.',
+        schemaName: 'CoinPackListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+      '503': {
+        description: `No coin ledger exists in this environment, so there is nothing to sell. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'What the platform sells its own currency in. Buying one is ordinary checkout against an ordinary offer.',
   },
   {
     method: 'get',

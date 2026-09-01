@@ -178,7 +178,7 @@ export class MembershipService {
     if (input.consumerId === undefined) return undefined;
     const executor = offers.transactionless;
     const now = this.dependencies.now();
-    const [standing, creatorCountry] = await Promise.all([
+    const [standing, sellerCountry] = await Promise.all([
       consumers.standingForUser({ executor, now, userId: input.consumerId }),
       creators.operatingCountryFor({
         creatorId: input.creatorId,
@@ -195,7 +195,7 @@ export class MembershipService {
     for (const currency of input.currencies) {
       const verdict = eligibility.evaluate({
         consumerCountry: standing?.region,
-        creatorCountry,
+        sellerCountry,
         currency,
       });
       if (verdict.kind === 'permitted') return [];

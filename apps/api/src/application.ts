@@ -2,6 +2,7 @@ import { Elysia } from 'elysia';
 import {
   loadServerConfig,
   localTestMediaStorage,
+  localTestWebCoinAcquisition,
   matureContentEnabled,
   type ServerConfig,
 } from '@velora/config/server';
@@ -86,6 +87,10 @@ import {
   createWalletRuntime,
   type WalletRuntime,
 } from './wallet/composition.js';
+import {
+  coinPackOffers,
+  publishPlatformCoinPacks,
+} from './wallet/provisioning.js';
 import type { WalletRoutes } from './wallet/routes.js';
 import { LiveEncounterDirectory } from './live/directory.js';
 import { LiveEncounterEnforcement } from './live/enforcement.js';
@@ -541,6 +546,14 @@ export function createApplication(
         config,
         consumerContext: users.consumerContext,
         database: ownedDatabase.database,
+        // WALLET's coin counts beside BILLING's prices, assembled here because
+        // this is the only place that holds both — so neither domain keeps a
+        // copy of the other's fact. Supplied only where the environment can
+        // actually sell, which makes "nothing is on sale" the default rather
+        // than a value somebody has to remember to unset.
+        ...(config.WALLET_WEB_ACQUISITION === localTestWebCoinAcquisition
+          ? { packs: () => coinPackOffers(billing.offerRepository) }
+          : {}),
         // Only so a language preference can be refused before it is sold. It
         // asks about the buyer and about nobody else, and it is the whole of
         // what WALLET may read from USERS.
@@ -1672,6 +1685,12 @@ export function createApplication(
       admitted(walletRoute(async (routes, input) => routes.getState(input))),
     )
     .get(
+      apiRoutePaths.walletCoinPacks,
+      admitted(
+        walletRoute(async (routes, input) => routes.getCoinPacks(input)),
+      ),
+    )
+    .get(
       apiRoutePaths.walletActivity,
       admitted(walletRoute(async (routes, input) => routes.getActivity(input))),
     )
@@ -1888,6 +1907,17 @@ export function createApplication(
     dependencies,
     async warm() {
       await ownedDatabaseService?.warm();
+      // The platform's own coin packs, published where this environment sells
+      // them. It runs here rather than in a migration because an offer and a
+      // price are product rows with a lifecycle, not schema — and it runs at
+      // every start because it is idempotent and a pack added to the catalogue
+      // should not need a manual step to become buyable locally.
+      if (config.WALLET_WEB_ACQUISITION === localTestWebCoinAcquisition) {
+        await publishPlatformCoinPacks({
+          now: () => new Date(),
+          offers: billing.offerRepository,
+        });
+      }
     },
   };
 }

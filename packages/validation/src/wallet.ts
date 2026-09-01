@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { moneySchema } from './money.js';
 import { profileLanguageSchema } from './profile.js';
 import { matchableGenderSchema, regionSchema } from './users.js';
 
@@ -297,6 +298,47 @@ export const walletActivityListResponseSchema = z
   .strict();
 
 /**
+ * One coin pack the platform sells, and what it costs.
+ *
+ * Two independent facts, side by side and never derived from each other. The
+ * coin count is a constant of the product and is fixed for ever once a pack has
+ * been sold; the money price is BILLING's, in BILLING's currency, under
+ * commercial terms that may change. A surface that computed one from the other
+ * would eventually tell somebody a purchase was worth something it was not.
+ *
+ * There is deliberately no `bestValue`, no `savingPercent`, no crossed-out
+ * price, no badge, and no "most popular". Every one of those is a claim about
+ * a comparison nobody has approved, and a shape that could hold one is a shape
+ * somebody eventually fills in.
+ */
+export const coinPackSchema = z
+  .object({
+    coins: coinAmountSchema,
+    /** What one purchase of this pack costs, as BILLING publishes money. */
+    price: moneySchema,
+    /** The identity a checkout is started against. */
+    priceId: z.uuid(),
+    /** The offer, which is what a checkout names. */
+    offerId: z.uuid(),
+  })
+  .strict();
+
+/**
+ * The coin packs on sale, and whether this environment can sell any.
+ *
+ * `channel` says what could take money right now rather than what exists in
+ * principle. `unavailable` comes with an empty list, because a surface holding
+ * packs it cannot sell is a surface one refactor away from rendering a buy
+ * control that fails.
+ */
+export const coinPackListResponseSchema = z
+  .object({
+    channel: z.enum(['unavailable', 'local-test']),
+    packs: z.array(coinPackSchema).max(20),
+  })
+  .strict();
+
+/**
  * Turning an Android store purchase into coins.
  *
  * The token is evidence, never authority. The server verifies it with the
@@ -342,6 +384,8 @@ export type AndroidCoinPurchaseRequest = z.infer<
 export type BroadenLivePreferenceRequest = z.infer<
   typeof broadenLivePreferenceRequestSchema
 >;
+export type CoinPack = z.infer<typeof coinPackSchema>;
+export type CoinPackListResponse = z.infer<typeof coinPackListResponseSchema>;
 export type WalletActivity = z.infer<typeof walletActivitySchema>;
 export type WalletActivityKind = z.infer<typeof walletActivityKindSchema>;
 export type WalletActivityListResponse = z.infer<

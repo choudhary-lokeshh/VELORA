@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import type { DatabaseHandle, Executor } from '../database/executor.js';
 import type { OfferCursor } from './cursor.js';
@@ -223,6 +223,11 @@ export class OfferRepository {
         createdAt: input.now,
         creatorId: input.creatorId,
         id: crypto.randomUUID(),
+        // Every offer a creator opens is theirs. The platform's own offers are
+        // created by `ensurePlatformOffer` and by nothing else, which is what
+        // keeps "a creator sold VELORA's currency" unreachable through this
+        // route rather than merely unlikely.
+        ownerType: 'creator',
         resourceId: input.resourceId,
         resourceType: input.resourceType,
         state: 'draft',
@@ -232,6 +237,84 @@ export class OfferRepository {
       .onConflictDoNothing()
       .returning();
     return inserted[0];
+  }
+
+  /**
+   * Makes sure one platform-owned offer exists, and answers with it.
+   *
+   * The only path that writes an offer with no creator, which is what keeps
+   * "a creator sold VELORA's currency" unreachable rather than merely
+   * unlikely: `insertOffer` always stamps `creator`, and this always stamps
+   * `platform`.
+   *
+   * Idempotent against the live-offer index rather than against a prior read,
+   * so two processes starting at once produce one offer. It is `active` on
+   * creation because there is no draft stage for a product the platform
+   * publishes itself — nobody is preparing it, and an offer that existed but
+   * could not be bought would be a coin pack that renders and refuses.
+   */
+  async ensurePlatformOffer(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly resourceId: string;
+      readonly resourceType: CommercialResourceType;
+    },
+  ): Promise<OfferRow | undefined> {
+    await executor
+      .insert(billingOffers)
+      .values({
+        activatedAt: input.now,
+        commercialMode: 'one_time',
+        createdAt: input.now,
+        creatorId: null,
+        id: crypto.randomUUID(),
+        ownerType: 'platform',
+        resourceId: input.resourceId,
+        resourceType: input.resourceType,
+        state: 'active',
+        updatedAt: input.now,
+        version: 1,
+      })
+      .onConflictDoNothing();
+    const rows = await executor
+      .select()
+      .from(billingOffers)
+      .where(
+        and(
+          isNull(billingOffers.creatorId),
+          eq(billingOffers.resourceType, input.resourceType),
+          eq(billingOffers.resourceId, input.resourceId),
+          eq(billingOffers.state, 'active'),
+        ),
+      )
+      .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Every live platform-owned offer of one resource type, with its prices.
+   *
+   * Scoped to platform ownership in the predicate rather than filtered
+   * afterwards, so a creator offer of the same resource type — which the
+   * database refuses for coins, and would permit for a future type — can never
+   * appear in a list the platform publishes as its own.
+   */
+  async findPlatformOffers(
+    executor: Executor,
+    resourceType: CommercialResourceType,
+  ): Promise<readonly OfferRow[]> {
+    return executor
+      .select()
+      .from(billingOffers)
+      .where(
+        and(
+          isNull(billingOffers.creatorId),
+          eq(billingOffers.resourceType, resourceType),
+          eq(billingOffers.state, 'active'),
+        ),
+      )
+      .orderBy(billingOffers.createdAt, billingOffers.id);
   }
 
   /**

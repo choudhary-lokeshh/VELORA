@@ -1933,6 +1933,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/wallet/coin-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the platform sells its own currency in. Buying one is ordinary checkout against an ordinary offer. */
+        get: operations["getCoinPacks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/wallet/activity": {
         parameters: {
             query?: never;
@@ -2686,7 +2703,7 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    type: "club" | "gift";
+                    type: "club" | "gift" | "coins";
                 };
                 /** @enum {string} */
                 state: "created" | "provider_pending" | "requires_action" | "succeeded" | "failed" | "cancelled" | "reconciliation_pending";
@@ -2839,7 +2856,7 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    type: "club" | "gift";
+                    type: "club" | "gift" | "coins";
                 };
                 /** @enum {string} */
                 state: "created" | "provider_pending" | "requires_action" | "succeeded" | "failed" | "cancelled" | "reconciliation_pending";
@@ -2872,7 +2889,7 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    type: "club" | "gift";
+                    type: "club" | "gift" | "coins";
                 };
                 /** @enum {string} */
                 state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
@@ -2903,7 +2920,7 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    type: "club" | "gift";
+                    type: "club" | "gift" | "coins";
                 };
                 /** @enum {string} */
                 state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
@@ -2936,7 +2953,7 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    type: "club" | "gift";
+                    type: "club" | "gift" | "coins";
                 };
             }[];
             readiness: {
@@ -2970,7 +2987,7 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
-                    type: "club" | "gift";
+                    type: "club" | "gift" | "coins";
                 };
                 /** @enum {string} */
                 state: "pending" | "active" | "past_due" | "cancel_at_period_end" | "cancelled" | "terminated";
@@ -3028,7 +3045,7 @@ export interface components {
                 /** Format: uuid */
                 offerId: string;
                 /** @enum {string} */
-                source: "club" | "gift";
+                source: "club" | "gift" | "coins";
                 state: string;
             }[];
             nextCursor?: string;
@@ -3046,7 +3063,7 @@ export interface components {
                     gross: string;
                     reversed: string;
                     /** @enum {string} */
-                    source: "club" | "gift";
+                    source: "club" | "gift" | "coins";
                 }[];
                 tax: string;
             }[];
@@ -3208,7 +3225,7 @@ export interface components {
                 /** Format: uuid */
                 resourceId: string;
                 /** @enum {string} */
-                resourceType: "club" | "gift";
+                resourceType: "club" | "gift" | "coins";
                 /** Format: date-time */
                 retiredAt?: string;
                 /** @enum {string} */
@@ -3257,7 +3274,7 @@ export interface components {
                 /** Format: uuid */
                 resourceId: string;
                 /** @enum {string} */
-                resourceType: "club" | "gift";
+                resourceType: "club" | "gift" | "coins";
                 /** Format: date-time */
                 retiredAt?: string;
                 /** @enum {string} */
@@ -4783,6 +4800,22 @@ export interface components {
         CoinGrantRequest: {
             coins: string;
             reference: string;
+        };
+        CoinPackListResponse: {
+            /** @enum {string} */
+            channel: "unavailable" | "local-test";
+            packs: {
+                coins: string;
+                price: {
+                    amountMinor: string;
+                    /** @enum {string} */
+                    currency: "AED" | "AUD" | "BHD" | "BRL" | "CAD" | "CHF" | "CLP" | "CNY" | "COP" | "CZK" | "DKK" | "EUR" | "GBP" | "HKD" | "IDR" | "ILS" | "INR" | "ISK" | "JOD" | "JPY" | "KRW" | "KWD" | "MXN" | "MYR" | "NOK" | "NZD" | "OMR" | "PHP" | "PLN" | "RON" | "SAR" | "SEK" | "SGD" | "THB" | "TND" | "TRY" | "TWD" | "USD" | "VND" | "ZAR";
+                };
+                /** Format: uuid */
+                priceId: string;
+                /** Format: uuid */
+                offerId: string;
+            }[];
         };
         WalletActivityListResponse: {
             activity: {
@@ -19025,6 +19058,97 @@ export interface operations {
                     "x-correlation-id"?: string;
                     /** @description Seconds to wait before retrying. Present on a capacity refusal. */
                     "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCoinPacks: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The coin packs this platform sells and what each costs, or an empty list where nothing can take money. A pack is VELORA’s own product: no creator is named, no creator is owed anything out of it, and no badge, saving, or comparison appears in the shape. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoinPackListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No coin ledger exists in this environment, so there is nothing to sell. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
                     [name: string]: unknown;
                 };
                 content: {

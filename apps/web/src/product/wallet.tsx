@@ -1,8 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { WalletActivity, WalletState } from '@velora/consumer-client';
+import type {
+  CoinPack,
+  WalletActivity,
+  WalletState,
+} from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 
 import { useApi } from '../app/providers';
@@ -11,12 +15,12 @@ import {
   Button,
   Card,
   EmptyState,
-  Notice,
   PageHeader,
   Section,
   Skeleton,
 } from '../design/primitives';
 import { describeSelection, useWallet } from './live-premium';
+import { formatPrice } from './commerce';
 import { formatDateTime } from './locale';
 import { useSingleFlight } from './resource';
 
@@ -249,42 +253,123 @@ function Acquisition({
   readonly onGrant: () => void;
   readonly state: WalletState;
 }) {
-  const nothingAvailable =
-    state.acquisition.android === 'unavailable' &&
-    state.acquisition.web === 'unavailable';
-  if (!nothingAvailable) {
-    // A channel exists. What it costs in money is BILLING's and is not rendered
-    // here from anything this screen holds.
+  const api = useApi();
+  const action = useSingleFlight();
+  const [packs, setPacks] = useState<CoinPack[] | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  // One key per pack, held for as long as this screen is open. A second press
+  // on the same pack is the same purchase; pressing a different one is a
+  // different purchase and gets its own key.
+  const intent = useRef(new Map<string, string>());
+  const sellable = state.acquisition.web === 'local-test';
+
+  useEffect(() => {
+    if (!sellable) return;
+    void api.coinPacks().then((result) => {
+      if (isOk(result)) setPacks([...result.value.packs]);
+    });
+  }, [api, sellable]);
+
+  if (!sellable) {
     return (
-      <Notice
-        testId="wallet-acquisition"
-        title="Getting more coins"
-        tone="info"
-      >
-        Coins can be bought in this environment. What a pack costs is shown
-        where it is sold.
-      </Notice>
+      <Section raised testId="wallet-acquisition" title="Getting more coins">
+        <p className="v-caption v-quiet v-measure">
+          {/*
+            The truth, plainly, rather than a disabled button. No payment
+            provider is configured and no coin pack is on sale, so there is
+            nothing here that could take money — and saying so is better than a
+            control that fails.
+          */}
+          There is no way to buy coins in this environment yet. Everyone
+          matching is free and always will be.
+        </p>
+        {state.acquisition.android === 'unavailable' ? (
+          <Button
+            busy={busy}
+            data-testid="wallet-grant"
+            onClick={onGrant}
+            size="sm"
+          >
+            Developer: grant 100 coins
+          </Button>
+        ) : null}
+      </Section>
     );
   }
+
   return (
     <Section raised testId="wallet-acquisition" title="Getting more coins">
       <p className="v-caption v-quiet v-measure">
         {/*
-          The truth, plainly, rather than a disabled button. No payment provider
-          and no store project is configured, so there is nothing here that
-          could take money — and saying so is better than a control that fails.
+          What a pack is, said once. No badge, no saving, no "most popular", and
+          no crossed-out price: every one of those is a claim about a comparison
+          nobody has approved, and there is nowhere in the server's answer to
+          put one.
         */}
-        There is no way to buy coins in this environment yet. Everyone matching
-        is free and always will be.
+        Coins buy narrowed Live matching. Everyone stays free.
       </p>
-      <Button
-        busy={busy}
-        data-testid="wallet-grant"
-        onClick={onGrant}
-        size="sm"
-      >
-        Developer: grant 100 coins
-      </Button>
+      {packs === undefined ? (
+        <Skeleton height={12} width="60%" />
+      ) : packs.length === 0 ? (
+        <p className="v-caption v-quiet" data-testid="wallet-packs-empty">
+          Nothing is on sale right now.
+        </p>
+      ) : (
+        <ul className="v-list v-list--divided" data-testid="wallet-packs">
+          {packs.map((pack) => (
+            <li className="v-row" key={pack.offerId}>
+              <span className="v-row__body">
+                <span className="v-subheading">{pack.coins} coins</span>
+                <span className="v-caption v-quiet">
+                  {formatPrice(pack.price)}
+                </span>
+              </span>
+              <Button
+                busy={action.busy}
+                data-testid={`wallet-buy-${pack.coins}`}
+                onClick={() => {
+                  action.run(async () => {
+                    setError(undefined);
+                    const key =
+                      intent.current.get(pack.offerId) ?? crypto.randomUUID();
+                    intent.current.set(pack.offerId, key);
+                    const result = await api.startCheckout({
+                      body: {
+                        currency: pack.price.currency,
+                        offerId: pack.offerId,
+                      },
+                      idempotencyKey: key,
+                    });
+                    if (result.kind !== 'ok') {
+                      setError(
+                        failureMessage(result) ?? 'This could not be started.',
+                      );
+                      return;
+                    }
+                    // The provider's own page. VELORA renders no card field
+                    // anywhere, because there is none to render.
+                    globalThis.location.assign(
+                      result.value.redirectUrl ??
+                        `/checkout/return?payment=${encodeURIComponent(
+                          result.value.payment.id,
+                        )}`,
+                    );
+                  });
+                }}
+                size="sm"
+                tone="primary"
+              >
+                Buy
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error === undefined ? null : (
+        <p className="v-caption v-quiet" data-testid="wallet-packs-error">
+          {error}
+        </p>
+      )}
     </Section>
   );
 }

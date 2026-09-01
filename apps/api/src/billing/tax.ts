@@ -28,7 +28,7 @@ import { money, zeroMoney, type Money } from '../money/money.js';
 
 export interface TaxAssessmentRequest {
   readonly consumerCountry: string | undefined;
-  readonly creatorCountry: string | undefined;
+  readonly sellerCountry: string | undefined;
   /** What the consumer is being charged, before any split. */
   readonly gross: Money;
 }

@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const contractPath = 'packages/validation/openapi/velora.v1.json';
-const expectedOperationCount = 172;
+const expectedOperationCount = 173;
 const expectedOperationDigest =
-  '715c119f68695f3c227fa73dc43944007332d72756b0895b4ae395438e22acae';
+  'eed8beadb595fe1283962accc6f45e5a9e7586ab46914bee9ffcd39d2a93c909';
 const methods = new Set(['delete', 'get', 'patch', 'post', 'put']);
 const allowedClassifications = new Set([
   'ADMIN_BLOCKED',

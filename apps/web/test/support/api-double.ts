@@ -753,6 +753,27 @@ function recordActivity(
   ];
 }
 
+/**
+ * The packs the platform sells, as the server publishes them.
+ *
+ * Fixed rather than configurable, because what a surface must not do with them
+ * is the subject: render a price it computed, or a badge nothing published.
+ */
+const coinPacks = [
+  {
+    coins: '100',
+    offerId: '10000000-0000-4000-8000-000000000001',
+    price: { amountMinor: '500', currency: 'EUR' },
+    priceId: '10000000-0000-4000-8000-000000000101',
+  },
+  {
+    coins: '500',
+    offerId: '10000000-0000-4000-8000-000000000002',
+    price: { amountMinor: '2500', currency: 'EUR' },
+    priceId: '10000000-0000-4000-8000-000000000102',
+  },
+];
+
 interface WalletActivityLine {
   coins: string;
   id: string;
@@ -1387,6 +1408,16 @@ export function createApiDouble(
     // from a delta it applied itself.
     if (path === '/v1/wallet' && method === 'GET') {
       return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/coin-packs' && method === 'GET') {
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      // Nothing at all where the environment cannot sell, exactly as the
+      // server answers: a surface holding packs it cannot buy is a surface one
+      // refactor away from a control that fails.
+      return json(200, {
+        channel: state.wallet.acquisition.web,
+        packs: state.wallet.acquisition.web === 'unavailable' ? [] : coinPacks,
+      });
     }
     if (path === '/v1/wallet/activity' && method === 'GET') {
       if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');

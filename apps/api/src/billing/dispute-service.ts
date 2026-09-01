@@ -10,7 +10,7 @@ import type { PaymentRow } from './payment-repository.js';
 import { billingBusinessTypes } from './policy.js';
 import type { RefundRepository } from './refund-repository.js';
 import type { GiftRepository } from './gift-repository.js';
-import { unwindEntries } from './revenue-entries.js';
+import { sellerOf, unwindEntries } from './revenue-entries.js';
 import { revenueReversedEvent } from './revenue-events.js';
 import {
   openDisputeStates,
@@ -260,7 +260,10 @@ export class DisputeService {
     const creatorShare = entries.find(
       (entry) => entry.account.category === 'creator_payable',
     );
-    if (creatorShare !== undefined) {
+    // Guarded on ownership as well as on the entry, for the reason the refund
+    // path records: a platform sale owes nobody anything, and a revenue fact
+    // about VELORA's own product would tell PAYOUTS otherwise.
+    if (offer.creatorId !== null && creatorShare !== undefined) {
       await outbox.append(executor as TransactionHandle, {
         eventName: revenueReversedEvent,
         eventVersion: 1,
@@ -342,7 +345,7 @@ export class DisputeService {
   private async unwindFor(input: {
     readonly dispute: DisputeRow;
     readonly executor: Executor;
-    readonly offer: { readonly creatorId: string };
+    readonly offer: { readonly creatorId: string | null };
     readonly payment: PaymentRow;
   }) {
     const { policy, refunds } = this.dependencies;
@@ -358,8 +361,8 @@ export class DisputeService {
       }),
       amount: money(input.dispute.amountMinor, currency),
       captured: money(input.payment.amountMinor, input.payment.currency),
-      creatorId: input.offer.creatorId,
       policy,
+      seller: sellerOf(input.offer),
     });
     if (unwound === undefined) {
       throw new Error(

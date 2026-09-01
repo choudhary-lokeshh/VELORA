@@ -236,7 +236,7 @@ export class CheckoutService {
         // for the same reason holding one across a payment provider is.
         assessment = await this.dependencies.tax.assess({
           consumerCountry: context.consumerCountry,
-          creatorCountry: context.creatorCountry,
+          sellerCountry: context.sellerCountry,
           gross: context.gross,
         });
       } catch {
@@ -417,12 +417,12 @@ export class CheckoutService {
     | { readonly kind: 'refused'; readonly reason: CheckoutRefusal }
     | {
         readonly consumerCountry: string | undefined;
-        readonly creatorCountry: string | undefined;
+        readonly sellerCountry: string | undefined;
         readonly gross: Money;
         readonly kind: 'context';
       }
   > {
-    const { consumers, creators, offers } = this.dependencies;
+    const { consumers, offers } = this.dependencies;
     const standing = await consumers.standingForUser({
       executor,
       now: input.now,
@@ -451,16 +451,20 @@ export class CheckoutService {
     if (!isCurrencyCode(price.currency)) {
       return { kind: 'refused', reason: 'unavailable' };
     }
-    const creatorCountry = await creators.operatingCountryFor({
-      creatorId: offer.creatorId,
+    // Where VELORA is selling *from*, which is the creator's country for a
+    // creator's product and VELORA's own for VELORA's. Derived once, here,
+    // rather than at each gate: two places deciding it is two places that can
+    // disagree about whose sale a coin pack is.
+    const sellerCountry = await this.sellerCountryFor({
       executor,
       now: input.now,
+      offer,
     });
     // The gate first, so a pairing nobody approved never reaches a tax engine
     // and never appears in anybody's assessment logs.
     const verdict = this.dependencies.eligibility.evaluate({
       consumerCountry: standing.region,
-      creatorCountry,
+      sellerCountry,
       currency: price.currency,
     });
     if (verdict.kind === 'refused') {
@@ -468,7 +472,7 @@ export class CheckoutService {
     }
     return {
       consumerCountry: standing.region,
-      creatorCountry,
+      sellerCountry,
       gross: money(price.amountMinor, price.currency),
       kind: 'context',
     };
@@ -580,10 +584,10 @@ export class CheckoutService {
     // charged against an answer that was true a moment ago.
     const verdict = this.dependencies.eligibility.evaluate({
       consumerCountry: standing.region,
-      creatorCountry: await this.dependencies.creators.operatingCountryFor({
-        creatorId: offer.creatorId,
+      sellerCountry: await this.sellerCountryFor({
         executor,
         now: input.now,
+        offer,
       }),
       currency: price.currency,
     });
@@ -634,6 +638,32 @@ export class CheckoutService {
       kind: 'prepared',
       payment: inserted,
     };
+  }
+
+  /**
+   * Where VELORA is selling from, for one offer.
+   *
+   * A creator's offer sells from the creator's operating country, which is
+   * CREATORS' answer. VELORA's own offer sells from wherever VELORA is
+   * established, which is a commercial and tax decision nobody has made — so
+   * the authority answers `undefined` outside local and test, and the seller
+   * gate refuses. That is the honest behaviour for an unmade decision, and it
+   * is why a platform offer cannot be bought in a deployed environment even if
+   * one somehow existed there.
+   */
+  private async sellerCountryFor(input: {
+    readonly executor: Executor;
+    readonly now: Date;
+    readonly offer: { readonly creatorId: string | null };
+  }): Promise<string | undefined> {
+    if (input.offer.creatorId === null) {
+      return this.dependencies.eligibility.platformCountry();
+    }
+    return this.dependencies.creators.operatingCountryFor({
+      creatorId: input.offer.creatorId,
+      executor: input.executor,
+      now: input.now,
+    });
   }
 
   private async giftPurchasePermitted(

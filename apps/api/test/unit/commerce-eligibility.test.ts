@@ -30,7 +30,7 @@ describe('the commerce eligibility authority', () => {
     expect(authority.creatorCountries()).toEqual([]);
     const verdict = authority.evaluate({
       consumerCountry: 'ES',
-      creatorCountry: 'ES',
+      sellerCountry: 'ES',
       currency: 'EUR',
     });
     // Every gate, not the first one found: an operator needs to know that all
@@ -48,14 +48,14 @@ describe('the commerce eligibility authority', () => {
     expect(
       authority.evaluate({
         consumerCountry: undefined,
-        creatorCountry: 'ES',
+        sellerCountry: 'ES',
         currency: 'EUR',
       }),
     ).toEqual({ gates: ['consumer_country'], kind: 'refused' });
     expect(
       authority.evaluate({
         consumerCountry: 'ES',
-        creatorCountry: undefined,
+        sellerCountry: undefined,
         currency: 'EUR',
       }),
     ).toEqual({ gates: ['creator_country'], kind: 'refused' });
@@ -71,7 +71,7 @@ describe('the commerce eligibility authority', () => {
     expect(
       authority.evaluate({
         consumerCountry: 'JP',
-        creatorCountry: 'JP',
+        sellerCountry: 'JP',
         currency: 'JPY',
       }),
     ).toEqual({ gates: ['creator_country'], kind: 'refused' });
@@ -82,7 +82,7 @@ describe('the commerce eligibility authority', () => {
     expect(
       authority.evaluate({
         consumerCountry: 'BR',
-        creatorCountry: 'BR',
+        sellerCountry: 'BR',
         currency: 'BRL',
       }),
     ).toEqual({
@@ -95,7 +95,7 @@ describe('the commerce eligibility authority', () => {
     expect(
       new LocalTestCommerceEligibility().evaluate({
         consumerCountry: 'ES',
-        creatorCountry: 'ES',
+        sellerCountry: 'ES',
         currency: 'EUR',
       }),
     ).toEqual({ kind: 'permitted' });
@@ -110,7 +110,7 @@ describe('the tax authority', () => {
     expect(
       await authority.assess({
         consumerCountry: 'ES',
-        creatorCountry: 'ES',
+        sellerCountry: 'ES',
         gross: money(1500n, 'EUR'),
       }),
     ).toBeUndefined();
@@ -119,7 +119,7 @@ describe('the tax authority', () => {
   it('distinguishes an authoritative zero from no authority', async () => {
     const assessment = await new LocalTestTaxAuthority().assess({
       consumerCountry: 'ES',
-      creatorCountry: 'ES',
+      sellerCountry: 'ES',
       gross: money(1500n, 'EUR'),
     });
     // A zero that names who said it. The difference between this and

@@ -242,6 +242,8 @@ export type SaveMatchingGenderBody = RequestBody<
  * behind it. There is no provider name, no payment identifier, no store token,
  * and no transaction identifier in this shape.
  */
+export type CoinPackList = JsonBody<'/v1/wallet/coin-packs', 'get', 200>;
+export type CoinPack = CoinPackList['packs'][number];
 export type WalletActivityList = JsonBody<'/v1/wallet/activity', 'get', 200>;
 export type WalletActivity = WalletActivityList['activity'][number];
 

@@ -1,6 +1,7 @@
 import {
   enabledCoinLedger,
   localTestCoinAcquisition,
+  localTestWebCoinAcquisition,
   unavailableCoinAcquisition,
   unavailableCoinLedger,
   type ServerConfig,
@@ -15,7 +16,7 @@ import {
 } from './acquisition.js';
 import { CoinLedger } from './ledger.js';
 import { WalletRepository } from './repository.js';
-import { WalletRoutes } from './routes.js';
+import { WalletRoutes, type CoinPackOffer } from './routes.js';
 import { WalletService, type WalletProfilePort } from './service.js';
 
 export interface WalletRuntime {
@@ -76,6 +77,15 @@ export function createWalletRuntime(input: {
   readonly database: DatabaseHandle;
   readonly now?: () => Date;
   /**
+   * BILLING's own offers for the platform's coin packs, priced.
+   *
+   * Supplied by the composition that holds both domains rather than read from
+   * here, so WALLET keeps no copy of a price and BILLING keeps no copy of a
+   * coin count. Absent in a composition with no BILLING, in which case nothing
+   * is on sale — which is also the answer in every deployed environment.
+   */
+  readonly packs?: () => Promise<readonly CoinPackOffer[]>;
+  /**
    * USERS' answer to what the *buyer* says they speak.
    *
    * The one cross-domain read this service makes, and it is about the caller
@@ -115,29 +125,29 @@ export function createWalletRuntime(input: {
       grantsPermitted:
         input.config.APP_ENV === 'local' || input.config.APP_ENV === 'test',
       wallet: service,
+      // What the platform sells its own currency in. Nothing at all where the
+      // environment cannot sell, which is what an empty list means to a
+      // surface: no pack renders and no purchase control exists.
+      packs: input.packs ?? (() => Promise.resolve([])),
       /*
-       * Web acquisition is BILLING's, and it is unavailable everywhere.
+       * Web acquisition is a configured gate of its own.
        *
-       * Two independent reasons, and either alone is enough. No payment
-       * provider is approved in any environment. And BILLING's offer model is
-       * creator-scoped by construction — `billing_offers.creator_id` is not
-       * null and its revenue routes to a creator payable position — so a
-       * platform-owned coin pack is not an offer it can currently express.
-       * Making it one is a change to the money architecture with tax and
-       * revenue-split consequences, recorded as an owner decision in
-       * `DECISIONS_REQUIRED.md` rather than improvised here.
+       * Deliberately not inferred from the payment provider. A provider being
+       * configured says money can move; it does not say VELORA has decided to
+       * sell its own currency, at what price, from which country, or under
+       * whose consumer-protection regime — all of which are undecided, and the
+       * environment guard refuses this value outside local and test.
        *
-       * The seam that will carry it already exists and is inert:
-       * `./entitlement-intake.ts` consumes BILLING's published entitlement
-       * facts and credits coins for a `coins` resource type that nothing yet
-       * emits. So the day a platform-owned pack is sellable, Web acquisition is
-       * an offer and a catalogue entry rather than a new checkout.
-       *
-       * Reported as `unavailable` rather than computed from the payment
-       * provider, because a surface told `local-test` would render a buy
-       * control for a product that does not exist.
+       * A coin pack reaches the ledger through BILLING's ordinary seam:
+       * `./entitlement-intake.ts` consumes the entitlement fact a settled
+       * purchase publishes and credits idempotently. There is no
+       * wallet-specific checkout, and there deliberately never will be.
        */
-      webAcquisition: 'unavailable',
+      webAcquisition:
+        input.config.WALLET_WEB_ACQUISITION === localTestWebCoinAcquisition &&
+        input.packs !== undefined
+          ? 'local-test'
+          : 'unavailable',
     }),
     service,
   };

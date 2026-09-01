@@ -57,6 +57,7 @@ import type {
   PolicyDocument,
   ProfileMediaUpload,
   PushDeviceList,
+  CoinPackList,
   WalletActivityList,
   WalletState,
   RegisterPushDeviceBody,
@@ -392,6 +393,14 @@ export interface ConsumerApi {
     query?: PageQuery,
     signal?: AbortSignal,
   ): Promise<ApiResult<WalletActivityList>>;
+  /**
+   * What the platform sells its own currency in, and what each pack costs.
+   *
+   * An empty list wherever nothing can take money, so a surface never holds
+   * packs it cannot start a checkout for. Buying one is ordinary checkout
+   * against an ordinary offer.
+   */
+  coinPacks(signal?: AbortSignal): Promise<ApiResult<CoinPackList>>;
   /**
    * Opens a paid, bounded window in which the matcher narrows to the declared
    * preferences named.
@@ -859,6 +868,11 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
 
     wallet: async (signal) =>
       attempt(async () => api.GET('/v1/wallet', await reading(signal))),
+
+    coinPacks: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/wallet/coin-packs', await reading(signal)),
+      ),
 
     walletActivity: async (query = {}, signal) =>
       attempt(async () =>

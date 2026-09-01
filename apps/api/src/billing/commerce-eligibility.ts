@@ -14,8 +14,12 @@ import type { CurrencyCode } from '@velora/validation';
  * separate approval in `docs/compliance/04-payments-tax-payout-gates.md`:
  *
  * - the consumer's country is one Velora may sell into;
- * - the creator's country is one Velora may sell *from*, which is a different
- *   list answering to different law;
+ * - the *seller's* country is one Velora may sell from, which is a different
+ *   list answering to different law. Usually that is the creator's; for
+ *   VELORA's own products it is VELORA's own country, and the gate keeps the
+ *   published name `creator_country` because that is what it means to every
+ *   creator who has ever been shown it and renaming a published identifier to
+ *   describe a second case would be a contract change for a caption;
  * - the currency is approved for that pairing rather than approved in general;
  * - a payment provider exists that is eligible for the pairing;
  * - a payout capability exists for the creator's country, because selling into
@@ -59,7 +63,7 @@ export interface CommerceEligibilityRequest {
    * refusal into a compliance control it is not.
    */
   readonly consumerCountry: string | undefined;
-  readonly creatorCountry: string | undefined;
+  readonly sellerCountry: string | undefined;
   readonly currency: CurrencyCode;
 }
 
@@ -76,6 +80,8 @@ export interface CommerceEligibility {
   readonly source: string;
   /** Countries Velora may sell into. Empty until an authority publishes one. */
   consumerCountries(): readonly string[];
+  /** Where VELORA sells its own products from, when that is decided. */
+  platformCountry(): string | undefined;
   /** Countries Velora may sell from. A different list, answering to different law. */
   creatorCountries(): readonly string[];
   evaluate(request: CommerceEligibilityRequest): CommerceEligibilityVerdict;
@@ -98,6 +104,19 @@ export class UnavailableCommerceEligibility implements CommerceEligibility {
 
   creatorCountries(): readonly string[] {
     return [];
+  }
+
+  /**
+   * Where VELORA itself is established, for the purposes of its own sales.
+   *
+   * `undefined`, and it is not a gap. Which jurisdiction VELORA sells its own
+   * products from is a commercial, tax, and legal decision nobody has made, and
+   * an absent answer refuses the seller gate — which is the only honest
+   * behaviour while it is unmade, and is what makes a platform-owned offer
+   * unbuyable in a deployed environment even if one existed there.
+   */
+  platformCountry(): string | undefined {
+    return undefined;
   }
 
   evaluate(): CommerceEligibilityVerdict {
@@ -136,6 +155,17 @@ export class LocalTestCommerceEligibility implements CommerceEligibility {
     return this.creators;
   }
 
+  /**
+   * A development answer, and the name of this class is what says so.
+   *
+   * It is one of the countries this fixture already treats as sellable from, so
+   * the platform's own sale exercises the same conjunction a creator's does.
+   * It proposes nothing about where VELORA is actually established.
+   */
+  platformCountry(): string | undefined {
+    return 'ES';
+  }
+
   evaluate(request: CommerceEligibilityRequest): CommerceEligibilityVerdict {
     const gates: CommerceEligibilityGate[] = [];
     if (
@@ -145,8 +175,8 @@ export class LocalTestCommerceEligibility implements CommerceEligibility {
       gates.push('consumer_country');
     }
     if (
-      request.creatorCountry === undefined ||
-      !this.creators.includes(request.creatorCountry)
+      request.sellerCountry === undefined ||
+      !this.creators.includes(request.sellerCountry)
     ) {
       gates.push('creator_country');
     }

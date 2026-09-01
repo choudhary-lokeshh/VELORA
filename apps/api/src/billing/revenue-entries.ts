@@ -45,6 +45,48 @@ export const disputesAccount = {
 } as const;
 
 /**
+ * Whose sale this is, in the only two shapes the book can post.
+ *
+ * A discriminated pair rather than a nullable creator identifier, so every
+ * caller has to say which kind of sale it is holding and no branch can be
+ * reached with "a creator sale whose creator is missing" — which is the state a
+ * nullable field invites and the one that would post a stranger's liability.
+ */
+export type OfferSeller =
+  | { readonly creatorId: string; readonly kind: 'creator' }
+  | { readonly kind: 'platform' };
+
+/**
+ * The platform's own revenue, for a sale nobody else has a claim on.
+ *
+ * Platform-scoped rather than creator-scoped, and that is the whole point of
+ * its existence. `platformRevenueAccount` holds the platform's share *of one
+ * creator's sales*, and a creator's earnings view reads it: putting VELORA's
+ * own product revenue there would make a coin pack appear in somebody's
+ * earnings as money the platform kept out of their work.
+ */
+export const platformOwnRevenueAccount = {
+  category: 'platform_revenue',
+  subjectType: 'platform',
+} as const;
+
+/**
+ * Who is selling, read off the offer row and derived nowhere else.
+ *
+ * One function, so "is this the platform's own sale" is answered identically by
+ * the settlement, the refund, and the dispute — three places that would
+ * otherwise each decide it, and only have to disagree once for a coin pack to
+ * credit somebody's payable.
+ */
+export function sellerOf(offer: {
+  readonly creatorId: string | null;
+}): OfferSeller {
+  return offer.creatorId === null
+    ? { kind: 'platform' }
+    : { creatorId: offer.creatorId, kind: 'creator' };
+}
+
+/**
  * The platform's share of one creator's sales.
  *
  * Subject-scoped like the payable rather than pooled across the platform, for a
@@ -94,26 +136,40 @@ export const payoutClearingAccount = {
  */
 export function captureEntries(input: {
   readonly allocation: RevenueAllocation;
-  readonly creatorId: string;
   readonly gross: Money;
+  readonly seller: OfferSeller;
 }): readonly JournalEntryInput[] {
-  const credits: JournalEntryInput[] = [
-    {
-      account: creatorPayableAccount(input.creatorId),
-      amount: input.allocation.creator,
-      direction: 'credit',
-    },
-    {
-      account: platformRevenueAccount(input.creatorId),
-      amount: input.allocation.platform,
-      direction: 'credit',
-    },
-    {
-      account: taxPayableAccount(input.creatorId),
-      amount: input.allocation.tax,
-      direction: 'credit',
-    },
-  ];
+  // The platform selling its own product. There is no split to apply, because
+  // there is nobody to split with: the whole gross is VELORA's, no creator is
+  // owed anything, and no payable is created that a payout would later have to
+  // settle. Applying a revenue share here would credit a creator position that
+  // names nobody, which the journal refuses — correctly.
+  const credits: JournalEntryInput[] =
+    input.seller.kind === 'platform'
+      ? [
+          {
+            account: platformOwnRevenueAccount,
+            amount: input.gross,
+            direction: 'credit',
+          },
+        ]
+      : [
+          {
+            account: creatorPayableAccount(input.seller.creatorId),
+            amount: input.allocation.creator,
+            direction: 'credit',
+          },
+          {
+            account: platformRevenueAccount(input.seller.creatorId),
+            amount: input.allocation.platform,
+            direction: 'credit',
+          },
+          {
+            account: taxPayableAccount(input.seller.creatorId),
+            amount: input.allocation.tax,
+            direction: 'credit',
+          },
+        ];
   return [
     { account: clearingAccount, amount: input.gross, direction: 'debit' },
     ...credits.filter((entry) => isPositiveMoney(entry.amount)),
@@ -152,14 +208,31 @@ export function unwindEntries(input: {
   readonly alreadyReversed: Money;
   readonly amount: Money;
   readonly captured: Money;
-  readonly creatorId: string;
   readonly policy: CommercePolicy;
+  readonly seller: OfferSeller;
 }): UnwindEntries | undefined {
   const remaining = subtractMoney(input.captured, input.alreadyReversed);
   const unwindable = isPositiveMoney(remaining)
     ? minimumOf(remaining, input.amount)
     : money(0n, input.amount.currency);
   const excess = subtractMoney(input.amount, unwindable);
+
+  // A platform sale unwinds the one position it created, and there is no
+  // excess case to reason about separately: the whole amount came from the
+  // platform's own revenue and the whole of it goes back the same way.
+  if (input.seller.kind === 'platform') {
+    return {
+      entries: mergeByAccount([
+        {
+          account: platformOwnRevenueAccount,
+          amount: input.amount,
+          direction: 'debit',
+        },
+      ]),
+      excess,
+    };
+  }
+  const creatorId = input.seller.creatorId;
 
   const debits: JournalEntryInput[] = [];
   if (isPositiveMoney(unwindable)) {
@@ -170,17 +243,17 @@ export function unwindEntries(input: {
     if (allocation === undefined) return undefined;
     debits.push(
       {
-        account: creatorPayableAccount(input.creatorId),
+        account: creatorPayableAccount(creatorId),
         amount: allocation.creator,
         direction: 'debit',
       },
       {
-        account: platformRevenueAccount(input.creatorId),
+        account: platformRevenueAccount(creatorId),
         amount: allocation.platform,
         direction: 'debit',
       },
       {
-        account: taxPayableAccount(input.creatorId),
+        account: taxPayableAccount(creatorId),
         amount: allocation.tax,
         direction: 'debit',
       },
@@ -188,7 +261,7 @@ export function unwindEntries(input: {
   }
   if (isPositiveMoney(excess)) {
     debits.push({
-      account: platformRevenueAccount(input.creatorId),
+      account: platformRevenueAccount(creatorId),
       amount: excess,
       direction: 'debit',
     });

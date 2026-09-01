@@ -409,6 +409,26 @@ export const unavailableCoinAcquisition = 'unavailable';
 export const localTestCoinAcquisition = 'local-test';
 
 /**
+ * How the Web acquires coins.
+ *
+ * Deliberately a gate of its own rather than an inference from
+ * `BILLING_PAYMENT_PROVIDER`. A payment provider being configured says money
+ * can move; it does not say VELORA has decided to sell its own currency, at
+ * what price, from which country, under whose consumer-protection regime. All
+ * of those are undecided, so selling coins is a separate switch that a
+ * deployed environment cannot turn on.
+ *
+ * `local-test` publishes platform-owned coin-pack offers with development
+ * prices and lets the local payment provider settle them, so the whole path —
+ * checkout, settlement, entitlement fact, idempotent credit — is walkable
+ * before any of those decisions exist. It requires the coin ledger and the
+ * local payment provider, because it is worth nothing without either, and the
+ * guard below refuses it outside local and test.
+ */
+export const unavailableWebCoinAcquisition = 'unavailable';
+export const localTestWebCoinAcquisition = 'local-test';
+
+/**
  * Notification delivery channels. No email, push, or SMS provider is approved —
  * country coverage, consent, deliverability, and privacy review are all pending
  * in `docs/decisions/DECISIONS_REQUIRED.md` — so `unavailable` is the only
@@ -596,6 +616,9 @@ export const serverConfigSchema = z
     WALLET_ANDROID_ACQUISITION: z
       .enum([unavailableCoinAcquisition, localTestCoinAcquisition])
       .default(unavailableCoinAcquisition),
+    WALLET_WEB_ACQUISITION: z
+      .enum([unavailableWebCoinAcquisition, localTestWebCoinAcquisition])
+      .default(unavailableWebCoinAcquisition),
     LOG_LEVEL: logLevelSchema.default('info'),
     MESSAGING_SAFETY_ELIGIBILITY: z
       .enum([unavailableSafetyEligibility, trustAndSafetyEligibility])
@@ -847,6 +870,13 @@ export const serverConfigSchema = z
         path: ['WALLET_ANDROID_ACQUISITION'],
       });
     }
+    if (config.WALLET_WEB_ACQUISITION !== unavailableWebCoinAcquisition) {
+      context.addIssue({
+        code: 'custom',
+        message: `WALLET_WEB_ACQUISITION is not usable in ${config.APP_ENV}: what a coin is worth, what a pack costs, which country VELORA sells its own products from, and how a virtual balance is treated for consumer-protection and tax purposes are all undecided; see DECISIONS_REQUIRED`,
+        path: ['WALLET_WEB_ACQUISITION'],
+      });
+    }
     if (
       config.NOTIFICATIONS_DELIVERY_CHANNEL !== unavailableNotificationChannel
     ) {
@@ -949,6 +979,26 @@ export const serverConfigSchema = z
         message: `WALLET_ANDROID_ACQUISITION requires WALLET_COIN_LEDGER to be ${enabledCoinLedger}`,
         path: ['WALLET_ANDROID_ACQUISITION'],
       });
+    }
+    // Web acquisition needs both halves and is worth nothing without either: a
+    // ledger for the coins to land in, and a provider that can take the money.
+    // A channel selected without one of them would publish a purchase control
+    // for a product that cannot complete.
+    if (config.WALLET_WEB_ACQUISITION !== unavailableWebCoinAcquisition) {
+      if (config.WALLET_COIN_LEDGER === unavailableCoinLedger) {
+        context.addIssue({
+          code: 'custom',
+          message: `WALLET_WEB_ACQUISITION requires WALLET_COIN_LEDGER to be ${enabledCoinLedger}`,
+          path: ['WALLET_WEB_ACQUISITION'],
+        });
+      }
+      if (config.BILLING_PAYMENT_PROVIDER === unavailablePaymentProvider) {
+        context.addIssue({
+          code: 'custom',
+          message: `WALLET_WEB_ACQUISITION requires BILLING_PAYMENT_PROVIDER to be ${localTestPaymentProvider}`,
+          path: ['WALLET_WEB_ACQUISITION'],
+        });
+      }
     }
     // Selecting the development media adapter without telling it where to keep
     // objects or what to sign with must fail at startup: an adapter that
@@ -1080,6 +1130,7 @@ export function redactServerConfig(config: ServerConfig) {
     rtcSignalTransport: config.REALTIME_SIGNAL_TRANSPORT,
     walletAndroidAcquisition: config.WALLET_ANDROID_ACQUISITION,
     walletCoinLedger: config.WALLET_COIN_LEDGER,
+    walletWebAcquisition: config.WALLET_WEB_ACQUISITION,
     safetyEligibility: config.MESSAGING_SAFETY_ELIGIBILITY,
     privilegedAuthenticatorVerifier:
       config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,

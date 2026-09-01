@@ -150,6 +150,34 @@ describe('the coin screen', () => {
     expect(panel.textContent).not.toContain('returned in full');
   });
 
+  it('sells the packs the server publishes, at the prices it published', async () => {
+    const base = walletState({ balance: { available: '0', reserved: '0' } });
+    const double = createApiDouble({
+      ...base,
+      wallet: {
+        ...base.wallet,
+        acquisition: { android: 'unavailable', web: 'local-test' },
+      },
+    });
+    renderProduct(<Wallet />, double, { pathname: '/you/wallet' });
+
+    const packs = await screen.findByTestId('wallet-packs');
+    // Both the coin count and the money price are the server's. Nothing on
+    // this screen computes one from the other.
+    expect(packs.textContent).toContain('100 coins');
+    expect(packs.textContent).toContain('5.00 EUR');
+    expect(packs.textContent).toContain('500 coins');
+    expect(packs.textContent).toContain('25.00 EUR');
+    // And no comparison between them, because none is published.
+    for (const claim of ['best', 'save', 'popular', 'bonus']) {
+      expect(packs.textContent.toLowerCase(), claim).not.toContain(claim);
+    }
+    // A channel exists, so the developer grant is gone: it is the stand-in for
+    // a purchase, not a second way to buy.
+    expect(screen.queryByTestId('wallet-grant')).toBeNull();
+    expect(screen.getByTestId('wallet-buy-100')).toBeTruthy();
+  });
+
   it('carries no casino anywhere on it', async () => {
     const double = createApiDouble(
       walletState({ balance: { available: '100', reserved: '0' } }),
