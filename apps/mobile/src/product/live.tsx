@@ -62,7 +62,12 @@ import {
 import { useApi } from '../frame/providers';
 import { mintUuid } from '../device/installation';
 import { useLiveMedia, type LiveMediaState } from './live-media';
-import { PremiumPreference, useWallet, type WalletView } from './live-premium';
+import {
+  describeSelection,
+  PremiumPreference,
+  useWallet,
+  type WalletView,
+} from './live-premium';
 import { VideoTrack } from './live-rtc';
 import { useLiveTransport, type LiveTransport } from './live-transport';
 import { useSingleFlight } from './resource';
@@ -725,7 +730,7 @@ function PreferenceControls({
         </Pressable>
       )}
 
-      <PremiumPreference wallet={wallet} />
+      <PremiumPreference languageOptions={languageOptions} wallet={wallet} />
     </View>
   );
 }
@@ -1682,13 +1687,18 @@ function SearchingPane({
         looks like it has stopped.
       */}
       <Text style={styles.centred} tone="secondary" variant="caption">
-        VELORA is looking across everybody here, except anybody you have just
-        met.
+        {premium === undefined
+          ? 'VELORA is looking across everybody here, except anybody you have just met.'
+          : `VELORA is looking for ${describeSelection(premium) ?? 'a narrowed search'} only, except anybody you have just met. Nobody can promise anyone is there.`}
       </Text>
       {narrowed && waited >= broadenPromptMilliseconds ? (
         <View style={styles.broaden} testID="live-broaden">
           <Text style={styles.centred} tone="tertiary" variant="caption">
-            Your search is narrowed. Widening it looks at everybody who is here.
+            {premium === undefined
+              ? 'Your search is narrowed. Widening it looks at everybody who is here.'
+              : premium.charged
+                ? 'Your search is narrowed. Nobody else matching has been here yet. This window has already been used, so widening costs nothing and returns nothing.'
+                : 'Your search is narrowed. Nobody matching has been here yet. Widening returns the coins you held, in full.'}
           </Text>
           <Button
             onPress={() => {
@@ -1702,7 +1712,10 @@ function SearchingPane({
           >
             Widen the search
           </Button>
-          <PremiumPreference wallet={wallet} />
+          <PremiumPreference
+            languageOptions={languageOptions}
+            wallet={wallet}
+          />
         </View>
       ) : (
         <PreferenceControls

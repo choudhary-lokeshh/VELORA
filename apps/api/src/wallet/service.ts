@@ -3,13 +3,18 @@ import { randomUUID } from 'node:crypto';
 import type { Executor, TransactionHandle } from '../database/executor.js';
 import type { CoinBalance, CoinLedger, CoinPosting } from './ledger.js';
 import {
-  livePreferenceEntitlementCoins,
+  livePreferenceActivationCoins,
   livePreferenceEntitlementDurationMilliseconds,
   livePreferenceSweepBatchSize,
+  livePremiumGenderValues,
+  livePremiumPreferenceKinds,
+  languageCodePattern,
   maximumLivePreferenceActivationsPerWindow,
   maximumWalletOperationCoins,
   regionCodePattern,
   walletAbuseWindowMilliseconds,
+  type LivePremiumGenderValue,
+  type LivePremiumPreferenceKind,
 } from './policy.js';
 import type {
   LivePreferenceEntitlementRow,
@@ -17,19 +22,37 @@ import type {
 } from './repository.js';
 
 /**
+ * One selection of premium preferences, as everything here passes it around.
+ *
+ * A record of optional values rather than a list of kind/value pairs, because
+ * every consumer of it asks "what is the gender narrowing" rather than "iterate
+ * the narrowings" — and because a list can hold the same kind twice, which is a
+ * state nothing downstream has an answer for.
+ */
+export interface LivePreferenceSelection {
+  readonly gender?: LivePremiumGenderValue | undefined;
+  readonly language?: string | undefined;
+  readonly region?: string | undefined;
+}
+
+/**
  * What the matcher needs to know about somebody's paid narrowing, and nothing
  * else.
  *
  * Deliberately not the entitlement row. LIVE has no business knowing what
  * anything cost, when it was reserved, or which ledger transaction holds the
- * coins — it needs the predicate and the identity of the window that bought it,
- * so it can ask for that window to be captured when it produces an encounter.
+ * coins — it needs the predicates and the identity of the window that bought
+ * them, so it can ask for that window to be captured when it produces an
+ * encounter.
+ *
+ * `charged` is here so the matcher can skip a capture it knows will be refused.
+ * It is not a permission and grants nothing: a window that has been charged
+ * narrows exactly as one that has not.
  */
-export interface ActiveLivePreference {
+export interface ActiveLivePreference extends LivePreferenceSelection {
+  readonly charged: boolean;
   readonly entitlementId: string;
   readonly expiresAt: Date;
-  /** ISO 3166-1 alpha-2. The declared region the pool is narrowed to. */
-  readonly region: string;
 }
 
 export type WalletRefusal =
@@ -58,8 +81,14 @@ export type CreditOutcome =
 /**
  * What one sweep cycle did. Counts only, on the same rule the RTC reconciler
  * follows: naming the people would put somebody's spending in a log line.
+ *
+ * `released` and `closed` are separate because they are different facts about
+ * the product. A release returned coins to somebody who found nobody; a close
+ * ended a window that had already been paid for and used. One number covering
+ * both would make "how often does a paid window find nobody" unanswerable.
  */
 export interface WalletSweepReport {
+  readonly closed: number;
   readonly examined: number;
   readonly released: number;
 }
@@ -77,7 +106,26 @@ export interface WalletServiceDependencies {
   readonly enabled: boolean;
   readonly ledger: CoinLedger;
   readonly now: () => Date;
+  /**
+   * USERS' answer to "what does this person say they speak".
+   *
+   * The narrowest possible read, and it is about the *buyer* rather than about
+   * anybody else. A language preference means "the other person must also speak
+   * this", so asking for one the buyer does not speak is meaningless — and
+   * selling it would be selling a filter that the matcher would then have to
+   * either honour into an empty pool or silently drop. Refusing at activation
+   * is the only version where nobody is charged for either.
+   *
+   * Absent in a composition with no USERS to ask, in which case a language
+   * preference is refused rather than sold unverified.
+   */
+  readonly profiles?: WalletProfilePort;
   readonly repository: WalletRepository;
+}
+
+/** The slice of USERS this domain is allowed to use, and the whole of it. */
+export interface WalletProfilePort {
+  languagesOf(userId: string): Promise<readonly string[]>;
 }
 
 /**
@@ -144,29 +192,48 @@ export class WalletService {
     userId: string,
   ): Promise<ActiveLivePreference | undefined> {
     if (!this.dependencies.enabled) return undefined;
-    const row = await this.dependencies.repository.findActiveEntitlement(
+    const row = await this.dependencies.repository.findOpenEntitlement(
       executor,
       userId,
     );
-    if (row === undefined) return undefined;
-    if (row.expiresAt.getTime() <= this.dependencies.now().getTime()) {
-      return undefined;
+    return this.inForce(row);
+  }
+
+  /**
+   * The windows held by any of these people, keyed by person.
+   *
+   * The matcher asks this about the candidates it is already considering, and
+   * about nobody else. It is what makes a paid narrowing hold *from both
+   * sides*: without it, somebody who bought "only women" would still be handed
+   * a man the moment his own search picked them, and the thing they paid for
+   * would be a filter that worked in one direction.
+   *
+   * It carries no price, because LIVE has no business knowing what anything
+   * cost, and it is a read over a list the caller chose — never a way to find
+   * out who is paying for what.
+   */
+  async activeLivePreferencesAmong(
+    executor: Executor,
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ActiveLivePreference>> {
+    const held = new Map<string, ActiveLivePreference>();
+    if (!this.dependencies.enabled || userIds.length === 0) return held;
+    const rows = await this.dependencies.repository.findOpenEntitlementsAmong(
+      executor,
+      userIds,
+    );
+    for (const row of rows) {
+      const window = this.inForce(row);
+      if (window !== undefined) held.set(row.userId, window);
     }
-    // The database guarantees a region-kind window names a region; this is the
-    // type system catching up with the constraint rather than a second rule.
-    if (row.preferenceRegion === null) return undefined;
-    return {
-      entitlementId: row.id,
-      expiresAt: row.expiresAt,
-      region: row.preferenceRegion,
-    };
+    return held;
   }
 
   /**
    * The same window, with what it cost, for a surface that renders it.
    *
    * Separate from {@link activeLivePreference} because the two have different
-   * audiences and must carry different things. The matcher gets the predicate
+   * audiences and must carry different things. The matcher gets the predicates
    * and the identity, and no price — LIVE has no business knowing what anything
    * cost. A wallet surface gets the price, because that is what it is for.
    */
@@ -175,20 +242,13 @@ export class WalletService {
   ): Promise<(ActiveLivePreference & { readonly coins: bigint }) | undefined> {
     if (!this.dependencies.enabled) return undefined;
     const executor = this.dependencies.repository.transactionless;
-    const row = await this.dependencies.repository.findActiveEntitlement(
+    const row = await this.dependencies.repository.findOpenEntitlement(
       executor,
       userId,
     );
-    if (row?.preferenceRegion == null) return undefined;
-    if (row.expiresAt.getTime() <= this.dependencies.now().getTime()) {
-      return undefined;
-    }
-    return {
-      coins: row.coins,
-      entitlementId: row.id,
-      expiresAt: row.expiresAt,
-      region: row.preferenceRegion,
-    };
+    const held = this.inForce(row);
+    if (held === undefined || row === undefined) return undefined;
+    return { ...held, coins: row.coins };
   }
 
   /**
@@ -201,18 +261,27 @@ export class WalletService {
    * convention. They are captured when the window produces an encounter and
    * released in full when it does not.
    */
-  async activateLivePreference(input: {
-    readonly region: string;
-    readonly userId: string;
-  }): Promise<ActivateLivePreferenceOutcome> {
+  async activateLivePreference(
+    input: LivePreferenceSelection & { readonly userId: string },
+  ): Promise<ActivateLivePreferenceOutcome> {
     if (!this.dependencies.enabled) {
       return { kind: 'refused', reason: 'unavailable' };
     }
-    // The one preference this product supports, checked against the declared
-    // shape rather than against a list of countries. A caller asking to filter
-    // on anything else is refused here, before a balance is read, so an
-    // unsupported attribute can never become a charge.
-    if (!new RegExp(regionCodePattern, 'u').test(input.region)) {
+    // Everything about the request that can be refused without reading a
+    // balance is refused first, so an unsupported preference can never become a
+    // charge. Each of these is checked against a declared shape or a declared
+    // list rather than against an inventory of real values: whether anybody in
+    // France is online right now is not a question this product answers, and
+    // refusing an activation because the pool happens to be empty would be
+    // selling on availability nobody can promise.
+    const selection = await this.supportedSelection(input);
+    if (selection === undefined) {
+      return { kind: 'refused', reason: 'not_supported' };
+    }
+    const coins = livePreferenceActivationCoins(selection);
+    if (coins === undefined) {
+      // A window that narrows nothing. `Everyone` is free and is what somebody
+      // gets by not buying anything, so there is nothing here to sell.
       return { kind: 'refused', reason: 'not_supported' };
     }
 
@@ -234,19 +303,25 @@ export class WalletService {
           return { kind: 'refused', reason: 'rate_limited' } as const;
         }
 
-        const held = await repository.lockActiveEntitlement(
+        const held = await repository.lockOpenEntitlement(
           executor,
           input.userId,
         );
+        // A window that is still running, charged or not. A caller who already
+        // has one is told so rather than being charged again, and the surface
+        // renders the window it already holds. An expired row that the sweep
+        // has not reached yet is not a window: settling it here rather than
+        // refusing is what stops a person being blocked from buying by a worker
+        // that is a few seconds behind.
         if (held !== undefined) {
-          // One open window per person. A caller who already has one is told so
-          // rather than being charged again, and the surface renders the window
-          // it already holds.
-          return { kind: 'refused', reason: 'conflict' } as const;
+          if (held.expiresAt.getTime() > at.getTime()) {
+            return { kind: 'refused', reason: 'conflict' } as const;
+          }
+          await this.close(executor, held, 'released');
         }
 
         const balance = await ledger.lockBalance(executor, input.userId);
-        if (balance.available < livePreferenceEntitlementCoins) {
+        if (balance.available < coins) {
           // Says only that the balance will not cover it. How much is missing,
           // and how much is held, are not part of a refusal: a refusal that
           // reported them would be a way to read somebody's balance from a
@@ -267,7 +342,7 @@ export class WalletService {
                 category: 'consumer_balance',
                 subjectId: input.userId,
               },
-              amount: livePreferenceEntitlementCoins,
+              amount: coins,
               direction: 'debit',
             },
             {
@@ -275,7 +350,7 @@ export class WalletService {
                 category: 'consumer_reserved',
                 subjectId: input.userId,
               },
-              amount: livePreferenceEntitlementCoins,
+              amount: coins,
               direction: 'credit',
             },
           ],
@@ -284,20 +359,21 @@ export class WalletService {
         } satisfies CoinPosting);
 
         await ledger.applyBalanceDelta(executor, {
-          availableDelta: -livePreferenceEntitlementCoins,
-          reservedDelta: livePreferenceEntitlementCoins,
+          availableDelta: -coins,
+          reservedDelta: coins,
           userId: input.userId,
         });
 
         const entitlement = await repository.insertEntitlement(executor, {
-          coins: livePreferenceEntitlementCoins,
+          coins,
           expiresAt: new Date(
             at.getTime() + livePreferenceEntitlementDurationMilliseconds,
           ),
           id: entitlementId,
           now: at,
-          preferenceKind: 'region',
-          preferenceRegion: input.region,
+          preferenceGender: selection.gender,
+          preferenceLanguage: selection.language,
+          preferenceRegion: selection.region,
           reservationTransactionId: posting.transactionId,
           userId: input.userId,
         });
@@ -327,9 +403,11 @@ export class WalletService {
    * encounter with an uncaptured reservation would be a narrowed match somebody
    * was never charged for.
    *
-   * Idempotent by the guarded update. A second capture of the same window
-   * changes nothing and answers `false`, which is what makes it safe for the
-   * matcher to call without first checking.
+   * Idempotent by the guarded update, and charged **once per window** rather
+   * than once per match. The second and every later encounter inside the same
+   * window finds the row already `captured`, changes nothing, and answers
+   * `false` — which is what makes the window a window: after the charge the
+   * narrowing keeps running and every further Next inside it is free.
    */
   async captureLivePreference(
     executor: TransactionHandle,
@@ -341,8 +419,11 @@ export class WalletService {
   ): Promise<boolean> {
     if (!this.dependencies.enabled) return false;
     const { ledger, now, repository } = this.dependencies;
-    const held = await repository.lockActiveEntitlement(executor, input.userId);
+    const held = await repository.lockOpenEntitlement(executor, input.userId);
     if (held?.id !== input.entitlementId) return false;
+    // Already charged. The window is still narrowing and this encounter is one
+    // of the ones it was bought for; there is simply nothing left to pay.
+    if (held.state !== 'active') return false;
 
     const at = now();
     const posting = await ledger.post(executor, {
@@ -383,23 +464,111 @@ export class WalletService {
   }
 
   /**
-   * Closes an open window at the person's request and returns the coins in
-   * full.
+   * Closes an open window at the person's request.
    *
-   * Somebody who decides they would rather meet anybody has not consumed what
-   * they bought, and charging them for changing their mind inside the window
-   * would make the control something people avoid touching.
+   * **A window that never found anybody returns its coins in full.** Somebody
+   * who decides they would rather meet anybody has not consumed what they
+   * bought, and charging them for changing their mind inside the window would
+   * make the control something people avoid touching — which would be worse for
+   * them than the coins.
+   *
+   * **A window that already found somebody returns nothing, and it does not
+   * pretend to.** The charge happened when the narrowing produced the encounter
+   * it was bought for; ending the window early gives up the rest of the time,
+   * which is a choice, not a refund. The surface says so before the button is
+   * pressed rather than afterwards.
    */
   async cancelLivePreference(userId: string): Promise<boolean> {
     if (!this.dependencies.enabled) return false;
     return this.dependencies.repository.transaction(async (executor) => {
       await this.dependencies.repository.lockWallet(executor, userId);
-      const held = await this.dependencies.repository.lockActiveEntitlement(
+      const held = await this.dependencies.repository.lockOpenEntitlement(
         executor,
         userId,
       );
       if (held === undefined) return false;
-      return this.release(executor, held, 'cancelled');
+      return this.close(executor, held, 'cancelled');
+    });
+  }
+
+  /**
+   * Widens a window that is already running, at no charge and with no refund.
+   *
+   * The one preference change that can be made inside a window somebody already
+   * paid for, and it is allowed precisely because it can only ever ask for
+   * *less*. Dropping "in France" from "women in France who speak French" makes
+   * the search bigger; there is no version of that which costs more, so there is
+   * no version of it that could produce a surprise charge.
+   *
+   * Everything else is a different window and is sold as one. Adding a
+   * preference, or swapping one for another, could cost more than what was paid
+   * and would silently redefine what was bought — so it is refused here and the
+   * surface offers the honest alternative: end this window and open the one you
+   * actually want. Ending an uncharged window returns the coins in full, so
+   * changing your mind before anybody is found costs nothing either way.
+   *
+   * Dropping *everything* is not a broadening, it is going back to `Everyone`,
+   * and it is refused here so it goes through cancellation — which is the path
+   * that knows whether coins are owed back.
+   */
+  async broadenLivePreference(
+    input: LivePreferenceSelection & { readonly userId: string },
+  ): Promise<
+    | {
+        readonly entitlement: LivePreferenceEntitlementRow;
+        readonly kind: 'broadened';
+      }
+    | { readonly kind: 'refused'; readonly reason: WalletRefusal }
+  > {
+    if (!this.dependencies.enabled) {
+      return { kind: 'refused', reason: 'unavailable' };
+    }
+    const { now, repository } = this.dependencies;
+    const at = now();
+    return repository.transaction(async (executor) => {
+      await repository.lockWallet(executor, input.userId);
+      const held = await repository.lockOpenEntitlement(executor, input.userId);
+      if (held === undefined || held.expiresAt.getTime() <= at.getTime()) {
+        return { kind: 'refused', reason: 'conflict' } as const;
+      }
+
+      const wanted = {
+        gender: input.gender,
+        language: input.language,
+        region: input.region,
+      };
+      const current = selectionOf(held);
+      // A strict subset, kind by kind: every preference the request keeps must
+      // be the *same value* the window already holds, and at least one must be
+      // gone. Comparing values rather than counting kinds is what stops
+      // "France" being swapped for "Japan" at no charge.
+      let dropped = 0;
+      for (const kind of livePremiumPreferenceKinds) {
+        if (wanted[kind] === undefined && current[kind] !== undefined) {
+          dropped += 1;
+          continue;
+        }
+        if (wanted[kind] !== current[kind]) {
+          return { kind: 'refused', reason: 'not_supported' } as const;
+        }
+      }
+      if (dropped === 0) return { kind: 'refused', reason: 'not_supported' };
+      if (livePreferenceActivationCoins(wanted) === undefined) {
+        // Nothing left to narrow on. That is `Everyone`, and it is cancellation.
+        return { kind: 'refused', reason: 'not_supported' } as const;
+      }
+
+      const broadened = await repository.broadenEntitlement(executor, {
+        id: held.id,
+        now: at,
+        preferenceGender: wanted.gender,
+        preferenceLanguage: wanted.language,
+        preferenceRegion: wanted.region,
+      });
+      if (broadened === undefined) {
+        return { kind: 'refused', reason: 'conflict' } as const;
+      }
+      return { entitlement: broadened, kind: 'broadened' } as const;
     });
   }
 
@@ -414,29 +583,36 @@ export class WalletService {
   async sweepExpired(
     limit = livePreferenceSweepBatchSize,
   ): Promise<WalletSweepReport> {
-    if (!this.dependencies.enabled) return { examined: 0, released: 0 };
+    if (!this.dependencies.enabled) {
+      return { closed: 0, examined: 0, released: 0 };
+    }
     const { now, repository } = this.dependencies;
     const due = await repository.findExpiredEntitlements(
       repository.transactionless,
       { limit, now: now() },
     );
+    let closed = 0;
     let released = 0;
     for (const row of due) {
       const settled = await repository.transaction(async (executor) => {
         await repository.lockWallet(executor, row.userId);
-        const held = await repository.lockActiveEntitlement(
-          executor,
-          row.userId,
-        );
+        const held = await repository.lockOpenEntitlement(executor, row.userId);
         // Another worker, or the person themselves, settled it between the read
         // and the lock. The guarded update would refuse anyway; this refuses
         // before writing a posting that would then belong to nothing.
-        if (held?.id !== row.id) return false;
-        return this.release(executor, held, 'released');
+        if (held?.id !== row.id) return undefined;
+        // Which of the two closures this is depends on the state under the
+        // lock, never on what the unlocked read said. A window that was charged
+        // in the microseconds between them is closed rather than released,
+        // which is the whole of "a captured reservation can never later
+        // release".
+        const state = held.state === 'active' ? 'released' : 'expired';
+        return (await this.close(executor, held, state)) ? state : undefined;
       });
-      if (settled) released += 1;
+      if (settled === 'released') released += 1;
+      if (settled === 'expired') closed += 1;
     }
-    return { examined: due.length, released };
+    return { closed, examined: due.length, released };
   }
 
   /**
@@ -655,14 +831,39 @@ export class WalletService {
     });
   }
 
-  /** The one place a reservation goes back, whichever way the window closed. */
-  private async release(
+  /**
+   * The one place a window closes, whichever way it closed.
+   *
+   * Two paths, and which one runs is decided by the state under the lock rather
+   * than by the caller's intention. A window still holding coins gives them back
+   * in full and lands in the terminal state the caller asked for. A window that
+   * was already charged has nothing to give back and simply stops narrowing.
+   *
+   * Writing it as one method is what makes the two impossible-by-construction
+   * mistakes impossible: a caller cannot release a charged window because this
+   * never posts for one, and a caller cannot silently keep somebody's coins by
+   * closing an uncharged window, because this always posts for one.
+   */
+  private async close(
     executor: TransactionHandle,
     held: LivePreferenceEntitlementRow,
-    state: 'cancelled' | 'released',
+    state: 'cancelled' | 'expired' | 'released',
   ): Promise<boolean> {
-    const { ledger, now } = this.dependencies;
+    const { ledger, now, repository } = this.dependencies;
     const at = now();
+    if (held.state !== 'active') {
+      // Already charged. Nothing moves; the window just ends. The state is
+      // forced to `expired` whatever the caller asked for, because "the person
+      // cancelled a window they had already paid for and used" and "its time
+      // ran out" are the same financial event and `cancelled` is reserved for
+      // the one that returns coins.
+      return (
+        (await repository.expireCapturedEntitlement(executor, {
+          id: held.id,
+          now: at,
+        })) !== undefined
+      );
+    }
     const posting = await ledger.post(executor, {
       businessReference: held.id,
       businessType: 'wallet.live_preference.release',
@@ -682,15 +883,15 @@ export class WalletService {
       reason: 'release',
     } satisfies CoinPosting);
 
-    const settled = await this.dependencies.repository.settleEntitlement(
-      executor,
-      {
-        id: held.id,
-        now: at,
-        settlementTransactionId: posting.transactionId,
-        state,
-      },
-    );
+    const settled = await repository.settleEntitlement(executor, {
+      id: held.id,
+      now: at,
+      settlementTransactionId: posting.transactionId,
+      // `expired` never reaches here: it is what a *charged* window becomes,
+      // and a charged window returned above. Narrowing it out is the type
+      // system restating the branch rather than a second rule.
+      state: state === 'expired' ? 'released' : state,
+    });
     if (settled === undefined) return false;
 
     await ledger.lockBalance(executor, held.userId);
@@ -701,6 +902,91 @@ export class WalletService {
     });
     return true;
   }
+
+  /**
+   * The window in force, or nothing, with the expiry evaluated on read.
+   *
+   * The expiry is checked here rather than trusted to the sweep, and that is not
+   * belt-and-braces: a sweep that is fifteen seconds behind would otherwise
+   * mean a narrowing outliving the window somebody bought, which is a person
+   * being filtered by a preference they are no longer paying for.
+   */
+  private inForce(
+    row: LivePreferenceEntitlementRow | undefined,
+  ): ActiveLivePreference | undefined {
+    if (row === undefined) return undefined;
+    if (row.expiresAt.getTime() <= this.dependencies.now().getTime()) {
+      return undefined;
+    }
+    const selection = selectionOf(row);
+    // The database guarantees a window narrows something. This is the type
+    // system catching up with that constraint rather than a second rule.
+    if (livePreferenceActivationCoins(selection) === undefined)
+      return undefined;
+    return {
+      charged: row.state !== 'active',
+      entitlementId: row.id,
+      expiresAt: row.expiresAt,
+      ...selection,
+    };
+  }
+
+  /**
+   * The requested selection, or nothing if any part of it is unsupported.
+   *
+   * Every arm refuses rather than dropping. A preference silently ignored is
+   * the failure that makes a paid control worthless — somebody pays for
+   * "women who speak French", gets a filter that only applied half of it, and
+   * has no way to find out.
+   */
+  private async supportedSelection(
+    input: LivePreferenceSelection & { readonly userId: string },
+  ): Promise<LivePreferenceSelection | undefined> {
+    if (
+      input.gender !== undefined &&
+      !livePremiumGenderValues.includes(input.gender)
+    ) {
+      return undefined;
+    }
+    if (
+      input.region !== undefined &&
+      !new RegExp(regionCodePattern, 'u').test(input.region)
+    ) {
+      return undefined;
+    }
+    if (input.language !== undefined) {
+      if (!new RegExp(languageCodePattern, 'u').test(input.language)) {
+        return undefined;
+      }
+      // Asking for people who speak a language you do not speak is a search
+      // that means nothing, and selling it would be selling a filter the
+      // matcher would have to either honour into an empty pool or quietly drop.
+      // With no USERS to ask, it is refused rather than sold unverified.
+      const spoken = await this.dependencies.profiles?.languagesOf(
+        input.userId,
+      );
+      if (spoken?.includes(input.language) !== true) return undefined;
+    }
+    return {
+      gender: input.gender,
+      language: input.language,
+      region: input.region,
+    };
+  }
+}
+
+/** One stored window's preferences, in the shape everything else speaks. */
+function selectionOf(row: LivePreferenceEntitlementRow): Record<
+  LivePremiumPreferenceKind,
+  string | undefined
+> & {
+  readonly gender: LivePremiumGenderValue | undefined;
+} {
+  return {
+    gender: row.preferenceGender ?? undefined,
+    language: row.preferenceLanguage ?? undefined,
+    region: row.preferenceRegion ?? undefined,
+  };
 }
 
 /**

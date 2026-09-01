@@ -14,8 +14,10 @@ import {
 
 import { inList, lengthBetween, timestamptz } from '../database/columns.js';
 import {
+  languageCodePattern,
+  livePreferenceEntitlementOpenStates,
   livePreferenceEntitlementStates,
-  livePremiumPreferenceKinds,
+  livePremiumGenderValues,
   maximumWalletBusinessReferenceLength,
   regionCodePattern,
   walletAccountCategories,
@@ -23,7 +25,7 @@ import {
   walletSubjectTypes,
   walletTransactionReasons,
   type LivePreferenceEntitlementState,
-  type LivePremiumPreferenceKind,
+  type LivePremiumGenderValue,
   type WalletAccountCategory,
   type WalletDirection,
   type WalletSubjectType,
@@ -250,19 +252,30 @@ export const walletBalances = pgTable(
  *
  * It is a *commitment*, not a permission to match: every eligibility, standing,
  * block, enforcement, and RTC predicate the free matcher asks is asked
- * identically while this is active, in the same order, and any one of them
+ * identically while this is open, in the same order, and any one of them
  * refusing produces no encounter regardless of what was paid. There is
  * deliberately no column here that could be read as a grant.
  *
- * The preference itself is stored rather than referenced, because it is what
- * was bought: a person who activated a window narrowed to one region and then
- * changed their mind must not have the thing they paid for silently redefined.
+ * The preferences themselves are stored rather than referenced, because they
+ * are what was bought: a person who activated a window narrowed to one region
+ * and then changed their mind must not have the thing they paid for silently
+ * redefined. They are three independent nullable columns rather than a kind and
+ * a value, because a selection is a *conjunction* — "women, in France, who
+ * speak French" is one window and not three — and a one-column-per-kind shape
+ * is the one where the database can state which combinations are legal.
+ *
+ * **A charged window is still a window.** `captured` is an open state, not a
+ * terminal one: the coins have moved, and the narrowing runs to `expiresAt`
+ * with every further match inside it filtered and free. That is what makes this
+ * a window rather than a per-match fee, and the partial unique index below is
+ * on both open states so a second window cannot be opened underneath one that
+ * is still running.
  *
  * `reservationTransactionId` and `settlementTransactionId` are what bind this
- * row to the books. A row in a terminal state without a settlement, or an
- * active one without a reservation, is a state where the product and the ledger
- * disagree about whether somebody has been charged — so the database refuses
- * both.
+ * row to the books. A row in any state but `active` without a settlement, or an
+ * `active` one without a reservation, is a state where the product and the
+ * ledger disagree about whether somebody has been charged — so the database
+ * refuses both.
  */
 export const livePreferenceEntitlements = pgTable(
   'wallet_live_preference_entitlements',
@@ -275,10 +288,10 @@ export const livePreferenceEntitlements = pgTable(
     /** When the window closes. Evaluated on read as well as swept. */
     expiresAt: timestamptz('expires_at').notNull(),
     id: uuid('id').primaryKey(),
-    /** Which supported premium preference this window applies. */
-    preferenceKind: text('preference_kind')
-      .notNull()
-      .$type<LivePremiumPreferenceKind>(),
+    /** The declared matching category this window narrows to. */
+    preferenceGender: text('preference_gender').$type<LivePremiumGenderValue>(),
+    /** The declared profile language this window narrows to. */
+    preferenceLanguage: text('preference_language'),
     /** The declared region this window narrows to. ISO 3166-1 alpha-2. */
     preferenceRegion: text('preference_region'),
     reservationTransactionId: uuid('reservation_transaction_id').notNull(),
@@ -290,16 +303,21 @@ export const livePreferenceEntitlements = pgTable(
     userId: uuid('user_id').notNull(),
   },
   (table) => [
-    // One open window per person. Activating twice is idempotent by the
-    // database rather than by whichever check ran first, and a second
-    // activation can never be funded by coins already committed to the first.
-    uniqueIndex('wallet_live_preference_active_uk')
+    // One open window per person, counting a charged one. Activating twice is
+    // idempotent by the database rather than by whichever check ran first, a
+    // second activation can never be funded by coins already committed to the
+    // first, and — because `captured` is in here — nobody can be sold a second
+    // window while the one they already paid for is still narrowing.
+    uniqueIndex('wallet_live_preference_open_uk')
       .on(table.userId)
-      .where(sql`${table.state} = 'active'`),
-    // The sweep's query: open windows whose time is up.
+      .where(inList(table.state, livePreferenceEntitlementOpenStates)),
+    // The sweep's query: open windows whose time is up. Both open states,
+    // because a charged window still has to be closed when it ends — it moves
+    // no money, but a window that never closed would block the next activation
+    // for ever.
     index('wallet_live_preference_expiry_idx')
       .on(table.expiresAt)
-      .where(sql`${table.state} = 'active'`),
+      .where(inList(table.state, livePreferenceEntitlementOpenStates)),
     // "How many has this person activated lately", which the bound asks.
     index('wallet_live_preference_user_recency_idx').on(
       table.userId,
@@ -318,20 +336,24 @@ export const livePreferenceEntitlements = pgTable(
       'wallet_live_preference_state_check',
       inList(table.state, livePreferenceEntitlementStates),
     ),
+    // A window has to narrow something. One that narrowed nothing would be
+    // somebody charged for `Everyone`, which is free, and it is the one shape
+    // an accidentally-empty selection would take.
     check(
-      'wallet_live_preference_kind_check',
-      inList(table.preferenceKind, livePremiumPreferenceKinds),
+      'wallet_live_preference_selection_check',
+      sql`${table.preferenceGender} is not null or ${table.preferenceRegion} is not null or ${table.preferenceLanguage} is not null`,
     ),
-    // A region preference names a region, and nothing else may. The day a
-    // second preference kind exists this is what stops it inheriting a column
-    // that means something else.
     check(
-      'wallet_live_preference_region_shape_check',
-      sql`(${table.preferenceKind} = 'region') = (${table.preferenceRegion} is not null)`,
+      'wallet_live_preference_gender_check',
+      sql`${table.preferenceGender} is null or ${inList(table.preferenceGender, livePremiumGenderValues)}`,
     ),
     check(
       'wallet_live_preference_region_check',
       sql`${table.preferenceRegion} is null or ${table.preferenceRegion} ~ ${sql.raw(`'${regionCodePattern}'`)}`,
+    ),
+    check(
+      'wallet_live_preference_language_check',
+      sql`${table.preferenceLanguage} is null or ${table.preferenceLanguage} ~ ${sql.raw(`'${languageCodePattern}'`)}`,
     ),
     check('wallet_live_preference_coins_check', sql`${table.coins} > 0`),
     check(
@@ -348,12 +370,14 @@ export const livePreferenceEntitlements = pgTable(
       'wallet_live_preference_settled_shape_check',
       sql`(${table.settledAt} is null) = (${table.settlementTransactionId} is null)`,
     ),
-    // Only a captured window names an encounter, and a captured one must. A
+    // Only a charged window names an encounter, and a charged one must. A
     // released window naming one would be a record of somebody being charged
-    // for a match they were not charged for.
+    // for a match they were not charged for. `expired` is here because it is
+    // what a charged window becomes when its time is up, and the encounter it
+    // was charged for does not stop having happened.
     check(
       'wallet_live_preference_encounter_shape_check',
-      sql`(${table.state} = 'captured') = (${table.encounterId} is not null)`,
+      sql`(${table.state} in ('captured', 'expired')) = (${table.encounterId} is not null)`,
     ),
   ],
 );

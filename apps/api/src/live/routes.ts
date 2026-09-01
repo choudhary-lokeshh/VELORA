@@ -574,8 +574,17 @@ function stateBody(view: LiveStateView): unknown {
       ? {}
       : {
           premium: {
+            charged: view.premium.charged,
             expiresAt: view.premium.expiresAt.toISOString(),
-            region: view.premium.region,
+            ...(view.premium.gender === undefined
+              ? {}
+              : { gender: view.premium.gender }),
+            ...(view.premium.language === undefined
+              ? {}
+              : { language: view.premium.language }),
+            ...(view.premium.region === undefined
+              ? {}
+              : { region: view.premium.region }),
           },
         }),
     ...(view.searchingSince === undefined

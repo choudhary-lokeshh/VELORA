@@ -16,7 +16,7 @@ import {
 import { CoinLedger } from './ledger.js';
 import { WalletRepository } from './repository.js';
 import { WalletRoutes } from './routes.js';
-import { WalletService } from './service.js';
+import { WalletService, type WalletProfilePort } from './service.js';
 
 export interface WalletRuntime {
   /** How Android acquires coins in this environment. */
@@ -75,6 +75,15 @@ export function createWalletRuntime(input: {
   readonly consumerContext?: ConsumerContextResolver;
   readonly database: DatabaseHandle;
   readonly now?: () => Date;
+  /**
+   * USERS' answer to what the *buyer* says they speak.
+   *
+   * The one cross-domain read this service makes, and it is about the caller
+   * rather than about anybody they might meet. Absent in a worker composition,
+   * which sells nothing; a language preference is then refused rather than sold
+   * without being checked.
+   */
+  readonly profiles?: WalletProfilePort;
 }): WalletRuntime {
   const now = input.now ?? (() => new Date());
   const repository = new WalletRepository(input.database);
@@ -88,6 +97,7 @@ export function createWalletRuntime(input: {
     enabled: input.config.WALLET_COIN_LEDGER === enabledCoinLedger,
     ledger,
     now,
+    ...(input.profiles === undefined ? {} : { profiles: input.profiles }),
     repository,
   });
   return {

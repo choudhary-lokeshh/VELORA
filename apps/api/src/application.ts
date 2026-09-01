@@ -541,6 +541,10 @@ export function createApplication(
         config,
         consumerContext: users.consumerContext,
         database: ownedDatabase.database,
+        // Only so a language preference can be refused before it is sold. It
+        // asks about the buyer and about nobody else, and it is the whole of
+        // what WALLET may read from USERS.
+        profiles: users.directory,
       });
     const walletService = wallet.service;
     live =
@@ -1672,6 +1676,14 @@ export function createApplication(
       admitted(
         walletRoute(async (routes, input) =>
           routes.activateLivePreference(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.walletLivePreferenceBroadening,
+      admitted(
+        walletRoute(async (routes, input) =>
+          routes.broadenLivePreference(input),
         ),
       ),
     )

@@ -15,6 +15,7 @@ import type {
   LiveInvitationResponse,
   LiveMedium,
   LiveMessageList,
+  LivePreferenceSelection,
   LivePreferences,
   LiveReaction,
   LiveSimulationScenario,
@@ -380,16 +381,33 @@ export interface ConsumerApi {
    */
   wallet(signal?: AbortSignal): Promise<ApiResult<WalletState>>;
   /**
-   * Opens a paid, bounded window in which the matcher narrows to one declared
-   * region.
+   * Opens a paid, bounded window in which the matcher narrows to the declared
+   * preferences named.
    *
-   * It names a region and nothing else: what it costs and how long it lasts are
-   * server constants. It narrows a search and authorizes nothing — every
-   * eligibility, standing, block, and enforcement predicate is asked identically
-   * whether or not anybody paid.
+   * It names declared preferences and nothing else: what it costs and how long
+   * it lasts are server facts. It narrows a search and authorizes nothing —
+   * every eligibility, standing, block, and enforcement predicate is asked
+   * identically whether or not anybody paid.
    */
-  activateLivePreference(region: string): Promise<ApiResult<WalletState>>;
-  /** Closes the open window and returns the coins it held, in full. */
+  activateLivePreference(
+    selection: LivePreferenceSelection,
+  ): Promise<ApiResult<WalletState>>;
+  /**
+   * Widens the window in force, at no charge and with no refund.
+   *
+   * The body is what should *remain*, so dropping a country from "women in
+   * France" is sent as the gender alone. Anything that is not strictly a
+   * widening is refused by the server rather than silently re-priced.
+   */
+  broadenLivePreference(
+    selection: LivePreferenceSelection,
+  ): Promise<ApiResult<WalletState>>;
+  /**
+   * Closes the window in force.
+   *
+   * A window that never found anybody returns its coins in full; one that
+   * already found somebody was charged then and returns nothing now.
+   */
   cancelLivePreference(): Promise<ApiResult<WalletState>>;
   /**
    * Redeems an Android store purchase the server verifies with the store.
@@ -830,11 +848,19 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     wallet: async (signal) =>
       attempt(async () => api.GET('/v1/wallet', await reading(signal))),
 
-    activateLivePreference: async (region) =>
+    activateLivePreference: async (selection) =>
       attempt(async () =>
         api.POST('/v1/wallet/live-preference', {
           ...(await writing()),
-          body: { region },
+          body: selection,
+        }),
+      ),
+
+    broadenLivePreference: async (selection) =>
+      attempt(async () =>
+        api.POST('/v1/wallet/live-preference/broadening', {
+          ...(await writing()),
+          body: selection,
         }),
       ),
 

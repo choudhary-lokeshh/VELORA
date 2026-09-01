@@ -13,6 +13,7 @@ import {
   androidCoinPurchaseRequestSchema,
   coinAmountSchema,
   coinGrantRequestSchema,
+  matchableGenderValues,
   productErrorCodes,
   walletStateResponseSchema,
 } from '@velora/validation';
@@ -24,15 +25,22 @@ import {
   localTestCoinProductCoins,
   type CoinAcquisitionPort,
 } from '../../src/wallet/acquisition.js';
+import * as usersPolicy from '../../src/users/profile-policy.js';
 import {
   coinPackCoins,
   coinPackIdentifiers,
 } from '../../src/wallet/catalogue.js';
 import { CoinLedger, CoinLedgerError } from '../../src/wallet/ledger.js';
 import {
-  livePreferenceEntitlementCoins,
+  languageCodePattern,
+  livePreferenceActivationCoins,
   livePreferenceEntitlementDurationMilliseconds,
+  livePreferenceEntitlementOpenStates,
+  livePreferenceEntitlementReservedState,
+  livePreferenceEntitlementStates,
   livePreferenceSweepIntervalMilliseconds,
+  livePremiumGenderValues,
+  livePremiumPreferenceCatalogue,
   livePremiumPreferenceKinds,
   maximumWalletOperationCoins,
   regionCodePattern,
@@ -230,8 +238,7 @@ describe('the ledger refuses a posting that could not mean anything', () => {
 });
 
 describe('what a paid preference costs is a server constant', () => {
-  it('publishes one price, one duration, and one supported attribute', () => {
-    expect(Number(livePreferenceEntitlementCoins)).toBeGreaterThan(0);
+  it('prices every supported preference, and every one is a declared field', () => {
     expect(livePreferenceEntitlementDurationMilliseconds).toBeGreaterThan(0);
     // The sweep that returns an unspent reservation runs far more often than
     // the window it settles, so coins are never held long after they stop
@@ -239,26 +246,70 @@ describe('what a paid preference costs is a server constant', () => {
     expect(livePreferenceSweepIntervalMilliseconds).toBeLessThan(
       livePreferenceEntitlementDurationMilliseconds,
     );
-    // One supported premium attribute, and it is a declared profile field.
-    // A gender preference has no column anywhere in USERS and is an owner
-    // decision rather than an implementation gap; this list is what makes that
-    // checkable rather than asserted in prose.
-    expect([...livePremiumPreferenceKinds]).toEqual(['region']);
+    // Three, and each is something a person set about themselves. Nothing here
+    // is computed, and the list is what makes that checkable rather than
+    // asserted in prose.
+    expect([...livePremiumPreferenceKinds]).toEqual([
+      'gender',
+      'region',
+      'language',
+    ]);
+    // Every published kind has a price. A kind the catalogue does not price
+    // would be a control a surface could render and the server could not sell.
+    for (const kind of livePremiumPreferenceKinds) {
+      expect(
+        Number(livePremiumPreferenceCatalogue[kind].coins),
+      ).toBeGreaterThan(0);
+    }
   });
 
-  it('accepts only a declared two-letter region, and nothing sensitive', () => {
+  it('charges a selection as the sum of what is in it, and nothing for nothing', () => {
+    const gender = livePremiumPreferenceCatalogue.gender.coins;
+    const region = livePremiumPreferenceCatalogue.region.coins;
+    const language = livePremiumPreferenceCatalogue.language.coins;
+    expect(livePreferenceActivationCoins({ gender: 'woman' })).toBe(gender);
     expect(
-      activateLivePreferenceRequestSchema.safeParse({ region: 'ES' }).success,
-    ).toBe(true);
+      livePreferenceActivationCoins({ gender: 'woman', region: 'FR' }),
+    ).toBe(gender + region);
     expect(
-      activateLivePreferenceRequestSchema.safeParse({ region: 'es' }).success,
-    ).toBe(false);
+      livePreferenceActivationCoins({
+        gender: 'woman',
+        language: 'fr',
+        region: 'FR',
+      }),
+    ).toBe(gender + region + language);
+    // `Everyone` is free, so a window that narrows nothing is not a thing this
+    // product can sell — and the price of one is not zero, it is absent.
+    expect(livePreferenceActivationCoins({})).toBeUndefined();
+  });
+
+  it('accepts only declared preferences, and nothing sensitive', () => {
+    for (const supported of [
+      { region: 'ES' },
+      { gender: 'woman' },
+      { language: 'fr' },
+      { gender: 'non_binary', language: 'fr', region: 'FR' },
+    ]) {
+      expect(
+        activateLivePreferenceRequestSchema.safeParse(supported).success,
+      ).toBe(true);
+    }
     // The shape cannot express any of these, which is the point: a contract
     // that could hold one is a contract somebody eventually fills in.
     for (const smuggled of [
-      { gender: 'women', region: 'ES' },
+      // An empty selection would be somebody charged for `Everyone`, which is
+      // free.
+      {},
+      { region: 'es' },
+      { gender: 'women' },
+      // Declining to say is not a category anybody may filter for. Its absence
+      // from this enum is what stops "prefer not to say" becoming an answer
+      // with consequences.
+      { gender: 'undisclosed' },
       { age: 25, region: 'ES' },
       { region: 'ES', regions: ['ES', 'FR'] },
+      { orientation: 'straight' },
+      { nearestTo: 'ES' },
     ]) {
       expect(
         activateLivePreferenceRequestSchema.safeParse(smuggled).success,
@@ -266,6 +317,30 @@ describe('what a paid preference costs is a server constant', () => {
     }
     expect(new RegExp(regionCodePattern, 'u').test('ES')).toBe(true);
     expect(new RegExp(regionCodePattern, 'u').test('ESP')).toBe(false);
+    expect(new RegExp(languageCodePattern, 'u').test('fr')).toBe(true);
+    expect(new RegExp(languageCodePattern, 'u').test('FR')).toBe(false);
+  });
+
+  it('keeps a charged window open and tells released and expired apart', () => {
+    // Both open states, because a charged window is still a window: the
+    // narrowing runs to expiry and every further match inside it is free.
+    expect([...livePreferenceEntitlementOpenStates]).toEqual([
+      'active',
+      'captured',
+    ]);
+    // Only one of them still holds coins, which is what makes "charged once"
+    // enforceable rather than conventional.
+    expect(livePreferenceEntitlementReservedState).toBe('active');
+    // `released` is a window nobody was charged for; `expired` is one somebody
+    // paid for and used. Collapsing them would make "how often does a paid
+    // window find nobody" unanswerable.
+    expect([...livePreferenceEntitlementStates]).toEqual([
+      'active',
+      'captured',
+      'expired',
+      'released',
+      'cancelled',
+    ]);
   });
 
   it('gives a client no way to say what anything is worth', () => {
@@ -298,7 +373,10 @@ describe('what a paid preference costs is a server constant', () => {
       acquisition: { android: 'unavailable', web: 'unavailable' },
       balance: { available: '75', reserved: '25' },
       enabled: true,
-      livePreferenceOffer: { coins: '25', durationSeconds: 900 },
+      livePreferenceCatalogue: {
+        durationSeconds: 900,
+        preferences: [{ coins: '25', kind: 'gender' }],
+      },
     });
     expect(parsed.success).toBe(true);
     // No count of matching people, no estimated wait, no probability: none of
@@ -307,7 +385,10 @@ describe('what a paid preference costs is a server constant', () => {
       walletStateResponseSchema.safeParse({
         acquisition: { android: 'unavailable', web: 'unavailable' },
         enabled: true,
-        livePreferenceOffer: { coins: '25', durationSeconds: 900 },
+        livePreferenceCatalogue: {
+          durationSeconds: 900,
+          preferences: [{ coins: '25', kind: 'gender' }],
+        },
         matchingNow: 12,
       }).success,
     ).toBe(false);
@@ -315,6 +396,22 @@ describe('what a paid preference costs is a server constant', () => {
 
   it('has a refusal that says only that the balance will not cover it', () => {
     expect(productErrorCodes.insufficientFunds).toBe('INSUFFICIENT_FUNDS');
+  });
+
+  it('narrows to the same categories USERS collects, restated once', () => {
+    // Three lists, one vocabulary. WALLET restates it because a schema module
+    // cannot import the contract package; USERS restates it for the same
+    // reason. A difference between any two of them would mean a preference
+    // somebody could buy and nobody could satisfy — or, far worse, one that
+    // silently matched the wrong people.
+    expect([...livePremiumGenderValues]).toEqual([...matchableGenderValues]);
+    expect([...livePremiumGenderValues]).toEqual([
+      ...usersPolicy.matchableGenderValues,
+    ]);
+    // And every one of them is something a person can actually declare.
+    for (const value of livePremiumGenderValues) {
+      expect(usersPolicy.matchingGenderValues).toContain(value);
+    }
   });
 });
 

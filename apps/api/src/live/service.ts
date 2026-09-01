@@ -102,7 +102,15 @@ export interface LiveStateView {
    * they meet: nobody is told why they were selected.
    */
   readonly premium:
-    { readonly expiresAt: Date; readonly region: string } | undefined;
+    | {
+        /** Whether the coins have already been charged for this window. */
+        readonly charged: boolean;
+        readonly expiresAt: Date;
+        readonly gender: string | undefined;
+        readonly language: string | undefined;
+        readonly region: string | undefined;
+      }
+    | undefined;
   readonly searchingSince: Date | undefined;
   readonly simulated: boolean;
   readonly state: 'idle' | 'searching' | 'matched' | 'ended';
@@ -274,10 +282,18 @@ export interface LiveConversationPort {
 export interface LiveDirectoryPort {
   /** The caller's own languages, which bound what they may narrow to. */
   languagesOf(userId: string): Promise<readonly string[]>;
-  /** Which of these people satisfy the narrowing a search asked for. */
+  /**
+   * Which of these people satisfy the narrowing a search asked for.
+   *
+   * Every criterion is conjunctive, and the answer is membership over
+   * identifiers the caller already holds — so applying a preference never
+   * becomes a way to read where somebody lives, what they speak, or what they
+   * have declared about themselves.
+   */
   matchingAmong(input: {
     /** The matcher's own connection. A second one would deadlock the pool. */
     readonly executor: Executor;
+    readonly gender?: string | undefined;
     readonly ids: readonly string[];
     readonly language: string | undefined;
     readonly region: string | undefined;
@@ -374,11 +390,54 @@ export interface LivePremiumPreferencePort {
     userId: string,
   ): Promise<
     | {
+        /**
+         * Whether the window has already been charged.
+         *
+         * Carried so the matcher can skip a capture it knows will be refused,
+         * and for nothing else. A charged window narrows exactly as an
+         * uncharged one does: this is not a permission and there is no branch
+         * anywhere in this domain where it makes a match more likely.
+         */
+        readonly charged: boolean;
         readonly entitlementId: string;
         readonly expiresAt: Date;
-        readonly region: string;
+        /** A declared matching category. Never `undisclosed`, never inferred. */
+        readonly gender?: string | undefined;
+        /** A declared profile language the buyer also speaks. */
+        readonly language?: string | undefined;
+        /** A declared ISO 3166-1 alpha-2 region. */
+        readonly region?: string | undefined;
       }
     | undefined
+  >;
+  /**
+   * The windows held by any of these candidates, keyed by person.
+   *
+   * Asked about the bounded candidate list this matcher is already considering,
+   * and about nobody else. It exists because a narrowing that only applied to
+   * the buyer's own search would be a filter that worked in one direction: the
+   * person who paid to meet only women would still be handed a man the instant
+   * his search picked them.
+   *
+   * It carries no price and no balance. What comes back is the predicate and
+   * the identity of the window, which is exactly what is needed to decide
+   * whether this pair may be put together and whose window to charge.
+   */
+  activeLivePreferencesAmong(
+    executor: Executor,
+    userIds: readonly string[],
+  ): Promise<
+    ReadonlyMap<
+      string,
+      {
+        readonly charged: boolean;
+        readonly entitlementId: string;
+        readonly expiresAt: Date;
+        readonly gender?: string | undefined;
+        readonly language?: string | undefined;
+        readonly region?: string | undefined;
+      }
+    >
   >;
   /**
    * Charges the window, because it produced the encounter it was bought for.
@@ -1231,7 +1290,15 @@ export class LiveService {
       actor,
       participation,
       pool,
-      premium?.region,
+      premium,
+    );
+    // Who the *paid* narrowing actually admitted, kept as its own set rather
+    // than inferred later. It is what decides whether anybody is charged, and
+    // deriving that from "a window was open and this was not an agreed
+    // candidate" would be one refactor away from charging for a match the
+    // filter had nothing to do with.
+    const premiumNarrowed = new Set(
+      premium === undefined ? [] : narrowed.map((row) => row.userId),
     );
     const candidates = [
       ...agreed,
@@ -1240,6 +1307,16 @@ export class LiveService {
     if (candidates.length === 0) return undefined;
 
     const candidateIds = candidates.map((row) => row.userId);
+    // The other half of a paid narrowing: whatever *they* bought has to hold
+    // too. A filter that only applied to the buyer's own search would be a
+    // filter that worked in one direction — somebody who paid to meet only
+    // women would still be handed a man the moment his search picked them, and
+    // the thing they paid for would quietly be worth nothing.
+    const counterpartWindows = await this.satisfiedCounterparts(
+      executor,
+      actor,
+      candidateIds,
+    );
     const blocked = await this.dependencies.safety.blockedAmong({
       candidateIds,
       executor,
@@ -1270,6 +1347,15 @@ export class LiveService {
       ) {
         continue;
       }
+      // Their window, if they hold one. Skipped for a pair who asked to meet,
+      // exactly as this person's own narrowing is: two people who named each
+      // other have already answered the question a preference asks, and a
+      // filter that then kept them apart would be the product overruling both
+      // of them.
+      const counterpart = agreedIds.has(candidate.userId)
+        ? undefined
+        : counterpartWindows.get(candidate.userId);
+      if (counterpart?.satisfied === false) continue;
 
       await lockPair(executor, actor.id, candidate.userId);
       if (
@@ -1344,20 +1430,44 @@ export class LiveService {
       // The window produced what it was bought for, so it is charged — in this
       // transaction, with the encounter, or not at all.
       //
-      // Only when the narrowing was actually applied. A pair who had already
-      // agreed to meet bypasses the narrowed pool by design, and charging for a
-      // match the filter did not make would be charging for the filter not
-      // being used. That is why the condition is `narrowed`, not "a window was
-      // open".
+      // Three conditions, and each removes a way of charging for something that
+      // did not happen. The candidate has to have come through the *paid*
+      // narrowing, so a pair who had already agreed to meet — who bypass it by
+      // design — is never a charge for a filter that was not used. The window
+      // has to be uncharged, so the second and every later match inside the
+      // fifteen minutes is free. And it is inside the allocation's own
+      // transaction, so a charge without an encounter and an encounter without
+      // a charge are both unreachable rather than unlikely.
+      //
+      // Nothing about the provider is consulted. LiveKit carries a match; it
+      // does not decide whether one was made, and a session that fails to open
+      // afterwards ends the encounter without unwinding the charge — the
+      // narrowing did find somebody, which is what was sold.
       if (
         premium !== undefined &&
+        !premium.charged &&
         this.dependencies.premium !== undefined &&
-        !agreedIds.has(candidate.userId)
+        premiumNarrowed.has(candidate.userId)
       ) {
         await this.dependencies.premium.captureLivePreference(executor, {
           encounterId: encounter.id,
           entitlementId: premium.entitlementId,
           userId: actor.id,
+        });
+      }
+      // And theirs, on exactly the same terms. Their window did the same work —
+      // it is why this pair is allowed at all — and charging only the person
+      // who happened to press the button last would make what somebody pays
+      // depend on whose poll arrived first.
+      if (
+        counterpart !== undefined &&
+        !counterpart.charged &&
+        this.dependencies.premium !== undefined
+      ) {
+        await this.dependencies.premium.captureLivePreference(executor, {
+          encounterId: encounter.id,
+          entitlementId: counterpart.entitlementId,
+          userId: candidate.userId,
         });
       }
       return encounter.id;
@@ -1491,6 +1601,74 @@ export class LiveService {
   }
 
   /**
+   * Which candidates hold a paid window, and whether this person satisfies it.
+   *
+   * Two round trips at most in the common case and none at all when nobody in
+   * the pool is paying: one read of the candidates' windows, then one
+   * membership question per *distinct* selection among them. Distinct rather
+   * than per candidate, because a pool where eight people all bought "women in
+   * France" is one question, not eight.
+   *
+   * The question is asked of USERS as a membership test over this person's own
+   * identifier, which is the whole privacy design. LIVE never learns what
+   * anybody declared — not the candidates' and not the actor's own. It learns
+   * one bit per window: whether this pair is allowed. Reading the actor's
+   * attributes here instead would have put a special-category value into a
+   * domain that has no use for one.
+   */
+  private async satisfiedCounterparts(
+    executor: TransactionHandle,
+    actor: UserAccountRow,
+    candidateIds: readonly string[],
+  ): Promise<
+    ReadonlyMap<
+      string,
+      {
+        readonly charged: boolean;
+        readonly entitlementId: string;
+        readonly satisfied: boolean;
+      }
+    >
+  > {
+    const answers = new Map<
+      string,
+      {
+        readonly charged: boolean;
+        readonly entitlementId: string;
+        readonly satisfied: boolean;
+      }
+    >();
+    const windows = await this.dependencies.premium?.activeLivePreferencesAmong(
+      executor,
+      candidateIds,
+    );
+    if (windows === undefined || windows.size === 0) return answers;
+
+    const verdicts = new Map<string, boolean>();
+    for (const [candidateId, window] of windows) {
+      const key = `${window.gender ?? ''}|${window.language ?? ''}|${window.region ?? ''}`;
+      let satisfied = verdicts.get(key);
+      if (satisfied === undefined) {
+        const matching = await this.dependencies.directory.matchingAmong({
+          executor,
+          gender: window.gender,
+          ids: [actor.id],
+          language: window.language,
+          region: window.region,
+        });
+        satisfied = matching.has(actor.id);
+        verdicts.set(key, satisfied);
+      }
+      answers.set(candidateId, {
+        charged: window.charged,
+        entitlementId: window.entitlementId,
+        satisfied,
+      });
+    }
+    return answers;
+  }
+
+  /**
    * The subset of the pool this person asked the matcher to consider.
    *
    * Both criteria are asked of USERS, on the matcher's own connection, and both
@@ -1508,28 +1686,44 @@ export class LiveService {
     actor: UserAccountRow,
     participation: LiveParticipationRow,
     pool: readonly LiveParticipationRow[],
-    premiumRegion?: string,
+    premium?: {
+      readonly gender?: string | undefined;
+      readonly language?: string | undefined;
+      readonly region?: string | undefined;
+    },
   ): Promise<readonly LiveParticipationRow[]> {
-    const language = participation.preferredLanguage ?? undefined;
     // A bought window names the region. Otherwise `same` means the region this
     // account is in — and somebody whose account has no region cannot ask for
     // people in it, so the honest reading of that is "no narrowing" rather than
     // "nobody": a person with no region set would otherwise be silently unable
     // to match at all.
     //
-    // The paid narrowing wins over the free one when both are present, because
-    // it is the more specific thing the person asked for and it is the one they
-    // paid for. It is still only a narrowing: it removes candidates from the
-    // pool and can never add one.
+    // The paid narrowing wins over the free one where both name the same
+    // dimension, because it is the more specific thing the person asked for and
+    // it is the one they paid for. Intersecting them instead would mean a free
+    // "people who speak Spanish" and a bought "people who speak French"
+    // producing a search for people who speak both, which is not what either
+    // control says it does. It is still only a narrowing either way: it removes
+    // candidates from the pool and can never add one.
+    const language =
+      premium?.language ?? participation.preferredLanguage ?? undefined;
     const region =
-      premiumRegion ??
+      premium?.region ??
       (participation.preferredRegion === 'same'
         ? (actor.region ?? undefined)
         : undefined);
+    const gender = premium?.gender;
     if (pool.length === 0) return pool;
-    if (language === undefined && region === undefined) return pool;
+    if (
+      gender === undefined &&
+      language === undefined &&
+      region === undefined
+    ) {
+      return pool;
+    }
     const matching = await this.dependencies.directory.matchingAmong({
       executor,
+      gender,
       ids: pool.map((row) => row.userId),
       language,
       region,
@@ -1938,7 +2132,13 @@ export class LiveService {
     const premium =
       held === undefined
         ? undefined
-        : { expiresAt: held.expiresAt, region: held.region };
+        : {
+            charged: held.charged,
+            expiresAt: held.expiresAt,
+            gender: held.gender,
+            language: held.language,
+            region: held.region,
+          };
     const preferences: LivePreferences = {
       language: participation?.preferredLanguage ?? undefined,
       region: participation?.preferredRegion ?? 'any',

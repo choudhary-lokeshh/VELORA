@@ -1,13 +1,14 @@
-import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
   Executor,
   TransactionHandle,
 } from '../database/executor.js';
+import { livePreferenceEntitlementOpenStates } from './policy.js';
 import type {
   LivePreferenceEntitlementState,
-  LivePremiumPreferenceKind,
+  LivePremiumGenderValue,
 } from './policy.js';
 import { livePreferenceEntitlements, walletAcquisitions } from './schema.js';
 
@@ -50,8 +51,9 @@ export class WalletRepository {
       readonly expiresAt: Date;
       readonly id: string;
       readonly now: Date;
-      readonly preferenceKind: LivePremiumPreferenceKind;
-      readonly preferenceRegion: string;
+      readonly preferenceGender: LivePremiumGenderValue | undefined;
+      readonly preferenceLanguage: string | undefined;
+      readonly preferenceRegion: string | undefined;
       readonly reservationTransactionId: string;
       readonly userId: string;
     },
@@ -67,8 +69,9 @@ export class WalletRepository {
         encounterId: null,
         expiresAt: input.expiresAt,
         id: input.id,
-        preferenceKind: input.preferenceKind,
-        preferenceRegion: input.preferenceRegion,
+        preferenceGender: input.preferenceGender ?? null,
+        preferenceLanguage: input.preferenceLanguage ?? null,
+        preferenceRegion: input.preferenceRegion ?? null,
         reservationTransactionId: input.reservationTransactionId,
         settledAt: null,
         settlementTransactionId: null,
@@ -84,11 +87,15 @@ export class WalletRepository {
   /**
    * The window this person currently holds, if any, locked for update.
    *
+   * Both open states, because a charged window is still a window: cancelling
+   * one, broadening one, and sweeping one all have to see it, and only the
+   * capture path cares that it has not been charged yet.
+   *
    * Locked rather than read, because every caller of this is about to decide
    * whether to settle it — and two callers deciding that at once is exactly the
    * race that would capture and release the same reservation.
    */
-  async lockActiveEntitlement(
+  async lockOpenEntitlement(
     executor: TransactionHandle,
     userId: string,
   ): Promise<LivePreferenceEntitlementRow | undefined> {
@@ -98,7 +105,10 @@ export class WalletRepository {
       .where(
         and(
           eq(livePreferenceEntitlements.userId, userId),
-          eq(livePreferenceEntitlements.state, 'active'),
+          inArray(
+            livePreferenceEntitlements.state,
+            livePreferenceEntitlementOpenStates,
+          ),
         ),
       )
       .for('update')
@@ -106,8 +116,36 @@ export class WalletRepository {
     return rows[0];
   }
 
+  /**
+   * The open windows held by any of these people, in one query.
+   *
+   * The matcher's own question, and it is asked about a candidate list the
+   * caller already holds rather than about the population — so this can never
+   * become a way to find out who is paying for what. One query for the batch,
+   * because the alternative is one per candidate inside a transaction that is
+   * already holding a pair lock.
+   */
+  async findOpenEntitlementsAmong(
+    executor: Executor,
+    userIds: readonly string[],
+  ): Promise<readonly LivePreferenceEntitlementRow[]> {
+    if (userIds.length === 0) return [];
+    return executor
+      .select()
+      .from(livePreferenceEntitlements)
+      .where(
+        and(
+          inArray(livePreferenceEntitlements.userId, [...userIds]),
+          inArray(
+            livePreferenceEntitlements.state,
+            livePreferenceEntitlementOpenStates,
+          ),
+        ),
+      );
+  }
+
   /** The same window, read without a lock, for a surface that only renders it. */
-  async findActiveEntitlement(
+  async findOpenEntitlement(
     executor: Executor,
     userId: string,
   ): Promise<LivePreferenceEntitlementRow | undefined> {
@@ -117,10 +155,78 @@ export class WalletRepository {
       .where(
         and(
           eq(livePreferenceEntitlements.userId, userId),
-          eq(livePreferenceEntitlements.state, 'active'),
+          inArray(
+            livePreferenceEntitlements.state,
+            livePreferenceEntitlementOpenStates,
+          ),
         ),
       )
       .limit(1);
+    return rows[0];
+  }
+
+  /**
+   * Drops preferences from a window that is already running.
+   *
+   * Broadening only, and the service is what enforces that; this writes what it
+   * was given. It never touches `coins`, `state`, or either settlement column,
+   * because widening a search changes what the window does and not what was
+   * paid for it — and it restates the open states in the predicate so a window
+   * that closed under the caller is not quietly amended after the fact.
+   */
+  async broadenEntitlement(
+    executor: TransactionHandle,
+    input: {
+      readonly id: string;
+      readonly now: Date;
+      readonly preferenceGender: LivePremiumGenderValue | undefined;
+      readonly preferenceLanguage: string | undefined;
+      readonly preferenceRegion: string | undefined;
+    },
+  ): Promise<LivePreferenceEntitlementRow | undefined> {
+    const rows = await executor
+      .update(livePreferenceEntitlements)
+      .set({
+        preferenceGender: input.preferenceGender ?? null,
+        preferenceLanguage: input.preferenceLanguage ?? null,
+        preferenceRegion: input.preferenceRegion ?? null,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(livePreferenceEntitlements.id, input.id),
+          inArray(
+            livePreferenceEntitlements.state,
+            livePreferenceEntitlementOpenStates,
+          ),
+        ),
+      )
+      .returning();
+    return rows[0];
+  }
+
+  /**
+   * Closes a charged window whose time is up.
+   *
+   * No posting and no settlement columns: the money moved at capture, and this
+   * only stops the narrowing and frees the person to open another. The `where`
+   * clause restates `captured`, so it can never touch a window that is still
+   * holding coins.
+   */
+  async expireCapturedEntitlement(
+    executor: TransactionHandle,
+    input: { readonly id: string; readonly now: Date },
+  ): Promise<LivePreferenceEntitlementRow | undefined> {
+    const rows = await executor
+      .update(livePreferenceEntitlements)
+      .set({ state: 'expired', updatedAt: input.now })
+      .where(
+        and(
+          eq(livePreferenceEntitlements.id, input.id),
+          eq(livePreferenceEntitlements.state, 'captured'),
+        ),
+      )
+      .returning();
     return rows[0];
   }
 
@@ -137,11 +243,15 @@ export class WalletRepository {
   }
 
   /**
-   * Settles one window, once.
+   * Settles one window's coins, once.
    *
    * The `where` clause restates `active`, so a second settlement of the same
-   * window changes nothing and returns nothing — which is what makes the sweep
-   * and a person's own cancellation safe to race.
+   * window changes nothing and returns nothing — which is what makes the sweep,
+   * a capture, and a person's own cancellation safe to race. It is the single
+   * gate through which coins may leave the reserved position, and it is why
+   * "captured can never later release" and "released can never later capture"
+   * are properties of one `update` rather than of an ordering somebody has to
+   * maintain.
    */
   async settleEntitlement(
     executor: TransactionHandle,
@@ -150,7 +260,10 @@ export class WalletRepository {
       readonly id: string;
       readonly now: Date;
       readonly settlementTransactionId: string;
-      readonly state: Exclude<LivePreferenceEntitlementState, 'active'>;
+      readonly state: Exclude<
+        LivePreferenceEntitlementState,
+        'active' | 'expired'
+      >;
     },
   ): Promise<LivePreferenceEntitlementRow | undefined> {
     const rows = await executor
@@ -189,7 +302,10 @@ export class WalletRepository {
       .from(livePreferenceEntitlements)
       .where(
         and(
-          eq(livePreferenceEntitlements.state, 'active'),
+          inArray(
+            livePreferenceEntitlements.state,
+            livePreferenceEntitlementOpenStates,
+          ),
           lte(livePreferenceEntitlements.expiresAt, input.now),
         ),
       )

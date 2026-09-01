@@ -940,16 +940,25 @@ export function createWorkerComposition(input: {
    *
    * Shorter than the window it settles by design: the gap between "this stopped
    * being useful" and "these coins are spendable again" should be seconds, not
-   * minutes. It reports what it released so an operator can see it working
-   * rather than inferring it from an absence of complaints.
+   * minutes. It reports what it released and what it closed so an operator can
+   * see it working rather than inferring it from an absence of complaints —
+   * and so the two can be told apart, because a release returned coins to
+   * somebody who found nobody and a close ended a window that had already been
+   * paid for and used.
+   *
+   * Counts only. Naming the people would put somebody's spending in a log line.
    */
   const livePreferenceSweep = new Poller({
     cycle: async () =>
       admit(async () => {
         const swept = await wallet.service.sweepExpired();
-        if (swept.released === 0) return;
+        if (swept.closed === 0 && swept.released === 0) return;
         input.logger.info(
-          { examined: swept.examined, released: swept.released },
+          {
+            closed: swept.closed,
+            examined: swept.examined,
+            released: swept.released,
+          },
           'live preference sweep cycle',
         );
       }),

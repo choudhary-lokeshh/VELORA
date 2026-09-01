@@ -166,6 +166,16 @@ export type LivePremiumNarrowing = NonNullable<LiveState['premium']>;
  */
 export type WalletState = JsonBody<'/v1/wallet', 'get', 200>;
 export type CoinBalance = NonNullable<WalletState['balance']>;
+/**
+ * One selection of premium preferences, as every wallet call carries it.
+ *
+ * Taken from the activation request rather than declared here, so a preference
+ * the server withdraws stops compiling in every surface that offered it.
+ */
+export type LivePreferenceSelection = RequestBody<
+  '/v1/wallet/live-preference',
+  'post'
+>;
 export type LivePreferenceEntitlement = NonNullable<
   WalletState['livePreference']
 >;

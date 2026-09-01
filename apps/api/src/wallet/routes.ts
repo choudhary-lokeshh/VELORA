@@ -1,6 +1,7 @@
 import {
   activateLivePreferenceRequestSchema,
   androidCoinPurchaseRequestSchema,
+  broadenLivePreferenceRequestSchema,
   coinGrantRequestSchema,
   productErrorCodes,
   walletStateResponseSchema,
@@ -19,8 +20,9 @@ import {
 } from '../users/context.js';
 import type { CoinAcquisitionPort } from './acquisition.js';
 import {
-  livePreferenceEntitlementCoins,
   livePreferenceEntitlementDurationMilliseconds,
+  livePremiumPreferenceCatalogue,
+  livePremiumPreferenceKinds,
 } from './policy.js';
 import type { WalletService, WalletRefusal } from './service.js';
 
@@ -77,10 +79,38 @@ export class WalletRoutes {
     if (!parsed.ok) return this.invalid(input);
 
     const outcome = await this.dependencies.wallet.activateLivePreference({
-      region: parsed.value.region,
+      ...parsed.value,
       // From the authenticated principal and never from the body, which is what
       // makes "nobody can spend somebody else's coins" a property of the code
       // rather than of this handler.
+      userId: resolved.context.account.id,
+    });
+    if (outcome.kind === 'refused') {
+      return this.refusal(input, outcome.reason);
+    }
+    return this.state(resolved.context.account.id);
+  }
+
+  /**
+   * Widens a window that is already running, at no charge.
+   *
+   * A separate operation from activation rather than an "update", because the
+   * two have opposite financial consequences and a single endpoint that
+   * sometimes charged would be one whose cost depended on state a client cannot
+   * see. Anything that is not strictly a widening is refused here and the
+   * surface offers the honest alternative.
+   */
+  async broadenLivePreference(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(
+      broadenLivePreferenceRequestSchema,
+      input.body,
+    );
+    if (!parsed.ok) return this.invalid(input);
+
+    const outcome = await this.dependencies.wallet.broadenLivePreference({
+      ...parsed.value,
       userId: resolved.context.account.id,
     });
     if (outcome.kind === 'refused') {
@@ -242,19 +272,29 @@ export class WalletRoutes {
           ? {}
           : {
               livePreference: {
+                charged: held.charged,
                 coins: held.coins.toString(),
                 expiresAt: held.expiresAt.toISOString(),
+                ...(held.gender === undefined ? {} : { gender: held.gender }),
                 id: held.entitlementId,
-                region: held.region,
+                ...(held.language === undefined
+                  ? {}
+                  : { language: held.language }),
+                ...(held.region === undefined ? {} : { region: held.region }),
               },
             }),
-        // Published from the same constants the service charges from, so a
-        // surface can never render a price that is not the price.
-        livePreferenceOffer: {
-          coins: livePreferenceEntitlementCoins.toString(),
+        // Published from the same table the service charges from, so a surface
+        // can never render a price that is not the price. The order is the
+        // catalogue's own, so two clients cannot disagree about it without one
+        // of them ignoring this answer.
+        livePreferenceCatalogue: {
           durationSeconds: Math.floor(
             livePreferenceEntitlementDurationMilliseconds / 1000,
           ),
+          preferences: livePremiumPreferenceKinds.map((kind) => ({
+            coins: livePremiumPreferenceCatalogue[kind].coins.toString(),
+            kind,
+          })),
         },
       }),
       status: 200,

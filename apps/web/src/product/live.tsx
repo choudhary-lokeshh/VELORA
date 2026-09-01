@@ -45,7 +45,12 @@ import {
 } from '../design/primitives';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { useLiveMedia, type LiveMediaState } from './live-media';
-import { PremiumPreference, useWallet, type WalletView } from './live-premium';
+import {
+  describeSelection,
+  PremiumPreference,
+  useWallet,
+  type WalletView,
+} from './live-premium';
 import { useLiveTransport, type LiveTransport } from './live-transport';
 import { useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
@@ -811,7 +816,7 @@ function PreferenceControls({
         </button>
       ) : null}
 
-      <PremiumPreference wallet={wallet} />
+      <PremiumPreference languageOptions={languageOptions} wallet={wallet} />
     </div>
   );
 }
@@ -1712,9 +1717,7 @@ function SearchingPane({
         */}
         {premium === undefined
           ? 'VELORA is looking across everybody here, except anybody you have just met.'
-          : `VELORA is looking in ${regionName(
-              premium.region,
-            )} only, except anybody you have just met. Nobody can promise somebody is there.`}
+          : `VELORA is looking for ${describeSelection(premium) ?? 'a narrowed search'} only, except anybody you have just met. Nobody can promise somebody is there.`}
       </p>
 
       {narrowed && waited >= broadenPromptMilliseconds ? (
@@ -1729,9 +1732,9 @@ function SearchingPane({
             */}
             {premium === undefined
               ? 'Your search is narrowed. Widening it looks at everybody who is here.'
-              : `Your search is narrowed to ${regionName(
-                  premium.region,
-                )}. Nobody matching has been here yet. You can keep waiting, or go back to everyone — the coins you held come back either way.`}
+              : premium.charged
+                ? `Your search is narrowed to ${describeSelection(premium) ?? 'your preferences'}. Nobody else matching has been here yet. You can keep waiting, or go back to everyone — this window has already been used, so nothing more is charged either way.`
+                : `Your search is narrowed to ${describeSelection(premium) ?? 'your preferences'}. Nobody matching has been here yet. You can keep waiting, or go back to everyone — the coins you held come back in full either way.`}
           </p>
           <Button
             data-testid="live-broaden-action"
@@ -1749,7 +1752,10 @@ function SearchingPane({
           >
             Widen the search
           </Button>
-          <PremiumPreference wallet={wallet} />
+          <PremiumPreference
+            languageOptions={languageOptions}
+            wallet={wallet}
+          />
         </div>
       ) : (
         <PreferenceControls

@@ -254,7 +254,13 @@ export interface MobileApiState {
     }[];
     preferences: { language?: string; region: 'any' | 'same' };
     /** The paid narrowing in force, exactly as the server reports it. */
-    premium?: { expiresAt: string; region: string };
+    premium?: {
+      charged: boolean;
+      expiresAt: string;
+      gender?: string;
+      language?: string;
+      region?: string;
+    };
     simulated: boolean;
     standInAvailable: boolean;
     state: 'idle' | 'searching' | 'matched' | 'ended';
@@ -274,13 +280,19 @@ export interface MobileApiState {
     };
     balance: { available: string; reserved: string };
     enabled: boolean;
+    catalogue: {
+      durationSeconds: number;
+      preferences: { coins: string; kind: 'gender' | 'language' | 'region' }[];
+    };
     livePreference?: {
+      charged: boolean;
       coins: string;
       expiresAt: string;
+      gender?: string;
       id: string;
-      region: string;
+      language?: string;
+      region?: string;
     };
-    offer: { coins: string; durationSeconds: number };
   };
   introductions: {
     counterpart: {
@@ -381,6 +393,7 @@ export const secondEncounterId = '99999999-9999-4999-8999-999999999999';
 export const liveCallId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const liveIntroductionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 export const liveConversationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+export const livePreferenceId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 export const conversationId = '33333333-3333-4333-8333-333333333333';
 export const introductionId = '55555555-5555-4555-8555-555555555555';
 export const callId = '66666666-6666-4666-8666-666666666666';
@@ -489,8 +502,18 @@ export function admittedState(): MobileApiState {
     wallet: {
       acquisition: { android: 'unavailable', web: 'unavailable' },
       balance: { available: '0', reserved: '0' },
+      // The catalogue the server publishes, restated here so a surface reading
+      // it is reading the same shape. The prices are the development values;
+      // what matters to a surface is that it never computes one.
+      catalogue: {
+        durationSeconds: 900,
+        preferences: [
+          { coins: '25', kind: 'gender' },
+          { coins: '15', kind: 'region' },
+          { coins: '10', kind: 'language' },
+        ],
+      },
       enabled: false,
-      offer: { coins: '25', durationSeconds: 900 },
     },
     candidates: [
       {
@@ -614,8 +637,53 @@ function walletBody(state: MobileApiState): unknown {
     ...(state.wallet.livePreference === undefined
       ? {}
       : { livePreference: state.wallet.livePreference }),
-    livePreferenceOffer: state.wallet.offer,
+    livePreferenceCatalogue: state.wallet.catalogue,
   };
+}
+
+/** One selection of premium preferences, as every wallet route carries it. */
+interface WalletSelection {
+  gender?: string;
+  language?: string;
+  region?: string;
+}
+
+function narrowsSomething(selection: WalletSelection): boolean {
+  return (
+    selection.gender !== undefined ||
+    selection.language !== undefined ||
+    selection.region !== undefined
+  );
+}
+
+/** Absent fields genuinely absent, exactly as the strict contract requires. */
+function selectionOf(selection: WalletSelection): WalletSelection {
+  return {
+    ...(selection.gender === undefined ? {} : { gender: selection.gender }),
+    ...(selection.language === undefined
+      ? {}
+      : { language: selection.language }),
+    ...(selection.region === undefined ? {} : { region: selection.region }),
+  };
+}
+
+/**
+ * What a selection costs, summed from the published catalogue.
+ *
+ * The same rule the server applies, restated here for the same reason every
+ * other rule in this double is: a surface that renders a total it computed
+ * itself would pass a test against a double that agreed with it and fail
+ * against a server that did not.
+ */
+function selectionPrice(
+  state: MobileApiState,
+  selection: WalletSelection,
+): bigint {
+  return state.wallet.catalogue.preferences.reduce(
+    (total, entry) =>
+      selection[entry.kind] === undefined ? total : total + BigInt(entry.coins),
+    0n,
+  );
 }
 
 /** The minimized public profile, with absent fields genuinely absent. */
@@ -1063,6 +1131,94 @@ export function createMobileApiDouble(
     // WALLET. Every route answers with the whole authoritative shape, so
     // nothing here can teach a surface to compute a balance from a delta.
     if (path === '/v1/wallet' && method === 'GET') {
+      return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/live-preference' && method === 'POST') {
+      const input = body as WalletSelection;
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      if (state.wallet.livePreference !== undefined) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      if (!narrowsSomething(input)) return error(422, 'VALIDATION_FAILED');
+      const price = selectionPrice(state, input);
+      if (BigInt(state.wallet.balance.available) < price) {
+        // Says only that the balance will not cover it. How much is missing is
+        // never disclosed, because a sequence of refusals would otherwise read
+        // somebody's balance.
+        return error(409, 'INSUFFICIENT_FUNDS');
+      }
+      state.wallet.balance = {
+        available: (BigInt(state.wallet.balance.available) - price).toString(),
+        reserved: (BigInt(state.wallet.balance.reserved) + price).toString(),
+      };
+      state.wallet.livePreference = {
+        charged: false,
+        coins: price.toString(),
+        expiresAt: iso(state.wallet.catalogue.durationSeconds * 1000),
+        id: livePreferenceId,
+        ...selectionOf(input),
+      };
+      state.live.premium = {
+        charged: false,
+        expiresAt: state.wallet.livePreference.expiresAt,
+        ...selectionOf(input),
+      };
+      return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/live-preference/broadening' && method === 'POST') {
+      const input = body as WalletSelection;
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      const open = state.wallet.livePreference;
+      if (open === undefined) return error(409, 'STATE_CONFLICT');
+      if (!narrowsSomething(input)) return error(422, 'VALIDATION_FAILED');
+      // Strictly a widening: every preference kept must be the same value the
+      // window already holds, and at least one must be gone.
+      let dropped = 0;
+      for (const kind of ['gender', 'language', 'region'] as const) {
+        if (input[kind] === undefined && open[kind] !== undefined) {
+          dropped += 1;
+          continue;
+        }
+        if (input[kind] !== open[kind]) return error(422, 'VALIDATION_FAILED');
+      }
+      if (dropped === 0) return error(422, 'VALIDATION_FAILED');
+      state.wallet.livePreference = {
+        charged: open.charged,
+        coins: open.coins,
+        expiresAt: open.expiresAt,
+        id: open.id,
+        ...selectionOf(input),
+      };
+      state.live.premium = {
+        charged: open.charged,
+        expiresAt: open.expiresAt,
+        ...selectionOf(input),
+      };
+      return json(200, walletBody(state));
+    }
+    if (
+      path === '/v1/wallet/live-preference/cancellation' &&
+      method === 'POST'
+    ) {
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      const held = state.wallet.livePreference;
+      if (held !== undefined) {
+        // In full, and only for a window that never found anybody. One that
+        // already found somebody was charged then and returns nothing now.
+        if (!held.charged) {
+          state.wallet.balance = {
+            available: (
+              BigInt(state.wallet.balance.available) + BigInt(held.coins)
+            ).toString(),
+            reserved: (
+              BigInt(state.wallet.balance.reserved) - BigInt(held.coins)
+            ).toString(),
+          };
+        }
+        delete state.wallet.livePreference;
+        delete state.live.premium;
+      }
+      // Cancelling nothing is not an error either.
       return json(200, walletBody(state));
     }
     if (path === '/v1/wallet/grants' && method === 'POST') {

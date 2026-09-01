@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { regionSchema } from './users.js';
+import { profileLanguageSchema } from './profile.js';
+import { matchableGenderSchema, regionSchema } from './users.js';
 
 /**
  * The coin wallet contract, and the one thing coins currently buy.
@@ -46,37 +47,97 @@ export const coinBalanceSchema = z
   .strict();
 
 /**
- * The paid narrowing this person currently holds, when they hold one.
+ * One selection of premium preferences, as every shape here carries it.
  *
- * A *window*, and the shape says so: it names what is being applied, when it
- * ends, and what it cost. It carries no count of matching people, no estimated
- * wait, and no probability, because none of those is a number this platform
- * has — publishing one would be inventing it.
+ * Named fields rather than a list of kind/value pairs. A list can hold the same
+ * kind twice and can hold a kind nobody published, and both are states a
+ * surface would then have to have an opinion about. Every field is optional and
+ * every combination is a conjunction: `{ gender: 'woman', region: 'FR' }` means
+ * women in France, and nothing in this contract can express "or".
+ *
+ * There is deliberately no field for an age, a body attribute, an appearance,
+ * an orientation, a compatibility target, or a person. A contract that could
+ * hold one is a contract somebody eventually fills in.
  */
-export const livePreferenceEntitlementSchema = z
+export const livePreferenceSelectionSchema = z
   .object({
-    coins: coinAmountSchema,
-    /** When this window closes. After it, the coins return in full. */
-    expiresAt: z.iso.datetime(),
-    id: z.uuid(),
-    /** The declared region the matcher is narrowing to while this is open. */
-    region: regionSchema,
+    /**
+     * A declared matching category.
+     *
+     * `undisclosed` is absent from this enum and its absence is the point: a
+     * preference for people who declined to say would turn declining into an
+     * answer with consequences.
+     */
+    gender: matchableGenderSchema.optional(),
+    /**
+     * A declared profile language, which the buyer must also speak.
+     *
+     * It means "the other person speaks this too". Asking for a language you do
+     * not speak is a search that means nothing, so the server refuses to sell
+     * one rather than selling a filter it would have to quietly drop.
+     */
+    language: profileLanguageSchema.optional(),
+    /** A declared ISO 3166-1 alpha-2 region. */
+    region: regionSchema.optional(),
   })
   .strict();
 
 /**
- * What one activation costs and how long it lasts, published by the server.
+ * The paid narrowing this person currently holds, when they hold one.
+ *
+ * A *window*, and the shape says so: it names what is being applied, when it
+ * ends, what it cost, and whether it has been charged yet. It carries no count
+ * of matching people, no estimated wait, and no probability, because none of
+ * those is a number this platform has — publishing one would be inventing it.
+ */
+export const livePreferenceEntitlementSchema = livePreferenceSelectionSchema
+  .extend({
+    /**
+     * Whether the coins have already been charged for this window.
+     *
+     * `false` means they are held and will come back in full if nothing is
+     * found. `true` means the window found somebody and was charged once; it
+     * keeps narrowing for the rest of its time, every further match inside it
+     * is free, and ending it early returns nothing. A surface that could not
+     * tell those apart would either promise a refund that is not coming or
+     * threaten a charge that already happened.
+     */
+    charged: z.boolean(),
+    coins: coinAmountSchema,
+    /** When this window closes. */
+    expiresAt: z.iso.datetime(),
+    id: z.uuid(),
+  })
+  .strict();
+
+/**
+ * What the premium preferences cost and how long a window lasts, published by
+ * the server.
  *
  * Published rather than hard-coded in a surface, so a price can never be
- * rendered that is not the price that will be charged. `durationSeconds` is
- * beside it because the two together are the whole of what is being bought,
- * and a control that showed one without the other would be describing half a
- * purchase.
+ * rendered that is not the price that will be charged, and a preference can be
+ * withdrawn or repriced without shipping a client. `durationSeconds` is beside
+ * the prices because the window is what is being bought, and a control that
+ * showed a price without it would be describing half a purchase.
+ *
+ * A selection costs the sum of the kinds in it. Stated here rather than left to
+ * each surface to work out, because two surfaces deriving the same total
+ * independently is two surfaces that can disagree with the server about what
+ * somebody is about to pay.
  */
-export const livePreferenceOfferSchema = z
+export const livePreferenceCatalogueSchema = z
   .object({
-    coins: coinAmountSchema,
     durationSeconds: z.int().positive().max(86_400),
+    preferences: z
+      .array(
+        z
+          .object({
+            coins: coinAmountSchema,
+            kind: z.enum(['gender', 'region', 'language']),
+          })
+          .strict(),
+      )
+      .max(8),
   })
   .strict();
 
@@ -114,27 +175,54 @@ export const walletStateResponseSchema = z
     balance: coinBalanceSchema.optional(),
     enabled: z.boolean(),
     livePreference: livePreferenceEntitlementSchema.optional(),
-    livePreferenceOffer: livePreferenceOfferSchema,
+    livePreferenceCatalogue: livePreferenceCatalogueSchema,
   })
   .strict();
 
 /**
  * Opening a paid window of narrowed matching.
  *
- * The region is the whole of the request. There is no amount, no duration, and
- * no product identifier: what it costs and how long it lasts are server
- * constants, so a client cannot ask for a cheaper window or a longer one.
+ * The selection is the whole of the request. There is no amount, no duration,
+ * and no product identifier: what it costs and how long it lasts are server
+ * facts, so a client cannot ask for a cheaper window or a longer one, and a
+ * client that renders a price it computed itself is rendering a guess.
  *
- * The shape admits one declared region and nothing else. It cannot express a
- * gender, an age, an appearance, a compatibility target, or a list — not
- * because a surface would not send one, but because a contract that could hold
- * one is a contract somebody eventually fills in.
+ * At least one preference is required. A window that narrowed nothing would be
+ * somebody being charged for `Everyone`, which is free.
  */
-export const activateLivePreferenceRequestSchema = z
-  .object({
-    region: regionSchema,
-  })
-  .strict();
+export const activateLivePreferenceRequestSchema =
+  livePreferenceSelectionSchema.refine(
+    (value) =>
+      value.gender !== undefined ||
+      value.language !== undefined ||
+      value.region !== undefined,
+    'An activation must narrow at least one preference',
+  );
+
+/**
+ * Widening a window that is already running.
+ *
+ * The body is the selection that should remain — so dropping "in France" from
+ * "women in France" is sent as `{ gender: 'woman' }`. Expressed as what is kept
+ * rather than as what is removed, because the server then compares two
+ * selections rather than applying a diff, and a request that named a kind the
+ * window never had is simply refused instead of silently doing nothing.
+ *
+ * It never charges and never refunds. The server refuses anything that is not
+ * strictly a widening — adding a preference, or swapping one value for another
+ * — because either could cost more than what was already paid, and a surprise
+ * charge is the failure that makes a paid control untrustworthy. Emptying the
+ * selection entirely is `Everyone`, which is cancellation and has its own
+ * operation, because that is the path that knows whether coins are owed back.
+ */
+export const broadenLivePreferenceRequestSchema =
+  livePreferenceSelectionSchema.refine(
+    (value) =>
+      value.gender !== undefined ||
+      value.language !== undefined ||
+      value.region !== undefined,
+    'Widening to nothing is a cancellation, not a widening',
+  );
 
 /**
  * Turning an Android store purchase into coins.
@@ -179,10 +267,18 @@ export type ActivateLivePreferenceRequest = z.infer<
 export type AndroidCoinPurchaseRequest = z.infer<
   typeof androidCoinPurchaseRequestSchema
 >;
+export type BroadenLivePreferenceRequest = z.infer<
+  typeof broadenLivePreferenceRequestSchema
+>;
 export type CoinBalance = z.infer<typeof coinBalanceSchema>;
 export type CoinGrantRequest = z.infer<typeof coinGrantRequestSchema>;
+export type LivePreferenceCatalogue = z.infer<
+  typeof livePreferenceCatalogueSchema
+>;
 export type LivePreferenceEntitlement = z.infer<
   typeof livePreferenceEntitlementSchema
 >;
-export type LivePreferenceOffer = z.infer<typeof livePreferenceOfferSchema>;
+export type LivePreferenceSelection = z.infer<
+  typeof livePreferenceSelectionSchema
+>;
 export type WalletStateResponse = z.infer<typeof walletStateResponseSchema>;

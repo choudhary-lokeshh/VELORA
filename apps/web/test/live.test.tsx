@@ -389,10 +389,12 @@ describe('the paid matching preference', () => {
 
     const panel = await screen.findByTestId('live-premium');
     const copy = panel.textContent;
-    // The price and the duration are the server's, so a surface can never
-    // render a price that is not the price that will be charged.
-    expect(copy).toContain('25 coins');
+    // Every price is the server's, so a surface can never render one that is
+    // not the price that will be charged.
+    expect(copy).toContain('Women — 25 coins');
     expect(copy).toContain('15 minutes');
+    // Everyone stays free and says so, next to the things that are not.
+    expect(copy).toContain('Everyone is free');
     // The whole of what happens to the money, said where somebody decides.
     expect(copy).toContain('held');
     expect(copy).toContain('returned in full');
@@ -409,19 +411,24 @@ describe('the paid matching preference', () => {
     renderProduct(<Live />, double, { pathname: '/live' });
     await screen.findByTestId('live-premium');
 
+    fireEvent.change(screen.getByTestId('live-premium-region'), {
+      target: { value: 'FR' },
+    });
+
     // Short of coins, so the activation control is replaced by the refusal —
-    // and the refusal says only that, never how much is missing beyond the
-    // price everybody can already see.
-    expect(screen.queryByTestId('live-premium-activate')).toBeNull();
+    // and the refusal says only the price and the balance, both of which this
+    // person can already see.
+    expect(screen.queryByTestId('live-premium-review')).toBeNull();
     const short = await screen.findByTestId('live-premium-short');
-    expect(short.textContent).toContain('You need 25 coins');
+    expect(short.textContent).toContain('France costs 15 coins');
+    expect(short.textContent).toContain('You have 0');
     // No channel can take money in this environment, so the only way to get
     // any is the developer grant, and it is labelled as one.
     const grant = await screen.findByTestId('live-premium-grant');
     expect(grant.textContent).toContain('Developer');
   });
 
-  it('holds the coins rather than spending them, and gives them back', async () => {
+  it('says what it will do before it moves anything, and does it once confirmed', async () => {
     const double = createApiDouble(
       walletState({ balance: { available: '100', reserved: '0' } }),
     );
@@ -431,6 +438,15 @@ describe('the paid matching preference', () => {
     fireEvent.change(screen.getByTestId('live-premium-region'), {
       target: { value: 'FR' },
     });
+    // The price is on the control that opens the confirmation, so the cost is
+    // never behind the button that spends.
+    const review = await screen.findByTestId('live-premium-review');
+    expect(review.textContent).toContain('France — 15 coins');
+    await click('live-premium-review');
+
+    const confirm = await screen.findByTestId('live-premium-confirm');
+    expect(confirm.textContent).toContain('France for 15 minutes — 15 coins');
+    expect(confirm.textContent).toContain('returned in full');
     await click('live-premium-activate');
 
     const active = await screen.findByTestId('live-premium-active');
@@ -447,6 +463,49 @@ describe('the paid matching preference', () => {
     ).toContain('100 coins');
   });
 
+  it('prices a composed selection as the sum the server publishes', async () => {
+    const double = createApiDouble(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-premium');
+
+    fireEvent.click(screen.getByLabelText('Women — 25 coins'));
+    fireEvent.change(screen.getByTestId('live-premium-region'), {
+      target: { value: 'FR' },
+    });
+    const review = await screen.findByTestId('live-premium-review');
+    // Two preferences, one window, and a total anybody can check by adding up
+    // what is on the screen.
+    expect(review.textContent).toContain('Women · France — 40 coins');
+  });
+
+  it('drops one preference from a running window without charging for it', async () => {
+    const double = createApiDouble(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-premium');
+
+    fireEvent.click(screen.getByLabelText('Women — 25 coins'));
+    fireEvent.change(screen.getByTestId('live-premium-region'), {
+      target: { value: 'FR' },
+    });
+    await click('live-premium-review');
+    await click('live-premium-activate');
+    const active = await screen.findByTestId('live-premium-active');
+    expect(active.textContent).toContain('Women · France');
+
+    await click('live-premium-drop-region');
+    const widened = await screen.findByTestId('live-premium-active-selection');
+    // Wider, and nothing moved: a wider search cannot cost more than the one
+    // already paid for.
+    expect(widened.textContent).toContain('Women');
+    expect(widened.textContent).not.toContain('France');
+    const panel = await screen.findByTestId('live-premium-active');
+    expect(panel.textContent).toContain('held, not spent');
+  });
+
   it('says what a narrowed search is actually doing, and promises nothing', async () => {
     const double = createApiDouble({
       ...walletState({ balance: { available: '100', reserved: '0' } }),
@@ -460,6 +519,7 @@ describe('the paid matching preference', () => {
     fireEvent.change(screen.getByTestId('live-premium-region'), {
       target: { value: 'FR' },
     });
+    await click('live-premium-review');
     await click('live-premium-activate');
     await click('live-start-video');
 

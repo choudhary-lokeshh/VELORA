@@ -108,35 +108,80 @@ export const maximumStorableCoins = 9_223_372_036_854_775_807n;
 export const maximumWalletOperationCoins = 1_000_000n;
 
 /**
- * What an activation of a premium live preference costs, in coins.
+ * The premium matching preferences this product sells, and what each costs.
  *
- * One price, for one thing: a bounded window in which the matcher applies a
- * narrowing the free product does not offer. It is not a per-match fee, not a
- * per-tap fee, and not a subscription.
+ * **One catalogue, on the server, and nowhere else.** Consumer Web and Consumer
+ * Android render what a wallet read returns; neither holds a price, a duration,
+ * or a list of kinds, so a surface cannot show a price that is not the price
+ * that will be charged, and a kind can be withdrawn without shipping a client.
  *
- * The number itself is provisional and marked as such in
+ * **Three kinds, and each is a field a person set about themselves.** A
+ * declared matching category, a declared region, and a declared language.
+ * Nothing here is inferred, nothing is derived from a photograph, a name, a
+ * voice, a model, or a network address, and there is no kind in this list whose
+ * value the platform worked out rather than was told.
+ *
+ * **A selection is priced as the sum of the kinds in it.** One window, one
+ * duration, and a price somebody can check by adding up what they chose. The
+ * alternative — a flat price whatever is selected — would mean the person who
+ * narrows on one thing subsidising the person who narrows on three, and a
+ * tiered "bundle" price would be a discount structure nobody has approved.
+ *
+ * The numbers are development values and are marked as such in
  * `DECISIONS_REQUIRED.md`: what a coin is worth in money is undecided, so what
- * this costs in money is undecided with it. What is *not* provisional is that
- * the cost is a server constant read from here — no request field, header, or
- * client value contributes to what somebody is charged.
+ * any of this costs in money is undecided with it. They are changeable here
+ * alone, with no migration and no client release. What is *not* provisional is
+ * that a charge is computed from this table — no request field, header, or
+ * client value contributes to what anybody is charged.
  */
-export const livePreferenceEntitlementCoins = 25n;
+export const livePremiumPreferenceCatalogue: Readonly<
+  Record<LivePremiumPreferenceKind, { readonly coins: bigint }>
+> = {
+  /** Narrows to one declared matching category. Never to `undisclosed`. */
+  gender: { coins: 25n },
+  /** Narrows to people who declared they speak one particular language. */
+  language: { coins: 10n },
+  /** Narrows to one declared ISO 3166-1 alpha-2 region. */
+  region: { coins: 15n },
+};
+
+/**
+ * What one selection costs, computed from the catalogue and from nothing else.
+ *
+ * Returns `undefined` for a selection that names nothing, because a window that
+ * narrows nothing is not a thing this product sells — `Everyone` is free and is
+ * what a person gets by not buying anything.
+ */
+export function livePreferenceActivationCoins(selection: {
+  readonly gender?: string | undefined;
+  readonly language?: string | undefined;
+  readonly region?: string | undefined;
+}): bigint | undefined {
+  let total = 0n;
+  for (const kind of livePremiumPreferenceKinds) {
+    if (selection[kind] === undefined) continue;
+    total += livePremiumPreferenceCatalogue[kind].coins;
+  }
+  return total === 0n ? undefined : total;
+}
 
 /**
  * How long one activation lasts.
  *
  * Fifteen minutes, which is long enough to be worth buying and short enough
- * that somebody who walks away has not bought an afternoon. The window is what
- * is sold; a match inside it is the outcome, and the charging rule below is
- * what makes the difference between the two honest.
+ * that somebody who walks away has not bought an afternoon. One duration for
+ * every selection, because what is sold is the window: charging more for a
+ * longer one, or giving a longer one to a bigger selection, would turn a simple
+ * purchase into a matrix nobody can check.
  */
 export const livePreferenceEntitlementDurationMilliseconds = 900_000;
 
 /**
  * How the charge actually works, stated once so no surface has to guess.
  *
- * **Reserve on activation, capture on the first filtered encounter, release in
- * full if the window closes without one.**
+ * **Reserve on activation, capture once on the first filtered encounter,
+ * release in full if the window closes without one — and the window keeps
+ * narrowing until it expires, whether or not it has been charged.**
  *
  * Chosen over the two alternatives deliberately. Charging on tap would mean
  * somebody paying for a pool that turned out to be empty, which is the exact
@@ -144,6 +189,14 @@ export const livePreferenceEntitlementDurationMilliseconds = 900_000;
  * successful match would mean the platform running a narrowed, more expensive
  * search for free for anybody who never matched, and would make the cost depend
  * on how busy the product happened to be that minute.
+ *
+ * The last clause is what makes this a *window* rather than a match fee. A
+ * capture is a money event, not the end of the thing that was bought: after it,
+ * the narrowing stays in force for the rest of the fifteen minutes and every
+ * further Next inside them is filtered and free. An entitlement that stopped
+ * applying the instant it was charged would be a per-match fee wearing a
+ * window's clothes, and the person pressing Next would silently be handed the
+ * whole pool a second later.
  *
  * A reservation is a real ledger position, not a flag: the coins leave the
  * spendable balance the instant the window opens, so a second activation cannot
@@ -155,33 +208,50 @@ export const livePreferenceEntitlementDurationMilliseconds = 900_000;
  * gets their coins back exactly as one who is watching does.
  */
 export const livePreferenceChargingRule =
-  'reserve-on-activation-capture-on-first-match-release-on-expiry';
+  'reserve-on-activation-capture-once-on-first-match-window-runs-to-expiry';
 
 /**
  * The lifecycle of one activation.
  *
- * `active` is a window that is open. `captured` is one that produced a filtered
- * encounter and was paid for. `released` is one that closed without producing
- * anything and cost nothing. `cancelled` is one the person closed themselves
- * before it produced anything, and it releases in full for the same reason.
+ * `active` is an open window whose coins are held and which has produced
+ * nothing yet. `captured` is an open window that has produced a filtered
+ * encounter and been charged — still narrowing, still running, and never
+ * charged again. `expired` is a captured window whose time is up; the money was
+ * settled at capture, so closing it moves nothing. `released` is a window that
+ * closed without ever producing anything, and its coins come back in full.
+ * `cancelled` is one the person closed themselves, and it returns the coins on
+ * exactly the same terms if it had not yet been charged.
  *
- * There is no `expired` distinct from `released`. An expiry that had not yet
- * been settled would be a state in which the books and the product disagree
- * about whether somebody has been charged, and the whole point of the sweep is
- * that no such state is durable.
+ * `expired` and `released` are deliberately distinct, and the distinction is
+ * financial rather than cosmetic: a `released` window is one nobody was charged
+ * for, and an `expired` one is a window somebody paid for and used. Collapsing
+ * them would make "how many paid windows found nobody" unanswerable, which is
+ * the one number that says whether this feature is honest.
  */
 export const livePreferenceEntitlementStates = [
   'active',
   'captured',
+  'expired',
   'released',
   'cancelled',
 ] as const;
 export type LivePreferenceEntitlementState =
   (typeof livePreferenceEntitlementStates)[number];
 
-/** The states in which an activation is still worth acting on. */
+/**
+ * The states in which a window is still narrowing somebody's search.
+ *
+ * Both of them, and that is the whole point: a charged window is still a window.
+ * The matcher reads this set and additionally checks the expiry, because a state
+ * cannot expire on its own and a sweep that is a few seconds behind must never
+ * mean a narrowing outlives what was bought.
+ */
 export const livePreferenceEntitlementOpenStates: readonly LivePreferenceEntitlementState[] =
-  ['active'];
+  ['active', 'captured'];
+
+/** The one state in which coins are still held and can still be charged. */
+export const livePreferenceEntitlementReservedState: LivePreferenceEntitlementState =
+  'active';
 
 /**
  * How often the worker settles activations whose window has closed.
@@ -208,37 +278,63 @@ export const walletAbuseWindowMilliseconds = 3_600_000;
 /**
  * The premium matching preferences this product actually supports.
  *
- * One, and it is the one the data can honestly answer. `region` narrows to a
- * declared ISO 3166-1 alpha-2 region, which is a field a person set themselves
- * during onboarding, which USERS already owns, and which the matcher already
- * reads for the free `same` narrowing.
+ * Three, and every one of them is a field a person set about themselves.
+ * `gender` narrows to a declared matching category, which USERS collects
+ * through one route on the subject's own account. `region` narrows to a
+ * declared ISO 3166-1 alpha-2 region, set during onboarding and already read by
+ * the matcher for the free `same` narrowing. `language` narrows to a declared
+ * profile language, and only to one the buyer speaks themselves.
  *
- * **What is deliberately absent matters more than what is here.** A
- * declared-gender preference — the "Women only" filter this product is
- * eventually expected to sell — has no field to read. `packages/validation`
- * records that the minimum discoverable profile deliberately excludes gender so
- * that "nobody is asked to hand over sensitive data as the price of being
- * seen", and there is no column for it anywhere in USERS. Adding one is a
- * product, policy, and legal decision about collecting a special-category
- * attribute, not an implementation detail, and it is recorded as an owner
- * decision in `DECISIONS_REQUIRED.md`.
+ * **What is absent matters as much as what is here.** There is no age band, no
+ * body attribute, no appearance, no orientation, no compatibility score, no
+ * popularity signal, and no "people like the ones you liked". Each of those is
+ * either something VELORA does not collect, something no lawful basis covers,
+ * or something that would have to be computed — and a computed preference is an
+ * inferred one however it is dressed.
  *
  * Nothing here is ever inferred. No camera, face, name, voice, model, or
  * location proxy contributes to any value in this list, and the shape of this
  * module is what makes that checkable: a preference is a declared field or it
  * does not exist.
+ *
+ * The order is the order surfaces render, so two clients cannot disagree about
+ * it without one of them ignoring the catalogue.
  */
-export const livePremiumPreferenceKinds = ['region'] as const;
+export const livePremiumPreferenceKinds = [
+  'gender',
+  'region',
+  'language',
+] as const;
 export type LivePremiumPreferenceKind =
   (typeof livePremiumPreferenceKinds)[number];
 
+/**
+ * The declared categories a `gender` preference may name.
+ *
+ * Restated here rather than imported for the reason at the top of this module,
+ * and asserted identical to USERS' own list and to the published contract by
+ * `test/unit/wallet-policy.test.ts`. `undisclosed` is deliberately absent: a
+ * preference for people who declined to say would make declining an answer with
+ * consequences.
+ */
+export const livePremiumGenderValues = ['woman', 'man', 'non_binary'] as const;
+export type LivePremiumGenderValue = (typeof livePremiumGenderValues)[number];
+
 /** ISO 3166-1 alpha-2, upper case. Mirrors USERS' own region constraint. */
 export const regionCodePattern = '^[A-Z]{2}$';
+
+/** BCP 47 primary subtag. Mirrors USERS' own profile-language constraint. */
+export const languageCodePattern = '^[a-z]{2,3}$';
 
 /**
  * What has to be decided before coins may exist in a deployed environment.
  * Each entry is a real blocker, not a caution, and configuration enforces the
  * list rather than merely documenting it.
+ *
+ * `declared-gender-attribute-not-collected` is gone because it has been
+ * answered: the attribute is collected, optionally and by declaration only. The
+ * legal question it stood beside has not gone away and is not the same
+ * question, so it is stated here as its own blocker.
  */
 export const productionBlockers = [
   'coin-money-value-undecided',
@@ -247,5 +343,6 @@ export const productionBlockers = [
   'virtual-currency-tax-treatment-unreviewed',
   'virtual-currency-consumer-protection-unreviewed',
   'play-billing-product-configuration-absent',
-  'declared-gender-attribute-not-collected',
+  'gender-preference-lawful-basis-unreviewed',
+  'premium-preference-pricing-unapproved',
 ] as const;

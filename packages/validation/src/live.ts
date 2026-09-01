@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { clientMessageIdSchema, messageBodySchema } from './messaging.js';
 import { profileLanguageSchema } from './profile.js';
 import { regionSchema } from './users.js';
+import { livePreferenceSelectionSchema } from './wallet.js';
 
 /**
  * Live discovery contract.
@@ -399,11 +400,20 @@ export const liveStateResponseSchema = z
      * of those is a number this platform has. And it is never rendered to the
      * other person: nobody is told why they were selected.
      */
-    premium: z
-      .object({
-        /** When the window closes and the coins return if nothing matched. */
+    premium: livePreferenceSelectionSchema
+      .extend({
+        /**
+         * Whether this window has already been charged.
+         *
+         * Reported so the stage can say what is actually true about the coins.
+         * A charged window keeps narrowing for the rest of its time and every
+         * further match inside it is free; an uncharged one still returns
+         * everything if nobody is found. Those are opposite promises and a
+         * surface that guessed would make one of them a lie.
+         */
+        charged: z.boolean(),
+        /** When the window closes. */
         expiresAt: z.iso.datetime(),
-        region: regionSchema,
       })
       .strict()
       .optional(),

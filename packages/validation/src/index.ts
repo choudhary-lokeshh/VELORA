@@ -168,6 +168,7 @@ import {
 import {
   activateLivePreferenceRequestSchema,
   androidCoinPurchaseRequestSchema,
+  broadenLivePreferenceRequestSchema,
   coinGrantRequestSchema,
   walletStateResponseSchema,
 } from './wallet.js';
@@ -420,6 +421,7 @@ export const apiRoutePaths = {
   walletAndroidPurchases: '/v1/wallet/android-purchases',
   walletGrants: '/v1/wallet/grants',
   walletLivePreference: '/v1/wallet/live-preference',
+  walletLivePreferenceBroadening: '/v1/wallet/live-preference/broadening',
   walletLivePreferenceCancellation: '/v1/wallet/live-preference/cancellation',
   notifications: '/v1/notifications',
   notificationDeviceRevocations: '/v1/notifications/devices/revocations',
@@ -607,6 +609,7 @@ export const apiSchemas = {
   LiveStateResponse: liveStateResponseSchema,
   ActivateLivePreferenceRequest: activateLivePreferenceRequestSchema,
   AndroidCoinPurchaseRequest: androidCoinPurchaseRequestSchema,
+  BroadenLivePreferenceRequest: broadenLivePreferenceRequestSchema,
   CoinGrantRequest: coinGrantRequestSchema,
   WalletStateResponse: walletStateResponseSchema,
   SendLiveMessageRequest: sendLiveMessageRequestSchema,
@@ -3584,7 +3587,38 @@ export const apiOperations = [
     },
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
-      'Opens a paid, bounded window of narrowed matching. The request names one declared region and never a price, a duration, or a person.',
+      'Opens a paid, bounded window of narrowed matching. The request names declared preferences and never a price, a duration, or a person.',
+  },
+  {
+    method: 'post',
+    operationId: 'broadenLivePreference',
+    path: apiRoutePaths.walletLivePreferenceBroadening,
+    requestSchemaName: 'BroadenLivePreferenceRequest',
+    responses: {
+      '200': {
+        description:
+          'Wallet state after widening the window already in force. Nothing is charged and nothing is refunded: a wider search cannot cost more than the one already paid for, and the window keeps the time it has left. The body names the preferences that should remain.',
+        schemaName: 'WalletStateResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `No window is currently in force. The body is an ApiError with code ${productErrorCodes.conflict}.`,
+        schemaName: 'ApiError',
+      },
+      '422': {
+        description:
+          'The request is not a widening. Adding a preference, or swapping one value for another, could cost more than what was paid and is sold as a new window instead; emptying the selection entirely is a cancellation and has its own operation.',
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+      '503': {
+        description: `No coin ledger exists in this environment. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}.`,
+        schemaName: 'ApiError',
+      },
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Widens the window already in force, at no charge. It can only ever ask for less, which is why it is free.',
   },
   {
     method: 'post',
@@ -3593,7 +3627,7 @@ export const apiOperations = [
     responses: {
       '200': {
         description:
-          'Wallet state after closing the open window. The reserved coins return in full: changing your mind inside the window you paid for is not a consumption of it. Repeating it is safe and cancelling nothing is not an error.',
+          'Wallet state after closing the window in force. A window that never found anybody returns its coins in full: changing your mind before it produced anything is not a consumption of it. A window that already found somebody was charged then, returns nothing now, and gives up only the time it had left. Repeating it is safe and cancelling nothing is not an error.',
         schemaName: 'WalletStateResponse',
       },
       ...consumerAuthenticationResponses,

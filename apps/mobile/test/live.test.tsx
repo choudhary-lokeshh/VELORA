@@ -291,14 +291,64 @@ describe('the paid matching preference', () => {
       walletState({ balance: { available: '0', reserved: '0' } }),
     );
     await screen.findByTestId('live-premium');
-    expect(screen.queryByTestId('live-premium-activate')).toBeNull();
+    await press('live-premium-gender-woman');
+
+    // Short of coins, so the control that opens a confirmation is replaced by
+    // the refusal — and the refusal says only the price and the balance, both
+    // of which this person can already see.
+    expect(screen.queryByTestId('live-premium-review')).toBeNull();
     expect(await screen.findByTestId('live-premium-short')).toHaveTextContent(
-      /You need 25 coins/u,
+      /Women costs 25 coins\. You have 0\./u,
     );
     // The only way to hold any coins here is the control that says it is a
     // developer's, and the server refuses it outside local and test.
     expect(await screen.findByTestId('live-premium-grant')).toHaveTextContent(
       /Developer/u,
     );
+  });
+
+  it('says what it will do before it moves anything, and does it once confirmed', async () => {
+    await mountLive(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    await screen.findByTestId('live-premium');
+    await press('live-premium-gender-woman');
+
+    // The price is on the control that opens the confirmation, so the cost is
+    // never behind the button that spends.
+    expect(await screen.findByTestId('live-premium-review')).toHaveTextContent(
+      /Women — 25 coins/u,
+    );
+    await press('live-premium-review');
+    expect(await screen.findByTestId('live-premium-confirm')).toHaveTextContent(
+      /Women for 15 minutes — 25 coins held/u,
+    );
+
+    await press('live-premium-activate');
+    const active = await screen.findByTestId('live-premium-active');
+    expect(active).toHaveTextContent(/Women/u);
+    // Held, not spent — and the sentence says so rather than reassuring.
+    expect(active).toHaveTextContent(/held, not spent/u);
+
+    await press('live-premium-cancel');
+    await screen.findByTestId('live-premium');
+    // In full, and the balance rendered is the server's answer rather than a
+    // delta this surface applied.
+    expect(await screen.findByTestId('live-premium-balance')).toHaveTextContent(
+      /You have 100 coins/u,
+    );
+  });
+
+  it('renders the catalogue the backend returns rather than a price of its own', async () => {
+    await mountLive(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    const panel = await screen.findByTestId('live-premium');
+    // Every price on this screen came from the wallet read. There is no
+    // constant in the mobile bundle a surface could disagree with the server
+    // about, which is what this asserts by naming all three.
+    expect(panel).toHaveTextContent(/Women — 25 coins/u);
+    expect(panel).toHaveTextContent(/15 coins/u);
+    expect(panel).toHaveTextContent(/10 coins/u);
   });
 });

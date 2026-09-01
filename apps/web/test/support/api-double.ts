@@ -297,7 +297,13 @@ export interface ApiDoubleState {
     }[];
     preferences: { language?: string; region: 'any' | 'same' };
     /** The paid narrowing in force, exactly as the server reports it. */
-    premium?: { expiresAt: string; region: string };
+    premium?: {
+      charged: boolean;
+      expiresAt: string;
+      gender?: string;
+      language?: string;
+      region?: string;
+    };
     /** Whether a stand-in is available, exactly as the server reports it. */
     simulated: boolean;
     /** Set by a test to make the next search find nobody. */
@@ -319,13 +325,19 @@ export interface ApiDoubleState {
     };
     balance: { available: string; reserved: string };
     enabled: boolean;
+    catalogue: {
+      durationSeconds: number;
+      preferences: { coins: string; kind: 'gender' | 'language' | 'region' }[];
+    };
     livePreference?: {
+      charged: boolean;
       coins: string;
       expiresAt: string;
+      gender?: string;
       id: string;
-      region: string;
+      language?: string;
+      region?: string;
     };
-    offer: { coins: string; durationSeconds: number };
   };
   /** Category and channel pairs the server says are settable. */
   notificationPreferences: {
@@ -477,8 +489,18 @@ export function emptyState(): ApiDoubleState {
     wallet: {
       acquisition: { android: 'unavailable', web: 'unavailable' },
       balance: { available: '0', reserved: '0' },
+      // The catalogue the server publishes, restated here so a surface reading
+      // it is reading the same shape. The prices are the development values;
+      // what matters to a surface is that it never computes one.
+      catalogue: {
+        durationSeconds: 900,
+        preferences: [
+          { coins: '25', kind: 'gender' },
+          { coins: '15', kind: 'region' },
+          { coins: '10', kind: 'language' },
+        ],
+      },
       enabled: false,
-      offer: { coins: '25', durationSeconds: 900 },
     },
     messages: [],
     notificationPreferences: [
@@ -681,8 +703,53 @@ function walletBody(state: ApiDoubleState): unknown {
     ...(state.wallet.livePreference === undefined
       ? {}
       : { livePreference: state.wallet.livePreference }),
-    livePreferenceOffer: state.wallet.offer,
+    livePreferenceCatalogue: state.wallet.catalogue,
   };
+}
+
+/** One selection of premium preferences, as every wallet route carries it. */
+interface WalletSelection {
+  gender?: string;
+  language?: string;
+  region?: string;
+}
+
+function narrowsSomething(selection: WalletSelection): boolean {
+  return (
+    selection.gender !== undefined ||
+    selection.language !== undefined ||
+    selection.region !== undefined
+  );
+}
+
+/** Absent fields genuinely absent, exactly as the strict contract requires. */
+function selectionOf(selection: WalletSelection): WalletSelection {
+  return {
+    ...(selection.gender === undefined ? {} : { gender: selection.gender }),
+    ...(selection.language === undefined
+      ? {}
+      : { language: selection.language }),
+    ...(selection.region === undefined ? {} : { region: selection.region }),
+  };
+}
+
+/**
+ * What a selection costs, summed from the published catalogue.
+ *
+ * The same rule the server applies, restated here for the same reason every
+ * other rule in this double is: a surface that renders a total it computed
+ * itself would pass a test against a double that agreed with it and fail
+ * against a server that did not.
+ */
+function selectionPrice(
+  state: ApiDoubleState,
+  selection: WalletSelection,
+): bigint {
+  return state.wallet.catalogue.preferences.reduce(
+    (total, entry) =>
+      selection[entry.kind] === undefined ? total : total + BigInt(entry.coins),
+    0n,
+  );
 }
 
 /** The minimized public profile, with absent fields genuinely absent. */
@@ -1275,12 +1342,13 @@ export function createApiDouble(
       return json(200, walletBody(state));
     }
     if (path === '/v1/wallet/live-preference' && method === 'POST') {
-      const input = body as { region: string };
+      const input = body as WalletSelection;
       if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
       if (state.wallet.livePreference !== undefined) {
         return error(409, 'STATE_CONFLICT');
       }
-      const price = BigInt(state.wallet.offer.coins);
+      if (!narrowsSomething(input)) return error(422, 'VALIDATION_FAILED');
+      const price = selectionPrice(state, input);
       if (BigInt(state.wallet.balance.available) < price) {
         // Says only that the balance will not cover it. How much is missing is
         // never disclosed, because a sequence of refusals would otherwise read
@@ -1292,14 +1360,50 @@ export function createApiDouble(
         reserved: (BigInt(state.wallet.balance.reserved) + price).toString(),
       };
       state.wallet.livePreference = {
-        coins: state.wallet.offer.coins,
-        expiresAt: iso(state.wallet.offer.durationSeconds * 1000),
+        charged: false,
+        coins: price.toString(),
+        expiresAt: iso(state.wallet.catalogue.durationSeconds * 1000),
         id: livePreferenceId,
-        region: input.region,
+        ...selectionOf(input),
       };
       state.live.premium = {
+        charged: false,
         expiresAt: state.wallet.livePreference.expiresAt,
-        region: input.region,
+        ...selectionOf(input),
+      };
+      return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/live-preference/broadening' && method === 'POST') {
+      const input = body as WalletSelection;
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      const open = state.wallet.livePreference;
+      if (open === undefined) return error(409, 'STATE_CONFLICT');
+      if (!narrowsSomething(input)) return error(422, 'VALIDATION_FAILED');
+      // Strictly a widening: every preference kept must be the same value the
+      // window already holds, and at least one must be gone. Anything else is a
+      // different window and is sold as one.
+      let dropped = 0;
+      for (const kind of ['gender', 'language', 'region'] as const) {
+        if (input[kind] === undefined && open[kind] !== undefined) {
+          dropped += 1;
+          continue;
+        }
+        if (input[kind] !== open[kind]) return error(422, 'VALIDATION_FAILED');
+      }
+      if (dropped === 0) return error(422, 'VALIDATION_FAILED');
+      // No charge and no refund: a wider search cannot cost more than the one
+      // already paid for, and the window keeps its own clock.
+      state.wallet.livePreference = {
+        charged: open.charged,
+        coins: open.coins,
+        expiresAt: open.expiresAt,
+        id: open.id,
+        ...selectionOf(input),
+      };
+      state.live.premium = {
+        charged: open.charged,
+        expiresAt: open.expiresAt,
+        ...selectionOf(input),
       };
       return json(200, walletBody(state));
     }
@@ -1310,16 +1414,20 @@ export function createApiDouble(
       if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
       const held = state.wallet.livePreference;
       if (held !== undefined) {
-        // In full. Changing your mind inside the window you paid for is not a
-        // consumption of it.
-        state.wallet.balance = {
-          available: (
-            BigInt(state.wallet.balance.available) + BigInt(held.coins)
-          ).toString(),
-          reserved: (
-            BigInt(state.wallet.balance.reserved) - BigInt(held.coins)
-          ).toString(),
-        };
+        // In full, and only for a window that never found anybody. Changing
+        // your mind before it produced anything is not a consumption of it; a
+        // window that already found somebody was charged then and returns
+        // nothing now.
+        if (!held.charged) {
+          state.wallet.balance = {
+            available: (
+              BigInt(state.wallet.balance.available) + BigInt(held.coins)
+            ).toString(),
+            reserved: (
+              BigInt(state.wallet.balance.reserved) - BigInt(held.coins)
+            ).toString(),
+          };
+        }
         delete state.wallet.livePreference;
         delete state.live.premium;
       }

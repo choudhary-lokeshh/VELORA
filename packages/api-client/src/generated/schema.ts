@@ -1942,8 +1942,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Opens a paid, bounded window of narrowed matching. The request names one declared region and never a price, a duration, or a person. */
+        /** Opens a paid, bounded window of narrowed matching. The request names declared preferences and never a price, a duration, or a person. */
         post: operations["activateLivePreference"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wallet/live-preference/broadening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Widens the window already in force, at no charge. It can only ever ask for less, which is why it is free. */
+        post: operations["broadenLivePreference"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4716,9 +4733,13 @@ export interface components {
                 region: "any" | "same";
             };
             premium?: {
+                /** @enum {string} */
+                gender?: "woman" | "man" | "non_binary";
+                language?: string;
+                region?: string;
+                charged: boolean;
                 /** Format: date-time */
                 expiresAt: string;
-                region: string;
             };
             /** Format: date-time */
             searchingSince?: string;
@@ -4727,11 +4748,20 @@ export interface components {
             state: "idle" | "searching" | "matched" | "ended";
         };
         ActivateLivePreferenceRequest: {
-            region: string;
+            /** @enum {string} */
+            gender?: "woman" | "man" | "non_binary";
+            language?: string;
+            region?: string;
         };
         AndroidCoinPurchaseRequest: {
             productReference: string;
             purchaseToken: string;
+        };
+        BroadenLivePreferenceRequest: {
+            /** @enum {string} */
+            gender?: "woman" | "man" | "non_binary";
+            language?: string;
+            region?: string;
         };
         CoinGrantRequest: {
             coins: string;
@@ -4750,16 +4780,24 @@ export interface components {
             };
             enabled: boolean;
             livePreference?: {
+                /** @enum {string} */
+                gender?: "woman" | "man" | "non_binary";
+                language?: string;
+                region?: string;
+                charged: boolean;
                 coins: string;
                 /** Format: date-time */
                 expiresAt: string;
                 /** Format: uuid */
                 id: string;
-                region: string;
             };
-            livePreferenceOffer: {
-                coins: string;
+            livePreferenceCatalogue: {
                 durationSeconds: number;
+                preferences: {
+                    coins: string;
+                    /** @enum {string} */
+                    kind: "gender" | "region" | "language";
+                }[];
             };
         };
         SendLiveMessageRequest: {
@@ -19077,6 +19115,123 @@ export interface operations {
             };
         };
     };
+    broadenLivePreference: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BroadenLivePreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Wallet state after widening the window already in force. Nothing is charged and nothing is refunded: a wider search cannot cost more than the one already paid for, and the window keeps the time it has left. The body names the preferences that should remain. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletStateResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No window is currently in force. The body is an ApiError with code STATE_CONFLICT. */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The request is not a widening. Adding a preference, or swapping one value for another, could cost more than what was paid and is sold as a new window instead; emptying the selection entirely is a cancellation and has its own operation. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No coin ledger exists in this environment. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     cancelLivePreference: {
         parameters: {
             query?: never;
@@ -19089,7 +19244,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Wallet state after closing the open window. The reserved coins return in full: changing your mind inside the window you paid for is not a consumption of it. Repeating it is safe and cancelling nothing is not an error. */
+            /** @description Wallet state after closing the window in force. A window that never found anybody returns its coins in full: changing your mind before it produced anything is not a consumption of it. A window that already found somebody was charged then, returns nothing now, and gives up only the time it had left. Repeating it is safe and cancelling nothing is not an error. */
             200: {
                 headers: {
                     /** @description Request correlation identifier */

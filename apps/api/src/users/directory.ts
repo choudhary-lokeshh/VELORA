@@ -2,7 +2,7 @@ import { and, asc, desc, eq, exists, gt, inArray, ne, sql } from 'drizzle-orm';
 
 import type { IdentityAdultAssuranceReaderPort } from '../identity/assurance-reader.js';
 import { adultAssuranceDecisionOf } from './onboarding.js';
-import type { MatchableGenderValue } from './profile-policy.js';
+import { matchableGenderValues } from './profile-policy.js';
 import type { UsersDatabase, UsersExecutor } from './repository.js';
 import {
   userAccounts,
@@ -444,7 +444,7 @@ export class ConsumerDirectory {
      * `undisclosed`, both fail the `exists` below and are simply absent from
      * the answer — never silently reclassified into a category.
      */
-    readonly gender?: MatchableGenderValue | undefined;
+    readonly gender?: string | undefined;
     readonly ids: readonly string[];
     readonly language: string | undefined;
     readonly region: string | undefined;
@@ -457,9 +457,23 @@ export class ConsumerDirectory {
     ) {
       return new Set(input.ids);
     }
+    // A category outside the matchable set matches nobody, and is answered
+    // rather than thrown. Taken as `string` on purpose: a caller narrowing a
+    // search does not have to restate USERS' vocabulary to ask a question about
+    // it, and the one domain that owns the list is the one that checks against
+    // it. Answering "nobody" is the safe direction — it can only ever make a
+    // pool smaller, never admit somebody who does not qualify — and `undisclosed`
+    // is refused here as well as at the point of sale, so declining to say can
+    // never be filtered for through any path.
+    const category = matchableGenderValues.find(
+      (value) => value === input.gender,
+    );
+    if (input.gender !== undefined && category === undefined) {
+      return new Set<string>();
+    }
     const executor = input.executor ?? this.database;
     const declaresGender =
-      input.gender === undefined
+      category === undefined
         ? undefined
         : exists(
             executor
@@ -468,7 +482,7 @@ export class ConsumerDirectory {
               .where(
                 and(
                   eq(userMatchingDeclarations.userId, userAccounts.id),
-                  eq(userMatchingDeclarations.matchingGender, input.gender),
+                  eq(userMatchingDeclarations.matchingGender, category),
                 ),
               ),
           );
