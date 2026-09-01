@@ -255,32 +255,33 @@ proof cannot hang waiting for a stronger version of a race it already has; and a
 matched pair can both obtain a credential the instant they are matched, which is
 the product statement the other two exist to keep true.
 
-## Android: integrated, and not proved against a provider
+## Android: carried, on an emulator
 
-Consumer Mobile has the whole integration and none of the evidence, and the
-distinction is deliberate rather than a gap in this document.
+Superseded on the same day this document last changed. What stood here said that
+no frame had crossed any RTC provider on an Android runtime from this repository.
+That was true when it was written and is not true now: a real Android client and
+a real browser were matched by VELORA with simulation disabled, joined one
+LiveKit Cloud room, and carried camera and microphone in both directions. The
+run, the byte counts, the control-by-control transport measurements, and the five
+Android-only defects it found are recorded in
+[`../live-android-provider`](../live-android-provider/README.md).
 
-What exists: `@livekit/react-native` reached only through `apps/mobile/src/product/live-rtc.ts`,
-so no surface component imports a vendor; `RECORD_AUDIO` declared for the first
-time and requested only after somebody presses Start; `BLUETOOTH`,
-`BLUETOOTH_ADMIN` and `FOREGROUND_SERVICE` refused, each for a reason recorded in
+What still stands from the older text is the integration itself:
+`@livekit/react-native` reached only through `apps/mobile/src/product/live-rtc.ts`,
+so no surface component imports a vendor; `RECORD_AUDIO` requested only after
+somebody presses Start; `BLUETOOTH`, `BLUETOOTH_ADMIN` and `FOREGROUND_SERVICE`
+refused, each for a reason recorded in
 [ADR-0043](../../decisions/ADR-0043-livekit-transport-coins-and-paid-live-preferences.md);
 and the preview yielding the camera to the room on the *server's* answer about
-the encounter rather than on the transport's own success, because Android gives
-one client the camera and yielding after a successful connection is yielding too
-late to work. `pnpm android:verify` asserts the permission allow-list, the
-manifest, the signing configuration and the SDK levels against a regenerated
-project on every gate run.
+the encounter rather than on the transport's own success. `pnpm android:verify`
+asserts the permission allow-list, the manifest, the signing configuration and
+the SDK levels against a regenerated project on every gate run.
 
-What does not exist: **no frame has crossed any RTC provider on an Android
-device from this repository.** Every Android screenshot in
-[`../live-android`](../live-android) and [`../live-v2-android`](../live-v2-android)
-was taken against the `local-test` adapter, which carries no media and reaches
-no network, and the surfaces correctly said so. The Web proof above is not
-evidence about Android: it shares the platform's authorization and the provider's
-protocol, and it shares neither the SDK build, the device's capture pipeline,
-nor the camera handover this platform had to design around. That is an argument
-for expecting it to work, and it is not recorded here as an observation.
-
-Proving it needs a build on a real device against a real provider, and a second
-participant for it to meet.
+What is still not proved is narrower than it was, and it is a real limit rather
+than a formality: the Android runtime was an **emulator**, whose camera is a
+synthetic scene and whose microphone is silence. Transport, lifecycle, device
+ownership and the controls are observed; picture quality, real microphone
+routing, Bluetooth headsets, cellular networks and any physical handset are not.
+The screenshots in [`../live-android`](../live-android) and
+[`../live-v2-android`](../live-v2-android) predate all of this and were taken
+against the `local-test` adapter, which carries no media and reaches no network.
