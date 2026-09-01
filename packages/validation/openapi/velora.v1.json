@@ -45154,6 +45154,20 @@
               "local-test"
             ]
           },
+          "gates": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "consumer_country",
+                "creator_country",
+                "currency",
+                "payment_capability",
+                "payout_capability",
+                "tax_authority"
+              ]
+            }
+          },
           "packs": {
             "maxItems": 20,
             "type": "array",

@@ -4804,6 +4804,7 @@ export interface components {
         CoinPackListResponse: {
             /** @enum {string} */
             channel: "unavailable" | "local-test";
+            gates?: ("consumer_country" | "creator_country" | "currency" | "payment_capability" | "payout_capability" | "tax_authority")[];
             packs: {
                 coins: string;
                 price: {

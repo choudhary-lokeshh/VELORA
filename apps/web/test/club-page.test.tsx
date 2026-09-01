@@ -204,6 +204,32 @@ describe('coming back from a payment provider', () => {
     expect(state.textContent).toContain('15.00 USD');
   });
 
+  it('sends somebody where what they bought actually landed', async () => {
+    const base = withPayment('succeeded');
+    const coins = {
+      ...base,
+      payments: base.payments.map((payment) => ({
+        ...payment,
+        resource: {
+          id: '20000000-0000-4000-8000-000000000001',
+          type: 'coins' as const,
+        },
+      })),
+    };
+    renderProduct(<CheckoutReturn />, createApiDouble(coins), {
+      pathname: '/checkout/return',
+      search: '?payment=payment-1',
+    });
+
+    // Coins and a club membership settle through one checkout and land
+    // somewhere different. A page that sent everybody to Memberships would
+    // send half of them to a screen with nothing on it.
+    await screen.findByTestId('checkout-state');
+    expect(document.body.textContent).toContain('Coins added');
+    const onward = screen.getByRole('link', { name: 'Go to Coins' });
+    expect(onward.getAttribute('href')).toBe('/you/wallet');
+  });
+
   it('says it is waiting rather than claiming a payment that has not settled', async () => {
     const double = createApiDouble(withPayment('provider_pending'));
     renderProduct(<CheckoutReturn />, double, {

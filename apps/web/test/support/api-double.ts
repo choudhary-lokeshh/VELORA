@@ -26,7 +26,7 @@ export interface ApiDoubleState {
     id: string;
     interval?: 'month' | 'year';
     offerId: string;
-    resource?: { id: string; type: 'club' | 'gift' };
+    resource?: { id: string; type: 'club' | 'coins' | 'gift' };
     state: string;
   }[];
   /**
@@ -52,7 +52,7 @@ export interface ApiDoubleState {
     failureReason?: string;
     id: string;
     offerId: string;
-    resource?: { id: string; type: 'club' | 'gift' };
+    resource?: { id: string; type: 'club' | 'coins' | 'gift' };
     state: string;
     updatedAt: string;
   }[];
@@ -329,6 +329,8 @@ export interface ApiDoubleState {
       durationSeconds: number;
       preferences: { coins: string; kind: 'gender' | 'language' | 'region' }[];
     };
+    /** Commercial gates shut for this viewer. Empty means none is. */
+    coinPackGates?: string[];
     livePreference?: {
       charged: boolean;
       coins: string;
@@ -1416,6 +1418,9 @@ export function createApiDouble(
       // refactor away from a control that fails.
       return json(200, {
         channel: state.wallet.acquisition.web,
+        ...(state.wallet.acquisition.web === 'unavailable'
+          ? {}
+          : { gates: state.wallet.coinPackGates }),
         packs: state.wallet.acquisition.web === 'unavailable' ? [] : coinPacks,
       });
     }

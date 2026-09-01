@@ -45,6 +45,18 @@ export interface CoinPackOffer {
   readonly priceId: string;
 }
 
+/**
+ * What is on sale, and why it is not, for one viewer.
+ *
+ * `gates` is BILLING's own vocabulary rather than a message: a surface names
+ * the shut gate, and somebody in a country VELORA has not approved is told
+ * that rather than that their account is in the wrong state.
+ */
+export interface CoinPackCatalogue {
+  readonly gates: readonly string[] | undefined;
+  readonly packs: readonly CoinPackOffer[];
+}
+
 export interface WalletRoutesDependencies {
   /** How Android acquires coins in this environment. */
   readonly acquisition: CoinAcquisitionPort;
@@ -65,7 +77,7 @@ export interface WalletRoutesDependencies {
    * domain must not hold a copy of one. It is only ever called where the
    * environment can actually sell.
    */
-  readonly packs: () => Promise<readonly CoinPackOffer[]>;
+  readonly packs: (userId: string) => Promise<CoinPackCatalogue>;
   /** Whether the Web may currently acquire coins. A configured gate of its own. */
   readonly webAcquisition: 'local-test' | 'unavailable';
   readonly wallet: WalletService;
@@ -115,14 +127,15 @@ export class WalletRoutes {
     if (!this.dependencies.wallet.enabled) {
       return this.refusal(input, 'unavailable');
     }
-    const packs =
+    const offer =
       this.dependencies.webAcquisition === 'local-test'
-        ? await this.dependencies.packs()
-        : [];
+        ? await this.dependencies.packs(resolved.context.account.id)
+        : { gates: undefined, packs: [] };
     return {
       body: coinPackListResponseSchema.parse({
         channel: this.dependencies.webAcquisition,
-        packs: packs.map((pack) => ({
+        ...(offer.gates === undefined ? {} : { gates: offer.gates }),
+        packs: offer.packs.map((pack) => ({
           coins: pack.coins.toString(),
           offerId: pack.offerId,
           price: {

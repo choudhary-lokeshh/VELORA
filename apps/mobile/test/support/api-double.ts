@@ -284,6 +284,8 @@ export interface MobileApiState {
       durationSeconds: number;
       preferences: { coins: string; kind: 'gender' | 'language' | 'region' }[];
     };
+    /** Commercial gates shut for this viewer. Empty means none is. */
+    coinPackGates?: string[];
     livePreference?: {
       charged: boolean;
       coins: string;
@@ -1208,6 +1210,9 @@ export function createMobileApiDouble(
       // refactor away from a control that fails.
       return json(200, {
         channel: state.wallet.acquisition.web,
+        ...(state.wallet.acquisition.web === 'unavailable'
+          ? {}
+          : { gates: state.wallet.coinPackGates }),
         packs: state.wallet.acquisition.web === 'unavailable' ? [] : coinPacks,
       });
     }

@@ -256,6 +256,7 @@ function Acquisition({
   const api = useApi();
   const action = useSingleFlight();
   const [packs, setPacks] = useState<CoinPack[] | undefined>(undefined);
+  const [gates, setGates] = useState<readonly string[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   // One key per pack, held for as long as this screen is open. A second press
   // on the same pack is the same purchase; pressing a different one is a
@@ -266,7 +267,9 @@ function Acquisition({
   useEffect(() => {
     if (!sellable) return;
     void api.coinPacks().then((result) => {
-      if (isOk(result)) setPacks([...result.value.packs]);
+      if (!isOk(result)) return;
+      setPacks([...result.value.packs]);
+      setGates(result.value.gates);
     });
   }, [api, sellable]);
 
@@ -310,6 +313,21 @@ function Acquisition({
       </p>
       {packs === undefined ? (
         <Skeleton height={12} width="60%" />
+      ) : gates !== undefined && gates.length > 0 ? (
+        /*
+          Why, rather than a Buy that fails. A generic refusal renders as "your
+          account cannot do that in its current state", and somebody in a
+          country VELORA has not approved has done nothing to their account —
+          sending them to fix it would be sending them after the wrong thing.
+        */
+        <p
+          className="v-caption v-quiet v-measure"
+          data-testid="wallet-packs-gated"
+        >
+          {gates.includes('consumer_country')
+            ? 'Coins are not on sale where you are yet. Everyone matching is free and works exactly as it does everywhere else.'
+            : 'Coins are not on sale right now. Everyone matching is free and works exactly as it does everywhere else.'}
+        </p>
       ) : packs.length === 0 ? (
         <p className="v-caption v-quiet" data-testid="wallet-packs-empty">
           Nothing is on sale right now.

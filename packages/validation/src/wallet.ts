@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { commerceGateSchema } from './billing.js';
 import { moneySchema } from './money.js';
 import { profileLanguageSchema } from './profile.js';
 import { matchableGenderSchema, regionSchema } from './users.js';
@@ -334,6 +335,16 @@ export const coinPackSchema = z
 export const coinPackListResponseSchema = z
   .object({
     channel: z.enum(['unavailable', 'local-test']),
+    /**
+     * Every commercial gate that is shut for this viewer, empty when none is.
+     *
+     * Present so a surface can say why rather than offering a purchase that
+     * fails with a message about the "account's state". Somebody in a country
+     * VELORA has not approved has done nothing wrong, and a refusal that
+     * implied otherwise would send them to fix something that was never the
+     * problem.
+     */
+    gates: z.array(commerceGateSchema).optional(),
     packs: z.array(coinPackSchema).max(20),
   })
   .strict();

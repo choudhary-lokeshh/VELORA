@@ -120,12 +120,17 @@ export function CheckoutReturn() {
   const row = payment.value.payment;
   const look = paymentStateLook(row.state);
   const settled = row.state === 'succeeded';
+  // What was bought, from the server's own answer rather than from where the
+  // browser happened to come from. Coins and a club membership settle through
+  // one checkout and land somewhere different, and a page that sent everybody
+  // to Memberships would send half of them to a screen with nothing on it.
+  const coins = row.resource?.type === 'coins';
 
   return (
     <>
       <PageHeader
         lede={settled ? 'Your payment went through.' : undefined}
-        title={settled ? 'You are in' : 'Payment'}
+        title={settled ? (coins ? 'Coins added' : 'You are in') : 'Payment'}
       />
       <Card testId="checkout-state">
         <div className="v-stack v-stack--4">
@@ -159,14 +164,18 @@ export function CheckoutReturn() {
             <Notice icon="info" testId="checkout-slow" tone="quiet">
               This is taking longer than usual. Nothing is lost and nothing is
               charged twice — VELORA resolves an unconfirmed payment against the
-              provider&apos;s own record. Your Memberships page will show it
-              when it settles.
+              provider&apos;s own record.{' '}
+              {coins ? 'Your coin balance' : 'Your Memberships page'} will show
+              it when it settles.
             </Notice>
           ) : null}
 
           <div className="v-inline v-inline--tight">
-            <Link className="v-btn v-btn--primary" href="/you/memberships">
-              Go to Memberships
+            <Link
+              className="v-btn v-btn--primary"
+              href={coins ? '/you/wallet' : '/you/memberships'}
+            >
+              {coins ? 'Go to Coins' : 'Go to Memberships'}
             </Link>
             {settling ? (
               <Button onClick={payment.reload}>Check again</Button>

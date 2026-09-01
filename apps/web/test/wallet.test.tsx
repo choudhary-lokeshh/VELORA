@@ -178,6 +178,28 @@ describe('the coin screen', () => {
     expect(screen.getByTestId('wallet-buy-100')).toBeTruthy();
   });
 
+  it('says why nothing is on sale, rather than offering a purchase that fails', async () => {
+    const base = walletState({ balance: { available: '0', reserved: '0' } });
+    const double = createApiDouble({
+      ...base,
+      wallet: {
+        ...base.wallet,
+        acquisition: { android: 'unavailable', web: 'local-test' },
+        coinPackGates: ['consumer_country'],
+      },
+    });
+    renderProduct(<Wallet />, double, { pathname: '/you/wallet' });
+
+    const gated = await screen.findByTestId('wallet-packs-gated');
+    // Names the reason, and never implies the person did something to their
+    // account. A generic refusal reads as "your account cannot do that in its
+    // current state", which would send them after the wrong thing.
+    expect(gated.textContent).toContain('not on sale where you are');
+    expect(gated.textContent).toContain('free');
+    expect(gated.textContent).not.toContain('account');
+    expect(screen.queryByTestId('wallet-packs')).toBeNull();
+  });
+
   it('carries no casino anywhere on it', async () => {
     const double = createApiDouble(
       walletState({ balance: { available: '100', reserved: '0' } }),

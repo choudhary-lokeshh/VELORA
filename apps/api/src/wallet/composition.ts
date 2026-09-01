@@ -16,7 +16,7 @@ import {
 } from './acquisition.js';
 import { CoinLedger } from './ledger.js';
 import { WalletRepository } from './repository.js';
-import { WalletRoutes, type CoinPackOffer } from './routes.js';
+import { WalletRoutes, type CoinPackCatalogue } from './routes.js';
 import { WalletService, type WalletProfilePort } from './service.js';
 
 export interface WalletRuntime {
@@ -84,7 +84,7 @@ export function createWalletRuntime(input: {
    * coin count. Absent in a composition with no BILLING, in which case nothing
    * is on sale — which is also the answer in every deployed environment.
    */
-  readonly packs?: () => Promise<readonly CoinPackOffer[]>;
+  readonly packs?: (userId: string) => Promise<CoinPackCatalogue>;
   /**
    * USERS' answer to what the *buyer* says they speak.
    *
@@ -128,7 +128,8 @@ export function createWalletRuntime(input: {
       // What the platform sells its own currency in. Nothing at all where the
       // environment cannot sell, which is what an empty list means to a
       // surface: no pack renders and no purchase control exists.
-      packs: input.packs ?? (() => Promise.resolve([])),
+      packs:
+        input.packs ?? (() => Promise.resolve({ gates: undefined, packs: [] })),
       /*
        * Web acquisition is a configured gate of its own.
        *

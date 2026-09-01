@@ -552,7 +552,16 @@ export function createApplication(
         // actually sell, which makes "nothing is on sale" the default rather
         // than a value somebody has to remember to unset.
         ...(config.WALLET_WEB_ACQUISITION === localTestWebCoinAcquisition
-          ? { packs: () => coinPackOffers(billing.offerRepository) }
+          ? {
+              packs: (userId: string) =>
+                coinPackOffers({
+                  consumers: users.adultStanding,
+                  eligibility: billing.eligibility,
+                  now: () => new Date(),
+                  offers: billing.offerRepository,
+                  userId,
+                }),
+            }
           : {}),
         // Only so a language preference can be refused before it is sold. It
         // asks about the buyer and about nobody else, and it is the whole of

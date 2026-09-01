@@ -112,8 +112,15 @@ const wallet = createWalletRuntime({
   config,
   consumerContext: users.consumerContext,
   database: database.drizzle,
-  // The same assembly the application performs, from the same two domains.
-  packs: () => coinPackOffers(product.billing.offerRepository),
+  // The same assembly the application performs, from the same three domains.
+  packs: (userId: string) =>
+    coinPackOffers({
+      consumers: users.adultStanding,
+      eligibility: product.billing.eligibility,
+      now: () => new Date(),
+      offers: product.billing.offerRepository,
+      userId,
+    }),
   profiles: users.directory,
 });
 const application = createApplication({
@@ -183,7 +190,7 @@ interface Session {
   readonly csrf: string;
 }
 
-async function consumer(subject: string): Promise<Session> {
+async function consumer(subject: string, region = 'ES'): Promise<Session> {
   const response = await handle(
     new Request('http://api.test/v1/auth/local/web-sessions', {
       body: JSON.stringify({ audience: 'consumer_web', subject }),
@@ -207,7 +214,7 @@ async function consumer(subject: string): Promise<Session> {
   await handle(signed('/v1/users', actor, { method: 'POST' }));
   await handle(
     signed('/v1/users/me/onboarding/adult-declaration', actor, {
-      body: { declaresAdult: true, region: 'ES' },
+      body: { declaresAdult: true, region },
       method: 'POST',
     }),
   );
@@ -331,12 +338,28 @@ describe('the platform sells its own coin packs, as its own', () => {
       expect(Number(pack.coins)).toBeGreaterThan(0);
       expect(Number(pack.price.amountMinor)).toBeGreaterThan(0);
     }
+    // Nothing is shut for this buyer, so the answer is an empty list of gates
+    // rather than an absent one — "no reason not to" and "nothing to evaluate"
+    // are different answers.
+    expect(published.gates).toEqual([]);
     // No badge, no saving, no comparison. A shape that could hold one is a
     // shape somebody eventually fills in.
     const serialized = JSON.stringify(published);
     for (const claim of ['bestValue', 'saving', 'popular', 'discount']) {
       expect(serialized, claim).not.toContain(claim);
     }
+  });
+
+  it('says which gate is shut rather than offering a purchase that fails', async () => {
+    // A country the local commerce authority has not approved. The packs are
+    // still published — they exist — and the gate says why this person cannot
+    // buy one, which is what stops a surface offering a control that refuses
+    // with a message about the state of their account.
+    const elsewhere = await consumer('gated@wallet.test', 'IN');
+    const published = await packs(elsewhere);
+    expect(published.channel).toBe('local-test');
+    expect(published.gates).toContain('consumer_country');
+    expect(published.packs.length).toBeGreaterThan(0);
   });
 
   it('refuses to let a creator sell coins, at the database', async () => {

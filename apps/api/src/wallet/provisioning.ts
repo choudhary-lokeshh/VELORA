@@ -1,6 +1,10 @@
+import { isCurrencyCode, type CurrencyCode } from '@velora/validation';
+
+import type { CommerceEligibility } from '../billing/commerce-eligibility.js';
 import type { OfferRepository } from '../billing/offer-repository.js';
+import type { CommercialConsumerPort } from '../billing/ports.js';
 import { coinPackCoins, coinPacks } from './catalogue.js';
-import type { CoinPackOffer } from './routes.js';
+import type { CoinPackCatalogue, CoinPackOffer } from './routes.js';
 
 /**
  * Publishing the platform's own coin packs, where an environment sells them.
@@ -73,27 +77,43 @@ export async function publishPlatformCoinPacks(input: {
 }
 
 /**
- * The coin packs on sale, with the price BILLING published for each.
+ * The coin packs on sale, with the price BILLING published for each, and why a
+ * particular person cannot buy one.
  *
- * Assembled where both domains are visible, which is the composition — WALLET
- * has the coin count and BILLING has the price, and neither holds a copy of the
- * other's. A pack whose offer or price is missing is simply absent from the
- * answer: a surface must never render a pack it cannot start a checkout for.
+ * Assembled where all three domains are visible, which is the composition —
+ * WALLET has the coin count, BILLING has the price and the commercial gates,
+ * and USERS has where somebody is. None of them holds a copy of another's fact.
+ *
+ * A pack whose offer or price is missing is simply absent from the answer: a
+ * surface must never render a pack it cannot start a checkout for. And the
+ * gates are evaluated *here* rather than discovered by a failed purchase,
+ * because "your account cannot do that in its current state" is what a generic
+ * refusal reads as, and somebody in a country VELORA has not approved has done
+ * nothing to their account.
  */
-export async function coinPackOffers(
-  offers: OfferRepository,
-): Promise<readonly CoinPackOffer[]> {
+export async function coinPackOffers(input: {
+  readonly consumers: CommercialConsumerPort;
+  readonly eligibility: CommerceEligibility;
+  readonly now: () => Date;
+  readonly offers: OfferRepository;
+  readonly userId: string;
+}): Promise<CoinPackCatalogue> {
+  const { offers } = input;
   const published = await offers.findPlatformOffers(
     offers.transactionless,
     'coins',
   );
   const assembled: CoinPackOffer[] = [];
+  const currencies = new Set<CurrencyCode>();
   for (const offer of published) {
     const coins = coinPackCoins(offer.resourceId);
     if (coins === undefined) continue;
     const prices = await offers.livePricesFor(offers.transactionless, offer.id);
     const price = prices[0];
     if (price === undefined) continue;
+    // The stored value passed the journal's own currency check, so this is the
+    // type system catching up with a constraint rather than a second rule.
+    if (isCurrencyCode(price.currency)) currencies.add(price.currency);
     assembled.push({
       amountMinor: price.amountMinor,
       coins,
@@ -102,5 +122,30 @@ export async function coinPackOffers(
       priceId: price.id,
     });
   }
-  return assembled;
+
+  // Nothing to evaluate against. That is not a gate this viewer failed, it is
+  // the platform selling nothing — and reporting a per-viewer refusal would
+  // blame a person for a decision nobody has taken.
+  if (currencies.size === 0) return { gates: undefined, packs: assembled };
+
+  const now = input.now();
+  const standing = await input.consumers.standingForUser({
+    executor: offers.transactionless,
+    now,
+    userId: input.userId,
+  });
+  const sellerCountry = input.eligibility.platformCountry();
+  const shut = new Set<string>();
+  for (const currency of currencies) {
+    const verdict = input.eligibility.evaluate({
+      consumerCountry: standing?.region,
+      currency,
+      sellerCountry,
+    });
+    if (verdict.kind === 'permitted') {
+      return { gates: [], packs: assembled };
+    }
+    for (const gate of verdict.gates) shut.add(gate);
+  }
+  return { gates: [...shut].sort(), packs: assembled };
 }
