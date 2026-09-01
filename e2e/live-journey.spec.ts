@@ -441,6 +441,62 @@ test.describe('Live discovery', () => {
     await expect(page.locator('video')).toHaveCount(0);
   });
 
+  /**
+   * The controls on a phone, with the chat closed and with it open.
+   *
+   * This is the assertion the component suite cannot make. Whether the closed
+   * chat is on the screen is decided by the stylesheet — `[hidden]` loses to a
+   * class that sets `display` — and jsdom loads no stylesheet, so a sheet that
+   * covered every control on every phone width passed every existing test and
+   * was visible the moment a browser was opened at 390 px. It is measured the
+   * way a person meets it: the control is asked to be clickable, without
+   * `force`, which is exactly what an overlay over it makes untrue.
+   */
+  test('keeps the dock reachable on a phone, chat open or closed', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await page.setViewportSize({ height: 844, width: 390 });
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-peer-name')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Closed: nothing is over the dock, so every control answers a real click.
+    await expect(page.getByTestId('live-toggle-chat')).toBeVisible();
+    await page.getByTestId('live-toggle-mic').click();
+    await expect(page.getByTestId('live-toggle-mic')).toHaveAttribute(
+      'aria-label',
+      'Unmute your microphone',
+    );
+    await page.getByTestId('live-toggle-mic').click();
+
+    // Open: the sheet takes the bottom of the picture and stops at the top of
+    // the dock. Moving on and ending are still one press away, which is the
+    // whole reason the sheet is bounded rather than full height.
+    await page.getByTestId('live-toggle-chat').click();
+    await expect(page.getByTestId('live-chat')).toBeVisible();
+    await expect(page.getByTestId('live-next')).toBeVisible();
+    await expect(page.getByTestId('live-end')).toBeVisible();
+    await page.getByTestId('live-chat-input').fill('still reachable');
+    await page.getByTestId('live-chat-send').click();
+    await expect(page.getByTestId('live-chat-list')).toContainText(
+      'still reachable',
+    );
+    await page.getByTestId('live-chat-close').click();
+    await expect(page.getByTestId('live-chat')).toBeHidden();
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
   test('keeps every other destination exactly where it was', async ({
     page,
   }, testInfo) => {

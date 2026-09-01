@@ -92,7 +92,14 @@ export function AppShell({
         : feeds.unreadNotifications;
 
   return (
-    <div className="v-shell">
+    /*
+     * An immersive page is a viewport rather than a document, and the shell has
+     * to be told: without it the shell grows to whatever the page contains, and
+     * a stage whose controls are pinned to its own bottom edge puts them below
+     * the fold. At twice the text size on a phone that is exactly what happened
+     * — Next and End left the screen while the picture stayed on it.
+     */
+    <div className={`v-shell${immersive ? ' v-shell--immersive' : ''}`}>
       <a className="v-skip-link" href="#main">
         Skip to content
       </a>

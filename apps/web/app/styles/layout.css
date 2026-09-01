@@ -31,12 +31,34 @@
   min-height: 100dvh;
 }
 
+/*
+ * One screen is a viewport rather than a document.
+ *
+ * Live pins its controls to the bottom edge of its own stage, so the stage has
+ * to be bounded by the window rather than by what is inside it. Without this
+ * the shell grew with the content and the dock went below the fold — visible at
+ * ordinary text size only as a page that scrolled, and at twice the text size
+ * as Next and End leaving the screen altogether. Everything that has to give is
+ * given by the canvas, which scrolls inside itself.
+ */
+.v-shell--immersive {
+  block-size: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .v-shell__main {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   position: relative;
+}
+
+.v-shell--immersive .v-shell__main,
+.v-shell--immersive .v-view,
+.v-shell--immersive .v-view__inner {
+  min-block-size: 0;
 }
 
 .v-view {
@@ -239,13 +261,17 @@
   /*
    * On a phone the immersive view is the viewport minus the two bars, and it
    * does not scroll. A camera product that scrolls is a document.
+   *
+   * Edge to edge sideways, and deliberately zero rather than a small gutter:
+   * the picture is the page here, and the stage used to claw the gutter back
+   * with a negative margin — which pushed the document four pixels wider than
+   * the viewport at every phone width and made every Live screen rock under a
+   * thumb.
    */
   .v-view--immersive {
-    padding-bottom: calc(
-      var(--tabbar-height) + var(--space-2) + env(safe-area-inset-bottom)
-    );
-    padding-inline: var(--space-3);
-    padding-top: var(--space-2);
+    padding-bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+    padding-inline: 0;
+    padding-top: 0;
   }
 }
 
@@ -497,6 +523,20 @@
 
   .v-view {
     padding: var(--space-10) var(--space-8) var(--space-16);
+  }
+
+  /*
+   * Restated at this width, and not because the value changed.
+   *
+   * `.v-view` and `.v-view--immersive` have the same specificity, so the rule
+   * declared later wins — and the desktop `.v-view` padding above is declared
+   * later than the immersive one at 768 px. Live therefore inherited a
+   * document's 40/32/64 frame on every laptop, which is where the wide margins
+   * and the dead band under the stage came from. Declaring it here puts the
+   * override back on the winning side of the cascade.
+   */
+  .v-view--immersive {
+    padding: var(--space-5) var(--space-6) var(--space-6);
   }
 }
 

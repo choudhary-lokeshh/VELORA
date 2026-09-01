@@ -8,7 +8,7 @@ It owns none of the facts an encounter depends on. AUTH owns the principal and t
 
 It does not own profiles, photographs, conversations, message history, call lifecycle, provider state, presence projections, recordings, or transcripts. **Nothing here is media**: no recording, transcript, frame, SDP, ICE candidate, TURN credential, or participant address has a column.
 
-V1 is one-to-one random discovery between two adults. Group rooms, broadcast, audiences, spectators, paid sessions, and recording are out of scope and unbuilt. [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) is the architecture authority, and [ADR-0041](../decisions/ADR-0041-live-discovery-preferences-choice-and-presence.md) adds preferences, choosing somebody, reactions, and the presence sweep.
+V1 is one-to-one random discovery between two adults. Group rooms, broadcast, audiences, spectators, paid sessions, and recording are out of scope and unbuilt. [ADR-0040](../decisions/ADR-0040-random-live-discovery.md) is the architecture authority, and [ADR-0041](../decisions/ADR-0041-live-discovery-preferences-choice-and-presence.md) adds preferences, choosing somebody, reactions, and the presence sweep. [ADR-0042](../decisions/ADR-0042-live-surface-refinements.md) refines the two surfaces without changing any of it.
 
 ## The three facts an encounter is made of
 

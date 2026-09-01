@@ -38,8 +38,12 @@ import {
   Notice,
   PageHeader,
   Segmented,
+  Skeleton,
   StatusMessage,
+  initialsOf,
+  toneOf,
 } from '../design/primitives';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import { useLiveMedia, type LiveMediaState } from './live-media';
 import { useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
@@ -481,6 +485,7 @@ export function Live() {
           languageOptions={state?.languageOptions ?? []}
           media={media}
           medium={medium}
+          message={message}
           onLeave={leave}
           onNext={next}
           onPreferences={changePreferences}
@@ -492,7 +497,13 @@ export function Live() {
         />
       )}
 
-      {message === undefined ? null : (
+      {/*
+        A failure at the door is said under the door. On the stage it is said on
+        the stage, by the layer that already knows how to sit above the dock —
+        an error card printed underneath a full-bleed picture is an error
+        somebody scrolls to find.
+      */}
+      {message === undefined || stage !== 'closed' ? null : (
         <ErrorMessage testId="live-message">{message}</ErrorMessage>
       )}
 
@@ -548,7 +559,12 @@ function LiveDoor({
   );
 
   return (
-    <section className="v-live__door" data-testid="live-door">
+    <section
+      className={`v-live__surface v-live__door${
+        mode === 'choose' ? ' v-live__door--choose' : ''
+      }`}
+      data-testid="live-door"
+    >
       <div className="v-live__door-inner">
         <Segmented<Mode>
           label="How to meet somebody"
@@ -570,14 +586,20 @@ function LiveDoor({
               </span>
               <h2 className="v-display v-live__door-title">Meet someone</h2>
               {returning ? null : (
-                <p className="v-live__lede v-measure">
-                  VELORA finds one other person who is here right now and puts
-                  the two of you together. Talk for as long as it is good,
-                  connect if you both want to, and move on whenever you like.
+                <p className="v-live__lede">
+                  One other person who is here right now. Talk for as long as it
+                  is good, and move on whenever you like.
                 </p>
               )}
             </div>
 
+            {/*
+              One dominant control and one quiet one, stacked rather than side
+              by side. Two filled pills of the same size is a door with no
+              answer to "what do I press", and agreeing to be heard is still not
+              agreeing to be seen — so the quieter way in stays a separate
+              control rather than a setting on this one.
+            */}
             <div className="v-live__door-actions">
               <Button
                 busy={busy}
@@ -598,6 +620,8 @@ function LiveDoor({
                 onClick={() => {
                   onStart('voice');
                 }}
+                size="sm"
+                tone="ghost"
               >
                 Voice only
               </Button>
@@ -609,38 +633,45 @@ function LiveDoor({
               preferences={preferences}
             />
 
+            {/*
+              What happens here, said once and laid out sideways. As a bulleted
+              list down the page it read as documentation, which is the one
+              thing a live-social door must not be. It is shown on somebody's
+              first visit and never again.
+            */}
             {returning ? null : (
               <ul className="v-live__steps">
                 <li>
                   <Icon name="camera" size="sm" />
-                  <span>
-                    Your camera and microphone open when you press start.
-                  </span>
+                  <span>Your camera opens when you press Start.</span>
                 </li>
                 <li>
                   <Icon name="live" size="sm" />
-                  <span>
-                    VELORA finds somebody eligible. You never choose who.
-                  </span>
+                  <span>VELORA finds somebody. You never choose who.</span>
                 </li>
                 <li>
                   <Icon name="link" size="sm" />
-                  <span>
-                    Connect only becomes a connection if you both press it.
-                  </span>
+                  <span>Connect counts only if you both press it.</span>
                 </li>
               </ul>
             )}
-
-            <p className="v-caption v-quiet v-measure v-live__door-note">
-              Nothing is recorded. VELORA stores no video, no audio, and no
-              transcript of a live session, and no setting turns that on.
-            </p>
           </>
         ) : (
           <ChoosePanel invitations={invitations} onState={onState} />
         )}
       </div>
+
+      {/*
+        The one thing this product will not do, said on the frame's own bottom
+        edge rather than as one more paragraph in the column. It is a footnote,
+        and it was starting to read as documentation.
+      */}
+      {mode === 'instant' ? (
+        <p className="v-micro v-live__door-note">
+          Nothing is recorded. VELORA stores no video, no audio, and no
+          transcript of a live session, and no setting turns that on.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -743,14 +774,24 @@ function PreferenceControls({
  * Choosing somebody instead of being given somebody.
  *
  * Real VELORA profiles, from the discovery feed this product already has, in
- * the shape Discover already publishes them. There is no second profile store
+ * the shape Discover already publishes them — and drawn the way Discover draws
+ * them, because they are the same people and a second visual language for one
+ * projection is a second thing to keep true. There is no second profile store
  * here and no second ranking: this is the same people, asked a different
  * question.
  *
- * Nothing on a card says "online". Availability is not published by the feed
+ * The portrait is the one the person put first, obtained the way every other
+ * consumer surface obtains one: a reference exchanged for a short-lived
+ * address, which re-decides visibility each time. Somebody with nothing to show
+ * gets their identity mark and no explanation, which is the rule everywhere
+ * else and is deliberate — a blocked viewer, a processing image, and a removed
+ * one must look the same.
+ *
+ * Nothing on a tile says "online". Availability is not published by the feed
  * and this screen has no way to prove it, so a badge claiming it would be a
- * badge this screen invented. What is offered instead is honest: ask, and be
- * told truthfully whether they have answered.
+ * badge this screen invented. There is no score, no percentage, and no
+ * compatibility claim for the same reason. What is offered instead is honest:
+ * ask, and be told truthfully whether they have answered.
  */
 function ChoosePanel({
   invitations,
@@ -788,11 +829,18 @@ function ChoosePanel({
       .map((invitation) => invitation.person.id),
   );
 
+  // One exchange for the whole page. Each tile draws its identity mark first
+  // and takes the photograph when it arrives, so nothing on screen waits.
+  const portraits = useMediaAddresses(
+    portraitReferences(candidates ?? []),
+    'display',
+  );
+
   return (
     <div className="v-live__choose" data-testid="live-choose">
       <InvitationList invitations={invitations} onState={onState} />
 
-      <p className="v-caption v-quiet v-measure">
+      <p className="v-caption v-live__choose-note">
         Ask somebody to meet live. They are told you asked and nothing else; a
         live session happens only if they say yes and you are both here.
       </p>
@@ -802,59 +850,113 @@ function ChoosePanel({
       )}
 
       {candidates === undefined ? (
-        <p className="v-caption v-quiet">Loading people…</p>
+        <>
+          <p className="v-visually-hidden" role="status">
+            Loading people
+          </p>
+          <ul className="v-live__people">
+            {Array.from({ length: 4 }, (_, index) => (
+              <li className="v-live__person" key={index}>
+                <div style={{ aspectRatio: '4 / 5' }}>
+                  <Skeleton height="100%" width="100%" />
+                </div>
+                <div className="v-live__person-body">
+                  <Skeleton height={12} width="60%" />
+                  <Skeleton height={36} width="100%" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : candidates.length === 0 ? (
-        <p
-          className="v-caption v-quiet v-measure"
-          data-testid="live-choose-empty"
-        >
-          Nobody to show right now. Instant still works — VELORA looks across
-          everybody who is here rather than only the people it can show you.
-        </p>
+        <div className="v-live__choose-empty" data-testid="live-choose-empty">
+          <Icon name="compass" size="lg" />
+          <p className="v-small">
+            Nobody to show right now. Instant still works — VELORA looks across
+            everybody who is here rather than only the people it can show you.
+          </p>
+        </div>
       ) : (
         <ul className="v-live__people">
           {candidates.map((candidate) => {
             const pending =
               outstanding.has(candidate.id) || asked.has(candidate.id);
+            const portrait = portraits.get(candidate.media[0]?.id ?? '');
+            const context = contextLine(
+              candidate.region,
+              candidate.sharedLanguages,
+            );
             return (
               <li className="v-live__person" key={candidate.id}>
-                <Avatar
-                  displayName={candidate.displayName}
-                  seed={candidate.id}
-                  size="md"
-                />
-                <div className="v-live__person-body">
-                  <p className="v-subheading v-truncate">
-                    {candidate.displayName}
-                  </p>
-                  <p className="v-micro v-quiet v-truncate">
-                    {contextLine(candidate.region, candidate.sharedLanguages)}
-                  </p>
-                </div>
-                <Button
-                  data-testid={`live-ask-${candidate.id}`}
-                  disabled={pending || ask.busy}
-                  icon={pending ? 'check' : 'live'}
-                  onClick={() => {
-                    ask.run(async () => {
-                      const result = await api.inviteToLive({
-                        candidateId: candidate.id,
-                        medium: 'video',
-                      });
-                      if (!isOk(result)) {
-                        setError(failureMessage(result));
-                        return;
-                      }
-                      setError(undefined);
-                      setAsked(new Set([...asked, candidate.id]));
-                      const current = await api.liveState();
-                      if (isOk(current)) onState(current.value);
-                    });
-                  }}
-                  size="sm"
+                <div
+                  className={`v-live__person-portrait v-avatar--tone-${String(
+                    toneOf(candidate.id),
+                  )}`}
                 >
-                  {pending ? 'Asked' : 'Ask to meet'}
-                </Button>
+                  {portrait === undefined ? (
+                    <span aria-hidden="true" className="v-live__person-mark">
+                      {initialsOf(candidate.displayName)}
+                    </span>
+                  ) : (
+                    /* A plain element rather than the framework's optimised
+                       one: a per-request signed address is viewer-scoped and
+                       short-lived, so nothing upstream can fetch or cache it. */
+                    <img
+                      alt=""
+                      className="v-live__person-image"
+                      data-testid={`live-portrait-${candidate.id}`}
+                      src={portrait}
+                    />
+                  )}
+                  <div className="v-live__person-identity">
+                    <p className="v-subheading v-truncate">
+                      {candidate.displayName}
+                    </p>
+                    {context === '' ? null : (
+                      <p className="v-micro v-quiet v-truncate">{context}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="v-live__person-body">
+                  {candidate.bio === undefined ? null : (
+                    <p className="v-caption v-live__person-bio">
+                      {candidate.bio}
+                    </p>
+                  )}
+                  <Button
+                    block
+                    data-testid={`live-ask-${candidate.id}`}
+                    disabled={pending || ask.busy}
+                    icon={pending ? 'check' : 'live'}
+                    onClick={() => {
+                      ask.run(async () => {
+                        const result = await api.inviteToLive({
+                          candidateId: candidate.id,
+                          medium: 'video',
+                        });
+                        if (!isOk(result)) {
+                          setError(failureMessage(result));
+                          return;
+                        }
+                        setError(undefined);
+                        setAsked(new Set([...asked, candidate.id]));
+                        const current = await api.liveState();
+                        if (isOk(current)) onState(current.value);
+                      });
+                    }}
+                    size="sm"
+                    /*
+                     * Secondary, deliberately. There is one action per tile and
+                     * twelve tiles on a laptop; a filled accent on each is a
+                     * wall of accent, which is the casino this product is not.
+                     * The tile itself is the affordance and the control is
+                     * unmistakable within it.
+                     */
+                    tone="secondary"
+                  >
+                    {pending ? 'Asked' : 'Ask to meet'}
+                  </Button>
+                </div>
               </li>
             );
           })}
@@ -976,6 +1078,7 @@ function LiveStage({
   languageOptions,
   media,
   medium,
+  message,
   onLeave,
   onNext,
   onPreferences,
@@ -990,6 +1093,8 @@ function LiveStage({
   readonly languageOptions: readonly string[];
   readonly media: LiveMediaState;
   readonly medium: LiveMedium;
+  /** A failure worth reading, said over the picture rather than under it. */
+  readonly message: string | undefined;
   readonly onLeave: () => void;
   readonly onNext: (encounterId: string) => void;
   readonly onPreferences: (preferences: LivePreferences) => void;
@@ -1058,12 +1163,36 @@ function LiveStage({
     showing ||
     (serverState === 'ended' && encounter !== undefined && !movingOn);
 
+  /*
+   * How tall the dock and the chat sheet actually are, measured rather than
+   * guessed.
+   *
+   * Everything anchored above them — the preview, the identity plate, the
+   * notices, the reactions, the connection moment — has to clear them, and both
+   * heights change with the text size, with the safe area, and with whether the
+   * reaction row is open. A constant is a constant that is wrong at somebody's
+   * text size, which is exactly what a browser showed: at twice the text the
+   * dock grew a second row and the preview sat on top of it.
+   */
+  const [dock, dockHeight] = useMeasuredBlock();
+  const [sheet, sheetHeight] = useMeasuredBlock();
+  const [notice, noticeHeight] = useMeasuredBlock();
+
   return (
     <div
-      className={`v-live__stage${aboutSomebody ? ' v-live__stage--live' : ''}${
-        chatOpen && showing ? ' v-live__stage--chatting' : ''
-      }`}
+      className={`v-live__surface v-live__stage${
+        aboutSomebody ? ' v-live__stage--live' : ''
+      }${chatOpen && showing ? ' v-live__stage--chatting' : ''}`}
       data-testid="live-room"
+      style={
+        {
+          '--live-dock-block': `${String(Math.round(dockHeight))}px`,
+          '--live-notice-block': `${String(
+            noticeHeight === 0 ? 0 : Math.round(noticeHeight) + 12,
+          )}px`,
+          '--live-sheet-block': `${String(Math.round(sheetHeight))}px`,
+        } as CSSProperties
+      }
     >
       <LocalPreview media={media} medium={medium} pip={aboutSomebody} />
 
@@ -1120,6 +1249,7 @@ function LiveStage({
         busy={busy}
         chatOpen={chatOpen}
         encounter={showing ? encounter : undefined}
+        measure={dock}
         media={media}
         onBurst={showBurst}
         onLeave={onLeave}
@@ -1138,11 +1268,12 @@ function LiveStage({
         unread={unread}
       />
 
-      <PermissionNotice media={media} />
+      <PermissionNotice measure={notice} media={media} message={message} />
 
       {showing ? (
         <LiveChat
           encounter={encounter}
+          measure={sheet}
           onBurst={showBurst}
           onClose={() => {
             setChatOpen(false);
@@ -1178,35 +1309,73 @@ function RemotePane({
   readonly revealing: boolean;
 }) {
   const transport = encounter.call?.mediaTransport ?? 'none';
+  const context = contextLine(
+    encounter.peer.region,
+    encounter.peer.sharedLanguages,
+  );
   return (
     <div
       className={`v-live__peer${revealing ? ' v-live__peer--revealing' : ''}`}
       data-testid="live-peer"
     >
-      <Avatar
-        displayName={encounter.peer.displayName}
-        seed={encounter.peer.id}
-        size="lg"
-      />
-      <p className="v-display v-live__peer-name" data-testid="live-peer-name">
-        {encounter.peer.displayName}
-      </p>
-      <p className="v-small v-quiet">
-        {contextLine(encounter.peer.region, encounter.peer.sharedLanguages)}
-      </p>
+      {/*
+        The person, and what is carrying them. Nothing about the arrangement
+        differs between the reveal and the connected state — the same hero, the
+        same plate, the same dock — so a match arrives rather than swapping one
+        layout for another under somebody's eyes.
+      */}
+      <span className="v-live__peer-halo">
+        <Avatar
+          displayName={encounter.peer.displayName}
+          seed={encounter.peer.id}
+          size="lg"
+        />
+      </span>
+
+      {/*
+        Who this is, in their own published words. Centred under the portrait on
+        a narrow window; a compact plate in the lower corner of the picture on a
+        wide one, which is where every video product puts a name and which
+        leaves the middle of the canvas to the person rather than to a paragraph
+        about them.
+      */}
+      <div className="v-live__peer-plate">
+        <p className="v-live__peer-name" data-testid="live-peer-name">
+          {encounter.peer.displayName}
+        </p>
+        {context === '' ? null : <p className="v-small v-quiet">{context}</p>}
+        {encounter.peer.bio === undefined ? null : (
+          <p className="v-caption v-live__peer-bio">{encounter.peer.bio}</p>
+        )}
+      </div>
+
+      {/*
+        What is carrying them, last and quietest. It is an account of an absence
+        rather than a thing to act on, and it is exact rather than reassuring —
+        a pane that looked like a video feed which had not started would be the
+        most misleading thing on this screen.
+      */}
       {revealing ? (
-        <p className="v-caption v-quiet" data-testid="live-connecting">
-          Connecting…
+        <p className="v-live__transport" data-testid="live-connecting">
+          <Icon name="live" size="sm" />
+          <span>Connecting…</span>
         </p>
       ) : transport === 'none' ? (
-        <p className="v-caption v-quiet v-measure" data-testid="live-no-media">
-          You are in a live session with {encounter.peer.displayName}, and no
-          approved provider exists yet to carry their camera or their voice. The
-          chat is live and everything else on this screen is real.
+        <p className="v-live__transport" data-testid="live-no-media">
+          <Icon name="cameraOff" size="sm" />
+          <span>
+            You are with {encounter.peer.displayName}, and no approved provider
+            exists yet to carry their camera or voice. The chat is live and
+            everything else here is real.
+          </span>
         </p>
       ) : (
-        <p className="v-caption v-quiet" data-testid="live-media-carried">
-          Connected.
+        <p
+          className="v-live__transport v-live__transport--connected"
+          data-testid="live-media-carried"
+        >
+          <Icon name="check" size="sm" />
+          <span>Connected.</span>
         </p>
       )}
     </div>
@@ -1244,21 +1413,22 @@ function ConnectedMoment({
         <Icon name="link" size="sm" />
       </span>
       <div className="v-live__moment-body">
-        <p className="v-small">You and {displayName} are connected</p>
+        <p className="v-small v-live__moment-title">
+          You and {displayName} are connected
+        </p>
         <p className="v-micro v-quiet">
-          Keep talking here.{' '}
           {conversationId === undefined ? (
-            <>The conversation is in your Inbox whenever you want it.</>
+            <>Keep talking here. The conversation is in your Inbox.</>
           ) : (
             <>
-              The conversation is in your{' '}
+              Keep talking here, or{' '}
               <Link
                 data-testid="live-moment-conversation"
                 href={`/messages/${conversationId}?from=/live`}
               >
-                Inbox
-              </Link>{' '}
-              whenever you want it.
+                open it in your Inbox
+              </Link>
+              .
             </>
           )}
         </p>
@@ -1348,11 +1518,32 @@ function SearchingPane({
 
   return (
     <div className="v-live__searching" data-testid="live-searching">
-      <span className="v-live__sweep" />
-      <StatusMessage testId="live-searching-status">{line}</StatusMessage>
-      <p className="v-caption v-quiet v-measure">
-        VELORA is looking for one other person who is here right now and who you
-        have not just met.
+      {/*
+        The search's own motion: three rings leaving a mark, over the person's
+        own live picture. It measures nothing, counts nothing, and stands for
+        nothing but the fact that VELORA is looking — which is the whole of what
+        is true here.
+      */}
+      <span aria-hidden="true" className="v-live__pulse">
+        <span className="v-live__pulse-ring" />
+        <span className="v-live__pulse-ring" />
+        <span className="v-live__pulse-ring" />
+        <span className="v-live__pulse-core">
+          <Icon name="live" size="md" />
+        </span>
+      </span>
+      <StatusMessage testId="live-searching-status">
+        <span className="v-live__searching-line">{line}</span>
+      </StatusMessage>
+      {/*
+        Every phrasing of the state says that VELORA is looking, including this
+        one — the rotating line above it does not always carry the word, and a
+        screen that reads "Nobody yet" with nothing beside it is a screen that
+        looks like it has stopped.
+      */}
+      <p className="v-caption v-live__searching-note">
+        VELORA is looking across everybody here, except anybody you have just
+        met.
       </p>
 
       {narrowed && waited >= broadenPromptMilliseconds ? (
@@ -1389,13 +1580,17 @@ function EndedPane({ encounter }: { readonly encounter: LiveEncounter }) {
     encounter.connection.conversationId !== undefined;
   return (
     <div className="v-live__ended" data-testid="live-ended">
-      <Avatar
-        displayName={encounter.peer.displayName}
-        seed={encounter.peer.id}
-        size="md"
-      />
-      <p className="v-heading">{copy?.title ?? 'That conversation ended'}</p>
-      <p className="v-small v-muted v-measure">{copy?.body ?? ''}</p>
+      <span className="v-live__peer-halo">
+        <Avatar
+          displayName={encounter.peer.displayName}
+          seed={encounter.peer.id}
+          size="md"
+        />
+      </span>
+      <p className="v-heading v-live__ended-title">
+        {copy?.title ?? 'That conversation ended'}
+      </p>
+      <p className="v-small v-live__ended-body">{copy?.body ?? ''}</p>
       {connected ? (
         <Notice
           icon="message"
@@ -1416,7 +1611,7 @@ function EndedPane({ encounter }: { readonly encounter: LiveEncounter }) {
         </Notice>
       ) : encounter.connection.state === 'requested' ? (
         <p
-          className="v-caption v-quiet v-measure"
+          className="v-caption v-quiet v-live__ended-body"
           data-testid="live-ended-requested"
         >
           You asked to connect. If they ask too, the conversation appears in
@@ -1531,6 +1726,7 @@ function Dock({
   busy,
   chatOpen,
   encounter,
+  measure,
   media,
   onBurst,
   onLeave,
@@ -1544,6 +1740,8 @@ function Dock({
   readonly busy: boolean;
   readonly chatOpen: boolean;
   readonly encounter: LiveEncounter | undefined;
+  /** Reports the dock's own height, which everything above it has to clear. */
+  readonly measure: (element: HTMLElement | null) => void;
   readonly media: LiveMediaState;
   readonly onBurst: (reaction: string, self: boolean) => void;
   readonly onLeave: () => void;
@@ -1563,33 +1761,49 @@ function Dock({
   const [reacting, setReacting] = useState(false);
 
   return (
-    <div className="v-live__dock" data-testid="live-controls">
+    <div className="v-live__dock" data-testid="live-controls" ref={measure}>
+      {/* The devices, at the end a hand reaches for in a hurry. A device that
+          is off says so in colour as well as in its glyph and its label. */}
       <div className="v-live__devices">
-        <IconButton
-          data-testid="live-toggle-mic"
-          label={
-            media.microphoneOn
-              ? 'Mute your microphone'
-              : 'Unmute your microphone'
-          }
-          name={media.microphoneOn ? 'mic' : 'micOff'}
-          onClick={media.toggleMicrophone}
-        />
-        <IconButton
-          data-testid="live-toggle-camera"
-          label={
-            media.cameraOn ? 'Turn your camera off' : 'Turn your camera on'
-          }
-          name={media.cameraOn ? 'camera' : 'cameraOff'}
-          onClick={media.toggleCamera}
-        />
-        {media.switchable ? (
+        <span
+          className={`v-live__device${
+            media.microphoneOn ? '' : ' v-live__device--off'
+          }`}
+        >
           <IconButton
-            data-testid="live-switch-camera"
-            label="Switch camera"
-            name="cameraSwitch"
-            onClick={media.switchCamera}
+            data-testid="live-toggle-mic"
+            label={
+              media.microphoneOn
+                ? 'Mute your microphone'
+                : 'Unmute your microphone'
+            }
+            name={media.microphoneOn ? 'mic' : 'micOff'}
+            onClick={media.toggleMicrophone}
           />
+        </span>
+        <span
+          className={`v-live__device${
+            media.cameraOn ? '' : ' v-live__device--off'
+          }`}
+        >
+          <IconButton
+            data-testid="live-toggle-camera"
+            label={
+              media.cameraOn ? 'Turn your camera off' : 'Turn your camera on'
+            }
+            name={media.cameraOn ? 'camera' : 'cameraOff'}
+            onClick={media.toggleCamera}
+          />
+        </span>
+        {media.switchable ? (
+          <span className="v-live__device">
+            <IconButton
+              data-testid="live-switch-camera"
+              label="Switch camera"
+              name="cameraSwitch"
+              onClick={media.switchCamera}
+            />
+          </span>
         ) : null}
       </div>
 
@@ -1724,15 +1938,23 @@ function Dock({
           </>
         )}
 
-        <Button
-          data-testid="live-end"
-          disabled={busy}
-          icon="x"
-          onClick={onLeave}
-          size="sm"
-        >
-          End
-        </Button>
+        {/*
+          Leaving is held apart from the things pressed every minute. It is
+          obvious, it is never behind a menu, and it never sits flush against
+          the control that sends a heart.
+        */}
+        <span className="v-live__exit">
+          <Button
+            data-testid="live-end"
+            disabled={busy}
+            icon="x"
+            onClick={onLeave}
+            size="sm"
+            tone="ghost"
+          >
+            End
+          </Button>
+        </span>
       </div>
 
       {connectError === undefined ? null : (
@@ -1753,15 +1975,30 @@ function Dock({
  * discovery keeps working either way — searching, chat, Connect, and Next do
  * not need a camera — and that is said rather than left to be discovered.
  */
-function PermissionNotice({ media }: { readonly media: LiveMediaState }) {
-  if (media.permission === 'granted' || media.permission === 'requesting') {
-    return null;
-  }
-  if (media.permission === 'idle') return null;
+function PermissionNotice({
+  measure,
+  media,
+  message,
+}: {
+  /** Reports the layer's height, which the canvas above it has to clear. */
+  readonly measure: (element: HTMLElement | null) => void;
+  readonly media: LiveMediaState;
+  readonly message: string | undefined;
+}) {
+  const permission =
+    media.permission === 'granted' ||
+    media.permission === 'requesting' ||
+    media.permission === 'idle'
+      ? undefined
+      : media.permission;
+  if (permission === undefined && message === undefined) return null;
 
   return (
-    <div className="v-live__notice">
-      {media.permission === 'unavailable' ? (
+    <div className="v-live__notice" ref={measure}>
+      {message === undefined ? null : (
+        <ErrorMessage testId="live-message">{message}</ErrorMessage>
+      )}
+      {permission === undefined ? null : permission === 'unavailable' ? (
         <Notice
           icon="cameraOff"
           testId="live-permission-unavailable"
@@ -1773,17 +2010,21 @@ function PermissionNotice({ media }: { readonly media: LiveMediaState }) {
             still meet people and talk to them in the chat.
           </p>
         </Notice>
-      ) : media.permission === 'failed' ? (
+      ) : permission === 'failed' ? (
         <Notice
           icon="cameraOff"
           testId="live-permission-failed"
           title="Your camera could not be opened"
           tone="caution"
         >
+          {/*
+            Shorter than it was, and it says the same things. This sits over a
+            live picture above the controls, and every line of it is a line of
+            the conversation it is covering.
+          */}
           <p>
-            The device is there and would not start. Another application holding
-            it is the usual reason, and closing that one and pressing start
-            again is the usual fix.
+            Another application is usually holding it. Closing that one and
+            pressing Start again is the usual fix.
           </p>
           <p>
             Everything else works without it — you can still be matched, chat,
@@ -1798,9 +2039,8 @@ function PermissionNotice({ media }: { readonly media: LiveMediaState }) {
           tone="caution"
         >
           <p>
-            Your browser has not granted access. Allow it from the address bar
-            and it will open here. If the browser has stopped asking, the
-            permission has to be changed in this site&rsquo;s settings.
+            Allow it from the address bar, or from this site&rsquo;s settings if
+            the browser has stopped asking.
           </p>
           <p>
             Everything else works without it — you can still be matched, chat,
@@ -1830,6 +2070,7 @@ function PermissionNotice({ media }: { readonly media: LiveMediaState }) {
  */
 function LiveChat({
   encounter,
+  measure,
   onBurst,
   onClose,
   onState,
@@ -1837,6 +2078,8 @@ function LiveChat({
   open,
 }: {
   readonly encounter: LiveEncounter;
+  /** Reports the sheet's height, so the preview above it can step over it. */
+  readonly measure: (element: HTMLElement | null) => void;
   readonly onBurst: (reaction: string, self: boolean) => void;
   readonly onClose: () => void;
   readonly onState: (state: LiveState) => void;
@@ -1955,14 +2198,15 @@ function LiveChat({
       className={`v-live__chat${open ? ' v-live__chat--open' : ''}`}
       data-testid="live-chat"
       hidden={!open}
+      ref={measure}
     >
       <div className="v-live__chat-head">
-        <p className="v-live__chat-note v-micro v-quiet">
-          <Icon name="clock" size="sm" />
-          <span>
-            This chat lives in this conversation only. It does not go to your
-            Inbox unless you both connect.
-          </span>
+        <p className="v-micro v-live__chat-title">
+          <Icon name="message" size="sm" />
+          {/* The panel is named, not the person: a rail is narrow and a long
+              name here truncates the one word that says what this is. Who it is
+              with is on the log itself, where a screen reader reads it. */}
+          <span>Live chat</span>
         </p>
         <IconButton
           data-testid="live-chat-close"
@@ -1982,7 +2226,7 @@ function LiveChat({
         role="log"
       >
         {messages.length === 0 ? (
-          <p className="v-caption v-quiet">Say something.</p>
+          <p className="v-caption v-live__chat-empty">Say something.</p>
         ) : (
           messages.map((entry) => (
             <p
@@ -2015,20 +2259,36 @@ function LiveChat({
           placeholder="Say something"
           value={draft}
         />
-        <Button
-          busy={send.busy}
+        {/*
+          An icon rather than a word. The composer is the width of a rail on a
+          laptop and of a phone on a phone, and a labelled pill there takes room
+          the sentence being typed needs. The name is on the control either way.
+        */}
+        <IconButton
           data-testid="live-chat-send"
-          icon="send"
-          tone="primary"
+          disabled={send.busy}
+          label="Send"
+          name="send"
           type="submit"
-        >
-          Send
-        </Button>
+        />
       </form>
 
       {error === undefined ? null : (
         <ErrorMessage testId="live-chat-error">{error}</ErrorMessage>
       )}
+
+      {/*
+        What this chat is, and is not — under the composer as one quiet line
+        rather than a paragraph sitting over the conversation. It is the rule
+        the whole feature rests on, and saying it here is cheaper than somebody
+        discovering it.
+      */}
+      <p className="v-micro v-live__chat-note">
+        <Icon name="clock" size="sm" />
+        <span>
+          Live chat only — it does not go to your Inbox unless you both connect.
+        </span>
+      </p>
     </section>
   );
 }
@@ -2140,6 +2400,60 @@ function useReveal(encounterId: string | undefined): boolean {
     };
   }, [encounterId]);
   return encounterId !== undefined && revealed !== encounterId;
+}
+
+/**
+ * How tall something on the stage actually is.
+ *
+ * Everything anchored above the dock and above the phone chat sheet has to
+ * clear them, and both change height with the text size, with the safe area,
+ * and with what is inside them — the dock grows a second row at twice the text,
+ * and the sheet grows as the conversation does. A constant here is a constant
+ * that is wrong at somebody's text size, which is what a browser showed the
+ * first time: the preview sat on top of the controls.
+ *
+ * Returns a callback ref rather than an object ref, so the measurement starts
+ * the moment the element exists rather than after an effect that has to depend
+ * on it. `ResizeObserver` is absent in a test renderer and in an old browser;
+ * the first measurement is taken directly either way, so the layout is right
+ * from the first paint and merely stops following later changes.
+ */
+function useMeasuredBlock(): [(element: HTMLElement | null) => void, number] {
+  const [height, setHeight] = useState(0);
+  const observer = useRef<ResizeObserver | undefined>(undefined);
+
+  const attach = useCallback((element: HTMLElement | null) => {
+    observer.current?.disconnect();
+    observer.current = undefined;
+    if (element === null) {
+      setHeight(0);
+      return;
+    }
+    // The border box, not the content box: the dock's own padding is part of
+    // what anything above it has to clear.
+    const read = () => {
+      setHeight((current) => {
+        const measured = Math.round(element.getBoundingClientRect().height);
+        // Rounded, and only written when it actually moved. A state write per
+        // sub-pixel reflow is how a resize observer ends up feeding itself.
+        return measured === current ? current : measured;
+      });
+    };
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const watcher = new ResizeObserver(read);
+    watcher.observe(element);
+    observer.current = watcher;
+  }, []);
+
+  useEffect(
+    () => () => {
+      observer.current?.disconnect();
+    },
+    [],
+  );
+
+  return [attach, height];
 }
 
 /** How long, in milliseconds, since an instant the server reported. */

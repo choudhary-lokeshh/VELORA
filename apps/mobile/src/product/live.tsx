@@ -16,23 +16,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
-  KeyboardAvoidingView,
+  Keyboard,
   PanResponder,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, {
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 
 import { Icon } from '../design/icons';
 import {
-  Actions,
   Avatar,
   BlockedState,
   Button,
+  Card,
+  Chip,
   EmptyState,
   ErrorMessage,
   IconButton,
@@ -40,9 +49,9 @@ import {
   Notice,
   Segmented,
   Stack,
-  StatusMessage,
   Text,
 } from '../design/primitives';
+import { portraitReferences, useMediaAddresses } from './imagery';
 import {
   color,
   layout,
@@ -435,11 +444,22 @@ function LiveDoor({
 
   return (
     <ScrollView
-      contentContainerStyle={[styles.door, { paddingTop: insetTop + space[4] }]}
+      contentContainerStyle={[
+        styles.door,
+        mode === 'choose' ? styles.doorChoosing : null,
+        { paddingTop: insetTop + space[4] },
+      ]}
       testID="live-door"
       // Scrollable so the door survives 200 % text, where the explanation and
       // both controls are taller than a phone.
     >
+      {/*
+        The one decorative gesture on the screen, and it is light on purpose: an
+        ember bloom off the top says something happens here without becoming the
+        neon this product is explicitly not.
+      */}
+      <DoorGlow />
+
       <Segmented<Mode>
         onChange={onModeChange}
         options={[
@@ -470,14 +490,20 @@ function LiveDoor({
             </Text>
             {explained ? null : (
               <Text style={styles.centred} tone="secondary" variant="body">
-                VELORA finds one other person who is here right now and puts the
-                two of you together. Talk for as long as it is good, connect if
-                you both want to, and move on whenever you like.
+                One other person who is here right now. Talk for as long as it
+                is good, and move on whenever you like.
               </Text>
             )}
           </View>
 
-          <Actions>
+          {/*
+            One dominant control and one quiet one, stacked rather than side by
+            side. Two pills of the same size is a door with no answer to "what
+            do I press" — and agreeing to be heard is still not agreeing to be
+            seen, so the quieter way in stays a control of its own rather than a
+            setting on this one.
+          */}
+          <Stack gap={2}>
             <Button
               busy={busy}
               icon="video"
@@ -497,12 +523,14 @@ function LiveDoor({
               onPress={() => {
                 onStart('voice');
               }}
+              size="small"
               testID="live-start-voice"
+              tone="ghost"
               wide
             >
               Voice only
             </Button>
-          </Actions>
+          </Stack>
 
           <PreferenceControls
             languageOptions={languageOptions}
@@ -510,24 +538,29 @@ function LiveDoor({
             preferences={preferences}
           />
 
+          {/*
+            What happens here, said once and shortly. As three long sentences it
+            read as documentation, which is the one thing a live-social door must
+            not be. It appears on the first launch and never again.
+          */}
           {explained ? null : (
             <Stack gap={3}>
               <Inline gap={3}>
                 <Icon color={color.ember} name="camera" size="sm" />
                 <Text style={styles.step} tone="secondary" variant="small">
-                  Your camera opens when you press start.
+                  Your camera opens when you press Start.
                 </Text>
               </Inline>
               <Inline gap={3}>
                 <Icon color={color.ember} name="live" size="sm" />
                 <Text style={styles.step} tone="secondary" variant="small">
-                  VELORA finds somebody eligible. You never choose who.
+                  VELORA finds somebody. You never choose who.
                 </Text>
               </Inline>
               <Inline gap={3}>
                 <Icon color={color.ember} name="link" size="sm" />
                 <Text style={styles.step} tone="secondary" variant="small">
-                  Connect only becomes a connection if you both press it.
+                  Connect counts only if you both press it.
                 </Text>
               </Inline>
             </Stack>
@@ -690,8 +723,15 @@ function ChoosePanel({
     .filter((invitation) => invitation.direction === 'outgoing')
     .map((invitation) => invitation.person.id);
 
+  // One exchange for the whole list. Each card draws its identity mark first
+  // and takes the photograph when it arrives, so nothing on screen waits.
+  const portraits = useMediaAddresses(
+    portraitReferences(candidates ?? []),
+    'display',
+  );
+
   return (
-    <Stack gap={3}>
+    <Stack gap={4}>
       <InvitationList invitations={invitations} onState={onState} />
 
       <Text tone="tertiary" variant="caption">
@@ -708,54 +748,94 @@ function ChoosePanel({
           Loading people…
         </Text>
       ) : candidates.length === 0 ? (
-        <Text testID="live-choose-empty" tone="tertiary" variant="caption">
-          Nobody to show right now. Instant still works — VELORA looks across
-          everybody who is here rather than only the people it can show you.
-        </Text>
+        <Card testID="live-choose-empty">
+          <Stack gap={3}>
+            <Icon color={color.textTertiary} name="compass" size="lg" />
+            <Text tone="secondary" variant="small">
+              Nobody to show right now. Instant still works — VELORA looks
+              across everybody who is here rather than only the people it can
+              show you.
+            </Text>
+          </Stack>
+        </Card>
       ) : (
+        /*
+          The same people Discover publishes, drawn the way Discover draws them:
+          the photograph somebody chose, their name, where they are and what the
+          two of you share, and what they wrote about themselves. A row with a
+          monogram in it was a contact list; this is a surface somebody browses.
+
+          Nothing says "online". Availability is not published by the feed and
+          this screen cannot prove it, so a badge claiming it would be one this
+          screen invented — and there is no score or compatibility claim near it
+          for the same reason.
+        */
         candidates.map((candidate) => {
           const pending =
             outstanding.includes(candidate.id) || asked.includes(candidate.id);
+          const region = regionName(candidate.region ?? '');
           return (
-            <View key={candidate.id} style={styles.person}>
-              <Avatar
-                displayName={candidate.displayName}
-                seed={candidate.id}
-                size="medium"
-              />
-              <View style={styles.personBody}>
-                <Text numberOfLines={1} variant="body" weight="semibold">
-                  {candidate.displayName}
-                </Text>
-                <Text numberOfLines={1} tone="tertiary" variant="caption">
-                  {contextLine(candidate.region, candidate.sharedLanguages)}
-                </Text>
-              </View>
-              <Button
-                disabled={pending || ask.busy}
-                icon={pending ? 'check' : 'live'}
-                onPress={() => {
-                  ask.run(async () => {
-                    const result = await api.inviteToLive({
-                      candidateId: candidate.id,
-                      medium: 'video',
+            <Card key={candidate.id} testID={`live-candidate-${candidate.id}`}>
+              <Stack gap={4}>
+                <View style={styles.person}>
+                  <Avatar
+                    displayName={candidate.displayName}
+                    seed={candidate.id}
+                    size="large"
+                    source={portraits.get(candidate.media[0]?.id ?? '')}
+                    testID={`live-portrait-${candidate.id}`}
+                  />
+                  <View style={styles.personBody}>
+                    <Text numberOfLines={2} variant="heading" weight="semibold">
+                      {candidate.displayName}
+                    </Text>
+                    <Inline gap={2} wrap>
+                      {candidate.region === undefined ? null : (
+                        <Chip>{region}</Chip>
+                      )}
+                      {candidate.sharedLanguages.length === 0 ? null : (
+                        <Chip>
+                          {candidate.sharedLanguages
+                            .map(languageName)
+                            .join(', ')}
+                        </Chip>
+                      )}
+                    </Inline>
+                  </View>
+                </View>
+
+                {candidate.bio === undefined ? null : (
+                  <Text numberOfLines={3} tone="secondary" variant="small">
+                    {candidate.bio}
+                  </Text>
+                )}
+
+                <Button
+                  disabled={pending || ask.busy}
+                  icon={pending ? 'check' : 'live'}
+                  onPress={() => {
+                    ask.run(async () => {
+                      const result = await api.inviteToLive({
+                        candidateId: candidate.id,
+                        medium: 'video',
+                      });
+                      if (!isOk(result)) {
+                        setError(failureMessage(result));
+                        return;
+                      }
+                      setError(undefined);
+                      setAsked([...asked, candidate.id]);
+                      const current = await api.liveState();
+                      if (isOk(current)) onState(current.value);
                     });
-                    if (!isOk(result)) {
-                      setError(failureMessage(result));
-                      return;
-                    }
-                    setError(undefined);
-                    setAsked([...asked, candidate.id]);
-                    const current = await api.liveState();
-                    if (isOk(current)) onState(current.value);
-                  });
-                }}
-                size="small"
-                testID={`live-ask-${candidate.id}`}
-              >
-                {pending ? 'Asked' : 'Ask'}
-              </Button>
-            </View>
+                  }}
+                  testID={`live-ask-${candidate.id}`}
+                  wide
+                >
+                  {pending ? 'Asked' : 'Ask to meet'}
+                </Button>
+              </Stack>
+            </Card>
           );
         })
       )}
@@ -937,13 +1017,55 @@ function LiveStage({
   const [chatHeight, setChatHeight] = useState(0);
   const aboveDock = dockHeight + space[3];
   /*
+   * How much of this screen the keyboard is standing on, measured rather than
+   * assumed.
+   *
+   * The manifest asks for `adjustResize` and Android 15 stopped honouring it:
+   * an edge-to-edge window is not resized for the keyboard, it is handed an
+   * inset it has to deal with itself. On a device that meant the composer —
+   * the one control the keyboard exists to serve — was underneath it, with
+   * nothing on screen to say what was being typed.
+   *
+   * Measuring the stage in the window rather than trusting the keyboard's own
+   * height is what makes this correct either way: where a window *is* resized
+   * the stage already ends above the keyboard and the overlap is zero, and
+   * where it is not the overlap is exactly the part that is covered.
+   */
+  const stage = useRef<View>(null);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
+      const top = event.endCoordinates.screenY;
+      stage.current?.measureInWindow((_x, y, _width, height) => {
+        setKeyboardOverlap(Math.max(0, y + height - top));
+      });
+    });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardOverlap(0);
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
+  /*
+   * Where the sheet's own bottom edge is. With the keyboard up it sits on the
+   * keyboard rather than on the dock: the dock is behind the keyboard at that
+   * point, and leaving a dock-sized gap between the two would be reserving room
+   * for something nobody can see.
+   */
+  const sheetFloor =
+    keyboardOverlap > 0 ? keyboardOverlap + space[2] : aboveDock;
+  /*
    * How far up the picture-in-picture has been pushed by an open chat sheet.
    *
    * The canvas reserves this as well as the preview's own height, because the
    * preview moving up without the words moving up is the same overlap in a new
    * place — which is what a device showed the first time the sheet opened.
    */
-  const previewLift = chatOpen && live ? chatHeight + space[2] : 0;
+  const previewLift =
+    chatOpen && live ? sheetFloor - aboveDock + chatHeight + space[2] : 0;
 
   /*
    * Pressing Next acknowledges before the server has answered.
@@ -963,6 +1085,28 @@ function LiveStage({
   const ending =
     serverState === 'ended' && encounter !== undefined && !movingOn;
   const aboutSomebody = showing || ending;
+
+  const canvasCeiling = insets.top + space[12];
+  const canvasFloor =
+    (aboutSomebody ? previewHeight + space[4] + previewLift : 0) + aboveDock;
+  /*
+   * Whether there is room on this screen for everything the canvas can say.
+   *
+   * Measured rather than decided by a device name or a breakpoint: what is left
+   * between the strip and the dock depends on the safe area, on the text size,
+   * on whether a sheet is open, and on how tall the phone is. On a 360 × 640
+   * device the bio and the account of the transport did not fit, and a canvas
+   * that centres content taller than itself pushes half of it off both ends —
+   * which is what a compact phone showed, with the top of somebody's portrait
+   * cut off by the status bar.
+   *
+   * What is dropped when there is not room is the bio and the transport
+   * sentence, in that order of usefulness: who this is stays, and both are back
+   * the moment there is room for them.
+   */
+  const [canvasHeight, setCanvasHeight] = useState(0);
+  const canvasRoom = canvasHeight - canvasCeiling - canvasFloor;
+  const cramped = canvasHeight > 0 && canvasRoom < 340;
 
   useEffect(() => {
     setUnread(0);
@@ -1006,14 +1150,7 @@ function LiveStage({
   const mutual = connection?.state === 'connected';
 
   return (
-    <KeyboardAvoidingView
-      // On Android the window is resized for the keyboard, so the dock and the
-      // sheet move with it; on iOS it overlays, and padding is what keeps the
-      // composer above it.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.stage}
-      testID="live-room"
-    >
+    <View ref={stage} style={styles.stage} testID="live-room">
       <LocalCamera
         bottom={aboveDock + previewLift}
         media={media}
@@ -1021,21 +1158,46 @@ function LiveStage({
         pip={aboutSomebody}
       />
 
+      {/*
+        Android 16 draws this application under the status bar, so the clock and
+        the battery sit on whatever the camera is pointed at. This is what keeps
+        them — and the strip beneath them — legible against a bright frame,
+        without a bar of solid colour across the top of a camera product.
+      */}
+      <Scrim
+        direction="down"
+        id="live-top-scrim"
+        opacity={0.72}
+        style={[styles.topScrim, { height: insets.top + space[16] }]}
+      />
+
       <View
+        onLayout={(event) => {
+          setCanvasHeight(event.nativeEvent.layout.height);
+        }}
         pointerEvents="box-none"
         style={[
           styles.canvas,
           {
-            paddingBottom:
-              (aboutSomebody ? previewHeight + space[4] + previewLift : 0) +
-              aboveDock,
-            paddingTop: insets.top + space[12],
+            paddingBottom: canvasFloor,
+            paddingTop: canvasCeiling,
           },
         ]}
         testID="live-remote"
       >
         {showing ? (
-          <RemotePane encounter={encounter} revealing={revealing} />
+          <RemotePane
+            /*
+             * With the sheet open there is less canvas, and the useful context
+             * is who this is rather than what they wrote and what is carrying
+             * them. Both are a sentence, both are back the moment the sheet
+             * closes, and leaving them in was the picture running under a
+             * corner of somebody's own face on a device.
+             */
+            compact={chatOpen || cramped}
+            encounter={encounter}
+            revealing={revealing}
+          />
         ) : aboutSomebody ? (
           <EndedPane
             encounter={encounter}
@@ -1086,15 +1248,28 @@ function LiveStage({
 
       <NoticeLayer aboveDock={aboveDock} media={media} message={message} />
 
+      {/*
+        The dock's own ground is a wash rather than a panel with a rule across
+        the top. A hard edge under a camera reads as a second screen stuck to
+        the bottom of the first; a gradient reads as controls floating over the
+        picture, which is what they are.
+
+        No bottom inset here, deliberately. The tab bar below this scene already
+        pads itself by the gesture area, and adding it again left a band of dead
+        black between Next and the bar on every gesture-navigation phone.
+      */}
       <View
         onLayout={(event) => {
           setDockHeight(event.nativeEvent.layout.height);
         }}
-        style={[
-          styles.dock,
-          { paddingBottom: Math.max(insets.bottom, space[2]) },
-        ]}
+        style={styles.dock}
       >
+        <Scrim
+          direction="up"
+          id="live-dock-scrim"
+          opacity={0.94}
+          style={styles.dockScrim}
+        />
         <Dock
           busy={busy}
           chatOpen={chatOpen}
@@ -1120,7 +1295,7 @@ function LiveStage({
 
       {showing ? (
         <LiveChat
-          bottom={aboveDock}
+          bottom={sheetFloor}
           encounter={encounter}
           onBurst={showBurst}
           onClose={() => {
@@ -1149,7 +1324,7 @@ function LiveStage({
           {scenariosOpen ? <SimulationPanel onApplied={onState} /> : null}
         </View>
       ) : null}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -1161,40 +1336,83 @@ function LiveStage({
  * most misleading thing on the screen.
  */
 function RemotePane({
+  compact,
   encounter,
   revealing,
 }: {
+  /** Whether the sheet is taking the bottom of the screen. */
+  readonly compact: boolean;
   readonly encounter: LiveEncounter;
   readonly revealing: boolean;
 }) {
   const transport = encounter.call?.mediaTransport ?? 'none';
+  const context = contextLine(
+    encounter.peer.region,
+    encounter.peer.sharedLanguages,
+  );
   return (
-    <View style={styles.peer} testID="live-peer">
-      <Avatar
-        displayName={encounter.peer.displayName}
-        seed={encounter.peer.id}
-        size="large"
-      />
-      <Text testID="live-peer-name" variant="display" weight="bold">
+    <View
+      style={[styles.peer, revealing ? styles.peerRevealing : null]}
+      testID="live-peer"
+    >
+      {/*
+        A soft ring behind the person, so the hero is a portrait rather than a
+        monogram floating in a void. It is the only glow on the stage.
+      */}
+      <View style={styles.peerHalo}>
+        <Avatar
+          displayName={encounter.peer.displayName}
+          seed={encounter.peer.id}
+          size={compact ? 'medium' : 'large'}
+        />
+      </View>
+      <Text
+        numberOfLines={2}
+        style={styles.centred}
+        testID="live-peer-name"
+        variant={compact ? 'title' : 'display'}
+        weight="bold"
+      >
         {encounter.peer.displayName}
       </Text>
-      <Text style={styles.centred} tone="secondary" variant="small">
-        {contextLine(encounter.peer.region, encounter.peer.sharedLanguages)}
-      </Text>
+      {context === '' ? null : (
+        <Text style={styles.centred} tone="secondary" variant="small">
+          {context}
+        </Text>
+      )}
+      {/*
+        What the other person published about themselves. It was on the web
+        surface and missing here, which left a phone showing a name and a
+        country where a laptop showed a person.
+      */}
+      {compact || encounter.peer.bio === undefined ? null : (
+        <Text
+          numberOfLines={2}
+          style={styles.centred}
+          tone="secondary"
+          variant="caption"
+        >
+          {encounter.peer.bio}
+        </Text>
+      )}
+      {/*
+        What is carrying them, last and quietest. It is an account of an absence
+        rather than a thing to act on, and it is exact rather than reassuring.
+      */}
       {revealing ? (
         <Text testID="live-connecting" tone="tertiary" variant="caption">
           Connecting…
         </Text>
-      ) : transport === 'none' ? (
+      ) : compact ? null : transport === 'none' ? (
         <Text
           style={styles.centred}
           testID="live-no-media"
           tone="tertiary"
           variant="caption"
         >
-          You are in a live session with {encounter.peer.displayName}, and no
-          approved provider exists yet to carry their camera or their voice. The
-          chat is live and everything else on this screen is real.
+          You are with {encounter.peer.displayName}, and no approved provider
+          exists yet to carry their camera or voice. The chat is live and
+          everything else here is real.
         </Text>
       ) : (
         <Text testID="live-media-carried" tone="tertiary" variant="caption">
@@ -1298,13 +1516,38 @@ function SearchingPane({
 
   return (
     <View style={styles.searching} testID="live-searching">
-      <Sweep />
-      <StatusMessage testID="live-searching-status">
+      {/*
+        The search's own motion: three rings leaving a mark, over the person's
+        own live picture. It measures nothing, counts nothing, and stands for
+        nothing but the fact that VELORA is looking — which is the whole of what
+        is true here. There is no queue position, no number of people, and no
+        rotating faces of people who are not there, because no presence
+        projection exists behind this product and every one of those would be
+        invented on this screen.
+      */}
+      <Pulse />
+      {/*
+        The status *is* the line, rather than a quiet echo underneath one. Two
+        elements saying the same words is two things a screen reader reads.
+      */}
+      <Text
+        accessibilityLiveRegion="polite"
+        align="center"
+        testID="live-searching-status"
+        variant="heading"
+        weight="semibold"
+      >
         {line ?? 'Looking for someone…'}
-      </StatusMessage>
-      <Text style={styles.centred} tone="tertiary" variant="caption">
-        VELORA is looking for one other person who is here right now and who you
-        have not just met.
+      </Text>
+      {/*
+        Every phrasing of the state says that VELORA is looking, including this
+        one — the rotating line above it does not always carry the word, and a
+        screen that reads "Nobody yet" with nothing beside it is a screen that
+        looks like it has stopped.
+      */}
+      <Text style={styles.centred} tone="secondary" variant="caption">
+        VELORA is looking across everybody here, except anybody you have just
+        met.
       </Text>
       {narrowed && waited >= broadenPromptMilliseconds ? (
         <View style={styles.broaden} testID="live-broaden">
@@ -1516,11 +1759,12 @@ function LocalCamera({
             </Text>
           </View>
         )}
-        {/* Two washes rather than one: text over a live camera has to stay
-            readable whatever is in frame, and a camera pointed at a white wall
-            is the common case that decides these values. */}
-        <View pointerEvents="none" style={styles.scrim} />
-        <View pointerEvents="none" style={styles.scrimEdges} />
+        {/* Two washes rather than one, and both drawn as gradients: text over a
+            live camera has to stay readable whatever is in frame, and a flat
+            overlay dulls the picture everywhere to protect the few places where
+            words sit. A camera pointed at a white wall is the common case that
+            decides these values. */}
+        <CameraScrim />
         <MicBadge media={media} />
       </View>
     );
@@ -1562,6 +1806,36 @@ function LocalCamera({
       )}
       <MicBadge media={media} />
     </Animated.View>
+  );
+}
+
+/**
+ * What keeps words readable over whatever the camera is pointed at.
+ *
+ * A radial dim through the middle, where the words are, and a vertical wash
+ * that darkens the top and the bottom where the strip and the dock sit. The
+ * flat pair of overlays this replaces darkened the whole picture by two thirds
+ * to protect the third of it that carries text.
+ */
+function CameraScrim() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg height="100%" width="100%">
+        <Defs>
+          <RadialGradient cx="50%" cy="46%" id="live-dim" r="68%">
+            <Stop offset="0" stopColor="#070508" stopOpacity={0.78} />
+            <Stop offset="1" stopColor="#070508" stopOpacity={0.24} />
+          </RadialGradient>
+          <LinearGradient id="live-edges" x1="0" x2="0" y1="0" y2="1">
+            <Stop offset="0" stopColor="#070508" stopOpacity={0.66} />
+            <Stop offset="0.42" stopColor="#070508" stopOpacity={0.32} />
+            <Stop offset="1" stopColor="#070508" stopOpacity={0.84} />
+          </LinearGradient>
+        </Defs>
+        <Rect fill="url(#live-dim)" height="100%" width="100%" />
+        <Rect fill="url(#live-edges)" height="100%" width="100%" />
+      </Svg>
+    </View>
   );
 }
 
@@ -1628,51 +1902,129 @@ function ReactionBurst({
   );
 }
 
-/** The search's own motion. Nothing about it measures anything. */
-function Sweep() {
-  const pulse = useRef(new Animated.Value(0)).current;
+/**
+ * The search's own motion: three rings leaving a mark.
+ *
+ * Nothing about it measures anything, and nothing about it can be mistaken for
+ * progress — it has no end state and no bar. A thin line that grew and shrank
+ * was what this was, and on a device over a live camera it was invisible.
+ */
+function Pulse() {
+  return (
+    <View style={styles.pulse}>
+      <PulseRing delay={0} />
+      <PulseRing delay={900} />
+      <PulseRing delay={1800} />
+      <View style={styles.pulseCore}>
+        <Icon color={color.ember} name="live" size="md" />
+      </View>
+    </View>
+  );
+}
+
+function PulseRing({ delay }: { readonly delay: number }) {
+  const rise = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          duration: 1100,
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          duration: 1100,
-          toValue: 0,
-          useNativeDriver: true,
-        }),
-      ]),
+      Animated.timing(rise, {
+        delay,
+        duration: 2800,
+        toValue: 1,
+        useNativeDriver: true,
+      }),
     );
     loop.start();
     return () => {
       loop.stop();
     };
-  }, [pulse]);
+  }, [delay, rise]);
 
   return (
     <Animated.View
       style={[
-        styles.sweep,
+        styles.pulseRing,
         {
-          opacity: pulse.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.25, 0.9],
+          opacity: rise.interpolate({
+            inputRange: [0, 0.25, 1],
+            outputRange: [0, 0.85, 0],
           }),
           transform: [
             {
-              scaleX: pulse.interpolate({
+              scale: rise.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0.35, 1],
+                outputRange: [0.45, 1],
               }),
             },
           ],
         },
       ]}
     />
+  );
+}
+
+/**
+ * A gradient wash, drawn rather than approximated with a flat colour.
+ *
+ * React Native has no gradient of its own, and a flat overlay over a live
+ * camera has a hard edge wherever it stops — which is what a device showed
+ * along the top of the dock. `react-native-svg` is already in this build for
+ * the shell's own ground, so this costs nothing new.
+ */
+function Scrim({
+  direction,
+  id,
+  opacity,
+  style,
+}: {
+  readonly direction: 'up' | 'down';
+  /** Unique per instance: two gradients sharing a name is one gradient. */
+  readonly id: string;
+  readonly opacity: number;
+  readonly style: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View pointerEvents="none" style={style}>
+      <Svg height="100%" width="100%">
+        <Defs>
+          <LinearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+            <Stop
+              offset="0"
+              stopColor="#070508"
+              stopOpacity={direction === 'down' ? opacity : 0}
+            />
+            <Stop
+              offset="1"
+              stopColor="#070508"
+              stopOpacity={direction === 'down' ? 0 : opacity}
+            />
+          </LinearGradient>
+        </Defs>
+        <Rect fill={`url(#${id})`} height="100%" width="100%" />
+      </Svg>
+    </View>
+  );
+}
+
+/**
+ * The one decorative gesture on the door.
+ *
+ * A soft ember bloom off the top: enough atmosphere that the screen feels like
+ * somewhere, and nowhere near the neon this product is explicitly not.
+ */
+function DoorGlow() {
+  return (
+    <View pointerEvents="none" style={styles.doorGlow}>
+      <Svg height="100%" width="100%">
+        <Defs>
+          <RadialGradient cx="50%" cy="0%" id="live-bloom" r="80%">
+            <Stop offset="0" stopColor={color.ember} stopOpacity={0.16} />
+            <Stop offset="1" stopColor={color.ember} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect fill="url(#live-bloom)" height="100%" width="100%" />
+      </Svg>
+    </View>
   );
 }
 
@@ -1756,51 +2108,78 @@ function Dock({
         </View>
       ) : null}
 
+      {/*
+        Two rows, grouped by what each control is for rather than laid out as a
+        row of equals: the devices at one end where a thumb reaches in a hurry,
+        the social controls at the other, and leaving held apart from both by a
+        divider — so ending a conversation never sits flush against sending a
+        heart. Moving on has the row nearest the thumb to itself.
+      */}
       <View style={styles.dockRow}>
         <Inline gap={2}>
-          <IconButton
-            label={
-              media.microphoneOn
-                ? 'Mute your microphone'
-                : 'Unmute your microphone'
-            }
-            name={media.microphoneOn ? 'mic' : 'micOff'}
-            onPress={media.toggleMicrophone}
-            testID="live-toggle-mic"
-          />
-          <IconButton
-            label={
-              media.cameraOn ? 'Turn your camera off' : 'Turn your camera on'
-            }
-            name={media.cameraOn ? 'camera' : 'cameraOff'}
-            onPress={media.toggleCamera}
-            testID="live-toggle-camera"
-          />
-          <IconButton
-            label="Switch camera"
-            name="cameraSwitch"
-            onPress={media.switchCamera}
-            testID="live-switch-camera"
-          />
+          <View
+            style={[
+              styles.control,
+              media.microphoneOn ? null : styles.controlOff,
+            ]}
+          >
+            <IconButton
+              label={
+                media.microphoneOn
+                  ? 'Mute your microphone'
+                  : 'Unmute your microphone'
+              }
+              name={media.microphoneOn ? 'mic' : 'micOff'}
+              onPress={media.toggleMicrophone}
+              testID="live-toggle-mic"
+              tone={media.microphoneOn ? 'primary' : 'critical'}
+            />
+          </View>
+          <View
+            style={[styles.control, media.cameraOn ? null : styles.controlOff]}
+          >
+            <IconButton
+              label={
+                media.cameraOn ? 'Turn your camera off' : 'Turn your camera on'
+              }
+              name={media.cameraOn ? 'camera' : 'cameraOff'}
+              onPress={media.toggleCamera}
+              testID="live-toggle-camera"
+              tone={media.cameraOn ? 'primary' : 'critical'}
+            />
+          </View>
+          <View style={styles.control}>
+            <IconButton
+              label="Switch camera"
+              name="cameraSwitch"
+              onPress={media.switchCamera}
+              testID="live-switch-camera"
+              tone="primary"
+            />
+          </View>
         </Inline>
 
-        <Inline gap={2}>
+        <View style={styles.dockAside}>
           {encounter === undefined ? null : (
             <>
-              <IconButton
-                label={reacting ? 'Hide reactions' : 'Send a reaction'}
-                name="heart"
-                onPress={() => {
-                  setReacting(!reacting);
-                }}
-                testID="live-react"
-              />
-              <View>
+              <View style={styles.control}>
+                <IconButton
+                  label={reacting ? 'Hide reactions' : 'Send a reaction'}
+                  name="heart"
+                  onPress={() => {
+                    setReacting(!reacting);
+                  }}
+                  testID="live-react"
+                  tone="primary"
+                />
+              </View>
+              <View style={styles.control}>
                 <IconButton
                   label={chatOpen ? 'Hide the chat' : 'Show the chat'}
                   name="message"
                   onPress={onToggleChat}
                   testID="live-toggle-chat"
+                  tone="primary"
                 />
                 {unread > 0 && !chatOpen ? (
                   <View style={styles.unread} testID="live-unread" />
@@ -1808,80 +2187,98 @@ function Dock({
               </View>
             </>
           )}
-          <IconButton
-            label="End live discovery"
-            name="x"
+          <View style={styles.dockDivider} />
+          <Button
+            icon="x"
             onPress={onLeave}
+            size="small"
             testID="live-end"
-          />
-        </Inline>
+            tone="ghost"
+          >
+            End
+          </Button>
+        </View>
       </View>
 
       {/*
-        Wrapping, because the Connect control's label is a sentence that grows:
-        "Connect" becomes "Waiting for them" becomes "They want to connect". On
-        a device the row overflowed at the second of those and cut the control
-        beside it in half.
+        Moving on is the most frequent act in the product, so Next is the widest
+        control on the screen and takes the row nearest the thumb. Connect is
+        quieter beside it and takes the accent only in the one state where the
+        other person is waiting on it — two filled accent controls side by side
+        is a screen with no hierarchy at all.
+
+        The row is declared rather than wrapped. Connect's label is a sentence
+        that grows — "Connect" becomes "Waiting for them" becomes "They want to
+        connect" — and on a device it overflowed at the second of those and cut
+        the control beside it in half.
       */}
-      <Inline gap={2} wrap>
+      <View style={styles.flowRow}>
         {encounter === undefined ? null : (
-          <Button
-            busy={connect.busy}
-            disabled={encounter.connection.state === 'connected'}
-            icon="link"
-            onPress={() => {
-              connect.run(async () => {
-                const result = await api.connectInLiveEncounter(encounter.id);
-                setError(isOk(result) ? undefined : failureMessage(result));
-                // Re-read rather than patched from the response. Connect and
-                // the other person's own Connect race constantly, and the
-                // authoritative answer to "where does this now stand" is the
-                // one read that carries the whole state — including the
-                // conversation a mutual connection has just created.
-                const current = await api.liveState();
-                if (isOk(current)) onState(current.value);
-              });
-            }}
-            testID="live-connect"
-            // Quieter than Next, and louder only when it is the thing to press.
-            tone={
-              encounter.connection.state === 'received'
-                ? 'primary'
-                : 'secondary'
-            }
-          >
-            {connectionCopy[encounter.connection.state] ?? 'Connect'}
-          </Button>
+          <View style={styles.flowQuiet}>
+            <Button
+              busy={connect.busy}
+              disabled={encounter.connection.state === 'connected'}
+              icon="link"
+              onPress={() => {
+                connect.run(async () => {
+                  const result = await api.connectInLiveEncounter(encounter.id);
+                  setError(isOk(result) ? undefined : failureMessage(result));
+                  // Re-read rather than patched from the response. Connect and
+                  // the other person's own Connect race constantly, and the
+                  // authoritative answer to "where does this now stand" is the
+                  // one read that carries the whole state — including the
+                  // conversation a mutual connection has just created.
+                  const current = await api.liveState();
+                  if (isOk(current)) onState(current.value);
+                });
+              }}
+              size="large"
+              testID="live-connect"
+              tone={
+                encounter.connection.state === 'received'
+                  ? 'primary'
+                  : 'secondary'
+              }
+              wide
+            >
+              {connectionCopy[encounter.connection.state] ?? 'Connect'}
+            </Button>
+          </View>
         )}
 
         {encounter === undefined ? (
           serverState === 'ended' || serverState === 'idle' ? (
+            <View style={styles.flowLoud}>
+              <Button
+                busy={busy}
+                icon="live"
+                onPress={onSearchAgain}
+                size="large"
+                testID="live-search-again"
+                tone="primary"
+                wide
+              >
+                Meet someone else
+              </Button>
+            </View>
+          ) : null
+        ) : (
+          <View style={styles.flowLoud}>
             <Button
-              busy={busy}
-              icon="live"
-              onPress={onSearchAgain}
+              icon="refresh"
+              onPress={() => {
+                onNext(encounter.id);
+              }}
               size="large"
-              testID="live-search-again"
+              testID="live-next"
               tone="primary"
               wide
             >
-              Meet someone else
+              Next
             </Button>
-          ) : null
-        ) : (
-          <Button
-            icon="refresh"
-            onPress={() => {
-              onNext(encounter.id);
-            }}
-            size="large"
-            testID="live-next"
-            tone="primary"
-          >
-            Next
-          </Button>
+          </View>
         )}
-      </Inline>
+      </View>
 
       {error === undefined ? null : (
         <ErrorMessage testID="live-connect-error">{error}</ErrorMessage>
@@ -2081,12 +2478,21 @@ function LiveChat({
       style={[styles.chat, { bottom }]}
       testID="live-chat"
     >
+      {/*
+        A sheet, not a card floating over the picture: it is flush to the bottom
+        of the stage, its top corners are the only rounded ones, and it names
+        itself in a line rather than opening with a paragraph of policy. What
+        this chat is and is not is said under the composer, where it belongs —
+        a disclaimer at the top of a conversation is the first thing somebody
+        reads and the least useful.
+      */}
       <View style={styles.chatHead}>
-        <Icon color={color.textTertiary} name="clock" size="sm" />
-        <Text style={styles.step} tone="tertiary" variant="caption">
-          This chat lives in this conversation only. It does not go to your
-          Inbox unless you both connect.
-        </Text>
+        <Inline gap={2}>
+          <Icon color={color.textTertiary} name="message" size="sm" />
+          <Text tone="tertiary" variant="caption">
+            Live chat
+          </Text>
+        </Inline>
         <IconButton
           label="Hide the chat"
           name="x"
@@ -2134,20 +2540,33 @@ function LiveChat({
           testID="live-chat-input"
           value={draft}
         />
-        <Button
-          busy={send.busy}
-          icon="send"
-          onPress={submit}
-          testID="live-chat-send"
-          tone="primary"
-        >
-          Send
-        </Button>
+        {/*
+          An icon rather than a word. The composer is the width of a phone, and
+          a labelled pill there takes room the sentence being typed needs. The
+          name is on the control either way.
+        */}
+        <View style={styles.send}>
+          <IconButton
+            disabled={send.busy}
+            label="Send"
+            name="send"
+            onPress={submit}
+            testID="live-chat-send"
+            tone="onAccent"
+          />
+        </View>
       </Inline>
 
       {error === undefined ? null : (
         <ErrorMessage testID="live-chat-error">{error}</ErrorMessage>
       )}
+
+      <Inline gap={2}>
+        <Icon color={color.textTertiary} name="clock" size="sm" />
+        <Text style={styles.step} tone="tertiary" variant="caption">
+          Live chat only — it does not go to your Inbox unless you both connect.
+        </Text>
+      </Inline>
     </View>
   );
 }
@@ -2335,20 +2754,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[5],
   },
   centred: { textAlign: 'center' },
+  /*
+   * A sheet, flush to the bottom of the stage and to both its sides, with only
+   * its top corners rounded. Bounded to part of the screen so filling it can
+   * never push the dock away and the person can always see who they are
+   * talking to.
+   */
   chat: {
     backgroundColor: color.surfaceOverlay,
-    borderColor: color.borderHairline,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: space[2],
-    left: space[3],
-    maxHeight: '58%',
-    padding: space[3],
+    borderTopColor: color.borderHairline,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderTopWidth: 1,
+    gap: space[3],
+    left: 0,
+    maxHeight: '52%',
+    paddingHorizontal: space[4],
+    paddingVertical: space[3],
     position: 'absolute',
-    right: space[3],
+    right: 0,
   },
-  chatHead: { alignItems: 'flex-start', flexDirection: 'row', gap: space[2] },
-  chatList: { maxHeight: 220 },
+  chatHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  chatList: { maxHeight: 240 },
   composer: {
     backgroundColor: color.surfaceInset,
     borderColor: color.borderSoft,
@@ -2380,21 +2811,62 @@ const styles = StyleSheet.create({
     borderColor: color.emberLine,
   },
   dock: {
-    backgroundColor: color.surfaceOverlay,
-    borderTopColor: color.borderHairline,
-    borderTopWidth: 1,
     bottom: 0,
-    gap: space[2],
+    gap: space[3],
     left: 0,
+    paddingBottom: space[3],
     paddingHorizontal: space[4],
-    paddingTop: space[3],
+    paddingTop: space[4],
     position: 'absolute',
     right: 0,
   },
+  dockDivider: {
+    backgroundColor: color.borderHairline,
+    height: space[6],
+    marginHorizontal: space[1],
+    width: 1,
+  },
+  /*
+   * Wraps rather than overflowing. The controls are icon-sized targets that
+   * must not shrink, and on a 360 dp phone the two groups together are wider
+   * than the row — which is not a hypothetical: on a compact device End lost
+   * its last letter off the side of the screen.
+   */
+  /*
+   * The social and safety group keeps the end of whatever line it lands on: a
+   * wrapped row aligned by `space-between` puts the lone second line at the
+   * start, which reads as a third group nobody designed.
+   */
+  dockAside: {
+    alignItems: 'center',
+    columnGap: space[2],
+    flexDirection: 'row',
+    marginLeft: 'auto',
+  },
   dockRow: {
     alignItems: 'center',
+    columnGap: space[2],
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: space[2],
+  },
+  dockScrim: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: -space[10],
+  },
+  /* A control on the picture, rather than a glyph floating on it. */
+  control: {
+    backgroundColor: color.surfaceOverlay,
+    borderColor: color.borderHairline,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  controlOff: {
+    backgroundColor: color.statusCriticalWash,
+    borderColor: color.statusCritical,
   },
   door: {
     /*
@@ -2409,6 +2881,14 @@ const styles = StyleSheet.create({
     gap: space[4],
     padding: space[5],
   },
+  doorChoosing: { justifyContent: 'flex-start' },
+  doorGlow: {
+    height: 360,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
   doorHero: { alignItems: 'center', gap: space[4] },
   doorMark: {
     alignItems: 'center',
@@ -2416,10 +2896,13 @@ const styles = StyleSheet.create({
     borderColor: color.emberLine,
     borderRadius: radius.pill,
     borderWidth: 1,
-    height: space[16],
+    height: space[20],
     justifyContent: 'center',
-    width: space[16],
+    width: space[20],
   },
+  flowLoud: { flex: 1.4 },
+  flowQuiet: { flex: 1 },
+  flowRow: { flexDirection: 'row', gap: space[2] },
   localBadge: {
     backgroundColor: color.surfaceOverlay,
     borderRadius: radius.pill,
@@ -2459,26 +2942,65 @@ const styles = StyleSheet.create({
   },
   notices: { left: space[3], position: 'absolute', right: space[3] },
   peer: { alignItems: 'center', gap: space[3] },
-  person: {
+  /* A soft ring behind the person, so the hero is a portrait rather than a
+     monogram floating in a void. */
+  peerHalo: {
     alignItems: 'center',
-    backgroundColor: color.surface1,
     borderColor: color.borderHairline,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: space[3],
+    justifyContent: 'center',
     padding: space[3],
   },
-  personBody: { flex: 1 },
+  /*
+   * The reveal changes opacity and nothing about the arrangement, so a match
+   * arrives rather than swapping one layout for another under somebody's eyes.
+   */
+  peerRevealing: { opacity: 0.55 },
+  person: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: space[4],
+  },
+  personBody: { flex: 1, gap: space[2] },
   pip: {
     backgroundColor: color.canvasDeep,
     borderColor: color.borderSoft,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
+    elevation: 12,
     height: previewHeight,
     overflow: 'hidden',
     position: 'absolute',
-    width: 108,
+    shadowColor: '#000000',
+    shadowOffset: { height: 10, width: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    width: 112,
+  },
+  pulse: {
+    alignItems: 'center',
+    height: 96,
+    justifyContent: 'center',
+    width: 96,
+  },
+  pulseCore: {
+    alignItems: 'center',
+    backgroundColor: color.emberWashStrong,
+    borderRadius: radius.pill,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  pulseRing: {
+    borderColor: color.ember,
+    borderRadius: radius.pill,
+    borderWidth: 2,
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
   pipLeft: { left: space[3] },
   pipRight: { right: space[3] },
@@ -2530,25 +3052,17 @@ const styles = StyleSheet.create({
     right: space[3],
     zIndex: 3,
   },
-  /* The wash that keeps words readable over whatever the camera is pointed at. */
-  scrim: {
-    backgroundColor: 'rgba(7, 5, 8, 0.58)',
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
+  searching: { alignItems: 'center', gap: space[4] },
+  /* The send affordance keeps the accent a labelled pill had, and gives the
+     room back to what is being typed. */
+  send: {
+    backgroundColor: color.ember,
+    borderRadius: radius.pill,
   },
-  scrimEdges: {
-    backgroundColor: 'rgba(7, 5, 8, 0.22)',
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  searching: { alignItems: 'center', gap: space[3] },
   simulation: {
+    // A ground of its own, so the developer's panel does not print itself over
+    // the product it is there to drive. It is absent in any deployed build.
+    backgroundColor: color.canvasDeep,
     borderColor: color.borderSoft,
     borderRadius: radius.md,
     borderStyle: 'dashed',
@@ -2578,12 +3092,7 @@ const styles = StyleSheet.create({
     top: 0,
     zIndex: 1,
   },
-  sweep: {
-    backgroundColor: color.ember,
-    borderRadius: radius.pill,
-    height: 3,
-    width: 180,
-  },
+  topScrim: { left: 0, position: 'absolute', right: 0, top: 0 },
   unread: {
     backgroundColor: color.ember,
     borderRadius: radius.pill,

@@ -18,6 +18,14 @@ import { overflowingElements, viewportWidths } from './viewport.js';
 const widths = viewportWidths;
 
 const routes = [
+  /*
+   * Live's door, which is the immersive layout and the one that escapes the
+   * reading column. It claws its gutter back from the shell, and when the two
+   * disagreed the stage was four pixels wider than the viewport at every phone
+   * width — a page that rocks sideways under a thumb, on the screen this
+   * product is arranged around.
+   */
+  '/live',
   '/discover',
   // The creator section is its own layout — a grid of cards whose names and
   // handles do not wrap — and it was the one that pushed the document sideways
