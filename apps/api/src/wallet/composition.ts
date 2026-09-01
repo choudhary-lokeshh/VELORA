@@ -7,6 +7,8 @@ import {
   type ServerConfig,
 } from '@velora/config/server';
 
+import type { SafeLogger } from '@velora/observability/server';
+
 import type { DatabaseHandle } from '../database/executor.js';
 import type { ConsumerContextResolver } from '../users/context.js';
 import {
@@ -75,6 +77,7 @@ export function createWalletRuntime(input: {
   /** Present when this composition publishes routes. */
   readonly consumerContext?: ConsumerContextResolver;
   readonly database: DatabaseHandle;
+  readonly logger: SafeLogger;
   readonly now?: () => Date;
   /**
    * BILLING's own offers for the platform's coin packs, priced.
@@ -106,6 +109,7 @@ export function createWalletRuntime(input: {
     // would otherwise run correctly with coins off must not fail to start.
     enabled: input.config.WALLET_COIN_LEDGER === enabledCoinLedger,
     ledger,
+    logger: input.logger,
     now,
     ...(input.profiles === undefined ? {} : { profiles: input.profiles }),
     repository,

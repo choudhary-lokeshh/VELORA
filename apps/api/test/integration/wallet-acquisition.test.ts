@@ -112,6 +112,7 @@ const wallet = createWalletRuntime({
   config,
   consumerContext: users.consumerContext,
   database: database.drizzle,
+  logger,
   // The same assembly the application performs, from the same three domains.
   packs: (userId: string) =>
     coinPackOffers({

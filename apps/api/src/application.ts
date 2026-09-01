@@ -546,6 +546,7 @@ export function createApplication(
         config,
         consumerContext: users.consumerContext,
         database: ownedDatabase.database,
+        logger,
         // WALLET's coin counts beside BILLING's prices, assembled here because
         // this is the only place that holds both — so neither domain keeps a
         // copy of the other's fact. Supplied only where the environment can

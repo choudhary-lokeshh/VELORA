@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { WalletActivityKind } from '@velora/validation';
+import type { SafeLogger } from '@velora/observability/server';
 
 import type { Executor, TransactionHandle } from '../database/executor.js';
 import type { CoinBalance, CoinLedger, CoinPosting } from './ledger.js';
@@ -124,6 +125,16 @@ export interface WalletServiceDependencies {
    */
   readonly enabled: boolean;
   readonly ledger: CoinLedger;
+  /**
+   * What an operator needs to see, and nothing an operator must not.
+   *
+   * Every line below carries the *kinds* somebody narrowed on and never the
+   * values: which categories are being bought is an operational question, and
+   * which category one person chose is theirs. No account identifier appears
+   * either, on the rule `./entitlement-intake.ts` already follows — a wallet
+   * log line that named people would be a record of somebody's spending.
+   */
+  readonly logger: SafeLogger;
   readonly now: () => Date;
   /**
    * USERS' answer to "what does this person say they speak".
@@ -354,13 +365,13 @@ export class WalletService {
     // selling on availability nobody can promise.
     const selection = await this.supportedSelection(input);
     if (selection === undefined) {
-      return { kind: 'refused', reason: 'not_supported' };
+      return this.refuse('not_supported', input);
     }
     const coins = livePreferenceActivationCoins(selection);
     if (coins === undefined) {
       // A window that narrows nothing. `Everyone` is free and is what somebody
       // gets by not buying anything, so there is nothing here to sell.
-      return { kind: 'refused', reason: 'not_supported' };
+      return this.refuse('not_supported', input);
     }
 
     const { ledger, now, repository } = this.dependencies;
@@ -378,7 +389,7 @@ export class WalletService {
             userId: input.userId,
           })) >= maximumLivePreferenceActivationsPerWindow
         ) {
-          return { kind: 'refused', reason: 'rate_limited' } as const;
+          return this.refuse('rate_limited', selection);
         }
 
         const held = await repository.lockOpenEntitlement(
@@ -393,7 +404,7 @@ export class WalletService {
         // that is a few seconds behind.
         if (held !== undefined) {
           if (held.expiresAt.getTime() > at.getTime()) {
-            return { kind: 'refused', reason: 'conflict' } as const;
+            return this.refuse('conflict', selection);
           }
           await this.close(executor, held, 'released');
         }
@@ -404,7 +415,7 @@ export class WalletService {
           // and how much is held, are not part of a refusal: a refusal that
           // reported them would be a way to read somebody's balance from a
           // sequence of failed attempts.
-          return { kind: 'refused', reason: 'insufficient_balance' } as const;
+          return this.refuse('insufficient_balance', selection);
         }
 
         const entitlementId = randomUUID();
@@ -462,11 +473,15 @@ export class WalletService {
           // that does not exist.
           throw new WalletConflict();
         }
+        this.dependencies.logger.info(
+          { coins: coins.toString(), kinds: kindsOf(selection) },
+          'live preference activated',
+        );
         return { entitlement, kind: 'activated' } as const;
       })
       .catch((error: unknown) => {
         if (error instanceof WalletConflict) {
-          return { kind: 'refused', reason: 'conflict' } as const;
+          return this.refuse('conflict', selection);
         }
         throw error;
       });
@@ -538,6 +553,10 @@ export class WalletService {
       reservedDelta: -held.coins,
       userId: input.userId,
     });
+    this.dependencies.logger.info(
+      { coins: held.coins.toString(), kinds: kindsOf(selectionOf(held)) },
+      'live preference charged',
+    );
     return true;
   }
 
@@ -774,10 +793,21 @@ export class WalletService {
           reservedDelta: 0n,
           userId: input.userId,
         });
+        this.dependencies.logger.info(
+          { channel: input.channel, coins: input.coins.toString() },
+          'verified purchase credited',
+        );
         return { alreadyCredited: false, kind: 'credited' } as const;
       })
       .catch((error: unknown) => {
         if (error instanceof WalletConflict) {
+          // Two deliveries of one purchase raced and the other won. Worth a
+          // line, because a channel that produced many of these would be one
+          // redelivering far more than it should.
+          this.dependencies.logger.info(
+            { channel: input.channel },
+            'verified purchase already credited',
+          );
           return { alreadyCredited: true, kind: 'credited' } as const;
         }
         throw error;
@@ -982,6 +1012,24 @@ export class WalletService {
   }
 
   /**
+   * One refusal, recorded and returned.
+   *
+   * The reason is the operational fact — an activation refused for balance and
+   * one refused for an unsupported preference are different problems with
+   * different owners — and it is logged with the kinds rather than the values.
+   */
+  private refuse(
+    reason: WalletRefusal,
+    selection: LivePreferenceSelection,
+  ): { readonly kind: 'refused'; readonly reason: WalletRefusal } {
+    this.dependencies.logger.info(
+      { kinds: kindsOf(selection), reason },
+      'live preference activation refused',
+    );
+    return { kind: 'refused', reason };
+  }
+
+  /**
    * The window in force, or nothing, with the expiry evaluated on read.
    *
    * The expiry is checked here rather than trusted to the sweep, and that is not
@@ -1066,6 +1114,19 @@ export class WalletService {
 function activityKindOf(reason: WalletTransactionReason): WalletActivityKind {
   if (reason === 'capture') return 'spend';
   return reason;
+}
+
+/**
+ * Which kinds a selection narrows on, for a log line.
+ *
+ * Kinds and never values. That somebody bought a gender narrowing is an
+ * operational fact; which category they chose is theirs, and a log is exactly
+ * the place a private preference should not accumulate.
+ */
+function kindsOf(selection: LivePreferenceSelection): readonly string[] {
+  return livePremiumPreferenceKinds.filter(
+    (kind) => selection[kind] !== undefined,
+  );
 }
 
 /** One stored window's preferences, in the shape everything else speaks. */

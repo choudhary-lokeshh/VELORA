@@ -1304,7 +1304,29 @@ export class LiveService {
       ...agreed,
       ...narrowed.filter((row) => !agreedIds.has(row.userId)),
     ];
-    if (candidates.length === 0) return undefined;
+    if (candidates.length === 0) {
+      // A paid narrowing that found nobody, which is the one outcome worth an
+      // operator's attention: it is what "somebody bought a filter and met
+      // nobody" looks like from the inside. Debug rather than info, because a
+      // poll happens every few seconds and the durable count of it is the
+      // sweep's `released` figure — coins actually handed back.
+      //
+      // Kinds and never values, on the rule WALLET's own logs follow: which
+      // categories are being bought is operational, and which one this person
+      // chose is theirs.
+      if (premium !== undefined) {
+        this.dependencies.logger.debug(
+          {
+            kinds: (['gender', 'region', 'language'] as const).filter(
+              (kind) => premium[kind] !== undefined,
+            ),
+            pool: pool.length,
+          },
+          'paid narrowing matched nobody in the pool',
+        );
+      }
+      return undefined;
+    }
 
     const candidateIds = candidates.map((row) => row.userId);
     // The other half of a paid narrowing: whatever *they* bought has to hold

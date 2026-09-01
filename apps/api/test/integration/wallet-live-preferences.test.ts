@@ -178,6 +178,7 @@ const wallet = createWalletRuntime({
   config,
   consumerContext: users.consumerContext,
   database: database.drizzle,
+  logger,
   now,
   // Only so a language preference can be refused before it is sold. It asks
   // what the *buyer* speaks and nothing about anybody they might meet.
@@ -321,6 +322,8 @@ function get(path: string, credentials: Credentials): Request {
 async function consumer(
   subject: string,
   profile: {
+    /** Discoverable and available, which is what being pickable requires. */
+    readonly discoverable?: boolean;
     readonly languages?: readonly string[];
     readonly matchingGender?: string;
     readonly region?: string;
@@ -389,6 +392,14 @@ async function consumer(
     );
     expect(declared.status).toBe(200);
   }
+  if (profile.discoverable === true) {
+    await handle(
+      post('/v1/users/me/availability', caller, {
+        availableUntil: new Date(Date.now() + 3_600_000).toISOString(),
+        state: 'available',
+      }),
+    );
+  }
   const upload = await handle(post('/v1/users/me/profile/media', caller, {}));
   const media = (await upload.json()) as { mediaId: string };
   await readyProfileImage({
@@ -397,6 +408,14 @@ async function consumer(
     assetId: media.mediaId,
     users,
   });
+  if (profile.discoverable === true) {
+    // After the image, because the server refuses to make an incomplete
+    // profile discoverable — which is the rule rather than an ordering quirk.
+    const shown = await handle(
+      post('/v1/users/me/preferences', caller, { discoverable: true }),
+    );
+    expect(shown.status).toBe(200);
+  }
   return caller;
 }
 
@@ -1074,6 +1093,7 @@ describe('a paid narrowing uses declared data and nothing else', () => {
   it('answers an empty pool honestly rather than inventing anybody', async () => {
     const alex = await consumer('empty-pool@wallet.test');
     await grant(alex, '100');
+    const before = logs.length;
     await activate(alex, { gender: 'non_binary', region: 'JP' });
     // Nobody at all is searching. The honest answer is that the search is still
     // running, the coins are still held, and no person has been fabricated to
@@ -1083,6 +1103,21 @@ describe('a paid narrowing uses declared data and nothing else', () => {
     expect(state.encounter).toBeUndefined();
     expect(state.premium?.charged).toBe(false);
     expect((await derivedBalance(alex.id)).reserved > 0n).toBe(true);
+
+    // An operator can see it happened, and cannot see who it happened to or
+    // what they chose. "Somebody bought a filter and met nobody" is the one
+    // outcome that says whether this feature is honest.
+    const observed = logs.slice(before) as {
+      fields: Record<string, unknown>;
+      message: string;
+    }[];
+    const line = observed.find(
+      (entry) => entry.message === 'paid narrowing matched nobody in the pool',
+    );
+    expect(line?.fields.kinds).toEqual(['gender', 'region']);
+    const serialized = JSON.stringify(observed);
+    expect(serialized).not.toContain('non_binary');
+    expect(serialized).not.toContain(alex.id);
   });
 
   it('lets a client change what it declares, and applies it to the next match', async () => {
@@ -1454,6 +1489,63 @@ describe('safety decides, and money never overrules it', () => {
     // of a comment.
     expect((await search(alex)).state).toBe('searching');
     expect((await derivedBalance(alex.id)).reserved).toBe(price);
+    const captures = await rowsOf<{ readonly total: string }>(
+      database.drizzle.execute(
+        sql`select count(*)::text as total from wallet_transactions where reason = 'capture'`,
+      ),
+    );
+    expect(captures[0]?.total).toBe('0');
+  });
+
+  it('never charges for a filter two people who chose each other bypassed', async () => {
+    // Both discoverable and available, because choosing somebody is the one
+    // action in LIVE that names a person and DISCOVERY decides whether they
+    // may be introduced at all.
+    const buyer = await consumer('agreed-buyer@wallet.test', {
+      discoverable: true,
+      languages: ['es'],
+    });
+    const chosen = await consumer('agreed-chosen@wallet.test', {
+      discoverable: true,
+      languages: ['es'],
+      matchingGender: 'woman',
+    });
+    const funded = await grant(buyer, '100');
+    const price = priceOf(funded, 'gender');
+    // A window for men. She is a woman, so the narrowing excludes her.
+    await activate(buyer, { gender: 'man' });
+
+    const invited = await handle(
+      post('/v1/live/invitations', buyer, {
+        candidateId: chosen.id,
+        medium: 'video',
+      }),
+    );
+    expect(invited.status).toBe(200);
+    const invitations = (
+      (await invited.json()) as {
+        invitations: { id: string }[];
+      }
+    ).invitations;
+    const request = invitations[0];
+    expect(request).toBeDefined();
+    const accepted = await handle(
+      post('/v1/live/invitation-responses', chosen, {
+        invitationId: request?.id ?? '',
+        response: 'accept',
+      }),
+    );
+    expect(accepted.status).toBe(200);
+
+    await search(chosen);
+    const matched = await search(buyer);
+    // They meet, because two people who named each other have already answered
+    // the question a preference asks — and a filter that then kept them apart
+    // would be the product overruling both of them.
+    expect(matched.encounter?.peer.id).toBe(chosen.id);
+    // And nobody is charged, because the filter did not make this match.
+    // Charging here would be charging for the filter *not* being used.
+    expect((await derivedBalance(buyer.id)).reserved).toBe(price);
     const captures = await rowsOf<{ readonly total: string }>(
       database.drizzle.execute(
         sql`select count(*)::text as total from wallet_transactions where reason = 'capture'`,

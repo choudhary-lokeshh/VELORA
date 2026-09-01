@@ -48,7 +48,13 @@ Local/test checkout, subscriptions, refunds, disputes, and virtual gifts post to
 
 ## Implemented: commercial offers and frozen prices
 
-An offer says what a creator sells; a price says what it costs. They are separate rows with separate lifecycles because they answer to different rules: an offer can be withdrawn and reopened, and a price can never change at all.
+An offer says what is sold; a price says what it costs. They are separate rows with separate lifecycles because they answer to different rules: an offer can be withdrawn and reopened, and a price can never change at all.
+
+**An offer says who is selling it.** `owner_type` is `creator` or `platform`, and the database enforces the pairing: a creator offer names a creator and a platform offer must not. That is a financial distinction rather than a descriptive one — a creator sale's money is split under approved commercial terms and leaves a payable behind, and a platform sale's money is entirely VELORA's. Every downstream posting, payout, and earnings figure follows from that one field, which is why it is a column rather than an inference from a resource type somebody could add to.
+
+Coins are the platform's own product, and the database refuses a creator selling them. A platform sale posts its whole gross to a *platform-scoped* revenue position, creates no payable, publishes no revenue fact, and unwinds only the position it created — so VELORA's own product can never appear in somebody's earnings as money the platform kept out of their work. See [ADR-0044](../decisions/ADR-0044-declared-matching-categories-and-premium-preference-sets.md).
+
+Which country VELORA sells its own products from is undecided. The commerce authority answers `undefined` for it outside local and test, so the seller gate refuses and a platform offer is unbuyable in a deployed environment even if one existed there.
 
 An offer normally points at a resource another domain owns — a private club by opaque identifier. BILLING never learns what is inside a club and PRIVATE CLUBS never learns what one costs. They meet through one published contract, `ClubCommercialDirectory`, which answers exactly one question: is this club owned by this creator, and is it published. An unknown club and somebody else's club give the same answer, so no creator can enumerate another's catalog by identifier. Virtual-gift offers are the narrow exception because BILLING owns their platform catalog; they are provisioned only by the local/test platform route, projected per eligible creator, and excluded from every creator-owned offer mutation and listing.
 

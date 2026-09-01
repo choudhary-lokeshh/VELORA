@@ -376,6 +376,7 @@ export function createWorkerComposition(input: {
     config: input.config,
     consumerContext: undefined as never,
     database: handle,
+    logger: input.logger,
     now,
   });
 
