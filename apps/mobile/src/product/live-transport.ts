@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import {
   isOk,
@@ -69,10 +70,27 @@ export interface LiveTransport {
   readonly localVideo: TrackReference | undefined;
 }
 
+/** Which way the camera points, in the screen's own vocabulary. */
+export type CameraFacing = 'back' | 'front';
+
+/** The same fact, in the vocabulary a capture constraint is written in. */
+function captureFacing(facing: CameraFacing): 'environment' | 'user' {
+  return facing === 'front' ? 'user' : 'environment';
+}
+
 export interface LiveTransportOptions {
   readonly api: ConsumerApi;
   readonly callId: string | undefined;
   readonly cameraOn: boolean;
+  /**
+   * Which camera to publish.
+   *
+   * Passed in because the provider owns the device during an encounter and the
+   * preview does not exist to be switched. Before this was here the control in
+   * the dock flipped a preview that had already been unmounted, so "Switch
+   * camera" was a button that did nothing for the whole of every call.
+   */
+  readonly facing: CameraFacing;
   readonly mediaTransport: 'none' | 'provider' | undefined;
   readonly microphoneOn: boolean;
   /**
@@ -163,6 +181,20 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
     setPeerAudio(false);
   }, []);
 
+  /*
+   * Joining, and leaving. Keyed only on the four facts that decide *which room
+   * this is*: the client, the call, whether anything is carrying it, and the
+   * callback that clears the other person. Nothing about what is published
+   * belongs in that list, because a change to any of it disconnects a live call
+   * and joins it again.
+   *
+   * `microphoneGranted` used to be in it, and the microphone is granted from a
+   * dialog that arrives *beside* the search — so the ordinary case was somebody
+   * being matched, connecting, and then having the whole room torn down and
+   * rebuilt the moment they said yes to being heard. It cost the audio session,
+   * both publications, and about a second of the call. It is a publishing
+   * decision, and it is now read where publishing is decided.
+   */
   useEffect(() => {
     if (!carried) {
       setState('idle');
@@ -281,26 +313,11 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
       active.current = opened;
       setRoom(opened);
       setState('connected');
-
-      // The camera and the microphone are opened by the room, because Android
-      // gives one client the camera and the preview has already yielded it.
-      // Each is attempted separately: a microphone the person refused must not
-      // stop the video, and a camera that will not open must not take the audio
-      // with it.
-      try {
-        await opened.localParticipant.setCameraEnabled(true);
-      } catch {
-        // Reported by the absence of a local track rather than by a failure
-        // state: the call is still a call, and the surface says the camera is
-        // off, which is true.
-      }
-      if (microphoneGranted) {
-        try {
-          await opened.localParticipant.setMicrophoneEnabled(true);
-        } catch {
-          // Same reasoning. Somebody who cannot be heard can still be seen.
-        }
-      }
+      // The devices are not opened here. Publishing is owned by the effect
+      // below, which is keyed on the room and on what the person has actually
+      // asked for — so a camera somebody switched off before being matched
+      // stays off instead of being published for the moment it takes an
+      // enable-then-disable to settle.
     };
     void open();
 
@@ -318,22 +335,107 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
       void open_?.disconnect();
       void AudioSession.stopAudioSession();
     };
-  }, [api, callId, carried, clearRemote, microphoneGranted]);
+  }, [api, callId, carried, clearRemote]);
 
   /**
-   * Tells the other side about mute, rather than sending silence.
+   * Everything this side publishes, and the only place that decides it.
    *
    * `setCameraEnabled(false)` unpublishes and releases the camera, which is
    * what "camera off" should mean on a phone: the indicator goes out and the
-   * device is free. `setMicrophoneEnabled(false)` does the same for audio.
+   * device is free. `setMicrophoneEnabled(false)` does the same for audio. Both
+   * are told rather than simulated, so "their camera is off" is a fact the
+   * other person's client receives instead of a black rectangle it has to guess
+   * about.
+   *
+   * The camera is opened here rather than at the end of connecting, which is
+   * what makes the person's own intent authoritative from the first frame: a
+   * camera switched off at the door is never published at all.
+   *
+   * It is also the only place that can *retry*. Opening a camera is not
+   * reliable on a phone and the most common failure is structural rather than
+   * exceptional: Android refuses the camera to an application that is not in
+   * front, and the microphone permission dialog — which arrives beside the
+   * search, over this screen — is exactly that. An open attempted once behind
+   * that dialog fails, and before this effect owned the decision nothing tried
+   * again for the rest of the call.
    */
+  const applied = useRef<{ facing: CameraFacing; resumes: number } | undefined>(
+    undefined,
+  );
+  const { cameraOn, facing, microphoneOn } = options;
+  /**
+   * How many times the application has come back to the front.
+   *
+   * A counter rather than a boolean, because what the camera has to react to is
+   * the *event* of returning: Android takes the device from an application that
+   * leaves the foreground — the eviction is the system's — and hands nothing
+   * back, so a publication that survives a background is a publication sending
+   * a frozen frame. Measured on a device, the picture never came back for the
+   * rest of the encounter and the surface went on saying "Connected."
+   */
+  const [resumes, setResumes] = useState(0);
+
   useEffect(() => {
-    if (room === undefined) return;
-    void room.localParticipant.setCameraEnabled(options.cameraOn);
-    void room.localParticipant.setMicrophoneEnabled(
-      microphoneGranted && options.microphoneOn,
-    );
-  }, [microphoneGranted, options.cameraOn, options.microphoneOn, room]);
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      setResumes((count) => count + 1);
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (room === undefined) {
+      applied.current = undefined;
+      return;
+    }
+    const local = room.localParticipant;
+    void (async () => {
+      try {
+        if (!cameraOn) {
+          await local.setCameraEnabled(false);
+          // Forgotten deliberately. The device is released, so turning the
+          // camera back on is an open rather than a switch.
+          applied.current = undefined;
+        } else {
+          const current = applied.current;
+          const track = local.getTrackPublication(
+            Track.Source.Camera,
+          )?.videoTrack;
+          if (current === undefined || track === undefined) {
+            // Nothing is published — either this is the first attempt, or an
+            // earlier one failed. `applied` is only written after the open
+            // resolves, so a failure leaves this branch armed for the next
+            // resume rather than recording a camera that is not there.
+            await local.setCameraEnabled(true, {
+              facingMode: captureFacing(facing),
+            });
+            applied.current = { facing, resumes };
+          } else if (current.facing !== facing || current.resumes !== resumes) {
+            // The person asked for the other camera, or the application has
+            // come back and the device underneath the publication is dead.
+            // Restarting keeps the publication — and so the other person's
+            // subscription — while the device beneath it changes, which is the
+            // difference between switching cameras and dropping out of the
+            // call for a moment.
+            await track.restartTrack({ facingMode: captureFacing(facing) });
+            applied.current = { facing, resumes };
+          }
+        }
+      } catch {
+        // A device that will not open is reported by the absence of a local
+        // track rather than by a failure state: the call is still a call, the
+        // surface says the camera is off, which is true, and the next time the
+        // application is in front this tries again.
+      }
+      try {
+        await local.setMicrophoneEnabled(microphoneGranted && microphoneOn);
+      } catch {
+        // Same reasoning. Somebody who cannot be heard can still be seen.
+      }
+    })();
+  }, [cameraOn, facing, microphoneGranted, microphoneOn, resumes, room]);
 
   return {
     localVideo,

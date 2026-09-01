@@ -282,6 +282,9 @@ export function LiveScreen({
     api,
     callId: encounter?.call?.id,
     cameraOn: media.cameraOn,
+    // The same facing the preview uses, so one control means one thing whether
+    // the preview or the provider is holding the camera.
+    facing: media.facing,
     mediaTransport: encounter?.call?.mediaTransport,
     microphoneGranted: media.microphoneAvailable,
     microphoneOn: media.microphoneOn,
@@ -1206,6 +1209,30 @@ function LiveStage({
 
   return (
     <View ref={stage} style={styles.stage} testID="live-room">
+      {/*
+        The other person, under everything.
+
+        On the stage rather than inside the pane that names them, because an
+        absolute layer on a phone fills its own parent and nothing further —
+        and that parent is a column sized to a name, a country, and a sentence.
+        Put there, a real camera arrived as a letterboxed strip across the
+        middle of the screen with the text drawn over it; it is only visible
+        with a provider actually carrying somebody, which is why it survived
+        every run against the simulated adapter.
+      */}
+      {transport.peerVideo === undefined ? null : (
+        <View
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+          testID="live-peer-video"
+        >
+          <VideoTrack
+            objectFit="cover"
+            style={StyleSheet.absoluteFill}
+            trackRef={transport.peerVideo}
+          />
+        </View>
+      )}
       <LocalCamera
         bottom={aboveDock + previewLift}
         media={media}
@@ -1413,16 +1440,25 @@ function RemotePane({
   );
   return (
     <View
-      style={[styles.peer, revealing ? styles.peerRevealing : null]}
+      style={[
+        styles.peer,
+        /*
+          Over a photograph the words need their own ground. Text drawn straight
+          onto a video is legible against one frame and illegible against the
+          next, and this is the same answer the web surface already gives.
+        */
+        peerVideo === undefined ? null : styles.peerCarried,
+        revealing ? styles.peerRevealing : null,
+      ]}
       testID="live-peer"
     >
       {/*
-        The other person, once a provider is actually carrying them. Full-bleed
-        and behind everything else, because the subject of this screen is a face
-        — and it replaces the monogram rather than sitting beside it, since a
-        placeholder over the thing it stands in for is worse than either alone.
+        The monogram gives way to the real thing. A stand-in kept on top of a
+        live face would be a placeholder covering the thing it stands in for, so
+        it is removed rather than layered — the picture itself is full-bleed on
+        the stage, behind this and everything else.
       */}
-      {peerVideo === undefined ? (
+      {peerVideo !== undefined ? null : (
         <View style={styles.peerHalo}>
           <Avatar
             displayName={encounter.peer.displayName}
@@ -1430,12 +1466,6 @@ function RemotePane({
             size={compact ? 'medium' : 'large'}
           />
         </View>
-      ) : (
-        <VideoTrack
-          objectFit="cover"
-          style={StyleSheet.absoluteFill}
-          trackRef={peerVideo}
-        />
       )}
       <Text
         numberOfLines={2}
@@ -3082,6 +3112,13 @@ const styles = StyleSheet.create({
   },
   notices: { left: space[3], position: 'absolute', right: space[3] },
   peer: { alignItems: 'center', gap: space[3] },
+  /* The ground the words get once there is a face behind them. */
+  peerCarried: {
+    backgroundColor: color.surfaceOverlay,
+    borderRadius: radius.lg,
+    paddingHorizontal: space[4],
+    paddingVertical: space[3],
+  },
   /* A soft ring behind the person, so the hero is a portrait rather than a
      monogram floating in a void. */
   peerHalo: {
