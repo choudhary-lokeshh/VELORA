@@ -45,6 +45,8 @@ import {
 } from '../design/primitives';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { useLiveMedia, type LiveMediaState } from './live-media';
+import { PremiumPreference, useWallet, type WalletView } from './live-premium';
+import { useLiveTransport, type LiveTransport } from './live-transport';
 import { useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
 
@@ -277,6 +279,15 @@ export function Live() {
     wantsAudio: true,
     wantsVideo: medium === 'video',
   });
+  /*
+   * Coins, read once at this level and shared by every control that renders
+   * them.
+   *
+   * One read rather than one per control, because two controls holding
+   * independent balances is how a person is shown a number they cannot spend.
+   * Every wallet call answers with the whole state, so this is never a delta.
+   */
+  const wallet = useWallet();
 
   const apply = useCallback((result: ApiResult<LiveState>) => {
     if (isOk(result)) {
@@ -297,6 +308,23 @@ export function Live() {
 
   const serverState = state?.state ?? 'idle';
   const encounter = state?.encounter;
+
+  /*
+   * The other person's media, when a provider is carrying it.
+   *
+   * Held here rather than inside the stage so it is keyed to the encounter the
+   * *server* says this person is in. A hook that lived one level down would be
+   * remounted by any re-render that changed the stage's shape, and remounting a
+   * connection is how a Next produces two rooms.
+   */
+  const transport = useLiveTransport({
+    api,
+    callId: encounter?.call?.id,
+    cameraOn: media.cameraOn,
+    localStream: media.stream,
+    mediaTransport: encounter?.call?.mediaTransport,
+    microphoneOn: media.microphoneOn,
+  });
 
   // A person the server already has in an encounter has a camera that should be
   // open, whether or not this tab is the one that opened it.
@@ -477,6 +505,7 @@ export function Live() {
           onStart={start}
           onState={setState}
           preferences={preferences}
+          wallet={wallet}
         />
       ) : (
         <LiveStage
@@ -493,7 +522,10 @@ export function Live() {
           onState={setState}
           preferences={preferences}
           searchingSince={state?.searchingSince}
+          premium={state?.premium}
           serverState={serverState}
+          transport={transport}
+          wallet={wallet}
         />
       )}
 
@@ -541,6 +573,7 @@ function LiveDoor({
   onStart,
   onState,
   preferences,
+  wallet,
 }: {
   readonly busy: boolean;
   readonly invitations: readonly LiveInvitation[];
@@ -551,6 +584,7 @@ function LiveDoor({
   readonly onStart: (medium: LiveMedium) => void;
   readonly onState: (state: LiveState) => void;
   readonly preferences: LivePreferences;
+  readonly wallet: WalletView;
 }) {
   const [returning] = useState(() => hasVisited());
   const waiting = invitations.filter(
@@ -631,6 +665,7 @@ function LiveDoor({
               languageOptions={languageOptions}
               onChange={onPreferences}
               preferences={preferences}
+              wallet={wallet}
             />
 
             {/*
@@ -693,10 +728,21 @@ function PreferenceControls({
   languageOptions,
   onChange,
   preferences,
+  wallet,
 }: {
   readonly languageOptions: readonly string[];
   readonly onChange: (preferences: LivePreferences) => void;
   readonly preferences: LivePreferences;
+  /**
+   * Coins, when this environment has them.
+   *
+   * The paid narrowing sits under the free ones rather than beside them,
+   * because they are different things: the two above cost nothing and are a
+   * preference somebody holds about themselves, and the one below is a bounded
+   * purchase. Rendering them as one row of equal controls would make the
+   * cheapest of them look like the odd one out.
+   */
+  readonly wallet: WalletView;
 }) {
   const narrowed =
     preferences.region === 'same' || preferences.language !== undefined;
@@ -764,6 +810,8 @@ function PreferenceControls({
           <span>Widen</span>
         </button>
       ) : null}
+
+      <PremiumPreference wallet={wallet} />
     </div>
   );
 }
@@ -1085,8 +1133,11 @@ function LiveStage({
   onSearchAgain,
   onState,
   preferences,
+  premium,
   searchingSince,
   serverState,
+  transport,
+  wallet,
 }: {
   readonly busy: boolean;
   readonly encounter: LiveEncounter | undefined;
@@ -1101,8 +1152,13 @@ function LiveStage({
   readonly onSearchAgain: () => void;
   readonly onState: (state: LiveState) => void;
   readonly preferences: LivePreferences;
+  /** The paid narrowing in force, as the server reports it. Never inferred. */
+  readonly premium: LiveState['premium'];
   readonly searchingSince: string | undefined;
   readonly serverState: LiveState['state'];
+  /** What a provider is actually carrying, if anything. Never a guess. */
+  readonly transport: LiveTransport;
+  readonly wallet: WalletView;
 }) {
   const live = serverState === 'matched' && encounter !== undefined;
   const encounterId = encounter?.id;
@@ -1198,7 +1254,11 @@ function LiveStage({
 
       <div className="v-live__canvas" data-testid="live-remote">
         {showing ? (
-          <RemotePane encounter={encounter} revealing={revealing} />
+          <RemotePane
+            encounter={encounter}
+            revealing={revealing}
+            transport={transport}
+          />
         ) : serverState === 'ended' && encounter !== undefined && !movingOn ? (
           <EndedPane encounter={encounter} />
         ) : (
@@ -1206,7 +1266,9 @@ function LiveStage({
             languageOptions={languageOptions}
             onPreferences={onPreferences}
             preferences={preferences}
+            premium={premium}
             searchingSince={searchingSince}
+            wallet={wallet}
           />
         )}
       </div>
@@ -1304,20 +1366,79 @@ interface Burst {
 function RemotePane({
   encounter,
   revealing,
+  transport,
 }: {
   readonly encounter: LiveEncounter;
   readonly revealing: boolean;
+  readonly transport: LiveTransport;
 }) {
-  const transport = encounter.call?.mediaTransport ?? 'none';
+  const carried = (encounter.call?.mediaTransport ?? 'none') === 'provider';
   const context = contextLine(
     encounter.peer.region,
     encounter.peer.sharedLanguages,
   );
+  /*
+   * The remote video element, attached imperatively.
+   *
+   * `srcObject` is a property rather than an attribute, so React cannot set it
+   * from a prop. Attaching it here rather than in a `key`-ed remount keeps the
+   * element — and therefore the playback — alive across a track being replaced,
+   * which is what a reconnect does.
+   */
+  const remoteVideo = useRef<HTMLVideoElement | null>(null);
+  /**
+   * Binds whatever element exists to whatever stream exists, whichever arrives
+   * first.
+   *
+   * A ref plus an effect keyed on the stream is not enough, and the reason is
+   * ordering: the element is rendered only once a video track has been
+   * subscribed, so an effect that ran when the *stream* changed could run
+   * before the element existed and never run again. A callback ref fires on
+   * mount, so the two are bound whichever way round they happen.
+   */
+  const attach = useCallback((element: HTMLVideoElement | null) => {
+    remoteVideo.current = element;
+    if (element === null) return;
+    element.srcObject = remoteStreamRef.current ?? null;
+    // Autoplay with sound is refused unless the element is muted or the page
+    // has been interacted with. Reaching this screen requires pressing Start,
+    // so it has been — and a rejection is recoverable by the person pressing
+    // anything, so it is swallowed rather than shown.
+    void element.play().catch(() => undefined);
+  }, []);
+  const remoteStreamRef = useRef<MediaStream | undefined>(undefined);
+  remoteStreamRef.current = transport.remoteStream;
+  useEffect(() => {
+    const element = remoteVideo.current;
+    if (element === null) return;
+    element.srcObject = transport.remoteStream ?? null;
+    if (transport.remoteStream !== undefined) {
+      void element.play().catch(() => undefined);
+    }
+  }, [transport.remoteStream]);
+
   return (
     <div
-      className={`v-live__peer${revealing ? ' v-live__peer--revealing' : ''}`}
+      className={`v-live__peer${revealing ? ' v-live__peer--revealing' : ''}${
+        transport.peerVideo ? ' v-live__peer--carried' : ''
+      }`}
       data-testid="live-peer"
     >
+      {/*
+        The other person, when a provider is actually carrying them. It sits
+        under the portrait and the plate rather than replacing them, so the
+        moment a track arrives is a picture appearing behind a name rather than
+        the whole composition being swapped.
+      */}
+      {transport.peerVideo ? (
+        <video
+          autoPlay
+          className="v-live__peer-video"
+          data-testid="live-peer-video"
+          playsInline
+          ref={attach}
+        />
+      ) : null}
       {/*
         The person, and what is carrying them. Nothing about the arrangement
         differs between the reveal and the connected state — the same hero, the
@@ -1360,7 +1481,7 @@ function RemotePane({
           <Icon name="live" size="sm" />
           <span>Connecting…</span>
         </p>
-      ) : transport === 'none' ? (
+      ) : !carried ? (
         <p className="v-live__transport" data-testid="live-no-media">
           <Icon name="cameraOff" size="sm" />
           <span>
@@ -1369,13 +1490,47 @@ function RemotePane({
             everything else here is real.
           </span>
         </p>
-      ) : (
+      ) : transport.state === 'failed' ? (
+        <p className="v-live__transport" data-testid="live-media-failed">
+          <Icon name="cameraOff" size="sm" />
+          <span>
+            You are with {encounter.peer.displayName}, and their camera and
+            voice could not be connected. The chat is live; Next will find
+            somebody else.
+          </span>
+        </p>
+      ) : transport.state === 'reconnecting' ? (
+        <p className="v-live__transport" data-testid="live-media-reconnecting">
+          <Icon name="live" size="sm" />
+          <span>Reconnecting…</span>
+        </p>
+      ) : transport.peerVideo || transport.peerAudio ? (
         <p
           className="v-live__transport v-live__transport--connected"
           data-testid="live-media-carried"
         >
           <Icon name="check" size="sm" />
-          <span>Connected.</span>
+          {/*
+            Says what is arriving rather than that a connection exists. Somebody
+            whose peer has turned their camera off is not looking at a broken
+            product, and a single word for both cases would leave them guessing
+            which.
+          */}
+          <span>
+            {transport.peerVideo
+              ? 'Connected.'
+              : `${encounter.peer.displayName}'s camera is off.`}
+          </span>
+        </p>
+      ) : (
+        <p className="v-live__transport" data-testid="live-media-waiting">
+          <Icon name="live" size="sm" />
+          {/*
+            Truthful about the one thing this state actually is: the room is
+            joined and the other person has not started sending yet. It never
+            says "connected" before a track has arrived.
+          */}
+          <span>Waiting for {encounter.peer.displayName} to join…</span>
         </p>
       )}
     </div>
@@ -1501,16 +1656,22 @@ function SearchingPane({
   languageOptions,
   onPreferences,
   preferences,
+  premium,
   searchingSince,
+  wallet,
 }: {
   readonly languageOptions: readonly string[];
   readonly onPreferences: (preferences: LivePreferences) => void;
   readonly preferences: LivePreferences;
+  readonly premium: LiveState['premium'];
   readonly searchingSince: string | undefined;
+  readonly wallet: WalletView;
 }) {
   const waited = useElapsed(searchingSince);
   const narrowed =
-    preferences.region === 'same' || preferences.language !== undefined;
+    preferences.region === 'same' ||
+    preferences.language !== undefined ||
+    premium !== undefined;
   const line =
     searchingLines[
       Math.min(searchingLines.length - 1, Math.floor(waited / 8000))
@@ -1542,30 +1703,60 @@ function SearchingPane({
         looks like it has stopped.
       */}
       <p className="v-caption v-live__searching-note">
-        VELORA is looking across everybody here, except anybody you have just
-        met.
+        {/*
+          Says what the search is actually doing, including when somebody paid
+          to make it smaller. A paid narrowing that produced an identical
+          sentence to a free one would be the clearest way to make somebody
+          doubt they got what they bought — and it still promises nothing about
+          who is there, because nothing knows.
+        */}
+        {premium === undefined
+          ? 'VELORA is looking across everybody here, except anybody you have just met.'
+          : `VELORA is looking in ${regionName(
+              premium.region,
+            )} only, except anybody you have just met. Nobody can promise somebody is there.`}
       </p>
 
       {narrowed && waited >= broadenPromptMilliseconds ? (
         <div className="v-live__broaden" data-testid="live-broaden">
           <p className="v-caption v-quiet v-measure">
-            Your search is narrowed. Widening it looks at everybody who is here.
+            {/*
+              Truthful about what waiting means, and it never says nobody is
+              there: this screen cannot know that, and a paid narrowing is
+              exactly where a confident "nobody matches" would be worst. What is
+              offered is the choice — keep waiting, or widen — with the money
+              consequence stated where somebody decides.
+            */}
+            {premium === undefined
+              ? 'Your search is narrowed. Widening it looks at everybody who is here.'
+              : `Your search is narrowed to ${regionName(
+                  premium.region,
+                )}. Nobody matching has been here yet. You can keep waiting, or go back to everyone — the coins you held come back either way.`}
           </p>
           <Button
             data-testid="live-broaden-action"
             onClick={() => {
+              // Both narrowings are cleared, because "widen" means widen. A
+              // control that dropped the free preference and left the paid one
+              // running would be a button that appeared not to work.
               onPreferences({ region: 'any' });
+              // "Widen" means widen. The paid window is closed too, and its
+              // coins come back in full, which is exactly what the sentence
+              // above this button says will happen.
+              if (premium !== undefined) wallet.cancelPremium();
             }}
             size="sm"
           >
             Widen the search
           </Button>
+          <PremiumPreference wallet={wallet} />
         </div>
       ) : (
         <PreferenceControls
           languageOptions={languageOptions}
           onChange={onPreferences}
           preferences={preferences}
+          wallet={wallet}
         />
       )}
     </div>

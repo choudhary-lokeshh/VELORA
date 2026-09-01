@@ -91,18 +91,29 @@ const config: ExpoConfig = {
      * notification channels created at first launch are configured for — a
      * channel's vibration is immutable after it is created, so getting it
      * right now is what stops live delivery needing new channel identifiers
-     * later. `CAMERA` is the profile photograph.
+     * later. `CAMERA` is the profile photograph and the live preview.
      *
-     * What is deliberately absent is as important. There is no `RECORD_AUDIO`:
-     * `expo-image-picker` adds it for video capture, this application captures
-     * no video, and it is blocked below rather than merely unused. There is no
-     * microphone or Bluetooth permission for calling, because calling opens no
-     * audio route. There are no contacts, no location, and no SMS.
+     * `RECORD_AUDIO` is here because live discovery now carries voice. It was
+     * deliberately absent and deliberately blocked for as long as no provider
+     * could carry audio anywhere — a permission a build cannot use is one asked
+     * for under false pretences — and it is declared now for the opposite
+     * reason: the microphone is published into a real session, so the build can
+     * use it and a person can be heard. It is still requested at runtime only
+     * after somebody presses Start, never at launch.
+     *
+     * What is deliberately absent is as important. There is no Bluetooth
+     * permission: the LiveKit library declares two legacy ones for headset
+     * routing on Android 11 and older, and whether VELORA asks a person for
+     * Bluetooth access is a product decision nobody has made, so both are
+     * blocked below. There is no `FOREGROUND_SERVICE`: an encounter ends when
+     * the application leaves the foreground and nothing runs behind it. There
+     * are no contacts, no location, and no SMS.
      */
     permissions: [
       'android.permission.CAMERA',
       'android.permission.INTERNET',
       'android.permission.POST_NOTIFICATIONS',
+      'android.permission.RECORD_AUDIO',
       'android.permission.VIBRATE',
     ],
     /**
@@ -122,9 +133,18 @@ const config: ExpoConfig = {
      * `SYSTEM_ALERT_WINDOW` is the bare template's, for the development
      * overlay; the debug variant declares it again at a higher merge priority,
      * so a development build keeps it and a release build does not.
-     * `RECORD_AUDIO` belongs to video capture this application does not do.
      * `RECEIVE_BOOT_COMPLETED` lets `expo-notifications` re-arm notifications
      * it scheduled locally, and this application schedules none.
+     *
+     * The three from `@livekit/react-native` are refused for stated reasons
+     * rather than for tidiness. `BLUETOOTH` and `BLUETOOTH_ADMIN` are the
+     * pre-Android-12 spelling of headset access; whether VELORA asks anybody
+     * for Bluetooth is a product decision that has not been made, and a call
+     * still routes to the earpiece and the speaker without them.
+     * `FOREGROUND_SERVICE` is for media that continues behind other
+     * applications, and a live encounter deliberately does not: the preview
+     * closes and the session ends when this application leaves the
+     * foreground.
      *
      * The reason for each is in `scripts/android-permission-model.mjs`, which
      * both Android gates read so they cannot disagree.
@@ -137,9 +157,11 @@ const config: ExpoConfig = {
      * running Android 12 or older, which `minSdkVersion` 24 still admits.
      */
     blockedPermissions: [
+      'android.permission.BLUETOOTH',
+      'android.permission.BLUETOOTH_ADMIN',
+      'android.permission.FOREGROUND_SERVICE',
       'android.permission.READ_APP_BADGE',
       'android.permission.RECEIVE_BOOT_COMPLETED',
-      'android.permission.RECORD_AUDIO',
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.USE_BIOMETRIC',
       'android.permission.USE_FINGERPRINT',
@@ -216,35 +238,49 @@ const config: ExpoConfig = {
       },
     ],
     /**
-     * `microphonePermission: false` is the point of this entry. Left alone the
-     * plugin adds `RECORD_AUDIO` for video capture, and this application
-     * selects and captures still images only.
+     * The photo picker, and the one thing that is no longer refused here.
+     *
+     * `microphonePermission: false` used to be the point of this entry: the
+     * plugin blocks `RECORD_AUDIO` outright when it is set, and this
+     * application captured still images only. It is gone now, and its absence
+     * is deliberate rather than an oversight — `withBlockedPermissions` is
+     * application-wide, so leaving it would strip the microphone live discovery
+     * genuinely uses, not merely the picker's.
+     *
+     * The picker still captures no video and still asks for no microphone at
+     * runtime; what changed is that the *application* has a real use for one,
+     * and one plugin may not veto another's capability.
      */
     [
       'expo-image-picker',
       {
         cameraPermission:
           'VELORA uses the camera only when you choose to take a profile photograph.',
-        microphonePermission: false,
       },
     ],
     /**
-     * The live-discovery preview, and the same refusal for the same reason.
+     * The live-discovery preview and the microphone that goes with it.
      *
-     * `recordAudioAndroidPermission: false` keeps `RECORD_AUDIO` out. The
-     * camera opens so somebody can see themselves before and during a live
-     * encounter; nothing records, and no approved provider exists to carry
-     * audio anywhere, so asking for a microphone would be asking for a
-     * permission this build cannot use. `scripts/android-permission-model.mjs`
-     * asserts the merged manifest against that.
+     * `recordAudioAndroid: true` is the plugin's own option name — the earlier
+     * spelling here was `recordAudioAndroidPermission`, which the plugin does
+     * not read, so the permission it added was in fact removed by the blocked
+     * list rather than never declared. It is stated correctly now that the
+     * microphone is real, so the declaration and the removal cannot disagree
+     * with each other silently.
+     *
+     * Nothing records. The camera and the microphone are published into a live
+     * session and discarded; no frame, sample, transcript, or file is written
+     * anywhere, and `scripts/android-permission-model.mjs` asserts the merged
+     * manifest against exactly this set.
      */
     [
       'expo-camera',
       {
         cameraPermission:
           'VELORA opens the camera when you start Live, so the person you meet can see you.',
-        microphonePermission: false,
-        recordAudioAndroidPermission: false,
+        microphonePermission:
+          'VELORA opens the microphone when you start Live, so the person you meet can hear you.',
+        recordAudioAndroid: true,
       },
     ],
     './plugins/with-velora-android',

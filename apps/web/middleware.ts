@@ -38,6 +38,11 @@ const headers = () => {
     // with `frame-ancestors 'none'` means nowhere else at all.
     mediaCapture: 'self',
     mediaDeliveryOrigin: config?.mediaDeliveryOrigin,
+    // The media project a live encounter is carried by, when one is
+    // configured. Without it `connect-src` would refuse the provider's socket
+    // *after* somebody had already granted a camera, which is the worst
+    // possible place for a policy to say no.
+    realtimeEndpoint: config?.realtimeEndpoint,
     referrerPolicy: 'same-origin',
   });
 };

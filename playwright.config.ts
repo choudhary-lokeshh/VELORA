@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { authApiBaseUrl } from './e2e/auth-environment.js';
+import {
+  authApiBaseUrl,
+  surfaceRealtimeEndpoint,
+} from './e2e/auth-environment.js';
 
 // The Next.js surfaces read their API endpoint from the server environment at
 // request time, so one build artifact serves every environment. `VELORA_APP_ENV`
@@ -9,6 +12,10 @@ const surfaceEnvironment = {
   VELORA_API_BASE_URL: authApiBaseUrl,
   VELORA_APP_ENV: 'local',
   VELORA_BIND_HOST: '127.0.0.1',
+  // Blank unless a real provider is configured for this run, which leaves the
+  // policy exactly what it was. When one is, the socket has to be named here or
+  // the browser refuses it after the person has already granted a camera.
+  VELORA_REALTIME_ENDPOINT: surfaceRealtimeEndpoint,
 };
 
 export default defineConfig({

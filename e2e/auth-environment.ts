@@ -188,7 +188,14 @@ export async function startAuthEnvironment(): Promise<void> {
     // they are enabled here because without them the browser cannot reach the
     // product's primary destination at all.
     LIVE_DISCOVERY_MODE: 'open',
-    LIVE_DISCOVERY_SIMULATION: 'local-test',
+    // The stand-in, on unless a run says otherwise.
+    //
+    // Every product journey here drives a feature that needs two people from
+    // one browser, so it is the default. The real-provider proof is the one
+    // run that must have it off: with a stand-in available, a person searching
+    // alone is matched with a seeded account that has no camera, and the proof
+    // would be asserting the absence of media it was written to find.
+    LIVE_DISCOVERY_SIMULATION: liveSimulation,
     LOG_LEVEL: 'warn',
     MEDIA_DELIVERY_SIGNING_KEY: mediaSigningKey,
     MEDIA_LOCAL_STORAGE_DIRECTORY: mediaDirectory,
@@ -198,12 +205,26 @@ export async function startAuthEnvironment(): Promise<void> {
     NOTIFICATIONS_DELIVERY_CHANNEL: 'local-test',
     QUEUE_REDIS_URL: `${redisUrl}/1`,
     REALTIME_CALL_ELIGIBILITY: 'composed',
-    REALTIME_RTC_PROVIDER: 'local-test',
+    // The transport, chosen by what this machine actually has.
+    //
+    // `local-test` carries no media and is what CI and an ordinary local run
+    // get, so the whole suite runs with no provider anywhere. Exporting the
+    // three LiveKit values before the run selects the real adapter instead,
+    // and `e2e/live-provider.spec.ts` — which is skipped without them — is
+    // then the only proof in this repository that two people can actually see
+    // and hear each other.
+    ...realtimeProviderEnvironment,
     SAFETY_APPEAL_POLICY: 'local-test',
     // The development storage adapter has no origin of its own, so the upload
     // and delivery addresses it issues have to name this API — which here is
     // the suite's own port, not the one a developer runs.
     VELORA_API_BASE_URL: authApiBaseUrl,
+    // Coins and the paid matching preference, on for the same reason live
+    // discovery is: both are refused outside local and test by the
+    // configuration schema, that refusal has its own assertions, and without
+    // them a browser cannot reach the control at all. The Android acquisition
+    // channel stays unavailable — a browser never uses it.
+    WALLET_COIN_LEDGER: 'enabled',
   };
 
   const api: ChildProcess = spawn('bun', ['run', 'src/main.ts'], {
@@ -260,6 +281,90 @@ export async function startAuthEnvironment(): Promise<void> {
  * the product suite mutates something and a shared cohort would make one
  * project's result depend on what another had already done.
  */
+/**
+ * The three LiveKit values, when this machine has them.
+ *
+ * Read from the ambient environment rather than from `.env`, so a proof run is
+ * an explicit act — `REALTIME_LIVEKIT_URL=… pnpm test:e2e` — rather than
+ * something a stale file turns on. All three or none: a partial selection is a
+ * startup failure by design, and a suite that produced one would be reporting a
+ * configuration mistake as a product failure.
+ */
+function livekitCredentials():
+  | {
+      readonly apiKey: string;
+      readonly apiSecret: string;
+      readonly url: string;
+    }
+  | undefined {
+  const url = process.env.REALTIME_LIVEKIT_URL;
+  const apiKey = process.env.REALTIME_LIVEKIT_API_KEY;
+  const apiSecret = process.env.REALTIME_LIVEKIT_API_SECRET;
+  if (
+    url === undefined ||
+    url.length === 0 ||
+    apiKey === undefined ||
+    apiKey.length === 0 ||
+    apiSecret === undefined ||
+    apiSecret.length === 0
+  ) {
+    return undefined;
+  }
+  return { apiKey, apiSecret, url };
+}
+
+const livekit = livekitCredentials();
+
+/**
+ * Whether a deterministic stand-in may be matched in this run.
+ *
+ * Overridable from the ambient environment for exactly one reason, stated in
+ * the backend environment above. Anything other than `unavailable` is the
+ * default, so a typo turns the stand-in on rather than silently off.
+ */
+const liveSimulation =
+  process.env.LIVE_DISCOVERY_SIMULATION === 'unavailable'
+    ? 'unavailable'
+    : 'local-test';
+
+/**
+ * Whether a match in this run can only ever be another real browser.
+ *
+ * Read by the provider spec, which refuses to run without it: a proof that
+ * could have matched a seeded stand-in would be a proof about nothing.
+ */
+export const realtimeMatchesRealPeopleOnly = liveSimulation === 'unavailable';
+
+/**
+ * Whether a provider is actually carrying media in this run.
+ *
+ * Read by the provider spec to skip itself. It is deliberately a statement
+ * about the *configuration this harness composed*, not about a vendor being
+ * approved: nothing here is evidence that LiveKit may be used in a deployed
+ * environment, which configuration refuses on its own.
+ */
+export const realtimeCarriesMedia = livekit !== undefined;
+
+const realtimeProviderEnvironment: Readonly<Record<string, string>> =
+  livekit === undefined
+    ? { REALTIME_RTC_PROVIDER: 'local-test' }
+    : {
+        REALTIME_LIVEKIT_API_KEY: livekit.apiKey,
+        REALTIME_LIVEKIT_API_SECRET: livekit.apiSecret,
+        REALTIME_LIVEKIT_URL: livekit.url,
+        REALTIME_RTC_PROVIDER: 'livekit',
+      };
+
+/**
+ * What a browser's Content-Security-Policy must permit to reach the provider.
+ *
+ * The Next.js surfaces set their own headers and do not load the API's server
+ * configuration, so the address has to be told to them separately — and without
+ * it `connect-src` refuses the socket after the camera has already been
+ * granted, which is the failure this value exists to prevent.
+ */
+export const surfaceRealtimeEndpoint = livekit?.url ?? '';
+
 export function cohortFor(project: string): SeedCohort {
   const state = JSON.parse(readFileSync(stateFile, 'utf8')) as EnvironmentState;
   const index = cohortOrder.indexOf(project as (typeof cohortOrder)[number]);

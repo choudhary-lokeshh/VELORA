@@ -253,9 +253,34 @@ export interface MobileApiState {
       sequence: number;
     }[];
     preferences: { language?: string; region: 'any' | 'same' };
+    /** The paid narrowing in force, exactly as the server reports it. */
+    premium?: { expiresAt: string; region: string };
     simulated: boolean;
     standInAvailable: boolean;
     state: 'idle' | 'searching' | 'matched' | 'ended';
+  };
+  /**
+   * Coins, in the one authoritative shape every wallet route answers with.
+   *
+   * `enabled` is separate from a zero balance on purpose, exactly as it is on
+   * the server: an environment with no coin ledger is not somebody with no
+   * coins, and a surface that could not tell them apart would offer a purchase
+   * that could never complete.
+   */
+  wallet: {
+    acquisition: {
+      android: 'unavailable' | 'local-test';
+      web: 'unavailable' | 'local-test';
+    };
+    balance: { available: string; reserved: string };
+    enabled: boolean;
+    livePreference?: {
+      coins: string;
+      expiresAt: string;
+      id: string;
+      region: string;
+    };
+    offer: { coins: string; durationSeconds: number };
   };
   introductions: {
     counterpart: {
@@ -459,6 +484,14 @@ export function admittedState(): MobileApiState {
       standInAvailable: true,
       state: 'idle',
     },
+    // No coin ledger by default, which is what every deployed environment has
+    // and what a surface must render as nothing rather than as zero.
+    wallet: {
+      acquisition: { android: 'unavailable', web: 'unavailable' },
+      balance: { available: '0', reserved: '0' },
+      enabled: false,
+      offer: { coins: '25', durationSeconds: 900 },
+    },
     candidates: [
       {
         displayName: 'Robin',
@@ -563,9 +596,25 @@ function liveBody(state: MobileApiState): unknown {
         : { language: state.live.preferences.language }),
       region: state.live.preferences.region,
     },
+    ...(state.live.premium === undefined
+      ? {}
+      : { premium: state.live.premium }),
     ...(state.live.state === 'searching' ? { searchingSince: iso() } : {}),
     simulated: state.live.simulated,
     state: state.live.state,
+  };
+}
+
+/** The one authoritative wallet read, exactly as the server publishes it. */
+function walletBody(state: MobileApiState): unknown {
+  return {
+    acquisition: state.wallet.acquisition,
+    ...(state.wallet.enabled ? { balance: state.wallet.balance } : {}),
+    enabled: state.wallet.enabled,
+    ...(state.wallet.livePreference === undefined
+      ? {}
+      : { livePreference: state.wallet.livePreference }),
+    livePreferenceOffer: state.wallet.offer,
   };
 }
 
@@ -1009,6 +1058,23 @@ export function createMobileApiDouble(
     // a fragment, exactly as the server does.
     if (path === '/v1/live/sessions' && method === 'GET') {
       return json(200, liveBody(state));
+    }
+
+    // WALLET. Every route answers with the whole authoritative shape, so
+    // nothing here can teach a surface to compute a balance from a delta.
+    if (path === '/v1/wallet' && method === 'GET') {
+      return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/grants' && method === 'POST') {
+      const input = body as { coins: string };
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      state.wallet.balance = {
+        ...state.wallet.balance,
+        available: (
+          BigInt(state.wallet.balance.available) + BigInt(input.coins)
+        ).toString(),
+      };
+      return json(200, walletBody(state));
     }
     if (path === '/v1/live/sessions' && method === 'POST') {
       const input = body as { medium: 'voice' | 'video' };

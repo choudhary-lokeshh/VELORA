@@ -296,11 +296,36 @@ export interface ApiDoubleState {
       sequence: number;
     }[];
     preferences: { language?: string; region: 'any' | 'same' };
+    /** The paid narrowing in force, exactly as the server reports it. */
+    premium?: { expiresAt: string; region: string };
     /** Whether a stand-in is available, exactly as the server reports it. */
     simulated: boolean;
     /** Set by a test to make the next search find nobody. */
     standInAvailable: boolean;
     state: 'idle' | 'searching' | 'matched' | 'ended';
+  };
+  /**
+   * Coins, in the one authoritative shape every wallet route answers with.
+   *
+   * `enabled` is separate from a zero balance on purpose, exactly as it is on
+   * the server: an environment with no coin ledger is not somebody with no
+   * coins, and a surface that could not tell them apart would offer a purchase
+   * that could never complete.
+   */
+  wallet: {
+    acquisition: {
+      android: 'unavailable' | 'local-test';
+      web: 'unavailable' | 'local-test';
+    };
+    balance: { available: string; reserved: string };
+    enabled: boolean;
+    livePreference?: {
+      coins: string;
+      expiresAt: string;
+      id: string;
+      region: string;
+    };
+    offer: { coins: string; durationSeconds: number };
   };
   /** Category and channel pairs the server says are settable. */
   notificationPreferences: {
@@ -408,6 +433,7 @@ export const secondPeerId = '77777777-7777-4777-8777-777777777777';
 export const liveEncounterId = '88888888-8888-4888-8888-888888888888';
 export const secondEncounterId = '99999999-9999-4999-8999-999999999999';
 export const liveCallId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+export const livePreferenceId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const liveIntroductionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 export const liveConversationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const ownAccountId = '11111111-1111-4111-8111-111111111111';
@@ -445,6 +471,14 @@ export function emptyState(): ApiDoubleState {
       simulated: false,
       standInAvailable: true,
       state: 'idle',
+    },
+    // No coin ledger by default, which is what every deployed environment has
+    // and what a surface must render as "nothing here" rather than as zero.
+    wallet: {
+      acquisition: { android: 'unavailable', web: 'unavailable' },
+      balance: { available: '0', reserved: '0' },
+      enabled: false,
+      offer: { coins: '25', durationSeconds: 900 },
     },
     messages: [],
     notificationPreferences: [
@@ -623,9 +657,31 @@ function liveBody(state: ApiDoubleState): unknown {
         : { language: state.live.preferences.language }),
       region: state.live.preferences.region,
     },
+    ...(state.live.premium === undefined
+      ? {}
+      : { premium: state.live.premium }),
     ...(state.live.state === 'searching' ? { searchingSince: iso() } : {}),
     simulated: state.live.simulated,
     state: state.live.state,
+  };
+}
+
+/**
+ * The one authoritative wallet read, exactly as the server publishes it.
+ *
+ * Every wallet route answers with this, so a surface never computes a balance
+ * from a delta — and a test asserting a rendered number is asserting what the
+ * server said rather than what the component decided.
+ */
+function walletBody(state: ApiDoubleState): unknown {
+  return {
+    acquisition: state.wallet.acquisition,
+    ...(state.wallet.enabled ? { balance: state.wallet.balance } : {}),
+    enabled: state.wallet.enabled,
+    ...(state.wallet.livePreference === undefined
+      ? {}
+      : { livePreference: state.wallet.livePreference }),
+    livePreferenceOffer: state.wallet.offer,
   };
 }
 
@@ -1210,6 +1266,76 @@ export function createApiDouble(
     // combination the server never had.
     if (path === '/v1/live/sessions' && method === 'GET') {
       return json(200, liveBody(state));
+    }
+
+    // WALLET. Every route answers with the whole authoritative shape, exactly as
+    // the server does, so nothing here can teach a surface to compute a balance
+    // from a delta it applied itself.
+    if (path === '/v1/wallet' && method === 'GET') {
+      return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/live-preference' && method === 'POST') {
+      const input = body as { region: string };
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      if (state.wallet.livePreference !== undefined) {
+        return error(409, 'STATE_CONFLICT');
+      }
+      const price = BigInt(state.wallet.offer.coins);
+      if (BigInt(state.wallet.balance.available) < price) {
+        // Says only that the balance will not cover it. How much is missing is
+        // never disclosed, because a sequence of refusals would otherwise read
+        // somebody's balance.
+        return error(409, 'INSUFFICIENT_FUNDS');
+      }
+      state.wallet.balance = {
+        available: (BigInt(state.wallet.balance.available) - price).toString(),
+        reserved: (BigInt(state.wallet.balance.reserved) + price).toString(),
+      };
+      state.wallet.livePreference = {
+        coins: state.wallet.offer.coins,
+        expiresAt: iso(state.wallet.offer.durationSeconds * 1000),
+        id: livePreferenceId,
+        region: input.region,
+      };
+      state.live.premium = {
+        expiresAt: state.wallet.livePreference.expiresAt,
+        region: input.region,
+      };
+      return json(200, walletBody(state));
+    }
+    if (
+      path === '/v1/wallet/live-preference/cancellation' &&
+      method === 'POST'
+    ) {
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      const held = state.wallet.livePreference;
+      if (held !== undefined) {
+        // In full. Changing your mind inside the window you paid for is not a
+        // consumption of it.
+        state.wallet.balance = {
+          available: (
+            BigInt(state.wallet.balance.available) + BigInt(held.coins)
+          ).toString(),
+          reserved: (
+            BigInt(state.wallet.balance.reserved) - BigInt(held.coins)
+          ).toString(),
+        };
+        delete state.wallet.livePreference;
+        delete state.live.premium;
+      }
+      // Cancelling nothing is not an error either.
+      return json(200, walletBody(state));
+    }
+    if (path === '/v1/wallet/grants' && method === 'POST') {
+      const input = body as { coins: string };
+      if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');
+      state.wallet.balance = {
+        ...state.wallet.balance,
+        available: (
+          BigInt(state.wallet.balance.available) + BigInt(input.coins)
+        ).toString(),
+      };
+      return json(200, walletBody(state));
     }
     if (path === '/v1/live/sessions' && method === 'POST') {
       const input = body as { medium: 'voice' | 'video' };

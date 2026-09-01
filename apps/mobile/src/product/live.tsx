@@ -62,6 +62,9 @@ import {
 import { useApi } from '../frame/providers';
 import { mintUuid } from '../device/installation';
 import { useLiveMedia, type LiveMediaState } from './live-media';
+import { PremiumPreference, useWallet, type WalletView } from './live-premium';
+import { VideoTrack } from './live-rtc';
+import { useLiveTransport, type LiveTransport } from './live-transport';
 import { useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
 
@@ -237,7 +240,6 @@ export function LiveScreen({
   const [state, setState] = useState<LiveState | undefined>(undefined);
   const [message, setMessage] = useState<string | undefined>(undefined);
   const action = useSingleFlight();
-  const media = useLiveMedia({ enabled: stage === 'open' });
 
   const apply = useCallback((result: ApiResult<LiveState>) => {
     if (isOk(result)) {
@@ -254,6 +256,36 @@ export function LiveScreen({
 
   const serverState = state?.state ?? 'idle';
   const encounter = state?.encounter;
+
+  /*
+   * Whether a provider has the devices for this encounter.
+   *
+   * Derived from the server's own answer rather than from the transport hook,
+   * which is what breaks the circle: the preview needs to know it must yield,
+   * the transport needs to know what the person has muted, and if each read the
+   * other neither could be declared first. This is the same fact both of them
+   * are asking about, so it is computed once, from the encounter, before
+   * either.
+   */
+  const carried = encounter?.call?.mediaTransport === 'provider';
+  const media = useLiveMedia({
+    enabled: stage === 'open',
+    yielded: carried,
+  });
+  /*
+   * Coins, read once at this level and shared by every control that renders
+   * them. Two controls holding independent balances is how a person is shown a
+   * number they cannot spend.
+   */
+  const wallet = useWallet();
+  const transport = useLiveTransport({
+    api,
+    callId: encounter?.call?.id,
+    cameraOn: media.cameraOn,
+    mediaTransport: encounter?.call?.mediaTransport,
+    microphoneGranted: media.microphoneAvailable,
+    microphoneOn: media.microphoneOn,
+  });
 
   // Somebody the server already has in an encounter — a resumed app, a second
   // device — is put back into the room rather than at the door.
@@ -360,6 +392,7 @@ export function LiveScreen({
         onState={setState}
         preferences={preferences}
         simulated={state?.simulated === true}
+        wallet={wallet}
       />
     );
   }
@@ -392,6 +425,8 @@ export function LiveScreen({
       searchingSince={state?.searchingSince}
       serverState={serverState}
       simulated={state?.simulated === true}
+      transport={transport}
+      wallet={wallet}
     />
   );
 }
@@ -423,6 +458,7 @@ function LiveDoor({
   onState,
   preferences,
   simulated,
+  wallet,
 }: {
   readonly busy: boolean;
   readonly insetTop: number;
@@ -436,6 +472,7 @@ function LiveDoor({
   readonly onState: (state: LiveState) => void;
   readonly preferences: LivePreferences;
   readonly simulated: boolean;
+  readonly wallet: WalletView;
 }) {
   const waiting = invitations.filter(
     (invitation) =>
@@ -536,6 +573,7 @@ function LiveDoor({
             languageOptions={languageOptions}
             onChange={onPreferences}
             preferences={preferences}
+            wallet={wallet}
           />
 
           {/*
@@ -596,10 +634,20 @@ function PreferenceControls({
   languageOptions,
   onChange,
   preferences,
+  wallet,
 }: {
   readonly languageOptions: readonly string[];
   readonly onChange: (preferences: LivePreferences) => void;
   readonly preferences: LivePreferences;
+  /**
+   * Coins, when this environment has them.
+   *
+   * The paid narrowing sits under the free ones rather than beside them: the
+   * two above cost nothing and are a preference somebody holds about
+   * themselves, and the one below is a bounded purchase. A row of equal chips
+   * would make the cheapest of them look like the odd one out.
+   */
+  readonly wallet: WalletView;
 }) {
   const languages = ['', ...languageOptions];
   const current = preferences.language ?? '';
@@ -673,6 +721,8 @@ function PreferenceControls({
           </Text>
         </Pressable>
       )}
+
+      <PremiumPreference wallet={wallet} />
     </View>
   );
 }
@@ -968,6 +1018,8 @@ function LiveStage({
   searchingSince,
   serverState,
   simulated,
+  transport,
+  wallet,
 }: {
   readonly busy: boolean;
   readonly encounter: LiveEncounter | undefined;
@@ -987,6 +1039,9 @@ function LiveStage({
   readonly searchingSince: string | undefined;
   readonly serverState: LiveState['state'];
   readonly simulated: boolean;
+  /** What a provider is actually carrying, if anything. Never a guess. */
+  readonly transport: LiveTransport;
+  readonly wallet: WalletView;
 }) {
   const live = serverState === 'matched' && encounter !== undefined;
   const encounterId = encounter?.id;
@@ -1156,6 +1211,7 @@ function LiveStage({
         media={media}
         medium={medium}
         pip={aboutSomebody}
+        transport={transport}
       />
 
       {/*
@@ -1197,6 +1253,7 @@ function LiveStage({
             compact={chatOpen || cramped}
             encounter={encounter}
             revealing={revealing}
+            transport={transport}
           />
         ) : aboutSomebody ? (
           <EndedPane
@@ -1209,6 +1266,7 @@ function LiveStage({
             onPreferences={onPreferences}
             preferences={preferences}
             searchingSince={searchingSince}
+            wallet={wallet}
           />
         )}
       </View>
@@ -1339,13 +1397,16 @@ function RemotePane({
   compact,
   encounter,
   revealing,
+  transport,
 }: {
   /** Whether the sheet is taking the bottom of the screen. */
   readonly compact: boolean;
   readonly encounter: LiveEncounter;
   readonly revealing: boolean;
+  readonly transport: LiveTransport;
 }) {
-  const transport = encounter.call?.mediaTransport ?? 'none';
+  const carried = (encounter.call?.mediaTransport ?? 'none') === 'provider';
+  const peerVideo = transport.peerVideo;
   const context = contextLine(
     encounter.peer.region,
     encounter.peer.sharedLanguages,
@@ -1356,16 +1417,26 @@ function RemotePane({
       testID="live-peer"
     >
       {/*
-        A soft ring behind the person, so the hero is a portrait rather than a
-        monogram floating in a void. It is the only glow on the stage.
+        The other person, once a provider is actually carrying them. Full-bleed
+        and behind everything else, because the subject of this screen is a face
+        — and it replaces the monogram rather than sitting beside it, since a
+        placeholder over the thing it stands in for is worse than either alone.
       */}
-      <View style={styles.peerHalo}>
-        <Avatar
-          displayName={encounter.peer.displayName}
-          seed={encounter.peer.id}
-          size={compact ? 'medium' : 'large'}
+      {peerVideo === undefined ? (
+        <View style={styles.peerHalo}>
+          <Avatar
+            displayName={encounter.peer.displayName}
+            seed={encounter.peer.id}
+            size={compact ? 'medium' : 'large'}
+          />
+        </View>
+      ) : (
+        <VideoTrack
+          objectFit="cover"
+          style={StyleSheet.absoluteFill}
+          trackRef={peerVideo}
         />
-      </View>
+      )}
       <Text
         numberOfLines={2}
         style={styles.centred}
@@ -1403,7 +1474,7 @@ function RemotePane({
         <Text testID="live-connecting" tone="tertiary" variant="caption">
           Connecting…
         </Text>
-      ) : compact ? null : transport === 'none' ? (
+      ) : compact ? null : !carried ? (
         <Text
           style={styles.centred}
           testID="live-no-media"
@@ -1414,9 +1485,39 @@ function RemotePane({
           exists yet to carry their camera or voice. The chat is live and
           everything else here is real.
         </Text>
-      ) : (
+      ) : transport.state === 'failed' ? (
+        <Text
+          style={styles.centred}
+          testID="live-media-failed"
+          tone="tertiary"
+          variant="caption"
+        >
+          You are with {encounter.peer.displayName}, and their camera and voice
+          could not be connected. The chat is live; Next will find somebody
+          else.
+        </Text>
+      ) : transport.state === 'reconnecting' ? (
+        <Text
+          testID="live-media-reconnecting"
+          tone="tertiary"
+          variant="caption"
+        >
+          Reconnecting…
+        </Text>
+      ) : peerVideo !== undefined || transport.peerAudio ? (
         <Text testID="live-media-carried" tone="tertiary" variant="caption">
-          Connected.
+          {/*
+            Says what is arriving rather than that a connection exists. Somebody
+            whose peer turned their camera off is not looking at a broken
+            product, and one word for both would leave them guessing which.
+          */}
+          {peerVideo === undefined
+            ? `${encounter.peer.displayName}'s camera is off.`
+            : 'Connected.'}
+        </Text>
+      ) : (
+        <Text testID="live-media-waiting" tone="tertiary" variant="caption">
+          Waiting for {encounter.peer.displayName} to join…
         </Text>
       )}
     </View>
@@ -1500,15 +1601,20 @@ function SearchingPane({
   onPreferences,
   preferences,
   searchingSince,
+  wallet,
 }: {
   readonly languageOptions: readonly string[];
   readonly onPreferences: (preferences: LivePreferences) => void;
   readonly preferences: LivePreferences;
   readonly searchingSince: string | undefined;
+  readonly wallet: WalletView;
 }) {
   const waited = useElapsed(searchingSince);
+  const premium = wallet.state?.livePreference;
   const narrowed =
-    preferences.region === 'same' || preferences.language !== undefined;
+    preferences.region === 'same' ||
+    preferences.language !== undefined ||
+    premium !== undefined;
   const line =
     searchingLines[
       Math.min(searchingLines.length - 1, Math.floor(waited / 8000))
@@ -1556,19 +1662,24 @@ function SearchingPane({
           </Text>
           <Button
             onPress={() => {
+              // "Widen" means widen. The paid window is closed too, and its
+              // coins come back in full.
               onPreferences({ region: 'any' });
+              if (premium !== undefined) wallet.cancelPremium();
             }}
             size="small"
             testID="live-broaden-action"
           >
             Widen the search
           </Button>
+          <PremiumPreference wallet={wallet} />
         </View>
       ) : (
         <PreferenceControls
           languageOptions={languageOptions}
           onChange={onPreferences}
           preferences={preferences}
+          wallet={wallet}
         />
       )}
     </View>
@@ -1696,14 +1807,27 @@ function LocalCamera({
   media,
   medium,
   pip,
+  transport,
 }: {
   /** How far above the bottom the picture-in-picture sits. Measured, not guessed. */
   readonly bottom: number;
   readonly media: LiveMediaState;
   readonly medium: LiveMedium;
   readonly pip: boolean;
+  readonly transport: LiveTransport;
 }) {
-  const showing = medium === 'video' && media.active;
+  /*
+   * Two sources for one self-view, and never both at once.
+   *
+   * Before an encounter is carried, the preview is `expo-camera`'s. Once the
+   * provider has the camera, it is the provider's own local track — because
+   * Android gives one client the device and `media.active` has already gone
+   * false to release it. Rendering the second only when the first is gone is
+   * what makes the handover a picture that keeps going rather than a black
+   * rectangle.
+   */
+  const local = transport.localVideo;
+  const showing = medium === 'video' && (media.active || local !== undefined);
   const [corner, setCorner] = useState<'left' | 'right'>('right');
   const drag = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const offset = useRef({ x: 0, y: 0 });
@@ -1737,13 +1861,21 @@ function LocalCamera({
   if (!pip) {
     return (
       <View style={StyleSheet.absoluteFill} testID="live-local">
-        {showing ? (
+        {!showing ? null : local === undefined ? (
           <CameraView
             facing={media.facing}
             style={StyleSheet.absoluteFill}
             testID="live-local-camera"
           />
         ) : (
+          <VideoTrack
+            mirror
+            objectFit="cover"
+            style={StyleSheet.absoluteFill}
+            trackRef={local}
+          />
+        )}
+        {showing ? null : (
           <View style={styles.localOff} testID="live-local-off">
             <Icon
               color={color.textTertiary}
@@ -1782,13 +1914,21 @@ function LocalCamera({
       testID="live-local"
       {...responder.panHandlers}
     >
-      {showing ? (
+      {!showing ? null : local === undefined ? (
         <CameraView
           facing={media.facing}
           style={StyleSheet.absoluteFill}
           testID="live-local-camera"
         />
       ) : (
+        <VideoTrack
+          mirror
+          objectFit="cover"
+          style={StyleSheet.absoluteFill}
+          trackRef={local}
+        />
+      )}
+      {showing ? null : (
         <View style={styles.localOff} testID="live-local-off">
           <Icon
             color={color.textTertiary}

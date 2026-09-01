@@ -37,6 +37,20 @@ function liveState(
 }
 
 /**
+ * A world that has coins, which no deployed environment does.
+ *
+ * The default state has none, and every other assertion on this screen runs
+ * against that — which is the point: the paid control must be *absent* where
+ * there is no ledger, not disabled, so nothing about the free product changes.
+ */
+function walletState(
+  overrides: Partial<MobileApiState['wallet']> = {},
+): MobileApiState {
+  const base = liveState();
+  return { ...base, wallet: { ...base.wallet, enabled: true, ...overrides } };
+}
+
+/**
  * Mounts the screen for somebody who is already signed in.
  *
  * The session is established the way a real cold launch establishes one — by
@@ -243,5 +257,48 @@ describe('the platform gate', () => {
     await screen.findByTestId('live-peer-name');
 
     expect(screen.queryByTestId('live-simulation')).toBeNull();
+  });
+});
+
+describe('the paid matching preference', () => {
+  it('is absent entirely where this environment has no coins', async () => {
+    await mountLive(liveState());
+    await screen.findByTestId('live-door');
+    // Absent rather than disabled. A control explaining a feature that does not
+    // exist here is a control somebody will try to enable.
+    expect(screen.queryByTestId('live-premium')).toBeNull();
+    expect(screen.queryByTestId('live-premium-active')).toBeNull();
+  });
+
+  it('says what is bought and claims nothing about who is there', async () => {
+    await mountLive(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    const panel = await screen.findByTestId('live-premium');
+    // The price and the duration are the server's, so this can never render a
+    // price that is not the price that will be charged.
+    expect(panel).toHaveTextContent(/25 coins/u);
+    expect(panel).toHaveTextContent(/15 minutes/u);
+    expect(panel).toHaveTextContent(/returned in full/u);
+    // And no invented figure anywhere. This is the screen where one would be
+    // most profitable and it carries none.
+    expect(panel).not.toHaveTextContent(/\d+\s*(people|online|waiting)/iu);
+    expect(panel).not.toHaveTextContent(/%/u);
+  });
+
+  it('offers no purchase where nothing can take money', async () => {
+    await mountLive(
+      walletState({ balance: { available: '0', reserved: '0' } }),
+    );
+    await screen.findByTestId('live-premium');
+    expect(screen.queryByTestId('live-premium-activate')).toBeNull();
+    expect(await screen.findByTestId('live-premium-short')).toHaveTextContent(
+      /You need 25 coins/u,
+    );
+    // The only way to hold any coins here is the control that says it is a
+    // developer's, and the server refuses it outside local and test.
+    expect(await screen.findByTestId('live-premium-grant')).toHaveTextContent(
+      /Developer/u,
+    );
   });
 });

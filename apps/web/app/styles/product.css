@@ -1519,6 +1519,45 @@
   justify-content: center;
 }
 
+/*
+ * The paid narrowing, under the free ones and visibly a different kind of
+ * thing.
+ *
+ * A panel rather than another pill, because it is not another preference: it
+ * costs something, it explains what happens to the money, and it takes a
+ * country. Drawing it as a fourth chip in the same row would put a purchase and
+ * a toggle on the same footing.
+ *
+ * Deliberately quiet — one surface, one hairline, no accent fill, no badge, no
+ * glow. Nothing on this platform sells by shouting, and a coin control that
+ * looked like a slot machine would undo every honest sentence inside it.
+ */
+.v-live__premium {
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+  max-inline-size: 26rem;
+  padding: var(--space-4);
+  text-align: start;
+}
+
+.v-live__premium p {
+  margin: 0;
+}
+
+/* The icon and its sentence sit on one line rather than wrapping apart. */
+.v-live__premium p:first-child {
+  align-items: center;
+  color: var(--text-primary);
+  display: flex;
+  gap: var(--space-2);
+}
+
 .v-live__pref,
 .v-live__pref-group {
   align-items: center;
@@ -1906,6 +1945,74 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/*
+ * The other person, once a provider is actually carrying them.
+ *
+ * Full-bleed and behind everything else on the stage, because the subject of
+ * this screen is a face and a face belongs in the whole picture rather than in
+ * a card. It escapes the pane's own 34rem measure deliberately: that measure
+ * exists so a *name and a paragraph* stay readable, and applying it to a video
+ * would letterbox the one thing somebody opened this screen to see.
+ *
+ * `object-fit: cover` rather than `contain`. A portrait phone camera and a
+ * landscape laptop one have nothing in common, and the alternative to cropping
+ * is black bars around a person — which reads as a broken feed rather than as a
+ * different aspect ratio.
+ *
+ * It sits at z-index 0 with the plate above it, so the name, the transport
+ * line, and the dock keep the exact arrangement they had before any provider
+ * existed. Nothing about the composition changes when media arrives; the
+ * placeholder portrait is simply replaced by the person.
+ */
+.v-live__peer-video {
+  block-size: 100%;
+  inline-size: 100%;
+  inset: 0;
+  object-fit: cover;
+  position: absolute;
+  z-index: 0;
+}
+
+/*
+ * Everything else on the peer pane rides above the picture.
+ *
+ * Stated on the children rather than by giving the video a negative index,
+ * which would put it behind the stage's own background and make it invisible.
+ */
+.v-live__peer-halo,
+.v-live__peer-plate,
+.v-live__transport {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * The portrait gives way to the real thing.
+ *
+ * A monogram is a stand-in for a face. Keeping one on top of a live face would
+ * be a placeholder covering the thing it was standing in for, so it is removed
+ * rather than layered — and the plate, which is a name and not a placeholder,
+ * stays exactly where it was.
+ */
+.v-live__peer--carried .v-live__peer-halo {
+  display: none;
+}
+
+/*
+ * Over a photograph the plate needs its own ground.
+ *
+ * Text drawn straight onto a video is legible against one frame and illegible
+ * against the next. A scrim under the plate and the transport line is what
+ * makes the name readable whatever the person is standing in front of.
+ */
+.v-live__peer--carried .v-live__peer-plate,
+.v-live__peer--carried .v-live__transport {
+  backdrop-filter: blur(12px);
+  background: var(--surface-scrim, rgb(12 10 12 / 62%));
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
 }
 
 /*

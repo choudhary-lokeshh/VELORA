@@ -1,4 +1,8 @@
-import { useCameraPermissions, type CameraType } from 'expo-camera';
+import {
+  useCameraPermissions,
+  useMicrophonePermissions,
+  type CameraType,
+} from 'expo-camera';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 
@@ -25,12 +29,24 @@ import {
  * foreground, which unmounts the view and releases the device; it comes back
  * when the app does, and no permission is re-requested because none was lost.
  *
- * **Muting is a product state and is never quietly reversed.** There is no
- * microphone here — this build asks for none, because no approved provider
- * carries audio anywhere and asking for a permission the product cannot use
- * would be asking for it under false pretences — so "muted" is what this
- * surface honestly reports and what it keeps across a resume. Nothing turns it
- * back on.
+ * **The preview yields the camera to the provider.** Android gives one client
+ * the camera, and `expo-camera`'s preview is a native view rather than a
+ * stream, so it cannot be published into a session. Once an encounter is being
+ * carried, this preview unmounts and the RTC room opens both devices itself —
+ * `yielded` is what says so, and it is set before the room asks rather than
+ * after it succeeds, because yielding late is the same as not yielding.
+ *
+ * **The microphone is asked for on the same terms as the camera, and only
+ * after an intent.** This build now carries voice, so a microphone permission
+ * is one it can actually use — and it is requested when somebody presses Start,
+ * never at launch and never on a render. A refusal narrows the encounter to
+ * video rather than stopping it: being seen without being heard is a worse
+ * call than a full one and a much better one than none.
+ *
+ * **Muting is a product state and is never quietly reversed.** Somebody who
+ * muted themselves and then backgrounded the application must not come back
+ * unmuted, so the intent is held here and applied to whatever is publishing
+ * rather than read back off it.
  *
  * **A refusal is a state, not an exception.** `denied` is answerable by asking
  * again; `blocked` is Android refusing to ask again, which only the settings
@@ -48,16 +64,28 @@ export interface LiveMediaState {
   /**
    * Whether this build can carry a microphone anywhere.
    *
-   * Always false, and read from here rather than written as a literal in the
-   * screen, so the day a provider is approved there is one place that changes.
-   * The mute control still exists and is still authoritative over intent — it
-   * is what somebody presses to say they do not want to be heard — and the
-   * surface says plainly that nothing is carrying audio yet.
+   * True when the person has granted it, false otherwise — including where they
+   * refused, where Android will not ask again, and where no provider is
+   * carrying anything. Read from here rather than written as a literal in the
+   * screen, so there is one place that decides whether the mute control is
+   * describing something real.
+   *
+   * The mute control still exists and is still authoritative over intent when
+   * this is false: it is what somebody presses to say they do not want to be
+   * heard, and the surface says plainly that nothing is carrying audio.
    */
   readonly microphoneAvailable: boolean;
   readonly microphoneOn: boolean;
+  /** What Android has said about the microphone, in the four states. */
+  readonly microphonePermission: PermissionState;
   readonly permission: PermissionState;
-  /** Asks Android for the camera. Safe to call when it is already granted. */
+  /**
+   * Asks Android for the camera and the microphone, in that order.
+   *
+   * Both, from the one gesture that says what it will do, because a person
+   * pressing Start is agreeing to a video call rather than to a camera. Safe to
+   * call when either is already granted.
+   */
   readonly request: () => Promise<void>;
   /** Opens this application's settings, the only way out of `blocked`. */
   readonly openSettings: () => Promise<boolean>;
@@ -75,8 +103,17 @@ export function useLiveMedia(options: {
    * gesture as turning it on.
    */
   readonly enabled: boolean;
+  /**
+   * Whether a provider has taken the camera for a live encounter.
+   *
+   * Android hands the camera to one client. While this is true the preview must
+   * be unmounted, so `active` is false regardless of everything else — and it
+   * is the transport that sets it, before the room asks for the device.
+   */
+  readonly yielded?: boolean;
 }): LiveMediaState {
   const [permission, requestPermission] = useCameraPermissions();
+  const [microphone, requestMicrophone] = useMicrophonePermissions();
   const [cameraOn, setCameraOn] = useState(true);
   const [microphoneOn, setMicrophoneOn] = useState(true);
   const [facing, setFacing] = useState<CameraType>('front');
@@ -104,20 +141,39 @@ export function useLiveMedia(options: {
       // preview depends on a camera, so a failure here must not stop somebody
       // being matched, chatting, or connecting.
     }
-  }, [requestPermission]);
+    try {
+      // Second, and separately. Android shows one dialog at a time, and a
+      // person who refuses the camera should still be asked about the
+      // microphone rather than having the question withdrawn — a voice-only
+      // encounter is a real thing this product offers.
+      await requestMicrophone();
+    } catch {
+      // Reported through `microphonePermission`, for the same reason.
+    }
+  }, [requestMicrophone, requestPermission]);
 
   // `null` is the state before the module has answered at all, which reads the
   // same way an undetermined permission does: ask. `readPermissionState` draws
   // the four-way distinction, so this only has to hand it the two shapes it
   // knows about.
   const state = readPermissionState(permission ?? undefined);
+  const microphoneState = readPermissionState(microphone ?? undefined);
 
   return {
-    active: options.enabled && foreground && state === 'granted' && cameraOn,
+    active:
+      options.enabled &&
+      foreground &&
+      state === 'granted' &&
+      cameraOn &&
+      // The provider has the camera. Rendering a preview here would be a second
+      // client asking Android for a device it has already given away, which
+      // fails rather than sharing.
+      options.yielded !== true,
     cameraOn,
     facing,
-    microphoneAvailable: false,
+    microphoneAvailable: microphoneState === 'granted',
     microphoneOn,
+    microphonePermission: microphoneState,
     openSettings: openApplicationSettings,
     permission: state,
     request,

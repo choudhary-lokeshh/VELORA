@@ -325,6 +325,65 @@ test.describe('Live discovery', () => {
     await expect(page.getByTestId('live-pref-region')).toHaveText('Anywhere');
   });
 
+  test('buys a narrower search, holds the coins, and gives them back', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+
+    const panel = page.getByTestId('live-premium');
+    await expect(panel).toBeVisible();
+    // What is being bought, at the price the server published, with what
+    // happens to the money said before it moves.
+    await expect(panel).toContainText('coins');
+    await expect(panel).toContainText('returned in full');
+    // And nothing about who is there. This is the screen where an invented
+    // figure would be most profitable and it carries none.
+    await expect(panel).not.toContainText('online');
+    await expect(panel).not.toContainText('%');
+
+    // No purchase channel exists in this environment, so the only way to hold
+    // any coins is the control that says it is a developer's.
+    const grant = page.getByTestId('live-premium-grant');
+    await expect(grant).toContainText('Developer');
+    await grant.click();
+    await expect(page.getByTestId('live-premium-balance')).toContainText(
+      '100 coins',
+    );
+
+    await page.getByTestId('live-premium-region').fill('FR');
+    await page.getByTestId('live-premium-activate').click();
+    const active = page.getByTestId('live-premium-active');
+    await expect(active).toBeVisible({ timeout: 30_000 });
+    // Held, not spent — which is the actual ledger position and the actual
+    // sentence.
+    await expect(active).toContainText('held, not spent');
+
+    // The narrowing reaches the search, and the search says what it is doing
+    // without claiming anybody matching is there.
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-room')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('live')).not.toContainText('nobody matching');
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+    // Back to everyone, in full. Changing your mind inside the window is not a
+    // consumption of it, and the balance the screen shows is the server's.
+    await page.getByTestId('live-premium-cancel').click();
+    await expect(page.getByTestId('live-premium-balance')).toContainText(
+      '100 coins',
+      { timeout: 30_000 },
+    );
+  });
+
   test('asks one real person to meet, and promises only a request', async ({
     page,
   }, testInfo) => {

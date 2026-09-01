@@ -27,6 +27,8 @@
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans": "catalog:",
     "@expo/metro-runtime": "catalog:",
+    "@livekit/react-native": "catalog:",
+    "@livekit/react-native-webrtc": "catalog:",
     "@velora/api-client": "workspace:*",
     "@velora/config": "workspace:*",
     "@velora/consumer-client": "workspace:*",
@@ -45,6 +47,7 @@
     "expo-router": "catalog:",
     "expo-secure-store": "catalog:",
     "expo-splash-screen": "catalog:",
+    "livekit-client": "catalog:",
     "expo-status-bar": "catalog:",
     "expo-system-ui": "catalog:",
     "react": "catalog:",

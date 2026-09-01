@@ -87,6 +87,23 @@ function liveState(
   return { ...base, live: { ...base.live, ...overrides } };
 }
 
+/**
+ * A world that has coins, which no deployed environment does.
+ *
+ * The default state has none, and every existing assertion on this screen runs
+ * against that — which is the point: the paid control must be *absent* where
+ * there is no ledger, not disabled, so nothing about the free product changes.
+ */
+function walletState(
+  overrides: Partial<ApiDoubleState['wallet']> = {},
+): ApiDoubleState {
+  const base = liveState();
+  return {
+    ...base,
+    wallet: { ...base.wallet, enabled: true, ...overrides },
+  };
+}
+
 const click = async (testId: string) => {
   fireEvent.click(screen.getByTestId(testId));
   await waitFor(() => {
@@ -349,6 +366,109 @@ describe('permissions', () => {
     // Nothing a person can do about it, so nothing is offered. A control that
     // did nothing would be worse than none.
     expect(notice.textContent).toContain('no camera or microphone available');
+  });
+});
+
+describe('the paid matching preference', () => {
+  it('is absent entirely where this environment has no coins', async () => {
+    const double = createApiDouble(liveState());
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-door');
+
+    // Absent rather than disabled. A control explaining a feature that does not
+    // exist here is a control somebody will try to enable.
+    expect(screen.queryByTestId('live-premium')).toBeNull();
+    expect(screen.queryByTestId('live-premium-active')).toBeNull();
+  });
+
+  it('says what is bought, at the published price, and claims nothing about who is there', async () => {
+    const double = createApiDouble(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    renderProduct(<Live />, double, { pathname: '/live' });
+
+    const panel = await screen.findByTestId('live-premium');
+    const copy = panel.textContent;
+    // The price and the duration are the server's, so a surface can never
+    // render a price that is not the price that will be charged.
+    expect(copy).toContain('25 coins');
+    expect(copy).toContain('15 minutes');
+    // The whole of what happens to the money, said where somebody decides.
+    expect(copy).toContain('held');
+    expect(copy).toContain('returned in full');
+    // And no invented figure anywhere: no count of matching people, no wait, no
+    // probability, no scarcity.
+    expect(copy).not.toMatch(/\d+\s*(people|online|waiting|match(es)?\b)/iu);
+    expect(copy).not.toContain('%');
+  });
+
+  it('offers no purchase where nothing can take money', async () => {
+    const double = createApiDouble(
+      walletState({ balance: { available: '0', reserved: '0' } }),
+    );
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-premium');
+
+    // Short of coins, so the activation control is replaced by the refusal —
+    // and the refusal says only that, never how much is missing beyond the
+    // price everybody can already see.
+    expect(screen.queryByTestId('live-premium-activate')).toBeNull();
+    const short = await screen.findByTestId('live-premium-short');
+    expect(short.textContent).toContain('You need 25 coins');
+    // No channel can take money in this environment, so the only way to get
+    // any is the developer grant, and it is labelled as one.
+    const grant = await screen.findByTestId('live-premium-grant');
+    expect(grant.textContent).toContain('Developer');
+  });
+
+  it('holds the coins rather than spending them, and gives them back', async () => {
+    const double = createApiDouble(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+    );
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-premium');
+
+    fireEvent.change(screen.getByTestId('live-premium-region'), {
+      target: { value: 'FR' },
+    });
+    await click('live-premium-activate');
+
+    const active = await screen.findByTestId('live-premium-active');
+    expect(active.textContent).toContain('France');
+    // Held, not spent — and the sentence says so rather than reassuring.
+    expect(active.textContent).toContain('held, not spent');
+
+    await click('live-premium-cancel');
+    await screen.findByTestId('live-premium');
+    // In full, and the balance rendered is the server's answer rather than a
+    // delta this surface applied.
+    expect(
+      (await screen.findByTestId('live-premium-balance')).textContent,
+    ).toContain('100 coins');
+  });
+
+  it('says what a narrowed search is actually doing, and promises nothing', async () => {
+    const double = createApiDouble({
+      ...walletState({ balance: { available: '100', reserved: '0' } }),
+      live: {
+        ...walletState().live,
+        standInAvailable: false,
+      },
+    });
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-premium');
+    fireEvent.change(screen.getByTestId('live-premium-region'), {
+      target: { value: 'FR' },
+    });
+    await click('live-premium-activate');
+    await click('live-start-video');
+
+    const searching = await screen.findByTestId('live-searching');
+    const copy = searching.textContent;
+    expect(copy).toContain('France');
+    // The one thing this screen must never claim, on the screen where claiming
+    // it would be most profitable.
+    expect(copy).toContain('Nobody can promise somebody is there');
   });
 });
 

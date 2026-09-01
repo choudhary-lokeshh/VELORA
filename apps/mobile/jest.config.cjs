@@ -7,6 +7,13 @@ module.exports = {
   // rather than by loosening export conditions globally, which would also flip
   // third-party CommonJS dependencies to their ESM builds.
   moduleNameMapper: {
+    // The RTC library links a native WebRTC implementation and cannot load
+    // here. `src/product/live-rtc.ts` is the one module that imports it, which
+    // is what makes replacing the whole transport a single line rather than a
+    // mock in every test that renders Live.
+    // Matched on the request as written, which is the relative `./live-rtc`
+    // the one importer uses — an absolute-looking pattern never fires.
+    '(?:^|/)live-rtc$': '<rootDir>/test/support/live-rtc.ts',
     '^@velora/validation/address-bounds$':
       '<rootDir>/../../packages/validation/dist/address-bounds.js',
     '^@velora/api-client$': '<rootDir>/../../packages/api-client/dist/index.js',
