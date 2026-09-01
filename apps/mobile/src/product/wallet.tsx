@@ -64,8 +64,23 @@ function coinsOf(value: string | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function minutesLeft(expiresAt: string, now: number): number {
-  return Math.max(0, Math.ceil((Date.parse(expiresAt) - now) / 60_000));
+/**
+ * How long a window has left, in whole minutes. Never a ticking countdown.
+ *
+ * Clamped to the window's own length, because the clock this runs on is the
+ * reader's and the expiry is the server's. A phone running a minute behind
+ * would otherwise say a fifteen-minute window has sixteen minutes left, which
+ * is the one direction this must never round — it would be the product
+ * promising more time than was sold. Observed on an Android 36 emulator whose
+ * clock had drifted, on 2026-09-01.
+ */
+function minutesLeft(
+  expiresAt: string,
+  now: number,
+  durationSeconds: number,
+): number {
+  const remaining = Math.ceil((Date.parse(expiresAt) - now) / 60_000);
+  return Math.max(0, Math.min(remaining, Math.ceil(durationSeconds / 60)));
 }
 
 export function WalletScreen({ onBack }: { readonly onBack: () => void }) {
@@ -302,7 +317,7 @@ function ActiveWindow({
             testID="wallet-window-selection"
             variant="small"
           >
-            {`${description} — ${String(minutesLeft(held.expiresAt, Date.now()))} min left`}
+            {`${description} — ${String(minutesLeft(held.expiresAt, Date.now(), state.livePreferenceCatalogue.durationSeconds))} min left`}
           </Text>
         </View>
         <Text tone="secondary" variant="caption">

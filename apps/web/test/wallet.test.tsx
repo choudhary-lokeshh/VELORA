@@ -122,6 +122,11 @@ describe('the coin screen', () => {
     // Minutes, never a ticking countdown: an unused window loses nobody
     // anything when it ends, so a clock would manufacture urgency.
     expect(window.textContent).toMatch(/\d+ min left/u);
+    // And never more than the window is long. The clock this renders on is the
+    // reader's and the expiry is the server's, so a device running behind would
+    // otherwise promise more time than was sold.
+    const [, minutes] = /(\d+) min left/u.exec(window.textContent) ?? [];
+    expect(Number(minutes)).toBeLessThanOrEqual(15);
     const panel = await screen.findByTestId('wallet-window');
     expect(panel.textContent).toContain('held, not spent');
     expect(panel.textContent).toContain('returned in full');

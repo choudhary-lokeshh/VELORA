@@ -124,9 +124,20 @@ export function coinsOf(value: string | undefined): number {
  * somebody paid for is pressure, and an unused window loses nobody anything
  * when it ends — the coins come back — so a countdown would be manufacturing
  * urgency that does not exist.
+ *
+ * Clamped to the window's own length, because the clock this runs on is the
+ * reader's and the expiry is the server's. A device running a minute behind
+ * would otherwise say a fifteen-minute window has sixteen minutes left, which
+ * is the one direction this must never round: it would be the product
+ * promising more time than was sold.
  */
-function minutesLeft(expiresAt: string, now: number): number {
-  return Math.max(0, Math.ceil((Date.parse(expiresAt) - now) / 60_000));
+function minutesLeft(
+  expiresAt: string,
+  now: number,
+  durationSeconds: number,
+): number {
+  const remaining = Math.ceil((Date.parse(expiresAt) - now) / 60_000);
+  return Math.max(0, Math.min(remaining, Math.ceil(durationSeconds / 60)));
 }
 
 /** One selection in words, in the order the catalogue publishes. */
@@ -245,7 +256,9 @@ export function PremiumPreference({
             testID="live-premium-active-selection"
             variant="small"
           >
-            {description} — {minutesLeft(held.expiresAt, Date.now())} min left
+            {description} —{' '}
+            {minutesLeft(held.expiresAt, Date.now(), catalogue.durationSeconds)}{' '}
+            min left
           </Text>
         </View>
         {/*
