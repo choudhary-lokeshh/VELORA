@@ -1,13 +1,22 @@
 # Real-provider proof: two people, one room, media both ways
 
-Recorded 2026-09-01, from `e2e/live-provider.spec.ts` run against a real
-LiveKit server. It is the only evidence in this repository that two strangers
-can actually see and hear each other, and it is deliberately not evidence about
-any vendor being approved — configuration refuses `REALTIME_RTC_PROVIDER=livekit`
-in staging and production on its own, for the reason recorded in
+Recorded 2026-09-01, from `e2e/live-provider.spec.ts`. It is the only evidence
+in this repository that two strangers can actually see and hear each other, and
+it is deliberately not evidence about any vendor being approved — configuration
+refuses `REALTIME_RTC_PROVIDER=livekit` in staging and production on its own,
+for the reason recorded in
 [RTC provider eligibility](../../compliance/10-rtc-provider-eligibility.md).
 
-## What was run
+The same specification was run against two servers on the same day, and both
+runs are recorded below because they found different things. A self-hosted
+LiveKit server proved the media path and found four defects. A LiveKit Cloud
+project then proved the same media path across somebody else's network, and the
+latency of doing so found two more that a server on loopback cannot expose.
+
+Every claim here is an observation from a run. Where something is argued rather
+than observed — Android is the one place — it says so.
+
+## What was run: the self-hosted server
 
 ```
 docker run -d --name velora-livekit-proof \
@@ -22,11 +31,11 @@ LIVE_DISCOVERY_SIMULATION=unavailable \
 pnpm exec playwright test e2e/live-provider.spec.ts --project=chromium
 ```
 
-Server version 1.13.6, self-hosted rather than LiveKit Cloud. The protocol, the
-token format, the server API, and the browser SDK are the same; what a cloud
-project adds is somebody else's operations and somebody else's terms, which is
-exactly the part that is unapproved. `--node-ip 127.0.0.1` and the published UDP
-port matter: without them ICE cannot complete from the host and every
+Server version 1.13.6, self-hosted, on loopback. What a cloud project adds is
+somebody else's operations, somebody else's network, and somebody else's terms —
+and only the last of those is still unanswered, because the Cloud run recorded
+below settled the other two. `--node-ip 127.0.0.1` and the published UDP port
+matter: without them ICE cannot complete from the host and every
 publication hangs, which is a property of running the server in a container and
 not of anything in this repository.
 
@@ -35,7 +44,7 @@ without it. With the stand-in available, a person searching alone is matched
 with a seeded account that has no camera, and the proof would be asserting the
 absence of the media it exists to find.
 
-## What passed
+## What passed on the self-hosted server
 
 One test, 4.5 s of assertions after a 55 s cold start:
 
@@ -50,7 +59,7 @@ One test, 4.5 s of assertions after a 55 s cold start:
 - Next removed the peer's video from the other browser;
 - both returned to the door.
 
-## What the provider recorded
+## What the self-hosted server recorded
 
 The room VELORA created, from the server's own log:
 
@@ -92,7 +101,7 @@ TR_AMGaM2ymCnHEua  TR_AMsRcW669v5Xzk   (audio, one each)
 TR_VC79ZevZsYv34T  TR_VC955u7Pgk9SyG   (video, one each)
 ```
 
-## What it found
+## What the self-hosted run found
 
 Four defects, none of which any simulated adapter can reveal. Each is fixed in
 the same change as this evidence.
@@ -126,51 +135,64 @@ the element that mounts when the first video track arrives was never handed the
 stream. Audio arrives before video in the ordinary case, which is why it looked
 like a video element with no picture.
 
-## What LiveKit Cloud has not yet proved
+## What LiveKit Cloud proved
 
-Recorded 2026-09-01, after the above. A LiveKit Cloud project was configured and
-the same specification was run against it. It did not produce media, and the
-reason is not in this repository.
-
-The project answers every server-API call with `401 invalid token`. That is one
-of two refusals LiveKit distinguishes, and the difference is the whole
-diagnosis:
+Recorded 2026-09-01, after everything above, against the LiveKit Cloud project
+at `wss://velora-m4vtt2eh.livekit.cloud`:
 
 ```
-real key + real secret    401 invalid token
-real key + wrong secret   401 invalid token
-bogus key + real secret   401 invalid API key
+REALTIME_LIVEKIT_URL=<cloud project> \
+REALTIME_LIVEKIT_API_KEY=<key> \
+REALTIME_LIVEKIT_API_SECRET=<secret> \
+LIVE_DISCOVERY_SIMULATION=unavailable \
+pnpm exec playwright test e2e/live-provider.spec.ts --project=chromium
 ```
 
-An unrecognised key never reaches signature verification, so `invalid API key`
-is the answer for a key the project has never heard of. The configured key gets
-past that check and fails the next one, which means the project *knows the key*
-and cannot verify the signature it carries. The configured `REALTIME_LIVEKIT_API_SECRET`
-does not belong to the configured `REALTIME_LIVEKIT_API_KEY` — the failure a key
-and a secret copied from two different key pairs produces, and the only one that
-looks like this.
+One test, passing: 4.1 s of assertions inside a 54.1 s run. The surfaces were
+the built `.next/standalone` artifacts, rebuilt from the current tree before the
+run; the API ran from source in a single process.
 
-Nothing in VELORA transforms either value on the way: the probe that produced
-the table above read them from the environment and signed with them directly,
-never touching the configuration layer or the adapter, and failed identically.
-Configuration maps a blank value to "absent" and otherwise passes the string
-through unchanged.
+- `pnpm rtc:doctor` reported that the project accepted the configured
+  credential, so server-API authentication against Cloud works;
+- two distinct seeded accounts signed in to two browser contexts with separate
+  cookie jars, and `LIVE_DISCOVERY_SIMULATION=unavailable` means the only
+  possible match for either was the other browser;
+- the real matcher paired them, and each was issued its own participant
+  credential naming the same Cloud room;
+- both joined that room and both published a camera and a microphone;
+- a remote video element on both sides, `videoWidth > 0` and a `currentTime`
+  that advanced — a decoded frame, and then another one;
+- `inbound-rtp` byte counts above zero for **both** `video` and `audio`, on
+  **both** sides, read from each browser's own `RTCPeerConnection.getStats` —
+  which is media arriving in both directions rather than a negotiated session
+  carrying nothing;
+- Next removed the peer's video from the other browser;
+- End returned both to the door.
 
-`pnpm rtc:doctor` now asks that question in one command, prints no credential,
-and names which of the two refusals it got. The remedy is to copy the key and
-the secret together from one key pair in the LiveKit console.
+This supersedes an earlier note in this file recording that no frame had crossed
+a LiveKit Cloud project and that Cloud authentication had been disproved. Both
+were true when written and are not true now. What was actually wrong was the
+credential: the project answered `401 invalid token` rather than
+`401 invalid API key`, which is the refusal a key and a secret taken from two
+different key pairs produce — the project knew the key and could not verify the
+signature it carried. `pnpm rtc:doctor` exists to ask that question in one
+command, prints no credential, and names which of the two refusals it got; it is
+what confirmed the replacement credential before this run. Nothing in VELORA
+transforms either value on the way, and nothing about the adapter changed to
+make Cloud work.
 
-Two things follow, and they are separate:
-
-- **Cloud authentication is disproved, not pending.** The project refused the
-  credential this repository is configured with. That is a finding, not a
-  timeout.
-- **Cloud media is unproven.** No frame has crossed a LiveKit Cloud project from
-  this repository. The media evidence above is from a self-hosted server, and
-  the protocol, token format, server API and browser SDK are the same — but that
-  is an argument, not an observation, and it is not recorded here as one.
+The grants Cloud mints were read from a browser's own connection during the
+diagnostic runs that preceded this one, and are the same shape the self-hosted
+server logged above: `roomJoin` on exactly one room, publish and subscribe,
+`roomCreate`, `roomList`, `roomAdmin`, `roomRecord`, `canPublishData`,
+`canUpdateOwnMetadata`, `hidden` and `recorder` all false, publishable sources
+exactly `camera` and `microphone`, a per-session participant hash as the
+subject, and a two-minute lifetime.
 
 ## What the Cloud attempt found
+
+Three defects, in the order they were reached. The first is about diagnosis; the
+other two are races that only exist because a real provider is a network away.
 
 **A refused credential was being treated as an ambiguous create.** REALTIME
 answers a provider that did not respond by asking it what it did with the
@@ -184,4 +206,81 @@ instead of one. The adapter now translates a `401` or `403` into a refusal the
 port declares, and the orchestrator reports it as itself and does not look up
 what was never created. The outcome is unchanged and still fail-closed: the
 binding is unresolved, the call stays connecting, the join timeout closes it,
-and nothing falls back to a simulated transport.
+and nothing falls back to a simulated transport. Fixed in `22c06a6`; the
+question it made askable is `a534c05`.
+
+**A call was published before the room it names existed.** `LiveService.ensureSession`
+bound `live_encounters.realtime_session_id` and *then* reached the provider, so
+between those two writes both clients could read a `call` whose session had no
+`provider_reference`. REALTIME refuses a join credential for one of those,
+correctly — and reported it as `ACTION_NOT_PERMITTED`, which is what a blocked
+pair is told and which a live surface treats as final, because a refusal is a
+decision and a client that kept asking would be arguing with a safety answer. So
+the browser asked once, gave up, and never joined a call it was in.
+
+The window is exactly one provider round trip. Against a server on loopback it
+is too narrow to land in; against Cloud it was 375 ms wide and the browser that
+did not trigger the match landed in it on every run, while the other sat alone
+in a room. Fixed in `d7ee810` by reaching the provider first and binding
+afterwards, whatever the provider answered — a session that failed to reach one
+is a fact the encounter has to carry, because the surface reads that state and
+says the camera and voice could not be connected, which is true. `2d83249`
+answers the remaining window honestly: `not_ready`, reported as `409
+STATE_CONFLICT` beside the unchanged `ACTION_NOT_PERMITTED`, decided *after* the
+eligibility composition so the softer answer is never reachable by somebody who
+may not join at all. Both consumer surfaces ask again on that one code and on no
+other.
+
+**The loser of a bind was ending a live session.** A poll by somebody already
+matched runs the same session work as the request that allocated the encounter,
+so two runs overlap as a matter of course — and `openLiveSession` answers the
+second with the *same* session rather than opening another one, which is what
+makes one encounter mean one room. Losing the bind therefore left a runner
+holding the session the winner had just published, and it was calling
+`endLiveSession` on it.
+
+It was latent while the window was microseconds wide. Putting the provider call
+inside that window made it certain: every Cloud match ended with one browser
+connected and publishing while the other's poll tore the session out from under
+it, after which the platform correctly refused every credential for a call that
+no longer existed. The loser now asks the encounter what it names — naming this
+session is success by somebody else's hand — and only a session nothing will
+ever reference is torn down. Fixed in `d7ee810`.
+
+Three regression proofs cover the pair, each verified failing without its fix:
+the ordering is observed from inside the provider call rather than inferred from
+the rows afterwards, because the row order is identical either way; the overlap
+is produced by holding both requests inside the provider call, and bounded so a
+proof cannot hang waiting for a stronger version of a race it already has; and a
+matched pair can both obtain a credential the instant they are matched, which is
+the product statement the other two exist to keep true.
+
+## Android: integrated, and not proved against a provider
+
+Consumer Mobile has the whole integration and none of the evidence, and the
+distinction is deliberate rather than a gap in this document.
+
+What exists: `@livekit/react-native` reached only through `apps/mobile/src/product/live-rtc.ts`,
+so no surface component imports a vendor; `RECORD_AUDIO` declared for the first
+time and requested only after somebody presses Start; `BLUETOOTH`,
+`BLUETOOTH_ADMIN` and `FOREGROUND_SERVICE` refused, each for a reason recorded in
+[ADR-0043](../../decisions/ADR-0043-livekit-transport-coins-and-paid-live-preferences.md);
+and the preview yielding the camera to the room on the *server's* answer about
+the encounter rather than on the transport's own success, because Android gives
+one client the camera and yielding after a successful connection is yielding too
+late to work. `pnpm android:verify` asserts the permission allow-list, the
+manifest, the signing configuration and the SDK levels against a regenerated
+project on every gate run.
+
+What does not exist: **no frame has crossed any RTC provider on an Android
+device from this repository.** Every Android screenshot in
+[`../live-android`](../live-android) and [`../live-v2-android`](../live-v2-android)
+was taken against the `local-test` adapter, which carries no media and reaches
+no network, and the surfaces correctly said so. The Web proof above is not
+evidence about Android: it shares the platform's authorization and the provider's
+protocol, and it shares neither the SDK build, the device's capture pipeline,
+nor the camera handover this platform had to design around. That is an argument
+for expecting it to work, and it is not recorded here as an observation.
+
+Proving it needs a build on a real device against a real provider, and a second
+participant for it to meet.
