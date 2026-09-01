@@ -1319,6 +1319,32 @@ export function createMobileApiDouble(
       };
       return json(200, state.call);
     }
+    if (path === '/v1/rtc/calls/join-authorization' && method === 'POST') {
+      /*
+       * A live encounter's own call, which is a different call from the
+       * introduction one below and is the only one a provider ever carries.
+       *
+       * It answers with a `transport` when the encounter says a provider has
+       * it, because that address is what a client connects to — without it
+       * there is a session and nothing carrying it, which is exactly what the
+       * `local-test` adapter reports and the state every simulated run was
+       * stuck in. A fixture that could not express "somebody is being carried"
+       * is a fixture no test could catch a carried-media defect in.
+       */
+      const carried = state.live.encounter?.call;
+      const asked = (body as { callId: string }).callId;
+      if (carried?.id === asked) {
+        if (carried.mediaTransport !== 'provider')
+          return error(409, 'CONFLICT');
+        return json(200, {
+          callId: carried.id,
+          credential: `join-live-${String(calls.length)}`,
+          expiresAt: iso(120_000),
+          medium: carried.medium,
+          transport: { provider: 'livekit', url: 'wss://media.test' },
+        });
+      }
+    }
     if (path.startsWith('/v1/rtc/calls/') && method === 'POST') {
       const input = body as { callId: string };
       if (state.call?.id !== input.callId) {
