@@ -299,6 +299,16 @@ async function seedConsumer(fixture, index) {
     languages: [commonLanguage, ...fixture.languages],
   });
 
+  // What this person says about themselves, through the one route that takes
+  // it. A fixture with no declaration is left with none: "never asked" is a
+  // real state a paid filter has to handle, and it is the state every existing
+  // account is in.
+  if (fixture.matchingGender !== undefined) {
+    await session.must('POST', '/v1/users/me/matching-gender', {
+      matchingGender: fixture.matchingGender,
+    });
+  }
+
   const live = profile.media.filter((one) => one.state !== 'removed');
   if (live.length === 0) {
     await upload(
@@ -922,6 +932,48 @@ async function seedGifts(people, seededCreators) {
   return sent;
 }
 
+/**
+ * Coins, so the paid matching preference is walkable without buying anything.
+ *
+ * Three deliberate groups rather than one. Most people are funded generously
+ * enough to open several windows, because the interesting walk is the matcher
+ * and not the arithmetic. Some are funded with *less than one window costs*, so
+ * the insufficient-balance state is reachable without anybody having to spend
+ * down to it first. And some have nothing at all, because a zero balance is the
+ * state every new account is in and the one a surface most often gets wrong.
+ *
+ * Every coin here goes through the published grant route, which the server
+ * refuses outside local and test — so this cannot fund anybody anywhere it
+ * should not, whatever it is pointed at. Nothing writes a balance directly, and
+ * the reference is stable per person so running the seed twice funds them once.
+ */
+async function seedCoins(people) {
+  let funded = 0;
+  let empty = 0;
+  for (const [index, person] of people.entries()) {
+    const group = index % 5;
+    if (group === 3) {
+      empty += 1;
+      continue;
+    }
+    // Below the cheapest single preference, so the refusal is reachable.
+    const coins = group === 4 ? '5' : '400';
+    const response = await person.session.call('POST', '/v1/wallet/grants', {
+      coins,
+      reference: `seed-coins-${String(index)}`,
+    });
+    if (!response.ok) {
+      // No coin ledger in this environment. That is a configuration this world
+      // may legitimately have — the free product is the whole product without
+      // it — so it is reported rather than fatal.
+      say('no coin ledger configured; wallets left empty');
+      return { empty: people.length, funded: 0 };
+    }
+    funded += 1;
+  }
+  return { empty, funded };
+}
+
 async function main() {
   guard();
   say(`seeding ${apiBaseUrl}`);
@@ -978,6 +1030,11 @@ async function main() {
 
   const gifts = await seedGifts(people, seededCreators);
   say(`${String(gifts)} gifts present through verified settlement`);
+
+  const coins = await seedCoins(people);
+  say(
+    `${String(coins.funded)} wallets funded, ${String(coins.empty)} deliberately empty`,
+  );
 
   process.stdout.write(
     [

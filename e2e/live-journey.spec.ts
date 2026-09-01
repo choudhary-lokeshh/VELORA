@@ -72,6 +72,41 @@ async function scenario(page: Page, name: string): Promise<void> {
   await control.click();
 }
 
+/**
+ * The coin screen, reached the way a person reaches it.
+ *
+ * Through You rather than by address, because a destination somebody can only
+ * arrive at by typing a URL is a destination that does not exist.
+ */
+async function openWallet(page: Page): Promise<void> {
+  await navigateTo(page, 'you');
+  await page.getByTestId('link-wallet').click();
+  await page.waitForURL(/\/you\/wallet$/u);
+}
+
+/** What the coin screen says this person holds, as text. */
+async function coinsHeld(page: Page): Promise<string> {
+  await openWallet(page);
+  return (await page.getByTestId('wallet-available').textContent()) ?? '';
+}
+
+/**
+ * Back to Everyone, whatever window this person is holding.
+ *
+ * A charged window runs to expiry by design — that is the whole difference
+ * between a window and a per-match fee — so a journey that bought one leaves it
+ * running for the next. Ending it is what a person does, and it goes through
+ * the real cancellation route.
+ */
+async function atEveryone(page: Page): Promise<void> {
+  const active = page.getByTestId('live-premium-active');
+  if (!(await active.isVisible())) return;
+  await page.getByTestId('live-premium-cancel').click();
+  await expect(page.getByTestId('live-premium')).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 async function atTheDoor(page: Page): Promise<void> {
   const door = page.getByTestId('live-door');
   if (await door.isVisible()) return;
@@ -325,6 +360,35 @@ test.describe('Live discovery', () => {
     await expect(page.getByTestId('live-pref-region')).toHaveText('Anywhere');
   });
 
+  test('meets somebody for nothing, and moves no coins doing it', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+
+    // Everyone is the default and it is free. Nothing is activated, nothing is
+    // held, and the balance a wallet read reports is unchanged by meeting
+    // somebody.
+    const before = await coinsHeld(page);
+    await navigateTo(page, 'live');
+    await atTheDoor(page);
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-room')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('live-peer-name')).toBeVisible();
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(await coinsHeld(page)).toBe(before);
+  });
+
   test('buys a narrower search, holds the coins, and gives them back', async ({
     context,
     page,
@@ -356,6 +420,16 @@ test.describe('Live discovery', () => {
     );
 
     await page.getByTestId('live-premium-region').fill('FR');
+    // The price is on the control that opens the confirmation, and the
+    // confirmation says the whole of what is about to happen. The cost is
+    // never behind the button that spends.
+    await expect(page.getByTestId('live-premium-review')).toContainText(
+      'coins',
+    );
+    await page.getByTestId('live-premium-review').click();
+    await expect(page.getByTestId('live-premium-confirm')).toContainText(
+      'returned in full',
+    );
     await page.getByTestId('live-premium-activate').click();
     const active = page.getByTestId('live-premium-active');
     await expect(active).toBeVisible({ timeout: 30_000 });
@@ -366,7 +440,7 @@ test.describe('Live discovery', () => {
     // The narrowing reaches the search, and the search says what it is doing
     // without claiming anybody matching is there.
     await page.getByTestId('live-start-video').click();
-    await expect(page.getByTestId('live-room')).toBeVisible({
+    await expect(page.getByTestId('live')).toContainText('France', {
       timeout: 30_000,
     });
     await expect(page.getByTestId('live')).not.toContainText('nobody matching');
@@ -382,6 +456,142 @@ test.describe('Live discovery', () => {
       '100 coins',
       { timeout: 30_000 },
     );
+  });
+
+  test('meets only the declared category that was bought, and pays once', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+    await atEveryone(page);
+
+    await page.getByTestId('live-premium-grant').click();
+    await expect(page.getByTestId('live-premium-balance')).toContainText(
+      'coins',
+    );
+    // The declared category the stand-in actually holds. Nothing about this
+    // person's name decided it: the cohort assigns declarations by position
+    // precisely so a name can never be what a match was made on.
+    await page.getByLabel(/^Women/u).click();
+    await page.getByTestId('live-premium-review').click();
+    await page.getByTestId('live-premium-activate').click();
+    await expect(page.getByTestId('live-premium-active')).toContainText(
+      'Women',
+      { timeout: 30_000 },
+    );
+
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-room')).toBeVisible({
+      timeout: 30_000,
+    });
+    // A real person, allocated by the real matcher against the real
+    // declaration — and only a person who actually declared it, because the
+    // filter is applied to the pool rather than to the copy on the screen.
+    await expect(page.getByTestId('live-peer-name')).toBeVisible();
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+    // And the wallet tells the story: held, then used, against the preference
+    // it was bought for.
+    await openWallet(page);
+    const history = page.getByTestId('wallet-history');
+    await expect(history).toContainText('Premium Live preference', {
+      timeout: 30_000,
+    });
+    await expect(history).toContainText('Women');
+    await expect(history).toContainText('coins used');
+  });
+
+  test('says nobody matching is here, and never invents somebody', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, person.subject);
+    await atTheDoor(page);
+    await atEveryone(page);
+
+    await page.getByTestId('live-premium-grant').click();
+    // A category nobody who could be offered holds. The honest answer is that
+    // the search is still running — not a fabricated person, and not a
+    // silently widened filter.
+    await page.getByLabel(/^Men/u).click();
+    await page.getByTestId('live-premium-review').click();
+    await page.getByTestId('live-premium-activate').click();
+    await expect(page.getByTestId('live-premium-active')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-searching')).toBeVisible({
+      timeout: 30_000,
+    });
+    // Still searching, with nobody in the room and nothing claimed about who
+    // is there.
+    await expect(page.getByTestId('live-peer-name')).toHaveCount(0);
+    await expect(page.getByTestId('live')).not.toContainText('%');
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+    // Switching back to everyone returns the coins in full, because the window
+    // never produced anything.
+    await page.getByTestId('live-premium-cancel').click();
+    await expect(page.getByTestId('live-premium-balance')).toContainText(
+      'coins',
+      { timeout: 30_000 },
+    );
+    await openWallet(page);
+    await expect(page.getByTestId('wallet-history')).toContainText(
+      'Reservation released',
+      { timeout: 30_000 },
+    );
+  });
+
+  test('refuses to half-activate anything, and leaves everyone free', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [, second] = cohortFor(testInfo.project.name).people;
+    if (second === undefined) throw new Error('the cohort needs two people');
+    await allowCapture(context, testInfo.project.name);
+    await signInAdmitted(page, second.subject);
+    await atTheDoor(page);
+    await atEveryone(page);
+
+    // Nobody has granted this person anything, so the balance is zero — which
+    // is a real state and not an error.
+    await expect(page.getByTestId('live-premium-balance')).toContainText(
+      '0 coins',
+    );
+    await page.getByLabel(/^Women/u).click();
+    // The refusal says the price and the balance, both of which are already on
+    // the screen, and it offers nothing this environment cannot complete.
+    const short = page.getByTestId('live-premium-short');
+    await expect(short).toContainText('coins');
+    await expect(page.getByTestId('live-premium-review')).toHaveCount(0);
+    await expect(page.getByTestId('live-premium-active')).toHaveCount(0);
+
+    // And nobody is trapped. Everyone is still there, still free, and still
+    // finds somebody.
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-room')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('live-peer-name')).toBeVisible();
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test('asks one real person to meet, and promises only a request', async ({

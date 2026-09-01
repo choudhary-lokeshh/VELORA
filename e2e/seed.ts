@@ -36,6 +36,24 @@ interface Fixture {
   readonly bio: string;
   readonly displayName: string;
   readonly languages: readonly string[];
+  /**
+   * What this person declares about themselves, when they declare anything.
+   *
+   * Assigned to the fixture rather than to the name, deliberately: VELORA never
+   * infers a declaration from a name, and a cohort where every declaration
+   * agreed with the name beside it would let an inference bug pass a browser
+   * walk.
+   *
+   * The *shape* of the cohort is chosen so a browser walk is deterministic
+   * rather than dependent on which stand-in the simulator happens to offer.
+   * The first fixture — who is the person every journey signs in as — declares
+   * `man`, and everybody who can be offered as a stand-in declares `woman`. So
+   * a bought "Women" window always finds somebody, and a bought "Men" window
+   * always finds nobody, whichever stand-in rematch suppression has left. The
+   * "never asked" state is a real one and is covered where it can be
+   * deterministic: the local seed world, and the API's own suites.
+   */
+  readonly matchingGender?: string;
   readonly region: string;
   readonly tone: string;
 }
@@ -45,6 +63,7 @@ const fixtures: readonly Fixture[] = [
     bio: 'Architect by day. I cook far too much for one person and I am always looking for somebody to help finish it.',
     displayName: 'Mara Oduya',
     languages: ['en', 'sw'],
+    matchingGender: 'man',
     region: 'ES',
     tone: '60,44,52',
   },
@@ -52,6 +71,7 @@ const fixtures: readonly Fixture[] = [
     bio: 'Sound engineer, night owl, terrible at chess but very willing to lose.',
     displayName: 'Tomás Iglesias',
     languages: ['es', 'en'],
+    matchingGender: 'woman',
     region: 'ES',
     tone: '38,50,62',
   },
@@ -59,6 +79,7 @@ const fixtures: readonly Fixture[] = [
     bio: 'Long walks, longer books. Currently rereading everything I loved at twenty to see whether it holds up.',
     displayName: 'Yuki Tanabe',
     languages: ['ja', 'en'],
+    matchingGender: 'woman',
     region: 'ES',
     tone: '52,40,38',
   },
@@ -67,10 +88,57 @@ const fixtures: readonly Fixture[] = [
     // unbreakable run is what makes a grid column wider than the viewport, and
     // the responsive assertions are the only thing that catches it.
     bio: `Ceramicist. ${'Supercalifragilisticexpialidocious'.repeat(4)} and clay under my nails.`,
+    matchingGender: 'woman',
     displayName: 'Maximilianovitch Wolfeschle',
     languages: ['ar', 'en', 'es', 'ja', 'sw'],
     region: 'ES',
     tone: '44,54,46',
+  },
+  /*
+   * Four more people, and they exist for one mechanical reason.
+   *
+   * The matcher will not hand somebody the same person twice inside the rematch
+   * suppression window, which is an hour — so every journey in the serial group
+   * that meets somebody uses one person up for the rest of the run. A cohort
+   * with only as many people as the first few journeys need leaves the later
+   * ones searching an empty pool, and the failure looks like a broken matcher
+   * rather than a fixture set that ran out.
+   *
+   * They declare `woman` for the same reason the ones above do: whichever
+   * stand-in suppression has left, a bought "Women" window finds somebody and a
+   * bought "Men" window finds nobody.
+   */
+  {
+    bio: 'Runs a bakery, sleeps at nine, up at four.',
+    displayName: 'Noor Haddad',
+    languages: ['ar', 'en'],
+    matchingGender: 'woman',
+    region: 'ES',
+    tone: '58,42,40',
+  },
+  {
+    bio: 'Cartographer. I make maps of places nobody asked about.',
+    displayName: 'Ida Berg',
+    languages: ['en', 'sv'],
+    matchingGender: 'woman',
+    region: 'ES',
+    tone: '40,48,58',
+  },
+  {
+    bio: 'Repairs pianos. Mostly listening, occasionally hitting things.',
+    displayName: 'Chiara Rossi',
+    languages: ['en', 'it'],
+    matchingGender: 'woman',
+    region: 'ES',
+    tone: '52,46,38',
+  },
+  {
+    bio: 'Astronomer, which is nine per cent stars and the rest paperwork.',
+    displayName: 'Lucia Moreno',
+    languages: ['en', 'es'],
+    matchingGender: 'woman',
+    region: 'ES',
+    tone: '46,40,56',
   },
 ];
 
@@ -244,6 +312,12 @@ async function admit(
     mediaId: slot.mediaId,
   });
   await waitForReadyImage(call);
+
+  if (fixture.matchingGender !== undefined) {
+    await call('POST', '/v1/users/me/matching-gender', {
+      matchingGender: fixture.matchingGender,
+    });
+  }
 
   await call('POST', '/v1/users/me/preferences', { discoverable: true });
   await call('POST', '/v1/users/me/availability', {

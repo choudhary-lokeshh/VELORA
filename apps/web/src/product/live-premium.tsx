@@ -11,7 +11,14 @@ import { failureMessage, isOk } from '@velora/consumer-client';
 
 import { useApi } from '../app/providers';
 import { Icon } from '../design/icons';
-import { Button, Choice, Field, Select, TextInput } from '../design/primitives';
+import {
+  Button,
+  ButtonLink,
+  Choice,
+  Field,
+  Select,
+  TextInput,
+} from '../design/primitives';
 import { languageName, regionName } from './locale';
 import { useSingleFlight } from './resource';
 
@@ -525,6 +532,18 @@ export function PremiumPreference({
             : ''}
         </p>
       )}
+
+      {chosen && !affordable && !developerGrant ? (
+        /*
+          Offered only because a channel actually exists. It is a link to where
+          coins are sold rather than a purchase control here: the Live door is
+          not a shop, and a buy flow on the screen somebody is trying to search
+          from is the thing that turns a utility into a funnel.
+        */
+        <ButtonLink data-testid="live-premium-get" href="/you/wallet" size="sm">
+          Get coins
+        </ButtonLink>
+      ) : null}
 
       {developerGrant ? (
         <Button

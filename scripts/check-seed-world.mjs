@@ -35,6 +35,29 @@ assert.ok(publicItems.length >= 40, 'seed needs at least 40 public items');
 assert.ok(clubs.length >= 6, 'seed needs at least 6 clubs');
 
 /**
+ * What the seeded world has to be able to show about matching.
+ *
+ * A paid gender preference is only walkable against a world that has people in
+ * every declared category *and* people in neither of the two states that are
+ * not a category — declining to say, and never having been asked. A world
+ * missing any of them would let the interesting failures pass: a filter that
+ * silently classified the undeclared, or one that treated declining as an
+ * answer, both look perfectly correct against a world where everybody declared.
+ */
+const declared = (value) =>
+  consumers.filter((person) => person.matchingGender === value).length;
+for (const category of ['woman', 'man', 'non_binary', 'undisclosed']) {
+  assert.ok(
+    declared(category) >= 3,
+    `seed needs at least 3 people who declared ${category}`,
+  );
+}
+assert.ok(
+  declared(undefined) >= 3,
+  'seed needs at least 3 people who have never been asked, which is the state every existing account is in',
+);
+
+/**
  * What the seeded world has to be able to show about money.
  *
  * A world where every club is priced would never render the invitation-only

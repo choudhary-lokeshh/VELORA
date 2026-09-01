@@ -39,6 +39,12 @@ const routes = [
   '/you/safety',
   '/you/memberships',
   '/you/gifts',
+  // The coin screen: a balance, a running window, a list of packs, and a
+  // history whose rows carry an amount and a reason side by side. The history
+  // row is the one that fails first — at 200% text on a 320 px phone the
+  // amount and the reason do not fit on one line, and a row that truncated the
+  // amount would be a history nobody can use.
+  '/you/wallet',
 ] as const;
 
 test.describe('Consumer Web responsive behaviour', () => {

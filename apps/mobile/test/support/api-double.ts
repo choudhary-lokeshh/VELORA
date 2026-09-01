@@ -1316,6 +1316,33 @@ export function createMobileApiDouble(
       // Cancelling nothing is not an error either.
       return json(200, walletBody(state));
     }
+    if (path === '/v1/wallet/android-purchases' && method === 'POST') {
+      const input = body as { productReference: string; purchaseToken: string };
+      if (
+        !state.wallet.enabled ||
+        state.wallet.acquisition.android === 'unavailable'
+      ) {
+        return error(503, 'DEPENDENCY_UNAVAILABLE');
+      }
+      // The shape the local-test adapter issues. A token this platform never
+      // shaped is refused, exactly as a real store refuses one it never minted
+      // — which is the property being stood in for.
+      if (!/^local-test-purchase-[0-9a-f-]{8,64}$/u.test(input.purchaseToken)) {
+        return error(409, 'ACTION_NOT_PERMITTED');
+      }
+      // The coin amount comes from the platform's catalogue keyed by the
+      // product, never from the request. There is no field a client could put
+      // one in.
+      const credited = '100';
+      state.wallet.balance = {
+        ...state.wallet.balance,
+        available: (
+          BigInt(state.wallet.balance.available) + BigInt(credited)
+        ).toString(),
+      };
+      recordActivity(state, { coins: credited, kind: 'purchase' });
+      return json(200, walletBody(state));
+    }
     if (path === '/v1/wallet/grants' && method === 'POST') {
       const input = body as { coins: string };
       if (!state.wallet.enabled) return error(503, 'DEPENDENCY_UNAVAILABLE');

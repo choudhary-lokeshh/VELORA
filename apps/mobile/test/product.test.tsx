@@ -1455,6 +1455,38 @@ describe('coins', () => {
     );
   });
 
+  it('buys through the store, and the coins come from what the server verified', async () => {
+    const base = admittedState();
+    const { view } = await mount(<WalletScreen onBack={nothing} />, {
+      ...base,
+      wallet: {
+        ...base.wallet,
+        acquisition: { android: 'local-test', web: 'unavailable' },
+        enabled: true,
+      },
+    });
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-acquisition')).toHaveTextContent(
+        /verified by the server before any coins exist/u,
+      );
+    });
+    // No developer grant beside it. A store exists, so the stand-in for one is
+    // gone: two ways to mint coins on one screen is one too many.
+    expect(view.queryByTestId('wallet-grant')).toBeNull();
+
+    await fireEvent.press(view.getByTestId('wallet-store-buy'));
+    await waitFor(() => {
+      expect(view.getByTestId('wallet-available')).toHaveTextContent(
+        /100 coins/u,
+      );
+    });
+    // And it appears as an acquisition rather than a grant, because the two are
+    // different facts about where coins came from.
+    expect(view.getByTestId('wallet-history')).toHaveTextContent(
+      /Coins acquired/u,
+    );
+  });
+
   it('says the right thing about a charged window and about an uncharged one', async () => {
     const running = {
       charged: false,

@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import type { WalletActivity, WalletState } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 
+import { mintUuid } from '../device/installation';
 import { useApi } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import { Icon } from '../design/icons';
@@ -17,6 +18,16 @@ import {
   Text,
 } from '../design/primitives';
 import { color, space } from '../design/tokens';
+
+/**
+ * The one product the local store stand-in sells.
+ *
+ * Restated here rather than imported from the server, because a client must not
+ * hold a coin count and this is only a product identifier — the coins come from
+ * the platform's own catalogue keyed by what the store confirmed. A real Play
+ * build reads this from the store's own product list.
+ */
+const localTestCoinProduct = 'velora.coins.local_test';
 import { describeSelection, useWallet } from './live-premium';
 import { formatWhen } from './locale';
 import { useSingleFlight } from './resource';
@@ -159,10 +170,44 @@ export function WalletScreen({ onBack }: { readonly onBack: () => void }) {
                   matching is free and always will be.
                 </Text>
               ) : (
-                <Text tone="secondary" variant="caption">
-                  Coins can be bought in this environment. What a pack costs is
-                  shown where it is sold.
-                </Text>
+                <>
+                  <Text tone="secondary" variant="caption">
+                    {/*
+                      What the real path is, said where somebody is looking at
+                      the stand-in for it. The store returns a purchase token to
+                      this application, the server verifies it with the store,
+                      and the coins follow from what the *store* confirmed — a
+                      client saying a purchase succeeded never mints anything,
+                      here or on a real Play build.
+                    */}
+                    This is the local store stand-in. A purchase is verified by
+                    the server before any coins exist, exactly as a real one
+                    would be.
+                  </Text>
+                  <Button
+                    busy={action.busy}
+                    onPress={() => {
+                      action.run(async () => {
+                        // The token a store would hand back. It is evidence and
+                        // never authority: the server checks it, derives the
+                        // coin amount from its own catalogue keyed by the
+                        // product the store confirmed, and credits idempotently
+                        // against the store's own purchase identity.
+                        wallet.apply(
+                          await api.redeemAndroidCoinPurchase({
+                            productReference: localTestCoinProduct,
+                            purchaseToken: `local-test-purchase-${mintUuid()}`,
+                          }),
+                        );
+                        load();
+                      });
+                    }}
+                    testID="wallet-store-buy"
+                    tone="primary"
+                  >
+                    Buy 100 coins
+                  </Button>
+                </>
               )}
               {state.acquisition.android === 'unavailable' &&
               state.acquisition.web === 'unavailable' ? (
