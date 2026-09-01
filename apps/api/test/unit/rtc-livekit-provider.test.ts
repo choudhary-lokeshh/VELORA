@@ -10,6 +10,7 @@ import {
 
 import { LiveKitRtcProvider } from '../../src/realtime/livekit-provider.js';
 import { rtcJoinCredentialTtlMilliseconds } from '../../src/realtime/policy.js';
+import { RtcProviderCredentialsRefusedError } from '../../src/realtime/provider.js';
 import type { RtcProviderPort } from '../../src/realtime/provider.js';
 
 const baseEnvironment = {
@@ -290,6 +291,120 @@ describe('configuration decides the provider, and refuses an unusable one', () =
     expect(redacted).not.toContain(credentials.apiKey);
     expect(redacted).not.toContain(credentials.url);
     expect(redacted).toContain('rtcProviderCredentialsConfigured');
+  });
+});
+
+/**
+ * Answers every server-API call with one canned HTTP response.
+ *
+ * The provider SDK reaches LiveKit over `fetch`, so replacing it is what lets a
+ * unit test state what the project answered without a project, a network, or a
+ * credential that could be real. Restored by the caller in every case,
+ * including a failing one, so one test cannot leave the next one talking to a
+ * stub.
+ */
+function answering(
+  status: number,
+  body: string,
+): { readonly restore: () => void } {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(body, { status }),
+    )) as unknown as typeof globalThis.fetch;
+  return {
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+/**
+ * What a call threw, or `undefined` if it did not throw.
+ *
+ * A value rather than `expect().rejects`, matching the refusal helper above:
+ * the assertion here is about the *class* a caller can branch on, and the class
+ * is what the orchestrator's distinction between an ambiguous create and a
+ * refused credential is built from.
+ */
+async function thrownBy(run: () => unknown): Promise<unknown> {
+  try {
+    await run();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+describe('a refused credential is a definite answer, not an ambiguous one', () => {
+  /**
+   * The exact refusal LiveKit Cloud sends when a project knows the API key but
+   * cannot verify the signature — which is what a mismatched key and secret
+   * produce, and the failure this translation was written for.
+   */
+  it('names a 401 as the project refusing this platform’s credentials', async () => {
+    const stub = answering(401, 'invalid token');
+    try {
+      const adapter = provider();
+      const caught = await thrownBy(() =>
+        adapter.createSession({
+          correlationId: 'a3e3b3a2-0f4f-4a4a-8a4a-1c1c1c1c1c1c',
+          medium: 'video',
+          platformSessionReference: 'a3e3b3a2-0f4f-4a4a-8a4a-1c1c1c1c1c1c',
+          providerIdempotencyKey: 'c9b1f0a4-2b2b-4c4c-9d9d-2e2e2e2e2e2e',
+        }),
+      );
+      expect(caught).toBeInstanceOf(RtcProviderCredentialsRefusedError);
+      // The account, so an operator can tell which project refused. Never the
+      // key and never the secret: the message is a log line and a log line is
+      // the last place either belongs.
+      const message = (caught as Error).message;
+      expect(message).toContain('velora-test.livekit.cloud');
+      expect(message).not.toContain(credentials.apiSecret);
+      expect(message).not.toContain(credentials.apiKey);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('names a 403 the same way, and every lookup as well as the create', async () => {
+    const stub = answering(403, 'permissions denied');
+    try {
+      const adapter = provider();
+      expect(
+        await thrownBy(() =>
+          adapter.retrieveByIdempotencyKey(
+            'c9b1f0a4-2b2b-4c4c-9d9d-2e2e2e2e2e2e',
+          ),
+        ),
+      ).toBeInstanceOf(RtcProviderCredentialsRefusedError);
+      expect(
+        await thrownBy(() =>
+          adapter.retrieveCurrentState('vdeadbeefdeadbeefdeadbeefdeadbeef'),
+        ),
+      ).toBeInstanceOf(RtcProviderCredentialsRefusedError);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  /**
+   * The other direction, and the one that matters more: a transport that did
+   * not answer genuinely leaves the outcome unknown, and translating it would
+   * throw away the idempotency-key recovery that exists for exactly that case.
+   */
+  it('leaves a server fault as itself, so recovery still owns it', async () => {
+    const stub = answering(503, 'service unavailable');
+    try {
+      const adapter = provider();
+      const caught = await thrownBy(() =>
+        adapter.retrieveCurrentState('vdeadbeefdeadbeefdeadbeefdeadbeef'),
+      );
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(RtcProviderCredentialsRefusedError);
+    } finally {
+      stub.restore();
+    }
   });
 });
 

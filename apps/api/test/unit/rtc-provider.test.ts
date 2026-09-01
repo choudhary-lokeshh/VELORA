@@ -7,16 +7,21 @@ import {
 } from '@velora/config/server';
 
 import { LocalTestRtcProvider } from '../../src/realtime/local-test-provider.js';
+import { RtcProviderOrchestrator } from '../../src/realtime/orchestrator.js';
 import {
   maximumRtcJoinCredentialTtlMilliseconds,
   rtcJoinCredentialTtlMilliseconds,
 } from '../../src/realtime/policy.js';
 import {
+  RtcProviderCredentialsRefusedError,
   UnavailableRtcProvider,
   isRtcProviderSessionSnapshot,
   isVerifiedRtcProviderEvent,
   type RtcProviderPort,
 } from '../../src/realtime/provider.js';
+import type { RtcRepository } from '../../src/realtime/repository.js';
+
+import type { SafeLogger } from '@velora/observability/server';
 
 const baseEnvironment = {
   AUTH_BROWSER_ORIGINS_CONSUMER_WEB: 'http://127.0.0.1:3000',
@@ -223,6 +228,98 @@ describe('an ambiguous create is answerable rather than lost', () => {
     expect(
       await provider.retrieveByIdempotencyKey('never-used'),
     ).toBeUndefined();
+  });
+});
+
+describe('a refused credential is not an ambiguous create', () => {
+  /**
+   * The failure a mismatched API key and secret actually produce, and the
+   * reason this distinction exists.
+   *
+   * The recovery path is right for a provider that did not answer and wrong for
+   * one that answered "no": nothing was created, so there is nothing to find,
+   * and the second call refuses for the same reason as the first. Asserting the
+   * lookup is never made is asserting that a misconfigured deployment costs one
+   * round trip per call rather than two — and, more importantly, that what an
+   * operator reads names the credential rather than an unexplained pair of
+   * provider failures.
+   */
+  it('does not ask a provider that refused us to answer a second time', async () => {
+    let lookups = 0;
+    const logged: string[] = [];
+    const provider = {
+      capabilities: { stateRetrieval: true },
+      createSession: () => {
+        throw new RtcProviderCredentialsRefusedError('velora.livekit.cloud');
+      },
+      provider: 'livekit',
+      retrieveByIdempotencyKey: () => {
+        lookups += 1;
+        return Promise.resolve(undefined);
+      },
+    } as unknown as RtcProviderPort;
+    const orchestrator = new RtcProviderOrchestrator({
+      logger: {
+        error: (_context: unknown, message: string) => logged.push(message),
+        warn: (_context: unknown, message: string) => logged.push(message),
+      } as unknown as SafeLogger,
+      now: () => new Date('2026-09-01T10:00:00.000Z'),
+      provider,
+      // Never reached: the refusal is answered before anything is written, and
+      // a repository that throws is how that is stated rather than assumed.
+      repository: {
+        transaction: () => {
+          throw new Error('no transaction may be opened for a refusal');
+        },
+      } as unknown as RtcRepository,
+    });
+
+    const outcome = await orchestrator.bindProviderSession({
+      medium: 'video',
+      providerIdempotencyKey: 'c9b1f0a4-2b2b-4c4c-9d9d-2e2e2e2e2e2e',
+      sessionId: 'a3e3b3a2-0f4f-4a4a-8a4a-1c1c1c1c1c1c',
+    });
+
+    // Fail-closed, and the same outcome every unusable binding produces: the
+    // call stays connecting and the join timeout closes it. A refused
+    // credential is never a reason to carry the encounter on a simulated
+    // transport instead.
+    expect(outcome.kind).toBe('unresolved');
+    expect(lookups).toBe(0);
+    expect(logged).toEqual(['rtc provider refused the configured credentials']);
+  });
+
+  it('still recovers a create that genuinely went unanswered', async () => {
+    let lookups = 0;
+    const provider = {
+      capabilities: { stateRetrieval: true },
+      createSession: () => {
+        throw new Error('socket hang up');
+      },
+      provider: 'livekit',
+      retrieveByIdempotencyKey: () => {
+        lookups += 1;
+        return Promise.resolve(undefined);
+      },
+    } as unknown as RtcProviderPort;
+    const orchestrator = new RtcProviderOrchestrator({
+      logger: {
+        error: () => undefined,
+        warn: () => undefined,
+      } as unknown as SafeLogger,
+      now: () => new Date('2026-09-01T10:00:00.000Z'),
+      provider,
+      repository: {} as unknown as RtcRepository,
+    });
+
+    const outcome = await orchestrator.bindProviderSession({
+      medium: 'video',
+      providerIdempotencyKey: 'c9b1f0a4-2b2b-4c4c-9d9d-2e2e2e2e2e2e',
+      sessionId: 'a3e3b3a2-0f4f-4a4a-8a4a-1c1c1c1c1c1c',
+    });
+
+    expect(outcome.kind).toBe('unresolved');
+    expect(lookups).toBe(1);
   });
 });
 

@@ -1,6 +1,7 @@
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { RtcCallMedium } from './policy.js';
+import { RtcProviderCredentialsRefusedError } from './provider.js';
 import type {
   RtcProviderPort,
   RtcProviderSessionSnapshot,
@@ -101,6 +102,24 @@ export class RtcProviderOrchestrator {
         providerIdempotencyKey: input.providerIdempotencyKey,
       });
     } catch (error) {
+      if (error instanceof RtcProviderCredentialsRefusedError) {
+        // Not ambiguous, and so not answerable: the provider refused this
+        // platform's credentials, which means no room was created and asking
+        // again with the same credentials would only refuse again. Reported as
+        // itself, at error level, because it is a deployment fault rather than
+        // a call that went wrong — and it is exactly the fault that otherwise
+        // reads as two unexplained provider failures in a row.
+        //
+        // The outcome is still `unresolved`, which is the fail-closed
+        // direction: the call stays connecting and the join timeout closes it.
+        // A refused credential is never a reason to carry the encounter on a
+        // simulated transport instead.
+        this.dependencies.logger.error(
+          { account: error.account, sessionId: input.sessionId },
+          'rtc provider refused the configured credentials',
+        );
+        return { kind: 'unresolved' };
+      }
       // The key was committed before the call, so this is answerable rather
       // than lost. Ask what the provider did with it.
       snapshot = await this.recoverByIdempotencyKey(

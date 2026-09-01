@@ -12,6 +12,7 @@ import {
   maximumRtcProviderReferenceLength,
   type RtcCallMedium,
 } from './policy.js';
+import { RtcProviderCredentialsRefusedError } from './provider.js';
 import type {
   CreateRtcSessionRequest,
   IssueRtcGrantRequest,
@@ -232,15 +233,17 @@ export class LiveKitRtcProvider implements RtcProviderPort {
     // Creating a room that already exists returns the existing one, so a retry
     // after an ambiguous outcome is one room rather than two. The idempotency
     // key deciding the name is what makes that true rather than hoped for.
-    const room = await this.#rooms.createRoom({
-      departureTimeout: departureTimeoutSeconds,
-      emptyTimeout: emptyRoomTimeoutSeconds,
-      maxParticipants: maximumRoomParticipants,
-      metadata: JSON.stringify({
-        platformSessionReference: request.platformSessionReference,
+    const room = await this.call(() =>
+      this.#rooms.createRoom({
+        departureTimeout: departureTimeoutSeconds,
+        emptyTimeout: emptyRoomTimeoutSeconds,
+        maxParticipants: maximumRoomParticipants,
+        metadata: JSON.stringify({
+          platformSessionReference: request.platformSessionReference,
+        }),
+        name,
       }),
-      name,
-    });
+    );
     return snapshotOf(room, request.platformSessionReference);
   }
 
@@ -248,14 +251,16 @@ export class LiveKitRtcProvider implements RtcProviderPort {
     providerIdempotencyKey: string,
   ): Promise<RtcProviderSessionSnapshot | undefined> {
     const name = this.roomNameFor(providerIdempotencyKey);
-    const [room] = await this.#rooms.listRooms([name]);
+    const [room] = await this.call(() => this.#rooms.listRooms([name]));
     return room === undefined ? undefined : snapshotOf(room);
   }
 
   async retrieveCurrentState(
     providerReference: string,
   ): Promise<RtcProviderSessionSnapshot> {
-    const [room] = await this.#rooms.listRooms([providerReference]);
+    const [room] = await this.call(() =>
+      this.#rooms.listRooms([providerReference]),
+    );
     if (room === undefined) {
       // LiveKit removes a room once it is empty past its timeout, so "not
       // listed" is the normal end state and not an error. It is reported as
@@ -317,17 +322,20 @@ export class LiveKitRtcProvider implements RtcProviderPort {
     readonly providerReference: string;
   }): Promise<void> {
     try {
-      await this.#rooms.removeParticipant(
-        input.providerReference,
-        input.participantReference,
-        {
-          // Kills every credential minted before this instant, not just the
-          // connection. Without it a removed participant could rejoin with the
-          // token they already held, and this platform's own authorization
-          // generation would be the only thing stopping them — which it is,
-          // but a bearer token the provider still honours is a second door.
-          revokeTokenTs: BigInt(Math.floor(this.now().getTime() / 1000)),
-        },
+      await this.call(() =>
+        this.#rooms.removeParticipant(
+          input.providerReference,
+          input.participantReference,
+          {
+            // Kills every credential minted before this instant, not just the
+            // connection. Without it a removed participant could rejoin with
+            // the token they already held, and this platform's own
+            // authorization generation would be the only thing stopping them —
+            // which it is, but a bearer token the provider still honours is a
+            // second door.
+            revokeTokenTs: BigInt(Math.floor(this.now().getTime() / 1000)),
+          },
+        ),
       );
     } catch (error) {
       // A participant who has already disconnected, or a room LiveKit has
@@ -339,7 +347,7 @@ export class LiveKitRtcProvider implements RtcProviderPort {
 
   async endSession(providerReference: string): Promise<void> {
     try {
-      await this.#rooms.deleteRoom(providerReference);
+      await this.call(() => this.#rooms.deleteRoom(providerReference));
     } catch (error) {
       if (!isNotFound(error)) throw error;
     }
@@ -401,6 +409,33 @@ export class LiveKitRtcProvider implements RtcProviderPort {
    * strength as the identifier it is derived from, and short enough to stay
    * well inside the provider-reference bound.
    */
+  /**
+   * Runs one server-API call and names a refused credential for what it is.
+   *
+   * Every operation here goes through it so that exactly one place in this
+   * adapter knows what a LiveKit refusal looks like on the wire. The transport
+   * status is the signal rather than the message text, because the message is a
+   * vendor's prose and is the string somebody eventually matches on: LiveKit
+   * answers `401 invalid token` when a key it recognises carries a signature it
+   * cannot verify, and `401 invalid API key` when it does not recognise the key
+   * at all. Both mean the same thing to this platform — the project will not
+   * accept us — and neither is a state to reconcile.
+   *
+   * Nothing else is translated. A timeout, a 5xx, or a dropped connection stays
+   * exactly what it was, because those genuinely leave the outcome unknown and
+   * the orchestrator's recovery is the correct answer to them.
+   */
+  private async call<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isCredentialRefusal(error)) {
+        throw new RtcProviderCredentialsRefusedError(this.account);
+      }
+      throw error;
+    }
+  }
+
   private roomNameFor(providerIdempotencyKey: string): string {
     const digest = createHmac('sha256', this.#apiSecret)
       .update(`velora:rtc-room:${providerIdempotencyKey}`)
@@ -480,6 +515,20 @@ function httpOriginOf(url: string): string {
   const parsed = new URL(url);
   parsed.protocol = parsed.protocol === 'ws:' ? 'http:' : 'https:';
   return parsed.origin;
+}
+
+/**
+ * Whether a provider refusal was about this platform's credentials.
+ *
+ * `401` is the project declining to authenticate us and `403` is it declining
+ * to authorize what an authenticated key asked for; both are definite answers
+ * about the credential rather than about the call, and both are worth telling
+ * an operator apart from a transport that simply did not answer.
+ */
+function isCredentialRefusal(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const status = (error as { readonly status?: unknown }).status;
+  return status === 401 || status === 403;
 }
 
 /**

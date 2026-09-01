@@ -230,6 +230,34 @@ export class RtcProviderUnavailableError extends Error {
 }
 
 /**
+ * The provider refused this platform's own credentials.
+ *
+ * Kept apart from every other provider failure because it is the one failure
+ * that is not ambiguous. A refused credential is a definite answer: nothing was
+ * created, nothing is pending, and asking the same question again with the same
+ * credential cannot learn anything the first attempt did not already establish.
+ * Every other transport failure leaves the platform genuinely unable to say
+ * what the provider did, which is what the idempotency-key recovery exists for.
+ *
+ * It exists so an operator reads "the project rejected our key" instead of
+ * "something failed twice", and so a misconfigured deployment costs one round
+ * trip rather than two per call. It carries the account and never the
+ * credential: the host is the project's public address, and the key and secret
+ * appear in no message, no log field, and no error this platform constructs.
+ *
+ * It is never a reason to fall back to a simulated transport. The caller's
+ * correct response is the same as for any unresolved binding — leave the call
+ * connecting and let the join timeout close it — which is the fail-closed
+ * direction and the one staging and production are already held to.
+ */
+export class RtcProviderCredentialsRefusedError extends Error {
+  constructor(readonly account: string) {
+    super(`RTC provider ${account} refused the configured credentials`);
+    this.name = 'RtcProviderCredentialsRefusedError';
+  }
+}
+
+/**
  * Default adapter. Every external operation refuses.
  *
  * The only value staging and production accept, and the reason is recorded
