@@ -304,7 +304,7 @@ describe('only a live, answered call admits anybody', () => {
     ).toBe('not_permitted');
   });
 
-  it('refuses a call that was never bound to a provider room', async () => {
+  it('answers a call with no provider room yet as not yet, rather than refused', async () => {
     const id = crypto.randomUUID();
     const stamp = now();
     const expiresAt = new Date(stamp.getTime() + 60_000);
@@ -320,10 +320,17 @@ describe('only a live, answered call admits anybody', () => {
       database.sql`insert into realtime_participants (invited_at, accepted_at, role, session_id, user_id)
         values (${stamp}, ${stamp}, 'caller', ${id}, ${caller}), (${stamp}, ${stamp}, 'recipient', ${id}, ${recipient})`,
     );
-    expect(
-      (await realtime.authorization.issue({ actorId: caller, sessionId: id }))
-        .kind,
-    ).toBe('not_permitted');
+    // No credential is issued — that part has never changed, and there is
+    // nothing to issue one against. What changed is what the caller is told:
+    // this person may join, and the room they would join does not exist yet.
+    // Reported as a refusal, it was indistinguishable from a block, and a
+    // client that read a live encounter in the moment before its room existed
+    // gave up on a call it was in fact in.
+    const outcome = await realtime.authorization.issue({
+      actorId: caller,
+      sessionId: id,
+    });
+    expect(outcome.kind).toBe('not_ready');
   });
 });
 

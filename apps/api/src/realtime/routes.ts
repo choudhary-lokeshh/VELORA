@@ -131,6 +131,20 @@ export class RtcRoutes {
           input.correlationId,
         );
       }
+      case 'not_ready': {
+        // The caller may join, and the room they would join does not exist
+        // yet. `STATE_CONFLICT` rather than `ACTION_NOT_PERMITTED`: the two
+        // reach the same status and mean opposite things to a client, because
+        // this one says re-read and ask again while the other says stop. A
+        // client that read the encounter in the moment between the session
+        // being opened and the provider answering used to be told it had been
+        // refused, and refusals are final on a live surface.
+        return routeFailure(
+          409,
+          productErrorCodes.conflict,
+          input.correlationId,
+        );
+      }
       case 'rate_limited': {
         return routeFailure(
           409,

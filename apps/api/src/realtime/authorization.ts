@@ -44,6 +44,19 @@ export type JoinAuthorizationOutcome =
   /** The call is not in a state that admits anybody, or the pair may not talk. */
   | { readonly kind: 'not_permitted' }
   /**
+   * This caller may join, and the room they would join does not exist yet.
+   *
+   * Distinct from `not_permitted` because it is a different fact about a
+   * different subject: nothing about this caller or this pair is wrong, and the
+   * answer differs as soon as the provider has answered. Collapsing the two
+   * told a client that had merely arrived early that it had been refused, and a
+   * refusal is the one answer this surface treats as final.
+   *
+   * It is reachable only after every eligibility predicate has passed, so it
+   * discloses nothing a caller could not already establish.
+   */
+  | { readonly kind: 'not_ready' }
+  /**
    * A minting bound was reached. Says only that: reporting which bound, or how
    * much of it remains, would publish a measure of somebody's calling.
    */
@@ -137,7 +150,6 @@ export class RtcJoinAuthorizationService {
         ) {
           return 'refused' as const;
         }
-        if (held.providerReference === null) return 'refused' as const;
 
         // Composed again, here, inside this transaction. Not inherited from the
         // acceptance, and never read from a cache.
@@ -157,6 +169,14 @@ export class RtcJoinAuthorizationService {
         ) {
           return 'refused' as const;
         }
+
+        // Asked after eligibility, deliberately. A session that has not reached
+        // a provider yet is answered "not yet" rather than "not permitted", and
+        // that softer answer must never be reachable by somebody who may not
+        // join at all — so the refusals above are decided first and only a
+        // caller who would otherwise be admitted ever learns the room is still
+        // being created.
+        if (held.providerReference === null) return 'unready' as const;
 
         // The last line, not the first: eligibility above has already decided
         // whether this person may be admitted at all. These bound how often
@@ -186,6 +206,7 @@ export class RtcJoinAuthorizationService {
 
     if (decision === 'unknown') return { kind: 'not_found' };
     if (decision === 'refused') return { kind: 'not_permitted' };
+    if (decision === 'unready') return { kind: 'not_ready' };
     if (decision === 'limited') return { kind: 'rate_limited' };
 
     // Outside the transaction, deliberately: minting reaches a provider, and a

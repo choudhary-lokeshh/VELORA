@@ -3983,7 +3983,7 @@ export const apiOperations = [
       },
       ...consumerAuthenticationResponses,
       '409': {
-        description: `The call does not admit anybody right now: it was never answered, it has ended, it is not bound to a provider session, the pair may no longer talk, or a minting bound has been reached — code ${productErrorCodes.rateLimited} in that last case. Eligibility is composed again at issuance rather than inherited from the acceptance, and a bound never reports how much of it remains.`,
+        description: `The call does not admit anybody right now. Three different facts share this status and are told apart by their code. ${productErrorCodes.actionNotPermitted}: the call was never answered, it has ended, or the pair may no longer talk — a decision, and asking again will not change it. ${productErrorCodes.conflict}: this caller may join and the provider room does not exist yet, which is not about them and does differ moments later, so a client re-reads and asks again. ${productErrorCodes.rateLimited}: a minting bound has been reached. Eligibility is composed again at issuance rather than inherited from the acceptance, the readiness answer is reachable only after every eligibility predicate has passed, and a bound never reports how much of it remains.`,
         schemaName: 'ApiError',
       },
       '422': invalidProductInputResponse,

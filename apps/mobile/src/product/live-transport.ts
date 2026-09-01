@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { isOk, type ConsumerApi } from '@velora/consumer-client';
+import {
+  isOk,
+  type ConsumerApi,
+  type JoinAuthorization,
+} from '@velora/consumer-client';
 
 import {
   AudioSession,
@@ -83,6 +87,52 @@ export interface LiveTransportOptions {
   readonly microphoneGranted: boolean;
 }
 
+/**
+ * The one refusal that means "ask again", and the bound on doing so.
+ *
+ * REALTIME answers `STATE_CONFLICT` when this person may join and the room they
+ * would join has not been created yet. It is the only refusal this hook does
+ * not treat as final, and the distinction is the server's rather than a guess
+ * made here from a status code: every other refusal — a block, an encounter
+ * that ended, a bound reached — is a decision that will not change by being
+ * asked a second time.
+ *
+ * The same values as the web hook, for the same window: LIVE reaches the
+ * provider before it publishes the session, so an ordinary match never sees
+ * this, and what remains is a create the provider left unresolved.
+ */
+const sessionNotReadyCode = 'STATE_CONFLICT';
+const notReadyAttempts = 6;
+const notReadyDelayMilliseconds = 500;
+
+/**
+ * Asks for this participant's credential, waiting out a room that is still
+ * being created.
+ *
+ * Returns nothing on every other answer, which the caller renders as failed.
+ * The abort signal is checked around the wait as well as around the request, so
+ * a Next pressed mid-retry stops here rather than connecting afterwards.
+ */
+async function authorizeJoin(input: {
+  readonly api: ConsumerApi;
+  readonly callId: string;
+  readonly cancelled: () => boolean;
+}): Promise<JoinAuthorization | undefined> {
+  for (let attempt = 0; attempt < notReadyAttempts; attempt += 1) {
+    const issued = await input.api.joinAuthorization(input.callId);
+    if (input.cancelled()) return undefined;
+    if (isOk(issued)) return issued.value;
+    if (issued.kind !== 'refused' || issued.code !== sessionNotReadyCode) {
+      return undefined;
+    }
+    await new Promise((resume) => {
+      setTimeout(resume, notReadyDelayMilliseconds);
+    });
+    if (input.cancelled()) return undefined;
+  }
+  return undefined;
+}
+
 export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
   const [state, setState] = useState<LiveTransportState>('idle');
   const [peerVideo, setPeerVideo] = useState<TrackReference | undefined>(
@@ -131,13 +181,13 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
       // Asked for per encounter and never held. The server re-composes
       // eligibility on every issuance, so a block landing between the match and
       // here refuses the credential.
-      const authorization = await api.joinAuthorization(callId);
+      const authorization = await authorizeJoin({ api, callId, cancelled });
       if (cancelled()) return;
-      if (!isOk(authorization)) {
+      if (authorization === undefined) {
         setState('failed');
         return;
       }
-      const transport = authorization.value.transport;
+      const transport = authorization.transport;
       if (transport === undefined) {
         setState('failed');
         return;
@@ -213,7 +263,7 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
         });
 
       try {
-        await opened.connect(transport.url, authorization.value.credential);
+        await opened.connect(transport.url, authorization.credential);
       } catch {
         if (cancelled()) return;
         await AudioSession.stopAudioSession();
