@@ -218,7 +218,9 @@ describe('sent gifts say what was sent, and what happened to it', () => {
     expect(row.querySelector('svg path')?.getAttribute('d')).toContain(
       'M12 4a',
     );
-    expect(row.querySelector('a')?.getAttribute('href')).toBe('/c/embervale');
+    expect(row.querySelector('a')?.getAttribute('href')).toBe(
+      '/c/embervale?from=%2Fyou%2Fgifts',
+    );
     // Through the product's own money formatter rather than assembled here.
     expect(row.textContent).toContain('1.50 USD');
   });

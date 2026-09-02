@@ -73,6 +73,11 @@ export function currentPath(): string {
   return pathname;
 }
 
+/** Arrives somewhere the way a completed navigation would, records included. */
+export function navigateTo(path: string): void {
+  router.push(path);
+}
+
 const router = {
   back(): void {
     records.push({ kind: 'back', path: pathname });
@@ -152,9 +157,14 @@ export function Link({
       {...rest}
       href={href}
       onClick={(event) => {
-        event.preventDefault();
+        // The real `next/link` runs the caller's handler first and honours a
+        // `preventDefault` by not navigating — the shell's Back uses exactly
+        // that to pop history instead of pushing. The default is prevented
+        // afterwards either way, so jsdom never attempts a page load.
         onClick?.(event);
-        router.push(href);
+        const handled = event.defaultPrevented;
+        event.preventDefault();
+        if (!handled) router.push(href);
       }}
     >
       {children}

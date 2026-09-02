@@ -7,7 +7,12 @@ import { journeyStage } from '@velora/consumer-client';
 
 import { Button, EmptyState } from '../design/primitives';
 import { AppShell } from './shell';
-import { returnParameter, safeReturnPath, signInHref } from './navigation';
+import {
+  addressOf,
+  returnParameter,
+  safeReturnPath,
+  signInHref,
+} from './navigation';
 import { useAccount, useSession } from './providers';
 
 /**
@@ -66,6 +71,7 @@ export function AppGate({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const parameters = useSearchParams();
   const session = useSession();
   const account = useAccount();
 
@@ -80,13 +86,23 @@ export function AppGate({
     account.onboarding.error === undefined &&
     !admitted;
 
+  /*
+   * The whole address, not the path. A checkout return carries its payment in
+   * the query, Discover carries which section is being read — a round trip
+   * through sign-in that kept only the path delivered somebody to the right
+   * page missing the thing they came back with.
+   */
+  const address = addressOf(pathname, parameters);
   useEffect(() => {
     if (session.known && !session.signedIn) {
-      router.replace(signInHref(pathname));
+      // Never from the sign-in page itself: a redirect that wrapped its own
+      // destination would chase its tail, each pass nesting the last address
+      // inside the next.
+      if (pathname !== '/sign-in') router.replace(signInHref(address));
       return;
     }
     if (needsWelcome) router.replace('/welcome');
-  }, [needsWelcome, pathname, router, session.known, session.signedIn]);
+  }, [address, needsWelcome, pathname, router, session.known, session.signedIn]);
 
   if (!session.known || !session.signedIn) return <Bootstrap />;
 

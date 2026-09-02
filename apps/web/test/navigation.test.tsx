@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -13,6 +13,7 @@ import {
 } from '../src/app/navigation';
 import { AppShell } from '../src/app/shell';
 import { admittedState, createApiDouble } from './support/api-double';
+import { navigateTo, navigations } from './support/navigation';
 import { renderProduct } from './support/render';
 
 /**
@@ -166,6 +167,39 @@ describe('what Back remembers', () => {
     expect(backTarget('/you/settings', null)).toBe('/you');
   });
 
+  it('returns to the doorway the page was actually opened from', () => {
+    // Each of these is a declared origin: a real link in the product carries
+    // it, and the table names it. A conversation is opened from the encounter
+    // that created it, from an introduction that became mutual, and from the
+    // notice announcing a message; a creator from somebody's own memberships
+    // and sent gifts; the wallet from the Live door's "Get coins".
+    expect(backTarget('/messages/conversation-1', '/live')).toBe('/live');
+    expect(backTarget('/messages/conversation-1', '/introductions')).toBe(
+      '/introductions',
+    );
+    expect(backTarget('/messages/conversation-1', '/notifications')).toBe(
+      '/notifications',
+    );
+    expect(backTarget('/people/person-1', '/live')).toBe('/live');
+    expect(backTarget('/c/aurora', '/you/memberships')).toBe(
+      '/you/memberships',
+    );
+    expect(backTarget('/c/aurora', '/you/gifts')).toBe('/you/gifts');
+    expect(backTarget('/c/aurora/club/inner', '/you/memberships')).toBe(
+      '/you/memberships',
+    );
+    expect(backTarget('/you/wallet', '/live')).toBe('/live');
+  });
+
+  it('does not let one page\u2019s doorway open another\u2019s', () => {
+    // The origins are per route, not a site-wide allowlist: the wallet is
+    // opened from Live, the rest of You is not.
+    expect(backTarget('/you/settings', '/live')).toBe('/you');
+    expect(backTarget('/messages/conversation-1', '/discover')).toBe(
+      '/messages',
+    );
+  });
+
   it('refuses a return address that is not the parent it belongs to', () => {
     // `from` arrives on the address, so it is somebody else's string. The worst
     // a crafted one may do is send somebody one level up, which is where Back
@@ -315,6 +349,43 @@ describe('the shell', () => {
     expect(screen.getByTestId('topbar-back').getAttribute('href')).toBe(
       '/discover?show=creators',
     );
+  });
+
+  it('pops history when the page underneath is the one Back leads to', async () => {
+    // Discover -> person -> Back used to *push* Discover: three history
+    // entries, a remount that lost the scroll and every loaded page, and a
+    // browser Back that re-entered the person. When this session's previous
+    // page is the page Back points at, going back through history restores it
+    // as it was.
+    shellAt('/you');
+    await waitFor(() => {
+      expect(screen.getByTestId('tab-you')).toBeTruthy();
+    });
+    act(() => {
+      navigateTo('/you/wallet');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('topbar-back')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('topbar-back'));
+
+    expect(navigations().at(-1)?.kind).toBe('back');
+  });
+
+  it('follows the link when there is no history to return through', async () => {
+    // A deep link, a bookmark, a second tab: nothing underneath, so popping
+    // would leave the site. The href is the fallback the table declared.
+    shellAt('/you/wallet');
+    await waitFor(() => {
+      expect(screen.getByTestId('topbar-back')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('topbar-back'));
+
+    const last = navigations().at(-1);
+    expect(last?.kind).toBe('push');
+    expect(last?.path).toBe('/you');
   });
 
   it('keeps the bar out of the way only where there is nothing to go back to', async () => {

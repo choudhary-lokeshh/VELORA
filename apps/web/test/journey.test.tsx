@@ -802,7 +802,8 @@ describe('introductions', () => {
       expect(
         navigations().some(
           (entry) =>
-            entry.path === '/messages/88888888-8888-4888-8888-888888888888',
+            entry.path ===
+            '/messages/88888888-8888-4888-8888-888888888888?from=%2Fintroductions',
         ),
       ).toBe(true);
     });
@@ -1146,7 +1147,8 @@ describe('notifications', () => {
     await waitFor(() => {
       expect(
         navigations().some(
-          (entry) => entry.path === `/messages/${conversationId}`,
+          (entry) =>
+            entry.path === `/messages/${conversationId}?from=%2Fnotifications`,
         ),
       ).toBe(true);
     });
@@ -1614,7 +1616,9 @@ describe('memberships', () => {
     const open = await screen.findByTestId(
       'club-open-77777777-7777-4777-8777-777777777777',
     );
-    expect(open.getAttribute('href')).toBe('/c/ember_vale/club/inner');
+    expect(open.getAttribute('href')).toBe(
+      '/c/ember_vale/club/inner?from=%2Fyou%2Fmemberships',
+    );
   });
 
   it('hands back an invitation and keeps it in the record as ended', async () => {

@@ -26,6 +26,7 @@ import type {
 import { failureMessage, isOk } from '@velora/consumer-client';
 
 import { useApi } from '../app/providers';
+import { nestedHref } from '../app/navigation';
 import { Icon } from '../design/icons';
 import {
   Avatar,
@@ -1621,7 +1622,7 @@ function ConnectedMoment({
               Keep talking here, or{' '}
               <Link
                 data-testid="live-moment-conversation"
-                href={`/messages/${conversationId}?from=/live`}
+                href={nestedHref(`/messages/${conversationId}`, '/live')}
               >
                 open it in your Inbox
               </Link>
@@ -1836,7 +1837,7 @@ function EndedPane({ encounter }: { readonly encounter: LiveEncounter }) {
             there whenever you like.{' '}
             <Link
               data-testid="live-ended-conversation"
-              href={`/messages/${encounter.connection.conversationId ?? ''}?from=/live`}
+              href={nestedHref(`/messages/${encounter.connection.conversationId ?? ''}`, '/live')}
             >
               Open it
             </Link>

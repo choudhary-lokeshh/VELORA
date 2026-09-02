@@ -110,7 +110,15 @@ const ancestry: readonly {
   readonly origins?: readonly string[];
   readonly parent: string | ((match: RegExpMatchArray) => string);
 }[] = [
-  { of: /^\/messages\/[^/]+$/u, parent: '/messages' },
+  {
+    of: /^\/messages\/[^/]+$/u,
+    // A conversation is opened from the Inbox, from the moment it is created
+    // in a Live encounter, from an introduction that just became mutual, and
+    // from the notice announcing a message. Each of those is a real doorway,
+    // and a Back that ignored them marched everybody to the Inbox list.
+    origins: ['/live', '/introductions', '/notifications'],
+    parent: '/messages',
+  },
   { of: /^\/people\/[^/]+$/u, origins: ['/live'], parent: '/discover' },
   {
     of: /^\/c\/([^/]+)\/club\/([^/]+)\/join$/u,
@@ -118,13 +126,33 @@ const ancestry: readonly {
   },
   {
     of: /^\/c\/([^/]+)\/club\/[^/]+$/u,
+    // Memberships lists the clubs somebody already belongs to, and each links
+    // here. Without the origin, leaving a club somebody opened from their own
+    // memberships walked them to the creator's page instead of back.
+    origins: ['/you/memberships'],
     parent: (match) => `/c/${match[1] ?? ''}`,
   },
-  { of: /^\/c\/[^/]+$/u, parent: '/discover' },
+  {
+    of: /^\/c\/[^/]+$/u,
+    // A creator is named on Memberships and on Sent gifts, and both link here.
+    // The creator page sits outside the application shell, so a person who
+    // arrived from their own records had no way back at all without these.
+    origins: ['/you/memberships', '/you/gifts'],
+    parent: '/discover',
+  },
   // A provider sends somebody back to these, so they are arrived at from
   // outside the site entirely. Memberships is where the thing they were paying
-  // for lives, which is the only destination that is useful either way.
-  { of: /^\/checkout\/[^/]+$/u, parent: '/you/memberships' },
+  // for lives, which is the only destination that is useful either way — for a
+  // membership. A coin purchase begins at the wallet, and its origin says so.
+  { of: /^\/checkout\/[^/]+$/u, origins: ['/you/wallet'], parent: '/you/memberships' },
+  {
+    // Before the general rule, because a match is taken in order. "Get coins"
+    // on the Live door leads here mid-decision, and the way back from that
+    // errand is the door, not the rest of You.
+    of: /^\/you\/wallet$/u,
+    origins: ['/live'],
+    parent: '/you',
+  },
   { of: /^\/you\/[^/]+$/u, parent: '/you' },
 ];
 

@@ -209,6 +209,11 @@ export function CheckoutCancelled() {
     enabled: paymentId !== null,
   });
   const row = payment.value?.payment;
+  // The same server truth the return page reads, for the same reason: coins
+  // and a membership settle through one checkout, and a coin buyer who stopped
+  // was being told nothing about "the membership" had changed and offered two
+  // doors that both led away from their wallet.
+  const coins = row?.resource?.type === 'coins';
 
   return (
     <>
@@ -219,8 +224,9 @@ export function CheckoutCancelled() {
       <Card testId="checkout-cancelled">
         <div className="v-stack v-stack--4">
           <p className="v-small v-muted">
-            You can start again whenever you like. Nothing about the membership
-            has changed and nothing has been taken.
+            {coins
+              ? 'You can start again whenever you like. No coins were added and nothing has been taken.'
+              : 'You can start again whenever you like. Nothing about the membership has changed and nothing has been taken.'}
           </p>
           {row === undefined ? null : (
             <p
@@ -231,8 +237,11 @@ export function CheckoutCancelled() {
             </p>
           )}
           <div className="v-inline v-inline--tight">
-            <Link className="v-btn v-btn--secondary" href="/you/memberships">
-              Memberships
+            <Link
+              className="v-btn v-btn--secondary"
+              href={coins ? '/you/wallet' : '/you/memberships'}
+            >
+              {coins ? 'Back to Coins' : 'Memberships'}
             </Link>
             <Link className="v-btn v-btn--secondary" href="/discover">
               Keep looking

@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import type { ApiResult, DiscoveryPerson } from '@velora/consumer-client';
 import { failureMessage } from '@velora/consumer-client';
 
+import { backTarget, destinationName } from '../app/navigation';
 import { usePageHeading } from '../app/page-heading';
 import { useApi, useToast } from '../app/providers';
 import {
@@ -49,6 +50,17 @@ export function PersonPage({ personId }: { readonly personId: string }) {
   const toast = useToast();
   const router = useRouter();
   const decision = useSingleFlight();
+  /*
+   * Where leaving this page lands. The same declared answer the shell's Back
+   * uses: the parent, refined by a declared origin. A person is opened from
+   * Discover and from Live, and a decision made about them used to hard-code
+   * Discover — which pulled somebody out of a live encounter they were still
+   * in, because the code deciding where to go had a different opinion from the
+   * table that owns the question.
+   */
+  const origin =
+    backTarget(usePathname(), useSearchParams().get('from')) ?? '/discover';
+  const originName = destinationName(origin) ?? 'Discover';
 
   const load = useCallback(
     async (signal: AbortSignal) => api.person(personId, signal),
@@ -70,7 +82,7 @@ export function PersonPage({ personId }: { readonly personId: string }) {
         toast.show(success, 'positive');
         // Back to where they came from, because the decision is made and this
         // page is about somebody they have now decided about.
-        router.replace('/discover');
+        router.replace(origin);
         return;
       }
       toast.show(failureMessage(result) ?? 'That did not work.', 'critical');
@@ -91,17 +103,43 @@ export function PersonPage({ personId }: { readonly personId: string }) {
     );
   }
 
+  if (
+    !gone &&
+    person.retryable &&
+    person.error !== undefined &&
+    person.value === undefined
+  ) {
+    /*
+     * A failed read is not an absent person. The empty state below asserts
+     * that there is nothing here, which is a claim about the world; a network
+     * that did not answer supports no claim at all, so this says what actually
+     * happened and offers the retry that might change it. Only a retryable
+     * failure lands here: a refusal and an absence stay in the deliberately
+     * ambiguous state below, which is the privacy answer this page gives.
+     */
+    return (
+      <div className="v-stack v-stack--3" data-testid="person-error">
+        <ErrorMessage testId="person-error-message">
+          {person.error}
+        </ErrorMessage>
+        <div>
+          <Button onClick={person.reload}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
+
   if (gone || person.value === undefined) {
     return (
       <EmptyState
         actions={
           <Button
             onClick={() => {
-              router.replace('/discover');
+              router.replace(origin);
             }}
             tone="secondary"
           >
-            Back to Discover
+            {`Back to ${originName}`}
           </Button>
         }
         body="There is nothing to show here. It may never have been anybody, or it may not be yours to see."

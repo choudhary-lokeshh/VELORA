@@ -6,6 +6,7 @@ import { useCallback } from 'react';
 import type { ConsumerGiftList } from '@velora/consumer-client';
 
 import { useApi } from '../app/providers';
+import { nestedHref } from '../app/navigation';
 import {
   Badge,
   Button,
@@ -148,7 +149,7 @@ export function SentGifts() {
                       <span className="v-caption v-quiet">
                         {/* The creator's own page, which is where this was
                             sent from and the only address this row knows. */}
-                        <Link href={`/c/${row.creator.handle}`}>
+                        <Link href={nestedHref(`/c/${row.creator.handle}`, '/you/gifts')}>
                           {row.creator.displayName}
                         </Link>
                         {' · '}

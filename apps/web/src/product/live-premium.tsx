@@ -9,6 +9,7 @@ import type {
 } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 
+import { nestedHref } from '../app/navigation';
 import { useApi } from '../app/providers';
 import { Icon } from '../design/icons';
 import {
@@ -555,7 +556,13 @@ export function PremiumPreference({
           not a shop, and a buy flow on the screen somebody is trying to search
           from is the thing that turns a utility into a funnel.
         */
-        <ButtonLink data-testid="live-premium-get" href="/you/wallet" size="sm">
+        <ButtonLink
+          data-testid="live-premium-get"
+          // Carries where it was pressed, so the wallet's Back is the door —
+          // this is an errand in the middle of choosing, not a move to You.
+          href={nestedHref('/you/wallet', '/live')}
+          size="sm"
+        >
           Get coins
         </ButtonLink>
       ) : null}

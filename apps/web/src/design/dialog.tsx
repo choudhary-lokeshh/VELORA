@@ -55,6 +55,41 @@ export function Dialog({
     onClose();
   }, [onClose]);
 
+  /**
+   * The system Back button, honoured while this is open.
+   *
+   * On a phone the hardware Back is how overlays are dismissed, and a dialog
+   * that ignored it let Back navigate the page out from underneath an open
+   * sheet. Opening pushes one history entry whose only meaning is "an overlay
+   * is open"; popping it — hardware Back, browser Back — closes the dialog and
+   * goes nowhere. Closing any other way consumes the entry, so Back afterwards
+   * does not need pressing twice.
+   *
+   * The consume is guarded on the entry still being the current one: a dialog
+   * whose action navigated somewhere has already replaced it, and popping then
+   * would undo the navigation somebody just asked for.
+   */
+  const latestClose = useRef(close);
+  latestClose.current = close;
+  useEffect(() => {
+    window.history.pushState({ veloraOverlay: true }, '');
+    let popped = false;
+    const onPop = () => {
+      popped = true;
+      latestClose.current();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      const state: unknown = window.history.state;
+      const marked =
+        typeof state === 'object' &&
+        state !== null &&
+        (state as { veloraOverlay?: unknown }).veloraOverlay === true;
+      if (!popped && marked) window.history.back();
+    };
+  }, []);
+
   useEffect(() => {
     restoreTo.current = document.activeElement;
     const node = panel.current;

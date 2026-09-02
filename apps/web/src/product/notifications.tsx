@@ -13,6 +13,7 @@ import type { ApiResult } from '@velora/api-client';
 import { maximumNotificationReadBatch } from '@velora/validation/notifications-bounds';
 
 import { useApi, useFeeds, useToast } from '../app/providers';
+import { nestedHref } from '../app/navigation';
 import { Icon, type IconName } from '../design/icons';
 import {
   Avatar,
@@ -89,7 +90,7 @@ function destinationOf(entry: NotificationEntry): string | undefined {
     case 'message_received':
       return entry.conversationId === undefined
         ? undefined
-        : `/messages/${entry.conversationId}`;
+        : nestedHref(`/messages/${entry.conversationId}`, '/notifications');
     case 'introduction_mutual':
       return entry.introductionId === undefined ? undefined : '/introductions';
     case 'call_incoming':

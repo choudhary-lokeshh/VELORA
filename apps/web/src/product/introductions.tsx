@@ -7,6 +7,7 @@ import type { ApiResult, Introduction } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 
 import { useApi, useFeeds, useToast } from '../app/providers';
+import { nestedHref } from '../app/navigation';
 import {
   Avatar,
   Button,
@@ -158,7 +159,7 @@ export function Introductions() {
           // conversation existed. Asking for it again before navigating is what
           // stops the thread rendering "not available" for the moment between.
           feeds.conversations.reload();
-          router.push(`/messages/${result.value.id}`);
+          router.push(nestedHref(`/messages/${result.value.id}`, '/introductions'));
           return;
         }
         toast.show(

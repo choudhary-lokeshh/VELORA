@@ -11,6 +11,7 @@ import type {
 } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 
+import { nestedHref } from '../app/navigation';
 import { useApi, useToast } from '../app/providers';
 import { ConfirmDialog } from '../design/dialog';
 import { Icon } from '../design/icons';
@@ -212,7 +213,7 @@ function PaidMembership({
           <span className="v-caption v-quiet">
             {club === undefined ? null : (
               <>
-                <Link href={`/c/${club.creatorHandle}`}>
+                <Link href={nestedHref(`/c/${club.creatorHandle}`, '/you/memberships')}>
                   @{club.creatorHandle}
                 </Link>
                 {' · '}
@@ -248,7 +249,7 @@ function PaidMembership({
         {club === undefined ? null : (
           <Link
             className="v-btn v-btn--secondary"
-            href={`/c/${club.creatorHandle}/club/${club.clubSlug}`}
+            href={nestedHref(`/c/${club.creatorHandle}/club/${club.clubSlug}`, '/you/memberships')}
           >
             Open the club
           </Link>
@@ -390,7 +391,7 @@ function Invitation({
         <span className="v-row__body">
           <span className="v-subheading v-wrap">{row.clubName}</span>
           <span className="v-caption v-quiet">
-            <Link href={`/c/${row.creatorHandle}`}>@{row.creatorHandle}</Link> ·
+            <Link href={nestedHref(`/c/${row.creatorHandle}`, '/you/memberships')}>@{row.creatorHandle}</Link> ·
             joined {formatRelative(row.grantedAt)}
           </span>
         </span>
@@ -409,7 +410,7 @@ function Invitation({
         <Link
           className="v-btn v-btn--secondary"
           data-testid={`club-open-${row.clubId}`}
-          href={`/c/${row.creatorHandle}/club/${row.clubSlug}`}
+          href={nestedHref(`/c/${row.creatorHandle}/club/${row.clubSlug}`, '/you/memberships')}
         >
           Open the club
         </Link>

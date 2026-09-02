@@ -1,13 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { useCallback, useState, type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
 import { Icon } from '../design/icons';
 import { Avatar } from '../design/primitives';
 import { PageHeadingWatcher } from './page-heading';
 import {
+  addressOf,
   backTarget,
   destinationName,
   destinations,
@@ -65,11 +73,52 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const parameters = useSearchParams();
+  const router = useRouter();
   const account = useAccount();
   const feeds = useFeeds();
   const displayName = account.profile.value?.displayName ?? 'Your account';
   const back = backTarget(pathname, parameters.get('from'));
   const backName = back === undefined ? undefined : destinationName(back);
+  /*
+   * The page this one was opened over, so Back can *pop* rather than push.
+   *
+   * The Back control is a link, and a link pushes: Discover → person → Back
+   * left three entries in history, remounted Discover from nothing — losing
+   * the scroll and every loaded page — and made the browser's own Back re-enter
+   * the person. When the previous page in this session is the page Back leads
+   * to, going back is strictly better: the browser restores it as it was.
+   * The href stays for every other arrival — a deep link, a new tab, a
+   * modifier-click — where there is no history to return through.
+   */
+  const address = addressOf(pathname, parameters);
+  const previousAddress = useRef<string | undefined>(undefined);
+  const currentAddress = useRef(address);
+  useEffect(() => {
+    if (currentAddress.current === address) return;
+    previousAddress.current = currentAddress.current;
+    currentAddress.current = address;
+  }, [address]);
+  const backByHistory = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (back === undefined) return;
+      if (event.defaultPrevented) return;
+      // A modifier or a non-primary button asks for a new tab or window, and
+      // history cannot answer that.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      if (event.button !== 0) return;
+      const previous = previousAddress.current;
+      if (previous === undefined) return;
+      // Same page counts even when the query differs: the query is state the
+      // page kept — which section, which filter — and returning through
+      // history is what preserves it.
+      if (previous.split('?')[0] !== back.split('?')[0]) return;
+      event.preventDefault();
+      router.back();
+    },
+    [back, router],
+  );
   /*
    * Whether the page's own heading is on screen. Undefined means the page did
    * not offer one, and the bar then names the page for the whole of it, which
@@ -186,6 +235,7 @@ export function AppShell({
               }
               data-testid="topbar-back"
               href={back}
+              onClick={backByHistory}
             >
               <Icon name="arrowLeft" size="md" />
               {backName === undefined ? null : (
