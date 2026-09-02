@@ -159,7 +159,9 @@ export function Introductions() {
           // conversation existed. Asking for it again before navigating is what
           // stops the thread rendering "not available" for the moment between.
           feeds.conversations.reload();
-          router.push(nestedHref(`/messages/${result.value.id}`, '/introductions'));
+          router.push(
+            nestedHref(`/messages/${result.value.id}`, '/introductions'),
+          );
           return;
         }
         toast.show(

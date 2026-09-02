@@ -102,7 +102,14 @@ export function AppGate({
       return;
     }
     if (needsWelcome) router.replace('/welcome');
-  }, [address, needsWelcome, pathname, router, session.known, session.signedIn]);
+  }, [
+    address,
+    needsWelcome,
+    pathname,
+    router,
+    session.known,
+    session.signedIn,
+  ]);
 
   if (!session.known || !session.signedIn) return <Bootstrap />;
 

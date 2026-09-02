@@ -91,6 +91,32 @@ export async function overflowingElements(
       );
     }
 
+    /*
+     * Scroll containers themselves, measured from the inside.
+     *
+     * `contained()` above excuses anything inside a clipping or scrolling
+     * ancestor, and that excuse has a blind spot: every `overflow-y: auto`
+     * pane computes `overflow-x` to `auto` as well, so a pane whose content
+     * grew sideways reports clean while hiding a sideways scrollbar of its
+     * own. The one intentional sideways scroller wears `v-segmented` and is
+     * allowed; everything else that actually scrolls sideways is a defect
+     * this suite exists to see.
+     */
+    for (const node of Array.from(document.querySelectorAll('body *'))) {
+      const style = getComputedStyle(node);
+      if (style.overflowX !== 'auto' && style.overflowX !== 'scroll') continue;
+      if (node.classList.contains('v-segmented')) continue;
+      if (node.scrollWidth <= node.clientWidth + 0.5) continue;
+      const identifier =
+        node.getAttribute('data-testid') ??
+        (typeof node.className === 'string' ? node.className : '');
+      offenders.push(
+        `${node.tagName.toLowerCase()}[${identifier}] scrolls sideways inside itself: ${String(
+          node.scrollWidth,
+        )} of ${String(node.clientWidth)}`,
+      );
+    }
+
     return offenders;
   });
 }

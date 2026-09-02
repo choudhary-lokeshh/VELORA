@@ -70,7 +70,7 @@ export function LanguagePicker({
         label="Languages you speak"
       >
         {(control) => (
-          <div className="v-inline v-inline--tight v-inline--nowrap">
+          <div className="v-inline v-inline--tight">
             <TextInput
               {...control}
               autoCapitalize="none"

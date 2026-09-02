@@ -217,7 +217,7 @@ export function CallDialog({
           </div>
 
           <div className="v-stack v-stack--2" style={{ alignItems: 'center' }}>
-            <p className="v-heading">{counterpart.displayName}</p>
+            <p className="v-heading v-wrap">{counterpart.displayName}</p>
             <p className="v-inline v-inline--tight" data-testid="call-state">
               <Icon name={medium === 'video' ? 'video' : 'phone'} size="sm" />
               <span className="v-muted">

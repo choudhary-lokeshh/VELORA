@@ -92,6 +92,26 @@ test.describe('Consumer Web responsive behaviour', () => {
         const offenders = await overflowingElements(page);
         expect(offenders, `${route} at ${String(width)}px`).toEqual([]);
       }
+
+      /*
+       * The two screens that are one navigation deeper than the list they are
+       * reached from, with the seed's own hostile content on them: the
+       * conversation carries the composer whose textarea has a min-content of
+       * its own, and the person page carries the longest name and the
+       * unbroken bio token. Neither was measured before, and one of them hid
+       * a composer that pushed Send off a narrow phone.
+       */
+      const cohort = cohortFor(testInfo.project.name);
+      const someone = cohort.people[1] ?? person;
+      for (const route of [
+        `/messages/${cohort.conversationId}`,
+        `/people/${someone.id}`,
+      ]) {
+        await page.goto(`${consumerWebOrigin}${route}`);
+        await expect(page.getByRole('main')).toBeVisible();
+        const offenders = await overflowingElements(page);
+        expect(offenders, `${route} at ${String(width)}px`).toEqual([]);
+      }
     });
   }
 
@@ -179,7 +199,13 @@ test.describe('Consumer Web responsive behaviour', () => {
     // Every screen, not one. Two of these overflowed at this size while `/you`
     // was clean: a card grid whose track had no floor, and a row whose status
     // pill could not shrink and could not wrap.
-    for (const route of routes) {
+    const cohort = cohortFor(testInfo.project.name);
+    const someone = cohort.people[1] ?? person;
+    for (const route of [
+      ...routes,
+      `/messages/${cohort.conversationId}`,
+      `/people/${someone.id}`,
+    ]) {
       await page.goto(`${consumerWebOrigin}${route}`);
       await page.addStyleTag({ content: 'html { font-size: 200% }' });
       await expect(page.getByRole('main')).toBeVisible();
@@ -187,5 +213,17 @@ test.describe('Consumer Web responsive behaviour', () => {
         [],
       );
     }
+
+    // The profile in its editing arrangement: a field beside a button is the
+    // classic row that cannot shrink, and the language picker inside it was
+    // the one place left where an input's min-content set the page's width.
+    await page.goto(`${consumerWebOrigin}/you`);
+    await page.addStyleTag({ content: 'html { font-size: 200% }' });
+    await page.getByTestId('profile-edit').click();
+    await expect(page.getByTestId('profile-save')).toBeVisible();
+    expect(
+      await overflowingElements(page),
+      '/you editing at 200% text',
+    ).toEqual([]);
   });
 });

@@ -490,7 +490,10 @@ function CreatorProfileView({
           <h1 className="v-title v-wrap" id="creator-name">
             {creator.displayName}
           </h1>
-          <p className="v-small v-quiet" data-testid="creator-page-handle">
+          <p
+            className="v-small v-quiet v-wrap"
+            data-testid="creator-page-handle"
+          >
             @{creator.handle}
           </p>
           {creator.bio === undefined ? null : (

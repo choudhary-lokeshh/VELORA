@@ -1837,7 +1837,10 @@ function EndedPane({ encounter }: { readonly encounter: LiveEncounter }) {
             there whenever you like.{' '}
             <Link
               data-testid="live-ended-conversation"
-              href={nestedHref(`/messages/${encounter.connection.conversationId ?? ''}`, '/live')}
+              href={nestedHref(
+                `/messages/${encounter.connection.conversationId ?? ''}`,
+                '/live',
+              )}
             >
               Open it
             </Link>

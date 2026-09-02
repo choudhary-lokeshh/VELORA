@@ -213,7 +213,12 @@ function PaidMembership({
           <span className="v-caption v-quiet">
             {club === undefined ? null : (
               <>
-                <Link href={nestedHref(`/c/${club.creatorHandle}`, '/you/memberships')}>
+                <Link
+                  href={nestedHref(
+                    `/c/${club.creatorHandle}`,
+                    '/you/memberships',
+                  )}
+                >
                   @{club.creatorHandle}
                 </Link>
                 {' · '}
@@ -249,7 +254,10 @@ function PaidMembership({
         {club === undefined ? null : (
           <Link
             className="v-btn v-btn--secondary"
-            href={nestedHref(`/c/${club.creatorHandle}/club/${club.clubSlug}`, '/you/memberships')}
+            href={nestedHref(
+              `/c/${club.creatorHandle}/club/${club.clubSlug}`,
+              '/you/memberships',
+            )}
           >
             Open the club
           </Link>
@@ -391,8 +399,12 @@ function Invitation({
         <span className="v-row__body">
           <span className="v-subheading v-wrap">{row.clubName}</span>
           <span className="v-caption v-quiet">
-            <Link href={nestedHref(`/c/${row.creatorHandle}`, '/you/memberships')}>@{row.creatorHandle}</Link> ·
-            joined {formatRelative(row.grantedAt)}
+            <Link
+              href={nestedHref(`/c/${row.creatorHandle}`, '/you/memberships')}
+            >
+              @{row.creatorHandle}
+            </Link>{' '}
+            · joined {formatRelative(row.grantedAt)}
           </span>
         </span>
         <Badge tone="neutral">
@@ -410,7 +422,10 @@ function Invitation({
         <Link
           className="v-btn v-btn--secondary"
           data-testid={`club-open-${row.clubId}`}
-          href={nestedHref(`/c/${row.creatorHandle}/club/${row.clubSlug}`, '/you/memberships')}
+          href={nestedHref(
+            `/c/${row.creatorHandle}/club/${row.clubSlug}`,
+            '/you/memberships',
+          )}
         >
           Open the club
         </Link>

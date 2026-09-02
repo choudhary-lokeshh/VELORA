@@ -144,7 +144,11 @@ const ancestry: readonly {
   // outside the site entirely. Memberships is where the thing they were paying
   // for lives, which is the only destination that is useful either way — for a
   // membership. A coin purchase begins at the wallet, and its origin says so.
-  { of: /^\/checkout\/[^/]+$/u, origins: ['/you/wallet'], parent: '/you/memberships' },
+  {
+    of: /^\/checkout\/[^/]+$/u,
+    origins: ['/you/wallet'],
+    parent: '/you/memberships',
+  },
   {
     // Before the general rule, because a match is taken in order. "Get coins"
     // on the Live door leads here mid-decision, and the way back from that

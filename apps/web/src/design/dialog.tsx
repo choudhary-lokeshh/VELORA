@@ -173,7 +173,7 @@ export function Dialog({
         <span className="v-sheet-grip" />
         {title === undefined ? null : (
           <div className="v-dialog__head">
-            <h2 className="v-heading" id={headingId}>
+            <h2 className="v-heading v-wrap" id={headingId}>
               {title}
             </h2>
             <button

@@ -766,6 +766,49 @@ test.describe('Live discovery', () => {
     });
   });
 
+  test('keeps every control on the picture on the narrowest phone at twice the text', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort has nobody in it');
+    await allowCapture(context, testInfo.project.name);
+    // The stage clips rather than scrolls, so an overflowing dock is not a
+    // scrollbar anywhere — it is Next and End simply gone. The measurement has
+    // to be each control against the viewport, in the encounter itself, at the
+    // width and text size where the dock's own group is widest.
+    await page.setViewportSize({ height: 740, width: 320 });
+    await signInAdmitted(page, person.subject);
+    await page.addStyleTag({ content: 'html { font-size: 200% }' });
+    await atTheDoor(page);
+    await page.getByTestId('live-start-video').click();
+    await expect(page.getByTestId('live-peer-name')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    for (const control of [
+      'live-toggle-mic',
+      'live-toggle-camera',
+      'live-connect',
+      'live-next',
+      'live-end',
+    ]) {
+      const box = await page.getByTestId(control).boundingBox();
+      expect(box, control).not.toBeNull();
+      if (box === null) continue;
+      expect(box.x, `${control} starts on screen`).toBeGreaterThanOrEqual(0);
+      expect(
+        box.x + box.width,
+        `${control} ends on screen`,
+      ).toBeLessThanOrEqual(320);
+    }
+
+    await page.getByTestId('live-end').click();
+    await expect(page.getByTestId('live-door')).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
   test('keeps every other destination exactly where it was', async ({
     page,
   }, testInfo) => {

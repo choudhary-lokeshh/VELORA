@@ -214,6 +214,13 @@
 }
 
 .v-control {
+  /*
+   * A control is a flex item wherever a field sits beside a button, and its
+   * min-content — twenty characters of input, scaled with the text size — is
+   * wider than a narrow phone at 200%. Without this the row it cannot wrap in
+   * pushes the document sideways.
+   */
+  min-width: 0;
   background: var(--surface-inset);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
@@ -1030,6 +1037,10 @@ a.v-notification {
   left: 50%;
   max-height: calc(100dvh - var(--space-12));
   max-width: min(520px, calc(100vw - var(--space-8)));
+  /* Vertical scrolling turns overflow-x visible into auto; clip says what is
+     meant, so a too-wide child is a defect the measure can see rather than a
+     sideways scrollbar inside a dialog. */
+  overflow-x: clip;
   overflow-y: auto;
   padding: var(--space-7);
   position: fixed;

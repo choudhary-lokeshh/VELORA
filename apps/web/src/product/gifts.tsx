@@ -149,7 +149,12 @@ export function SentGifts() {
                       <span className="v-caption v-quiet">
                         {/* The creator's own page, which is where this was
                             sent from and the only address this row knows. */}
-                        <Link href={nestedHref(`/c/${row.creator.handle}`, '/you/gifts')}>
+                        <Link
+                          href={nestedHref(
+                            `/c/${row.creator.handle}`,
+                            '/you/gifts',
+                          )}
+                        >
                           {row.creator.displayName}
                         </Link>
                         {' · '}

@@ -525,6 +525,10 @@
   gap: var(--space-3);
   max-height: 58dvh;
   min-height: 240px;
+  /* Vertical scrolling turns overflow-x visible into auto; clip says what is
+     meant, so a too-wide child is a defect the measure can see rather than a
+     sideways scrollbar inside the pane. */
+  overflow-x: clip;
   overflow-y: auto;
   padding: var(--space-5) var(--space-4);
   overscroll-behavior: contain;
@@ -624,6 +628,13 @@
 }
 
 .v-composer__input {
+  /*
+   * A flex item's min-width is its min-content, and a textarea's min-content
+   * is its default twenty columns — which scales with the root font. At twice
+   * the text on a narrow phone that floor alone was wider than the row, and
+   * Send left the screen; the thread's own clipping kept it invisible.
+   */
+  min-width: 0;
   background: var(--surface-inset);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
@@ -1078,6 +1089,7 @@
 .v-gift-choice__name {
   font-size: var(--text-small-size);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .v-gift-success {
   color: var(--status-positive);
@@ -1287,7 +1299,12 @@
 
   --live-preview-inline: 168px;
   --live-preview-ratio: 4 / 3;
-  --live-rail: 21rem;
+  /*
+   * Bounded against the window as well as the text. In rem alone, 200% text
+   * turned the chat rail into most of a tablet's width and pushed the canvas
+   * padding past the stage.
+   */
+  --live-rail: min(21rem, 40vw);
   --live-inset: var(--space-4);
 
   background: var(--canvas-deep);
@@ -1339,6 +1356,10 @@
  */
 .v-live__door {
   align-items: center;
+  /* Vertical scrolling turns overflow-x visible into auto; clip says what is
+     meant, so a too-wide child is a defect the measure can see rather than a
+     sideways scrollbar inside the pane. */
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-8) var(--space-5);
@@ -1807,7 +1828,12 @@
 
 .v-live__request-body {
   flex: 1;
-  min-inline-size: 8rem;
+  /*
+   * Guarded the way `.v-row__body` guards the identical floor: at twice the
+   * text 8rem is wider than the whole column this row sits in, and an
+   * unguarded floor pushes the door sideways instead of wrapping.
+   */
+  min-inline-size: min(100%, 8rem);
 }
 
 .v-live__request-body p {
@@ -1875,6 +1901,10 @@
    * is not — `justify-content: center` would instead push the top of it past
    * the scroll container's start edge, where nothing can bring it back.
    */
+  /* Vertical scrolling turns overflow-x visible into auto; clip says what is
+     meant, so a too-wide child is a defect the measure can see rather than a
+     sideways scrollbar inside the pane. */
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-16) var(--space-5)
@@ -2767,13 +2797,19 @@
 }
 
 .v-live__flow {
-  flex: none;
+  /*
+   * Allowed to shrink and to wrap. The group holds Connect and Next, and
+   * Connect's longest label plus Next's floor is wider than a narrow phone at
+   * twice the text; `flex: none` on a nowrap pair pushed Next and End off the
+   * stage, and the stage clips rather than scrolls, so nothing showed it. The
+   * dock already wraps between groups; this lets the pair wrap within its own
+   * group too, which keeps every control on the picture.
+   */
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  min-inline-size: 0;
   gap: var(--space-3);
   justify-content: center;
-}
-
-.v-live__flow .v-btn {
-  white-space: nowrap;
 }
 
 /*
@@ -3042,6 +3078,10 @@
   flex-direction: column;
   gap: var(--space-2);
   min-block-size: 5rem;
+  /* Vertical scrolling turns overflow-x visible into auto; clip says what is
+     meant, so a too-wide child is a defect the measure can see rather than a
+     sideways scrollbar inside the pane. */
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-inline-end: var(--space-1);

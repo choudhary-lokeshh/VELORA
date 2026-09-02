@@ -1,4 +1,10 @@
-import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {

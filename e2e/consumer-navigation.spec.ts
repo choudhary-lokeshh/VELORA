@@ -119,6 +119,53 @@ test.describe('Consumer Web navigation', () => {
     await expect(page.getByText(notFoundHeading)).toHaveCount(0);
   });
 
+  test('goes back through history rather than growing it', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort needs a person');
+
+    await signInAdmitted(page, person.subject);
+    await navigateTo(page, 'discover');
+    const candidate = page.locator('[data-testid^="candidate-open-"]').first();
+    await expect(candidate).toBeVisible();
+    await candidate.click();
+    await page.waitForURL(/\/people\/[^/?]+/u);
+
+    await page.getByTestId('topbar-back').click();
+    await page.waitForURL(/\/discover(\?|$)/u);
+
+    // The control used to push: Discover, the person, Discover again — and the
+    // browser's own Back walked back *into* the person somebody had just left.
+    // Popping consumes the person's entry, so browser Back now leaves the
+    // sequence entirely instead of replaying it.
+    await page.goBack();
+    await expect(page).not.toHaveURL(/\/people\//u);
+  });
+
+  test('closes an open dialog on Back instead of leaving the page', async ({
+    page,
+  }, testInfo) => {
+    const [person] = cohortFor(testInfo.project.name).people;
+    if (person === undefined) throw new Error('the cohort needs a person');
+
+    await signInAdmitted(page, person.subject);
+    await page.goto(`${consumerWebOrigin}/you/settings`);
+    await page.getByTestId('auth-sign-out-everywhere').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+
+    // A phone's system Back is a history pop. With a sheet open it must be the
+    // sheet that goes, not the screen underneath it.
+    await page.goBack();
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page).toHaveURL(/\/you\/settings$/u);
+
+    // The entry was consumed either way: the next Back leaves the page once,
+    // not after a ghost press.
+    await page.getByTestId('topbar-back').click();
+    await page.waitForURL(/\/you$/u);
+  });
+
   test('leaves a settings page for You', async ({ page }, testInfo) => {
     const [person] = cohortFor(testInfo.project.name).people;
     if (person === undefined) throw new Error('the cohort needs a person');
