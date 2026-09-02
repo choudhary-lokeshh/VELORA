@@ -12,7 +12,7 @@ import {
   minimumDisplayNameLength,
 } from '@velora/validation/profile-bounds';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { useApi, useSession } from '../frame/providers';
 import { PlainScreen, Wordmark } from '../frame/shell';
@@ -111,10 +111,7 @@ export function OnboardingScreen() {
 
   return (
     <PlainScreen testID="onboarding-screen">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.fill}
-      >
+      <View style={styles.fill}>
         <Stack gap={5}>
           <Wordmark />
           {position < 0 ? null : (
@@ -193,7 +190,7 @@ export function OnboardingScreen() {
             profile={session.account.profile.value}
           />
         ) : null}
-      </KeyboardAvoidingView>
+      </View>
     </PlainScreen>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { useSession } from '../frame/providers';
 import { PlainScreen, Wordmark } from '../frame/shell';
@@ -48,10 +48,7 @@ export function WelcomeScreen() {
 
   return (
     <PlainScreen testID="welcome-screen">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.fill}
-      >
+      <View style={styles.fill}>
         <View style={styles.top}>
           {/*
             One mark, not two. The wordmark already carries the sparkle, and a
@@ -138,7 +135,7 @@ export function WelcomeScreen() {
             anybody can find you.
           </Text>
         </Stack>
-      </KeyboardAvoidingView>
+      </View>
     </PlainScreen>
   );
 }

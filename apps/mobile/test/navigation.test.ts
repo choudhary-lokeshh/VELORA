@@ -5,6 +5,7 @@ import {
   creatorPath,
   discoverPath,
   messagesPath,
+  personPath,
   youPath,
   youSectionPath,
 } from '../src/frame/links';
@@ -107,9 +108,11 @@ describe('where a pushed screen leaves for', () => {
   const served = [
     '/discover',
     '/introductions',
+    '/live',
     '/messages',
     '/messages/[conversationId]',
     '/notices',
+    '/people/[personId]',
     '/you',
     '/you/[section]',
     '/c/[handle]',
@@ -127,6 +130,11 @@ describe('where a pushed screen leaves for', () => {
 
   it.each([
     ['a conversation', conversationPath('conversation-1'), messagesPath],
+    [
+      'a person',
+      personPath('11111111-1111-4111-8111-111111111111'),
+      discoverPath,
+    ],
     ['a You section', youSectionPath('memberships'), youPath],
     ['a creator page', creatorPath('ember_vale'), discoverPath],
     ['a club', clubPath('ember_vale', 'inner'), creatorPath('ember_vale')],

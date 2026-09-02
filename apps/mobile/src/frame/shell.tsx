@@ -1,5 +1,7 @@
+import { usePathname } from 'expo-router';
 import { createContext, useContext, type ReactNode } from 'react';
 import {
+  Keyboard,
   PixelRatio,
   Platform,
   Pressable,
@@ -23,6 +25,7 @@ import {
   text,
   tracking,
 } from '../design/tokens';
+import { useKeyboardOverlap } from './keyboard';
 import { destinations, signalLabel } from './navigation';
 import { useToast, type ToastTone } from './providers';
 
@@ -96,6 +99,17 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const tabBarBelow = useContext(TabBarBelow);
   /*
+   * The keyboard, dealt with here so no screen deals with it alone.
+   *
+   * Android 15 stopped resizing an edge-to-edge window for the keyboard, so a
+   * form near the bottom of any screen under You was simply covered: the
+   * window kept its size, the scroll range kept its length, and the bio field
+   * with its Save button sat behind the keys. The measured overlap joins the
+   * bottom padding, which restores exactly the scrollable room the keyboard
+   * took — and is zero anywhere the window still resizes.
+   */
+  const keyboard = useKeyboardOverlap();
+  /*
    * A header that clips is a header that lies.
    *
    * One line for the title and two for the subtitle is right at the ordinary
@@ -116,7 +130,12 @@ export function Screen({
           <IconButton
             label="Back"
             name="arrowLeft"
-            onPress={onBack}
+            onPress={() => {
+              // Leaving with the keyboard up would pop the screen and leave
+              // the keys standing over the one underneath.
+              Keyboard.dismiss();
+              onBack();
+            }}
             testID="screen-back"
           />
         )}
@@ -145,13 +164,20 @@ export function Screen({
   );
 
   const padding = {
-    // The tab bar already holds the gesture band open where there is one.
-    paddingBottom: space[10] + (tabBarBelow ? 0 : insets.bottom),
+    // The tab bar already holds the gesture band open where there is one, and
+    // the keyboard's measured overlap keeps the bottom of the content
+    // reachable while it is up.
+    paddingBottom:
+      space[10] + (tabBarBelow ? 0 : insets.bottom) + keyboard.overlap,
     paddingHorizontal: space[4],
   };
 
   return (
-    <View style={styles.screen} {...(testID === undefined ? {} : { testID })}>
+    <View
+      ref={keyboard.target}
+      style={styles.screen}
+      {...(testID === undefined ? {} : { testID })}
+    >
       <Atmosphere />
       {header}
       {scroll ? (
@@ -193,13 +219,17 @@ export function PlainScreen({
   readonly testID?: string;
 }) {
   const insets = useSafeAreaInsets();
+  // The same measured keyboard room the framed screen gets. The onboarding
+  // ladder and the sign-in field live here, near the bottom of the screen,
+  // which is exactly where an unresized window puts the keys.
+  const keyboard = useKeyboardOverlap();
   return (
-    <View style={styles.screen}>
+    <View ref={keyboard.target} style={styles.screen}>
       <Atmosphere />
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
-          paddingBottom: insets.bottom + space[10],
+          paddingBottom: insets.bottom + space[10] + keyboard.overlap,
           paddingHorizontal: space[5],
           paddingTop: insets.top + space[8],
         }}
@@ -434,13 +464,27 @@ const toastInk: Readonly<Record<ToastTone, TextTone>> = {
 export function Toaster() {
   const { dismiss, toasts } = useToast();
   const insets = useSafeAreaInsets();
+  /*
+   * Above the tab bar only where there is one. The toaster mounts at the root,
+   * outside any screen, so it asks the address instead of a context: the six
+   * destination roots draw the bar, and a pushed screen does not — a toast
+   * floating a bar's height above nothing reads as detached from the screen it
+   * is about.
+   */
+  const pathname = usePathname();
+  const overTabBar = destinations.some(
+    (destination) => pathname === `/${destination.name}` || pathname === '/',
+  );
   if (toasts.length === 0) return null;
   return (
     <View
       pointerEvents="box-none"
       style={[
         styles.toaster,
-        { bottom: insets.bottom + layout.tabBarHeight + space[3] },
+        {
+          bottom:
+            insets.bottom + (overTabBar ? layout.tabBarHeight : 0) + space[3],
+        },
       ]}
       testID="toaster"
     >

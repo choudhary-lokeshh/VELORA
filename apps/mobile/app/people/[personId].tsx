@@ -26,7 +26,12 @@ export default function Person() {
         leave(router, discoverPath);
       }}
       onLeave={() => {
-        router.replace(discoverPath);
+        // A decision leaves the way Back leaves: pop to wherever this person
+        // was opened from — Discover, or the live encounter still running —
+        // and fall back to Discover only when a deep link put nothing behind
+        // this screen. Replacing unconditionally ejected a live encounter's
+        // reader into a feed they had not been reading.
+        leave(router, discoverPath);
       }}
       personId={personId}
     />

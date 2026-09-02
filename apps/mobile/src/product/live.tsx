@@ -16,7 +16,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
-  Keyboard,
   PanResponder,
   Pressable,
   ScrollView,
@@ -36,6 +35,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import { Icon } from '../design/icons';
+import { Sheet } from '../design/sheet';
 import {
   Avatar,
   BlockedState,
@@ -59,6 +59,7 @@ import {
   space,
   text as textScale,
 } from '../design/tokens';
+import { useKeyboardOverlap } from '../frame/keyboard';
 import { useApi } from '../frame/providers';
 import { mintUuid } from '../device/installation';
 import { useLiveMedia, type LiveMediaState } from './live-media';
@@ -494,6 +495,7 @@ function LiveDoor({
         mode === 'choose' ? styles.doorChoosing : null,
         { paddingTop: insetTop + space[4] },
       ]}
+      keyboardShouldPersistTaps="handled"
       testID="live-door"
       // Scrollable so the door survives 200 % text, where the explanation and
       // both controls are taller than a phone.
@@ -1094,23 +1096,7 @@ function LiveStage({
    * the stage already ends above the keyboard and the overlap is zero, and
    * where it is not the overlap is exactly the part that is covered.
    */
-  const stage = useRef<View>(null);
-  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
-  useEffect(() => {
-    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
-      const top = event.endCoordinates.screenY;
-      stage.current?.measureInWindow((_x, y, _width, height) => {
-        setKeyboardOverlap(Math.max(0, y + height - top));
-      });
-    });
-    const hidden = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardOverlap(0);
-    });
-    return () => {
-      shown.remove();
-      hidden.remove();
-    };
-  }, []);
+  const { overlap: keyboardOverlap, target: stage } = useKeyboardOverlap();
 
   /*
    * Where the sheet's own bottom edge is. With the keyboard up it sits on the
@@ -1151,7 +1137,14 @@ function LiveStage({
 
   const canvasCeiling = insets.top + space[12];
   const canvasFloor =
-    (aboutSomebody ? previewHeight + space[4] + previewLift : 0) + aboveDock;
+    (aboutSomebody ? previewHeight + space[4] + previewLift : 0) +
+    aboveDock +
+    /*
+     * The searching pane carries the premium region field, and this canvas is
+     * the one place that does not scroll: with the keys up and no reserved
+     * room, the field being typed into sat behind them.
+     */
+    keyboardOverlap;
   /*
    * Whether there is room on this screen for everything the canvas can say.
    *
@@ -1179,26 +1172,51 @@ function LiveStage({
   }, [encounterId]);
 
   /*
-   * The hardware Back closes the sheet before it leaves the screen.
+   * The hardware Back, in the order a phone promises: the topmost thing goes
+   * first. An open sheet closes. An open confirmation closes. An encounter is
+   * never abandoned by an accidental press — Back asks, with the same End the
+   * dock offers, because a person is on the other end of it. A running search
+   * is stopped, which is what leaving it means and involves nobody else.
+   * When none of that is on screen, `false` leaves the navigator's own
+   * behaviour untouched.
    *
-   * A sheet that ignored Back would be a sheet a person had to find a control
-   * to close, on the one platform where Back is the control for exactly that.
-   * Returning `false` when nothing is open leaves the navigator's own behaviour
-   * untouched.
+   * One handler with the order written out, rather than one per concern:
+   * `BackHandler` answers listeners most-recent-first, and two effects racing
+   * over mount order is how a Back closes the wrong thing.
    */
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
   useEffect(() => {
-    if (!chatOpen) return undefined;
+    if (confirmingLeave && serverState !== 'matched') setConfirmingLeave(false);
+  }, [confirmingLeave, serverState]);
+  const inEncounter = serverState === 'matched' && encounter !== undefined;
+  const searching = serverState === 'searching';
+  useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
-        setChatOpen(false);
-        return true;
+        if (chatOpen) {
+          setChatOpen(false);
+          return true;
+        }
+        if (confirmingLeave) {
+          setConfirmingLeave(false);
+          return true;
+        }
+        if (inEncounter) {
+          setConfirmingLeave(true);
+          return true;
+        }
+        if (searching) {
+          onLeave();
+          return true;
+        }
+        return false;
       },
     );
     return () => {
       subscription.remove();
     };
-  }, [chatOpen]);
+  }, [chatOpen, confirmingLeave, inEncounter, onLeave, searching]);
 
   const showBurst = useCallback((reaction: string, self: boolean) => {
     const id = mintUuid();
@@ -1395,6 +1413,40 @@ function LiveStage({
           onUnread={setUnread}
           open={chatOpen}
         />
+      ) : null}
+
+      {confirmingLeave && inEncounter ? (
+        <Sheet
+          onClose={() => {
+            setConfirmingLeave(false);
+          }}
+          testID="live-leave-confirm"
+          title="Leave this conversation?"
+        >
+          <Text tone="secondary" variant="small">
+            {`You are with ${encounter.peer.displayName}. Ending is the same End as the one on the dock — it closes this session for both of you.`}
+          </Text>
+          <Button
+            icon="x"
+            onPress={() => {
+              setConfirmingLeave(false);
+              onLeave();
+            }}
+            testID="live-leave-confirm-end"
+            tone="danger"
+          >
+            End conversation
+          </Button>
+          <Button
+            onPress={() => {
+              setConfirmingLeave(false);
+            }}
+            testID="live-leave-confirm-stay"
+            tone="secondary"
+          >
+            Stay
+          </Button>
+        </Sheet>
       ) : null}
 
       {simulated && !chatOpen ? (

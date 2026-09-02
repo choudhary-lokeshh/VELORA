@@ -7,13 +7,7 @@ import type {
 import { failureMessage, isOk, isRetryable } from '@velora/consumer-client';
 import { maximumMessageBodyCharacters } from '@velora/validation/messaging-bounds';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 
 import { useApi, useSession, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
@@ -318,11 +312,7 @@ function Thread({
         />
       }
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={space[10]}
-        style={styles.fill}
-      >
+      <View style={styles.fill}>
         {call === undefined ? (
           <Card testID="conversation-call-entry" tone="surface2">
             <Stack gap={3}>
@@ -551,7 +541,7 @@ function Thread({
             ) : null}
           </View>
         )}
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }

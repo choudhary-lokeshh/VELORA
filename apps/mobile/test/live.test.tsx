@@ -1,5 +1,6 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import type { ReactElement } from 'react';
+import { BackHandler } from 'react-native';
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { LiveScreen } from '../src/product/live';
@@ -350,5 +351,84 @@ describe('the paid matching preference', () => {
     expect(panel).toHaveTextContent(/Women — 25 coins/u);
     expect(panel).toHaveTextContent(/15 coins/u);
     expect(panel).toHaveTextContent(/10 coins/u);
+  });
+});
+
+/**
+ * What the hardware Back does inside an encounter.
+ *
+ * A phone's Back is an accidental press waiting to happen, and the thing on
+ * the other side of this screen is a person. Back therefore asks — with the
+ * same End the dock offers — instead of silently abandoning them, and asks
+ * only once: the sheet's own Back closes the sheet.
+ */
+describe('the hardware Back in an encounter', () => {
+  const backHandlers: (() => boolean)[] = [];
+
+  beforeEach(() => {
+    backHandlers.length = 0;
+    jest
+      .spyOn(BackHandler, 'addEventListener')
+      .mockImplementation((_event, handler) => {
+        const pressed = handler as () => boolean;
+        backHandlers.push(pressed);
+        return {
+          remove: () => {
+            const index = backHandlers.indexOf(pressed);
+            if (index >= 0) backHandlers.splice(index, 1);
+          },
+        };
+      });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  async function pressBack(): Promise<boolean> {
+    // Registered handlers answer most-recent-first, the way the platform does.
+    let handled = false;
+    await act(async () => {
+      for (const handler of [...backHandlers].reverse()) {
+        if (handler()) {
+          handled = true;
+          break;
+        }
+      }
+      await Promise.resolve();
+    });
+    return handled;
+  }
+
+  it('asks before leaving, and stays when told to stay', async () => {
+    await mountLive(liveState());
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    expect(await pressBack()).toBe(true);
+    await screen.findByTestId('live-leave-confirm');
+
+    await press('live-leave-confirm-stay');
+    await waitFor(() => {
+      expect(screen.queryByTestId('live-leave-confirm')).toBeNull();
+    });
+    // Still with them: nothing ended because somebody said stay.
+    expect(screen.getByTestId('live-peer-name')).toBeTruthy();
+  });
+
+  it('ends through the same leave the dock uses when told to end', async () => {
+    await mountLive(liveState());
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    await pressBack();
+    await screen.findByTestId('live-leave-confirm');
+    await press('live-leave-confirm-end');
+
+    // The door again, the way End reaches it: the server was told, and the
+    // stage did not simply unmount around a running session.
+    await screen.findByTestId('live-door');
   });
 });

@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 
-import { discoverPath } from '../src/frame/links';
-
+import { livePath } from '../src/frame/links';
+import { leave } from '../src/frame/navigation';
 import { Screen } from '../src/frame/shell';
 import { Button, EmptyState } from '../src/design/primitives';
 
@@ -14,19 +14,24 @@ import { Button, EmptyState } from '../src/design/primitives';
  * — a "that conversation is private" page is an existence oracle.
  */
 export default function NotFoundScreen() {
+  // Pop when there is somewhere to pop to — a wrong link followed from inside
+  // the product should hand back the screen it was followed from, scrolled
+  // where it was. The fallback for a cold start is Live, which is where a
+  // launch lands, rather than a feed this person never chose.
+  const back = () => {
+    leave(router, livePath);
+  };
   return (
-    <Screen testID="not-found" title="Not here">
+    <Screen onBack={back} testID="not-found" title="Not here">
       <EmptyState
         action={
           <Button
             icon="arrowLeft"
-            onPress={() => {
-              router.replace(discoverPath);
-            }}
+            onPress={back}
             testID="not-found-back"
             tone="primary"
           >
-            Back to Discover
+            Go back
           </Button>
         }
         body="That link does not lead anywhere in VELORA. It may have been for something that has since gone."

@@ -1,7 +1,15 @@
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, ScrollView, View } from 'react-native';
+import {
+  Keyboard,
+  Modal,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useKeyboardOverlap } from '../frame/keyboard';
 import { IconButton, Text } from './primitives';
 import { color, layout, radius, space } from './tokens';
 
@@ -35,10 +43,27 @@ export function Sheet({
   readonly title: string;
 }) {
   const insets = useSafeAreaInsets();
+  /*
+   * The keyboard, measured against the sheet itself.
+   *
+   * A modal window is pinned to the bottom of a window Android 15 no longer
+   * resizes, so a sheet with a text field — the report, the appeal — kept its
+   * promise about nothing pushing the action off only until the keys came up:
+   * the primary button sat behind them and the internal scroll could not
+   * reach it. The measured overlap joins the bottom padding, which stands the
+   * whole sheet on top of the keyboard.
+   */
+  const keyboard = useKeyboardOverlap();
+  const close = () => {
+    // The keys belong to this sheet's field; the screen underneath should not
+    // inherit them for a frame after it goes.
+    Keyboard.dismiss();
+    onClose();
+  };
   return (
     <Modal
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={close}
       statusBarTranslucent
       transparent
       visible
@@ -47,14 +72,18 @@ export function Sheet({
         <Pressable
           accessibilityLabel="Close"
           accessibilityRole="button"
-          onPress={onClose}
+          onPress={close}
           style={styles.scrim}
           testID={`${testID}-scrim`}
         />
         <View
+          ref={keyboard.target}
           style={[
             styles.sheet,
-            { paddingBottom: Math.max(insets.bottom, space[4]) },
+            {
+              paddingBottom:
+                Math.max(insets.bottom, space[4]) + keyboard.overlap,
+            },
           ]}
         >
           <View style={styles.grip} />
@@ -70,7 +99,7 @@ export function Sheet({
             <IconButton
               label="Close"
               name="x"
-              onPress={onClose}
+              onPress={close}
               testID={`${testID}-close`}
             />
           </View>
