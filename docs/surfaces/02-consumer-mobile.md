@@ -156,3 +156,20 @@ That proves layout, state, reachability, and target size. It does not prove nati
 **Large text changes the layout rather than the words.** Past 1.3× a row of equal-weight controls becomes a column, a button drops its decorative mark before it costs the label a character, and a header stops counting lines instead of clipping a sentence. A screen with no tab bar under it holds the system gesture band open itself.
 
 **Country and language still read as wire subtags on Android** — `NG`, `Both speak en` — because Hermes ships `Intl` without `DisplayNames`. Nothing is invented by that and no country list is hand-written; closing it is a bundle-size and dependency decision, open in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
+
+## As built, after ADR-0045
+
+[ADR-0045](../decisions/ADR-0045-consumer-completion-doorways-keyboards-and-a-camera-that-is-off.md) closes the gaps a walk through the product found, on the device.
+
+The keyboard is the screen frame's business rather than each screen's. One measurement — this view's position in the window against the keyboard's top edge — is used by the framed screen, the plain screen, the bottom sheet and the Live stage, so a form near the bottom of any screen can be filled in whether or not this Android resizes the window for the IME. Leaving a screen or closing a sheet dismisses the keys rather than leaving them over what is underneath.
+
+The hardware Back answers in one place, in one order: an open sheet closes, an open confirmation closes, an active encounter asks with the same End the dock offers, a running search stops, and anything else falls through to the navigator. A person is on the other end of an encounter, and an accidental press may not abandon them.
+
+Discover has two halves, People and Creators, with the section in the address under the same name Consumer Web uses. The creator half lists the public directory through a client that sends no credential, and a creator's page opens on their name, their bio and the links they published before anything they sell. Whether a club is invitation-only is the offers read's own answer; a read that failed says so instead.
+
+Spoken languages are edited here rather than only during onboarding, because they gate discovery matching and the paid Live language preference and a phone is the only device many people have.
+
+A decision made about a person leaves the way Back leaves, popping to the encounter or the feed they were opened from. The not-found screen has a header Back and pops to what was on screen before it. Signing out everywhere asks first. Coins can be pulled to refresh, and every read that fails — the wallet, its history, a person, memberships, payments, a creator's offers — says so with a retry rather than resting on a skeleton.
+
+A far-end camera turned off removes the picture and says whose camera it is, in the same room, with the voice still arriving. There is no voice-only surface, because there is no need for one.
+

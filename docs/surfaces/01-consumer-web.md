@@ -112,3 +112,18 @@ Consumer Web renders server answers and adds nothing. In particular it carries n
 ## Security, phase, and authority
 
 Follow [security baseline](../security/01-security-baseline.md), [screen states](../design/06-screen-state-requirements.md), and [consumer product](../product/02-consumer-product.md). V1 includes consumer core and no new verification workflow UI. Phase 2 may add approved Identity Assurance handoff, premium, and RTC; Phase 3 may add approved consumer AI and broader social features. Conditional creator content remains gate-controlled even on Web.
+
+### As built, after ADR-0045
+
+[ADR-0045](../decisions/ADR-0045-consumer-completion-doorways-keyboards-and-a-camera-that-is-off.md) finishes the way somebody moves through this surface, and changes nothing about what it is.
+
+Every route that can be navigated into declares both where it belongs and which doorways are real. A conversation is reached from the Inbox, from the Live encounter that created it, from an introduction that has just become mutual and from the notice announcing a message; a creator from Discover and from somebody's own memberships and sent gifts; a club from its creator and from memberships; the wallet from You and from the Live door's "Get coins"; a checkout return from Memberships and from the wallet. Back returns to the doorway that was used, and the address carrying it is still validated against that route's own closed list, so a value somebody else wrote can at worst send them one level up.
+
+Back walks history rather than growing it. When the previous page in this session is the page Back leads to, the control goes back and the browser restores that page as it was — its scroll position, and everything it had already loaded. The address remains a link for the arrival that has no history behind it: a deep link, a notification, a new tab, a modifier-click.
+
+A dialog holds one history entry while it is open, so a phone's system Back closes the sheet rather than navigating the page out from under it, and closing any other way consumes that entry so the next Back is the page's own.
+
+A failed read is never rendered as an absence. The wallet, its history, the coin packs, a person, availability, a creator's gift catalogue, memberships and payments each say what happened and offer the retry that might change it, and the safety sections offer one too. Where the ambiguity is a privacy answer rather than a state — somebody who does not exist and somebody who may not be seen — it is kept.
+
+Live carries the other person's voice in an element of its own, mounted for the whole encounter, because the picture's element exists only while a picture is arriving. A peer whose camera is off is rendered as a portrait, a name, and a sentence saying so, in the same session, with everything else untouched.
+
