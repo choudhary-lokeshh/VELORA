@@ -542,8 +542,8 @@ export function Live() {
       {stage === 'closed' ? (
         <LiveDoor
           busy={action.busy}
-          invitations={state?.invitations ?? []}
-          languageOptions={state?.languageOptions ?? []}
+          invitations={state.invitations}
+          languageOptions={state.languageOptions}
           mode={mode}
           onModeChange={setMode}
           onPreferences={changePreferences}
@@ -556,7 +556,7 @@ export function Live() {
         <LiveStage
           busy={action.busy}
           encounter={encounter}
-          languageOptions={state?.languageOptions ?? []}
+          languageOptions={state.languageOptions}
           media={media}
           medium={medium}
           message={message}
@@ -566,8 +566,8 @@ export function Live() {
           onSearchAgain={searchAgain}
           onState={setState}
           preferences={preferences}
-          searchingSince={state?.searchingSince}
-          premium={state?.premium}
+          searchingSince={state.searchingSince}
+          premium={state.premium}
           serverState={serverState}
           transport={transport}
           wallet={wallet}
@@ -584,9 +584,7 @@ export function Live() {
         <ErrorMessage testId="live-message">{message}</ErrorMessage>
       )}
 
-      {state?.simulated === true ? (
-        <SimulationPanel onState={setState} />
-      ) : null}
+      {state.simulated ? <SimulationPanel onState={setState} /> : null}
     </div>
   );
 }

@@ -236,6 +236,9 @@ export function JoinClub({
 
           {prices.length === 1 ? null : (
             <Segmented
+              // A choice inside a form, not a tab: nothing else on the page
+              // is replaced by picking a cadence.
+              as="radiogroup"
               label="How often you pay"
               onChange={setPriceId}
               options={prices.map((price) => ({

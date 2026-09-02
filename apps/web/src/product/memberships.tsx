@@ -662,6 +662,12 @@ function PaymentHistory({
         <ul className="v-list v-list--divided">
           {rows.map((row) => {
             const look = paymentStateLook(row.state);
+            // Read once and named, so the row can ask whether there is a
+            // reason worth printing without the template having to.
+            const failure =
+              row.failureReason === undefined
+                ? undefined
+                : paymentFailureLabels[row.failureReason];
             const club =
               row.resource === undefined
                 ? undefined
@@ -678,10 +684,7 @@ function PaymentHistory({
                       <time dateTime={row.createdAt}>
                         {formatDay(row.createdAt)}
                       </time>
-                      {row.failureReason === undefined ||
-                      paymentFailureLabels[row.failureReason] === undefined
-                        ? null
-                        : ` · ${paymentFailureLabels[row.failureReason]}`}
+                      {failure === undefined ? null : ` · ${failure}`}
                     </span>
                   </span>
                   <Badge tone={look.tone}>{look.label}</Badge>

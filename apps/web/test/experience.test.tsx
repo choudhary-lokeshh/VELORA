@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ConversationThread } from '../src/product/conversations';
@@ -335,6 +341,32 @@ describe('admission says which step somebody is on', () => {
  * separated only by which edge they sat against, and a message that failed
  * with the retry sitting quietly underneath it.
  */
+describe('a control says what kind of choice it is', () => {
+  it('is a radio group when the choice lives inside a form', () => {
+    // The same strip picks which half of Discover is being read — a tab, and
+    // announced as one — and how often somebody pays on a join form, which is
+    // not. Telling a reader the page is about to change when it is not is a
+    // description of something that does not happen.
+    const view = render(
+      <Segmented
+        as="radiogroup"
+        label="How often you pay"
+        onChange={() => undefined}
+        options={[
+          { label: 'Monthly', value: 'month' },
+          { label: 'Yearly', value: 'year' },
+        ]}
+        value="month"
+      />,
+    );
+
+    expect(view.container.querySelector('[role="radiogroup"]')).not.toBeNull();
+    const chosen = view.container.querySelector('[role="radio"]');
+    expect(chosen?.getAttribute('aria-checked')).toBe('true');
+    expect(view.container.querySelector('[role="tab"]')).toBeNull();
+  });
+});
+
 describe('what somebody who cannot see the screen is told', () => {
   it('keeps the toast region in the document before there is a toast', async () => {
     const double = createApiDouble(admittedState());
@@ -392,8 +424,19 @@ describe('what somebody who cannot see the screen is told', () => {
     // A log region, because a message arrives rather than being asked for.
     expect(thread.getAttribute('role')).toBe('log');
     expect(thread.getAttribute('aria-live')).toBe('polite');
+
     // And each bubble carries its author in words. Alignment and colour were
-    // the only things that did, and neither is read out.
-    expect(thread.textContent).toContain('They said: ');
+    // the only things that did, and neither is read out. Sent rather than
+    // seeded, so the assertion does not depend on what a fixture happens to
+    // have put in the thread.
+    fireEvent.change(screen.getByTestId('message-body'), {
+      target: { value: 'who said it' },
+    });
+    fireEvent.click(screen.getByTestId('message-send'));
+    await waitFor(() => {
+      expect(screen.getByTestId('messages').textContent).toContain(
+        'You said: ',
+      );
+    });
   });
 });

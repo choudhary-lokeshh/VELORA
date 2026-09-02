@@ -762,16 +762,30 @@ export interface SegmentedOption<T extends string> {
  * nobody knows is there.
  */
 export function Segmented<T extends string>({
+  as = 'tabs',
   label,
   onChange,
   options,
   value,
 }: {
+  /**
+   * What this group of options actually is.
+   *
+   * Tabs by default, which is what it is on Discover, Introductions and the
+   * Live door: choosing one changes which part of the page is shown. It is
+   * not what it is on a join form, where the same control picks how often
+   * somebody pays — that is a choice inside a form, and calling it a tab
+   * tells a reader the page is about to change when it is not. The keyboard
+   * behaviour is identical either way: both patterns are one tab stop with
+   * arrow keys that move and select.
+   */
+  readonly as?: 'tabs' | 'radiogroup';
   readonly label: string;
   readonly onChange: (next: T) => void;
   readonly options: readonly SegmentedOption<T>[];
   readonly value: T;
 }) {
+  const tabs = as === 'tabs';
   const strip = useRef<HTMLDivElement>(null);
 
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -800,9 +814,9 @@ export function Segmented<T extends string>({
     // Focus follows selection, which is the pattern for a tablist whose panels
     // are already on the page: moving the focus without moving the selection
     // would leave somebody reading one section while another is highlighted.
-    const tabs =
+    const items =
       strip.current?.querySelectorAll<HTMLButtonElement>('.v-segmented__item');
-    tabs?.item(next).focus();
+    items?.item(next).focus();
   };
 
   return (
@@ -811,20 +825,22 @@ export function Segmented<T extends string>({
       className="v-segmented"
       onKeyDown={move}
       ref={strip}
-      role="tablist"
+      role={tabs ? 'tablist' : 'radiogroup'}
     >
       {options.map((option) => {
         const selected = option.value === value;
         return (
           <button
-            aria-selected={selected}
+            {...(tabs
+              ? { 'aria-selected': selected }
+              : { 'aria-checked': selected })}
             className="v-segmented__item"
             data-testid={`segment-${option.value}`}
             key={option.value}
             onClick={() => {
               onChange(option.value);
             }}
-            role="tab"
+            role={tabs ? 'tab' : 'radio'}
             // One stop for the whole group. Everything inside it is reached
             // with the arrow keys the role already promised.
             tabIndex={selected ? 0 : -1}
