@@ -1,3 +1,8 @@
+import {
+  consumerWebOrigin,
+  creatorStudioOrigin,
+  platformAdminOrigin,
+} from './auth-environment.js';
 import { expect, test } from './fixtures.js';
 
 /**
@@ -16,7 +21,7 @@ test('Platform Admin carries the operator product and nothing else', async ({
   // The console is behind a door nobody can currently open, so the root sends
   // an operator to the page that explains it. `admin.spec.ts` asserts the
   // refusal itself; this is about which surface this is.
-  await page.goto('http://127.0.0.1:3002');
+  await page.goto(platformAdminOrigin);
   await page.waitForURL(/\/access/u, { timeout: 30_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Platform Admin',
@@ -38,7 +43,7 @@ test('Creator Studio carries the creator product and nothing consumer', async ({
 }) => {
   // The workspace is behind a door: the root sends somebody with no session to
   // the only page they can act on.
-  await page.goto('http://127.0.0.1:3001');
+  await page.goto(creatorStudioOrigin);
   await page.waitForURL(/\/sign-in/u, { timeout: 30_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Creator Studio',
@@ -63,7 +68,7 @@ test('Creator Studio carries the creator product and nothing consumer', async ({
 test('Consumer Web carries the consumer product and nothing privileged', async ({
   page,
 }) => {
-  await page.goto('http://127.0.0.1:3000');
+  await page.goto(consumerWebOrigin);
   // The public entry, which is what somebody with no session reaches.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Meet people who said yes too.',
@@ -90,7 +95,7 @@ test('Consumer Web carries the consumer product and nothing privileged', async (
 test('an unknown public creator address says only that there is nothing there', async ({
   page,
 }) => {
-  await page.goto('http://127.0.0.1:3000/c/nobody-here');
+  await page.goto(`${consumerWebOrigin}/c/nobody-here`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'This page is not available',
   );

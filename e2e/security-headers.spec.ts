@@ -1,3 +1,8 @@
+import {
+  consumerWebOrigin,
+  creatorStudioOrigin,
+  platformAdminOrigin,
+} from './auth-environment.js';
 import { expect, test } from './fixtures.js';
 
 // The application layer owns these headers until a deployment edge exists.
@@ -7,17 +12,17 @@ const surfaces = [
   {
     name: 'Consumer Web',
     referrerPolicy: 'same-origin',
-    url: 'http://127.0.0.1:3000',
+    url: consumerWebOrigin,
   },
   {
     name: 'Creator Studio',
     referrerPolicy: 'same-origin',
-    url: 'http://127.0.0.1:3001',
+    url: creatorStudioOrigin,
   },
   {
     name: 'Platform Admin',
     referrerPolicy: 'no-referrer',
-    url: 'http://127.0.0.1:3002',
+    url: platformAdminOrigin,
   },
 ] as const;
 
@@ -77,8 +82,8 @@ test('Platform Admin is never weaker than Consumer Web', async ({
   request,
 }) => {
   const [consumer, admin] = await Promise.all([
-    request.get('http://127.0.0.1:3000'),
-    request.get('http://127.0.0.1:3002'),
+    request.get(consumerWebOrigin),
+    request.get(platformAdminOrigin),
   ]);
 
   expect(admin.headers()['content-security-policy']).toBe(

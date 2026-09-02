@@ -36,9 +36,87 @@ const mediaDirectory = resolve(repositoryRoot, 'test-results/media');
 
 export const authApiPort = 4100;
 export const authApiBaseUrl = `http://127.0.0.1:${String(authApiPort)}`;
-export const consumerWebOrigin = 'http://127.0.0.1:3000';
-export const creatorStudioOrigin = 'http://127.0.0.1:3001';
-export const platformAdminOrigin = 'http://127.0.0.1:3002';
+
+/**
+ * Which ports the three surfaces listen on for a browser run.
+ *
+ * Overridable, and defaulted to the ports everything else in the repository
+ * uses, so CI and an ordinary local run are unchanged. What the override buys
+ * is a run on a machine where something else already holds 3000: Playwright
+ * reuses whatever is listening outside CI without asking what it is, and a
+ * developer's unrelated server adopted that way produces a hundred "element not
+ * found" failures that read as a broken product. Moving VELORA's own run aside
+ * is the answer that touches nobody else's process.
+ */
+function surfacePort(variable: string, fallback: number): number {
+  const declared = process.env[variable];
+  if (declared === undefined || declared.trim() === '') return fallback;
+  const port = Number(declared);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${variable} is not a port: ${declared}`);
+  }
+  return port;
+}
+
+export const consumerWebPort = surfacePort('VELORA_E2E_WEB_PORT', 3000);
+export const creatorStudioPort = surfacePort('VELORA_E2E_STUDIO_PORT', 3001);
+export const platformAdminPort = surfacePort('VELORA_E2E_ADMIN_PORT', 3002);
+
+export const consumerWebOrigin = `http://127.0.0.1:${String(consumerWebPort)}`;
+export const creatorStudioOrigin = `http://127.0.0.1:${String(creatorStudioPort)}`;
+export const platformAdminOrigin = `http://127.0.0.1:${String(platformAdminPort)}`;
+
+/** Every surface this suite drives, in the order the configuration starts them. */
+export const surfaces: readonly {
+  readonly name: string;
+  readonly origin: string;
+  readonly port: number;
+}[] = [
+  { name: 'Consumer Web', origin: consumerWebOrigin, port: consumerWebPort },
+  {
+    name: 'Creator Studio',
+    origin: creatorStudioOrigin,
+    port: creatorStudioPort,
+  },
+  {
+    name: 'Platform Admin',
+    origin: platformAdminOrigin,
+    port: platformAdminPort,
+  },
+];
+
+/**
+ * Refuses a run against servers VELORA does not own.
+ *
+ * Playwright adopts anything already listening on a `webServer` URL outside CI
+ * and never asks what answered. This runs before those servers start, so
+ * anything answering now belongs to somebody else — and the honest outcome is
+ * one sentence naming the port rather than a suite of assertions failing
+ * against a stranger's application. A VELORA server left running from an
+ * earlier run is welcome, which is what the marker check distinguishes.
+ */
+export async function refuseForeignSurfaces(): Promise<void> {
+  for (const surface of surfaces) {
+    let answered: string | undefined;
+    try {
+      const response = await fetch(surface.origin, {
+        signal: AbortSignal.timeout(2_000),
+      });
+      answered = await response.text();
+    } catch {
+      // Nothing is listening, which is the ordinary case: Playwright starts
+      // this surface itself a moment from now.
+      continue;
+    }
+    if (answered.includes('VELORA')) continue;
+    throw new Error(
+      `port ${String(surface.port)} is already served by something that is not ${surface.name}. ` +
+        'A browser run against a server VELORA does not own is not evidence. ' +
+        'Leave that process alone and give this run its own ports with ' +
+        'VELORA_E2E_WEB_PORT, VELORA_E2E_STUDIO_PORT, and VELORA_E2E_ADMIN_PORT.',
+    );
+  }
+}
 
 /**
  * HMAC material for the development media adapter's delivery grants.

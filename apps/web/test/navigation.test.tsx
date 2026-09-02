@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   addressOf,
@@ -17,7 +17,7 @@ import {
   safeReturnPath,
   signInHref,
 } from '../src/app/navigation';
-import { AppShell } from '../src/app/shell';
+import { AppShell, forgetAddresses } from '../src/app/shell';
 import { admittedState, createApiDouble } from './support/api-double';
 import { navigateTo, navigations } from './support/navigation';
 import { renderProduct } from './support/render';
@@ -296,6 +296,7 @@ describe('the destination sign-in comes back to', () => {
 });
 
 describe('the shell', () => {
+  beforeEach(forgetAddresses);
   const shellAt = (pathname: string, search = '') =>
     renderProduct(
       <AppShell title="Test">

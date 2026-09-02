@@ -2,6 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 import {
   authApiBaseUrl,
+  consumerWebPort,
+  creatorStudioPort,
+  platformAdminPort,
   surfaceRealtimeEndpoint,
 } from './e2e/auth-environment.js';
 
@@ -75,24 +78,29 @@ export default defineConfig({
   use: {
     trace: 'retain-on-failure',
   },
+  // The ports come from `auth-environment`, which defaults them to the ones
+  // every other part of the repository uses and lets a run move aside when a
+  // machine already has something on 3000. `PORT` is passed rather than baked
+  // into each surface's own script, so the server and the address the suite
+  // visits cannot disagree.
   webServer: [
     {
       command: 'pnpm --filter @velora/web start',
-      env: surfaceEnvironment,
+      env: { ...surfaceEnvironment, PORT: String(consumerWebPort) },
       reuseExistingServer: !process.env.CI,
-      url: 'http://127.0.0.1:3000',
+      url: `http://127.0.0.1:${String(consumerWebPort)}`,
     },
     {
       command: 'pnpm --filter @velora/creator-studio start',
-      env: surfaceEnvironment,
+      env: { ...surfaceEnvironment, PORT: String(creatorStudioPort) },
       reuseExistingServer: !process.env.CI,
-      url: 'http://127.0.0.1:3001',
+      url: `http://127.0.0.1:${String(creatorStudioPort)}`,
     },
     {
       command: 'pnpm --filter @velora/admin start',
-      env: surfaceEnvironment,
+      env: { ...surfaceEnvironment, PORT: String(platformAdminPort) },
       reuseExistingServer: !process.env.CI,
-      url: 'http://127.0.0.1:3002',
+      url: `http://127.0.0.1:${String(platformAdminPort)}`,
     },
   ],
 });

@@ -408,12 +408,19 @@
 
 .v-person__actions {
   display: flex;
+  /*
+   * Allowed to wrap: at twice the text on the narrowest phone, Pass,
+   * Interested, and the safety control are wider than the screen, and a row
+   * that cannot wrap pushed the whole page sideways.
+   */
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: auto;
 }
 
 .v-person__actions > .v-btn {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @media (width >= 768px) {

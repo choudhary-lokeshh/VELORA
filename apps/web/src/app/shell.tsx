@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
   type MouseEvent,
   type ReactNode,
@@ -50,6 +49,30 @@ const signalLabels: Readonly<
   notifications: 'unread notices',
 };
 
+/*
+ * Where this session was one page ago, at module scope on purpose.
+ *
+ * Each page mounts its own shell, so anything a component instance held is
+ * gone by the time the next page's Back needs it — refs here reset on every
+ * navigation, which quietly turns every pop back into a push. The module
+ * survives client-side navigation and resets with a real page load, which is
+ * exactly the lifetime browser history has.
+ */
+let previousAddress: string | undefined;
+let currentAddress: string | undefined;
+
+function rememberAddress(address: string): void {
+  if (currentAddress === address) return;
+  previousAddress = currentAddress;
+  currentAddress = address;
+}
+
+/** Forgets the walk. For tests, which begin a fresh session in one process. */
+export function forgetAddresses(): void {
+  previousAddress = undefined;
+  currentAddress = undefined;
+}
+
 export function AppShell({
   children,
   immersive = false,
@@ -91,12 +114,8 @@ export function AppShell({
    * modifier-click — where there is no history to return through.
    */
   const address = addressOf(pathname, parameters);
-  const previousAddress = useRef<string | undefined>(undefined);
-  const currentAddress = useRef(address);
   useEffect(() => {
-    if (currentAddress.current === address) return;
-    previousAddress.current = currentAddress.current;
-    currentAddress.current = address;
+    rememberAddress(address);
   }, [address]);
   const backByHistory = useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
@@ -108,7 +127,7 @@ export function AppShell({
         return;
       }
       if (event.button !== 0) return;
-      const previous = previousAddress.current;
+      const previous = previousAddress;
       if (previous === undefined) return;
       // Same page counts even when the query differs: the query is state the
       // page kept — which section, which filter — and returning through

@@ -109,8 +109,21 @@ async function atEveryone(page: Page): Promise<void> {
 
 async function atTheDoor(page: Page): Promise<void> {
   const door = page.getByTestId('live-door');
+  const end = page.getByTestId('live-end');
+  /*
+   * Waits for the surface to have an answer before reading it.
+   *
+   * Live asks the server where this person is before offering anything: an
+   * environment with Live switched off, an account that is not eligible, and
+   * an encounter already running are all answers that arrive rather than
+   * being known at first paint, and offering Start before one of them lands
+   * would be the product guessing. So this waits for whichever of the two
+   * ends of that read appears — a door, or an encounter to leave — instead of
+   * asking once and concluding from a screen that is still asking.
+   */
+  await expect(door.or(end).first()).toBeVisible({ timeout: 30_000 });
   if (await door.isVisible()) return;
-  await page.getByTestId('live-end').click();
+  await end.click();
   await expect(door).toBeVisible({ timeout: 30_000 });
 }
 
