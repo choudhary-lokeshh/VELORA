@@ -23,6 +23,88 @@ import { Button, type ButtonTone } from './primitives';
  * is the only thing you can interact with right now" do not change with width.
  */
 
+/**
+ * One history entry for however many overlays are open, held here.
+ *
+ * A dialog that pushed and popped its own entry looked right until one dialog
+ * replaced another: the safety menu closes and the block confirmation opens in
+ * the same commit, React destroys before it creates, and the browser delivers
+ * the menu's pop *after* the confirmation has pushed — so the pop landed on
+ * the menu's entry, the confirmation saw a pop, and it closed itself the
+ * instant it opened. A browser found that; jsdom's synchronous history could
+ * not.
+ *
+ * So the entry belongs to "an overlay is open" rather than to any one dialog.
+ * The first to open pushes it, the last to close consumes it, and a handover
+ * in between is invisible to history — which is also what somebody pressing
+ * Back means: close what is on top of the page, once.
+ */
+let openOverlays = 0;
+let overlayMark: number | undefined;
+let overlayMarks = 0;
+const overlayClosers: (() => void)[] = [];
+let watchingPop = false;
+
+function overlayMarkOf(state: unknown): number | undefined {
+  if (typeof state !== 'object' || state === null) return undefined;
+  const mark = (state as { veloraOverlay?: unknown }).veloraOverlay;
+  return typeof mark === 'number' ? mark : undefined;
+}
+
+function onOverlayPop(): void {
+  if (overlayMark === undefined) return;
+  if (overlayMarkOf(window.history.state) === overlayMark) return;
+  // The entry is gone, so nothing may consume it afterwards.
+  overlayMark = undefined;
+  overlayClosers.at(-1)?.();
+}
+
+/** Registers an open overlay, pushing the group's entry if it is the first. */
+function enterOverlay(close: () => void): void {
+  overlayClosers.push(close);
+  openOverlays += 1;
+  if (openOverlays > 1) return;
+  overlayMarks += 1;
+  overlayMark = overlayMarks;
+  window.history.pushState({ veloraOverlay: overlayMark }, '');
+  if (watchingPop) return;
+  window.addEventListener('popstate', onOverlayPop);
+  watchingPop = true;
+}
+
+/**
+ * Unregisters one, consuming the group's entry once nothing is open.
+ *
+ * Deferred by a microtask on purpose: that is the window in which a dialog
+ * replacing another has already mounted, and a handover must not spend the
+ * entry that the incoming dialog is about to rely on.
+ */
+function leaveOverlay(close: () => void): void {
+  const index = overlayClosers.lastIndexOf(close);
+  if (index >= 0) overlayClosers.splice(index, 1);
+  openOverlays -= 1;
+  queueMicrotask(() => {
+    if (openOverlays > 0) return;
+    if (watchingPop) {
+      window.removeEventListener('popstate', onOverlayPop);
+      watchingPop = false;
+    }
+    // Only while there is an entry and it is still the current one: a dialog
+    // whose action navigated somewhere has already replaced it, and a Back
+    // that already popped it has cleared the mark — spending another one
+    // there took the page with it.
+    if (
+      overlayMark !== undefined &&
+      overlayMarkOf(window.history.state) === overlayMark
+    ) {
+      overlayMark = undefined;
+      window.history.back();
+      return;
+    }
+    overlayMark = undefined;
+  });
+}
+
 const focusableSelector = [
   'a[href]',
   'button:not([disabled])',
@@ -58,35 +140,20 @@ export function Dialog({
   /**
    * The system Back button, honoured while this is open.
    *
-   * On a phone the hardware Back is how overlays are dismissed, and a dialog
+   * On a phone the hardware Back is how an overlay is dismissed, and a dialog
    * that ignored it let Back navigate the page out from underneath an open
-   * sheet. Opening pushes one history entry whose only meaning is "an overlay
-   * is open"; popping it — hardware Back, browser Back — closes the dialog and
-   * goes nowhere. Closing any other way consumes the entry, so Back afterwards
-   * does not need pressing twice.
-   *
-   * The consume is guarded on the entry still being the current one: a dialog
-   * whose action navigated somewhere has already replaced it, and popping then
-   * would undo the navigation somebody just asked for.
+   * sheet. The entry it pops belongs to the group rather than to this dialog,
+   * for the reason recorded above.
    */
   const latestClose = useRef(close);
   latestClose.current = close;
   useEffect(() => {
-    window.history.pushState({ veloraOverlay: true }, '');
-    let popped = false;
-    const onPop = () => {
-      popped = true;
+    const dismiss = () => {
       latestClose.current();
     };
-    window.addEventListener('popstate', onPop);
+    enterOverlay(dismiss);
     return () => {
-      window.removeEventListener('popstate', onPop);
-      const state: unknown = window.history.state;
-      const marked =
-        typeof state === 'object' &&
-        state !== null &&
-        (state as { veloraOverlay?: unknown }).veloraOverlay === true;
-      if (!popped && marked) window.history.back();
+      leaveOverlay(dismiss);
     };
   }, []);
 

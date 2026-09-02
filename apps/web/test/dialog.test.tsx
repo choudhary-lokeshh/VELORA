@@ -3,12 +3,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Dialog } from '../src/design/dialog';
 
+/**
+ * Whether the current history entry belongs to an open overlay.
+ *
+ * The mark is an identity rather than a flag, because one dialog routinely
+ * replaces another and each has to recognise its own entry.
+ */
 const marked = () => {
   const state: unknown = window.history.state;
+  if (typeof state !== 'object' || state === null) return false;
   return (
-    typeof state === 'object' &&
-    state !== null &&
-    (state as { veloraOverlay?: unknown }).veloraOverlay === true
+    typeof (state as { veloraOverlay?: unknown }).veloraOverlay === 'number'
   );
 };
 
@@ -55,6 +60,38 @@ describe('a dialog and the Back button', () => {
 
     await waitFor(() => {
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps one entry when one dialog replaces another', async () => {
+    // The safety menu closes and the block confirmation opens in the same
+    // commit. React destroys before it creates, so the menu's consume is
+    // queued first and the browser delivers it after the confirmation has
+    // opened — which used to close the confirmation the instant it appeared.
+    const view = render(
+      <Dialog onClose={() => undefined} title="A menu">
+        <p>menu</p>
+      </Dialog>,
+    );
+    const onClose = vi.fn();
+    view.rerender(
+      <Dialog onClose={onClose} title="A confirmation">
+        <p>confirm</p>
+      </Dialog>,
+    );
+
+    await waitFor(() => {
+      expect(marked()).toBe(true);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // And the group still holds exactly one entry: one Back closes it.
+    window.history.back();
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(marked()).toBe(false);
     });
   });
 

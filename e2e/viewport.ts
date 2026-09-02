@@ -98,14 +98,28 @@ export async function overflowingElements(
      * ancestor, and that excuse has a blind spot: every `overflow-y: auto`
      * pane computes `overflow-x` to `auto` as well, so a pane whose content
      * grew sideways reports clean while hiding a sideways scrollbar of its
-     * own. The one intentional sideways scroller wears `v-segmented` and is
-     * allowed; everything else that actually scrolls sideways is a defect
-     * this suite exists to see.
+     * own. Everything that actually scrolls sideways inside itself is a defect
+     * this suite exists to see, except the two containers that do it on
+     * purpose.
      */
     for (const node of Array.from(document.querySelectorAll('body *'))) {
       const style = getComputedStyle(node);
       if (style.overflowX !== 'auto' && style.overflowX !== 'scroll') continue;
-      if (node.classList.contains('v-segmented')) continue;
+      /*
+       * The two containers that scroll sideways on purpose, by name.
+       *
+       * A consumer section switch scrolls its last option into reach rather
+       * than hiding it, and Platform Admin's decision tables genuinely have
+       * more columns than a tablet has width — dropping one would be dropping
+       * a fact from an audit trail. Everything else that scrolls sideways
+       * inside itself is a layout that did not fit.
+       */
+      if (
+        node.classList.contains('v-segmented') ||
+        node.classList.contains('a-scroller')
+      ) {
+        continue;
+      }
       if (node.scrollWidth <= node.clientWidth + 0.5) continue;
       const identifier =
         node.getAttribute('data-testid') ??

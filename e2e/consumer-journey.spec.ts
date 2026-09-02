@@ -281,7 +281,9 @@ test.describe('Consumer Web product journey', () => {
       .first();
     await expect(mutual).toBeVisible();
     await mutual.getByRole('button', { name: 'Message' }).click();
-    await page.waitForURL(/\/messages\/[0-9a-f-]+$/u);
+    // The address carries where the conversation was opened from, so Back
+    // returns to the introduction rather than to the Inbox list.
+    await page.waitForURL(/\/messages\/[0-9a-f-]+(\?|$)/u);
     await expect(page.getByTestId('conversation-view')).toBeVisible();
   });
 
