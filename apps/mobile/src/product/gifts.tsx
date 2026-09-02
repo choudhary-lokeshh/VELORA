@@ -165,7 +165,12 @@ export function SentGiftsScreen({
                       <View style={styles.body}>
                         <Text weight="medium">{row.gift.name}</Text>
                         <Pressable
+                          // A caption is about eighteen points tall; the hit
+                          // area is padded out to the target this product
+                          // declares rather than to the height of the text.
+                          accessibilityLabel={`Open ${row.creator.displayName}`}
                           accessibilityRole="link"
+                          hitSlop={space[3]}
                           onPress={() => {
                             onOpenCreator(row.creator.handle);
                           }}

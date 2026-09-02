@@ -400,6 +400,12 @@ export function Field({
             <View style={styles.inlineTight}>
               <Icon color={color.statusCritical} name="alert" size="sm" />
               <Text
+                /*
+                  Announced, not only hinted. The hint is read when focus
+                  reaches the field; a validation error that appears after a
+                  failed submit, with focus on the button, reached nobody.
+                */
+                accessibilityLiveRegion="assertive"
                 testID={testID === undefined ? undefined : `${testID}-error`}
                 tone="critical"
                 variant="caption"
@@ -997,7 +1003,19 @@ export function Skeleton({
 
 export function RowSkeleton({ rows = 3 }: { readonly rows?: number }) {
   return (
-    <View accessibilityLabel="Loading" style={styles.stack3} testID="skeleton">
+    /*
+      Accessible, or it is nothing. A label on a `View` that is not itself
+      accessible is not surfaced, and the bars carry no text — so the whole
+      loading state was silence, and so was the moment it ended.
+    */
+    <View
+      accessible
+      accessibilityLabel="Loading"
+      accessibilityLiveRegion="polite"
+      accessibilityRole="progressbar"
+      style={styles.stack3}
+      testID="skeleton"
+    >
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.skeletonRow}>
           <View style={styles.skeletonAvatar} />
@@ -1019,18 +1037,27 @@ export interface SegmentedOption<T extends string> {
 }
 
 export function Segmented<T extends string>({
+  label,
   onChange,
   options,
   testID,
   value,
 }: {
+  /** What is being switched. Required, as it is on the web twin: a tab list
+   * with no name is announced as a tab list with no subject. */
+  readonly label: string;
   readonly onChange: (next: T) => void;
   readonly options: readonly SegmentedOption<T>[];
   readonly testID: string;
   readonly value: T;
 }) {
   return (
-    <View accessibilityRole="tablist" style={styles.segmented} testID={testID}>
+    <View
+      accessibilityLabel={label}
+      accessibilityRole="tablist"
+      style={styles.segmented}
+      testID={testID}
+    >
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -1315,7 +1342,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.xs,
     flex: 1,
     justifyContent: 'center',
-    minHeight: layout.controlHeightSmall,
+    // The declared minimum rather than the small-control height: a tab is a
+    // thing a thumb hits, and 40 is under the floor this product sets.
+    minHeight: layout.minimumTouchTarget,
     paddingHorizontal: space[2],
   },
   segmentActive: { backgroundColor: color.surface3 },

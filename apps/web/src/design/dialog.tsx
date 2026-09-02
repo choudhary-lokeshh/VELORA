@@ -162,7 +162,12 @@ export function Dialog({
       */}
       <div className="v-scrim" onClick={close} />
       <div
-        aria-labelledby={headingId}
+        // Only when something actually carries that id. A dialog with neither
+        // a title nor a caller's heading would otherwise point at nothing,
+        // which is a dialog with no name at all.
+        {...(title === undefined && labelledBy === undefined
+          ? {}
+          : { 'aria-labelledby': headingId })}
         aria-modal="true"
         className="v-dialog"
         data-testid={testId}

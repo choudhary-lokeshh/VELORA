@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { ConversationThread } from '../src/product/conversations';
 import { Introductions } from '../src/product/introductions';
 import { SentGifts } from '../src/product/gifts';
 import { ClubDestination } from '../src/product/club';
@@ -323,5 +324,76 @@ describe('admission says which step somebody is on', () => {
     expect(screen.getByTestId('welcome-step-count').textContent).toBe(
       'Step 1 of 4',
     );
+  });
+});
+
+/**
+ * The things a screen reader is told, which are not the things a screen shows.
+ *
+ * Each of these was silent: a region announced by nothing because it was
+ * inserted at the same moment as its content, a thread whose two voices were
+ * separated only by which edge they sat against, and a message that failed
+ * with the retry sitting quietly underneath it.
+ */
+describe('what somebody who cannot see the screen is told', () => {
+  it('keeps the toast region in the document before there is a toast', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<Introductions />, double, { pathname: '/introductions' });
+
+    // A reader announces changes *inside* a region it is already watching.
+    // Inserting the region together with its first toast is a change to the
+    // document instead, and it is dropped — which made every confirmation and
+    // every failure in the product unannounced.
+    const [region] = await screen.findAllByTestId('toaster');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent).toBe('');
+  });
+
+  it('says who said each message rather than which side it is on', async () => {
+    const conversationId = '88888888-8888-4888-8888-888888888888';
+    const double = createApiDouble({
+      ...admittedState(),
+      conversations: [
+        {
+          counterpart: { displayName: 'Robin', id: otherPersonId, media: [] },
+          createdAt: '2026-08-14T12:00:00.000Z',
+          id: conversationId,
+          lastActivityAt: '2026-08-14T12:00:00.000Z',
+          lastMessageSequence: 0,
+          lastReadSequence: 0,
+          relationship: {
+            introductionId: '55555555-5555-4555-8555-555555555555',
+            kind: 'mutual_introduction',
+          },
+          state: 'active',
+        },
+      ],
+      messages: [
+        {
+          body: 'Hello there',
+          clientMessageId: 'seed-1',
+          conversationId,
+          createdAt: '2026-08-14T12:00:00.000Z',
+          id: '99999999-9999-4999-8999-999999999901',
+          senderId: otherPersonId,
+          sequence: 1,
+        },
+      ],
+    });
+    renderProduct(
+      <ConversationThread conversationId={conversationId} />,
+      double,
+      {
+        pathname: `/messages/${conversationId}`,
+      },
+    );
+
+    const thread = await screen.findByTestId('messages');
+    // A log region, because a message arrives rather than being asked for.
+    expect(thread.getAttribute('role')).toBe('log');
+    expect(thread.getAttribute('aria-live')).toBe('polite');
+    // And each bubble carries its author in words. Alignment and colour were
+    // the only things that did, and neither is read out.
+    expect(thread.textContent).toContain('They said: ');
   });
 });

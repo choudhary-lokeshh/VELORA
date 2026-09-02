@@ -229,7 +229,13 @@ export function Field({
         </div>
       )}
       {error === undefined ? null : (
-        <p className="v-field__error" id={errorId}>
+        /*
+          Announced as well as described. `aria-describedby` reads the error
+          when focus reaches the field; a validation error that appears after
+          a failed submit, while focus is still on the button, reaches nobody
+          without this.
+        */
+        <p className="v-field__error" id={errorId} role="alert">
           <Icon name="alert" size="sm" />
           {error}
         </p>

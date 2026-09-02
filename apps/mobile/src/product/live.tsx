@@ -60,6 +60,7 @@ import {
   text as textScale,
 } from '../design/tokens';
 import { useKeyboardOverlap } from '../frame/keyboard';
+import { signalLabel } from '../frame/navigation';
 import { useApi } from '../frame/providers';
 import { mintUuid } from '../device/installation';
 import { useLiveMedia, type LiveMediaState } from './live-media';
@@ -527,6 +528,7 @@ function LiveDoor({
       <DoorGlow />
 
       <Segmented<Mode>
+        label="How to meet somebody"
         onChange={onModeChange}
         options={[
           { label: 'Instant', value: 'instant' },
@@ -2119,8 +2121,18 @@ function CameraScrim() {
 }
 
 function MicBadge({ media }: { readonly media: LiveMediaState }) {
+  const muted = !(media.microphoneOn && media.microphoneAvailable);
   return (
-    <View style={styles.localBadge} testID="live-mic-state">
+    // In words as well as in colour. The camera's own state is written out
+    // beside the picture; the microphone's was a red mark and nothing else.
+    <View
+      accessible
+      accessibilityLabel={
+        muted ? 'Your microphone is off' : 'Your microphone is on'
+      }
+      style={styles.localBadge}
+      testID="live-mic-state"
+    >
       <Icon
         // Muted reads as muted whatever the transport says. What the badge
         // never does is claim the microphone is *carrying* anything: nothing
@@ -2454,7 +2466,19 @@ function Dock({
               </View>
               <View style={styles.control}>
                 <IconButton
-                  label={chatOpen ? 'Hide the chat' : 'Show the chat'}
+                  /*
+                    The count rides in the label. The dot beside this button
+                    is an unlabelled eight-pixel mark — colour alone, and
+                    absent from the accessibility tree — so a reader had no
+                    way to know anything had been said.
+                  */
+                  label={
+                    unread > 0 && !chatOpen
+                      ? `Show the chat, ${signalLabel(unread)} new`
+                      : chatOpen
+                        ? 'Hide the chat'
+                        : 'Show the chat'
+                  }
                   name="message"
                   onPress={onToggleChat}
                   testID="live-toggle-chat"

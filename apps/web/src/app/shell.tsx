@@ -329,7 +329,16 @@ export function AppShell({
  */
 export function Toaster() {
   const { dismiss, toasts } = useToast();
-  if (toasts.length === 0) return null;
+  /*
+   * The region exists before anything is in it, always.
+   *
+   * A live region is announced by what *changes inside it*, and a reader only
+   * watches regions that were already in the document. Inserting the region
+   * and its first toast together — which is what returning null until there
+   * was a toast did — is a mutation of the document rather than of the
+   * region, and it is dropped: every confirmation and every failure in the
+   * product went unannounced. Empty, it renders nothing and takes no space.
+   */
   return (
     <div aria-live="polite" className="v-toaster" data-testid="toaster">
       {toasts.map((toast) => (

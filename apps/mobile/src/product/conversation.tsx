@@ -409,6 +409,9 @@ function Thread({
           />
         ) : (
           <FlatList
+            // A log: messages arrive rather than being asked for, and a
+            // reader should hear one land instead of re-reading to find it.
+            accessibilityLiveRegion="polite"
             contentContainerStyle={styles.thread}
             data={ordered}
             inverted
@@ -604,6 +607,13 @@ function Bubble({
       testID={`message-${String(message.sequence)}`}
     >
       <View
+        /*
+          Whose message this is, in words. Side and colour are the only things
+          that carried it, and neither reaches a reader: the thread was spoken
+          as an undifferentiated run of sentences.
+        */
+        accessible
+        accessibilityLabel={`${own ? 'You' : 'They'} said: ${message.body}`}
         style={[styles.bubble, own ? styles.bubbleOwn : styles.bubbleTheirs]}
       >
         <Text tone={own ? 'onAccent' : 'primary'} variant="small">

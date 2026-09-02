@@ -229,6 +229,7 @@ export function DiscoverScreen({
     >
       <View style={styles.sections}>
         <Segmented
+          label="What to browse"
           onChange={onSection}
           options={[
             { label: 'People', value: 'people' },
@@ -459,7 +460,10 @@ function CreatorsPane({
       }
       renderItem={({ item }) => (
         <Pressable
-          accessibilityRole="button"
+          accessibilityLabel={`Open ${item.displayName}`}
+          // A link, the way the same act is announced from Sent gifts: a
+          // reader navigating by links should find every creator page.
+          accessibilityRole="link"
           onPress={() => {
             onOpenCreator(item.handle);
           }}
@@ -523,7 +527,22 @@ function CandidateCard({
             because it acts on the person rather than opening them.
           */}
           <Pressable
-            accessibilityLabel={`Open ${candidate.displayName}`}
+            /*
+              The whole card, in words. An explicit label replaces the text
+              inside it, so the region and the shared languages — the two
+              facts a sighted person decides Pass or Interested on — were
+              spoken to nobody, and the only way to hear them was to open the
+              person.
+            */
+            accessibilityLabel={[
+              `Open ${candidate.displayName}`,
+              region,
+              candidate.sharedLanguages.length === 0
+                ? undefined
+                : `both speak ${languageNames(candidate.sharedLanguages)}`,
+            ]
+              .filter((part) => part !== undefined)
+              .join(', ')}
             accessibilityRole="button"
             onPress={onOpen}
             style={({ pressed }) => [

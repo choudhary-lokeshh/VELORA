@@ -125,7 +125,10 @@ export function CreatorScreen({
                 <View style={styles.links}>
                   {shown.links.map((link) => (
                     <Pressable
+                      // A chip is padded for reading rather than for a thumb.
+                      accessibilityLabel={`Open ${link.label ?? link.url}`}
                       accessibilityRole="link"
+                      hitSlop={space[3]}
                       key={link.url}
                       onPress={() => {
                         void Linking.openURL(link.url);

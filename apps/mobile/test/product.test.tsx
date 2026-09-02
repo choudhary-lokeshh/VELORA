@@ -1720,3 +1720,53 @@ describe('coins', () => {
     expect(charged.view.queryByText(/returned in full/u)).toBeNull();
   });
 });
+
+/**
+ * What a phone says to somebody who cannot see it.
+ *
+ * Each of these was silent or misleading: a card whose own accessible label
+ * swallowed the two facts a decision rests on, a thread whose voices were
+ * separated only by which edge they sat against, and a loading state that was
+ * skipped entirely because a label on a plain view is not surfaced.
+ */
+describe('what a reader is told on a phone', () => {
+  it('keeps the region and the shared languages in a card’s own label', async () => {
+    const { view } = await mount(
+      <DiscoverScreen
+        onOpenCreator={nothing}
+        onOpenPerson={nothing}
+        onOpenYou={nothing}
+        onSection={nothing}
+        section="people"
+      />,
+      withCandidates(),
+    );
+
+    const card = await view.findByTestId(`candidate-open-${otherPersonId}`);
+    const label = String(card.props.accessibilityLabel);
+    // An explicit label replaces the text inside it, so these two had to be
+    // folded in or they reached nobody.
+    expect(label).toContain('Open');
+    expect(label.toLowerCase()).toContain('both speak');
+  });
+
+  it('says who said each message rather than which side it is on', async () => {
+    const { view } = await mount(
+      <ConversationScreen conversationId={conversationId} onBack={nothing} />,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('message-input')).toBeTruthy();
+    });
+    await fireEvent.changeText(
+      view.getByTestId('message-input'),
+      'who said it',
+    );
+    await fireEvent.press(view.getByTestId('message-send'));
+
+    // Found by the label itself: side and colour carried this and neither is
+    // spoken, so the thread was read as an undifferentiated run of sentences.
+    await waitFor(() => {
+      expect(view.getByLabelText('You said: who said it')).toBeTruthy();
+    });
+  });
+});

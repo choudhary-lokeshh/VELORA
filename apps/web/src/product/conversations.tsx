@@ -593,10 +593,23 @@ function Thread({
               <p className="v-wrap">{pending.body}</p>
             </div>
             <div className="v-message__meta">
+              {/*
+                Announced, not only drawn. Somebody who cannot see the thread
+                sends a message and hears nothing at all otherwise — including
+                when it failed, with the retry sitting silently underneath.
+              */}
               {pending.state === 'sending' ? (
-                <span data-testid="message-sending">Sending…</span>
+                <span
+                  aria-live="polite"
+                  data-testid="message-sending"
+                  role="status"
+                >
+                  Sending…
+                </span>
               ) : (
-                <span data-testid="message-send-failed">{pending.message}</span>
+                <span data-testid="message-send-failed" role="alert">
+                  {pending.message}
+                </span>
               )}
             </div>
             {pending.state === 'sending' ? null : (
@@ -748,7 +761,18 @@ function MessageStream({
 }) {
   let lastDay: string | undefined;
   return (
-    <ol className="v-stack v-stack--3" data-testid="messages">
+    /*
+      A log region, because messages arrive rather than being fetched by
+      somebody pressing something. Without it a reader has to poll the thread
+      by re-reading it to discover that the other person replied — the live
+      chat on the Live stage has said this correctly all along.
+    */
+    <ol
+      aria-live="polite"
+      className="v-stack v-stack--3"
+      data-testid="messages"
+      role="log"
+    >
       {messages.map((message, index) => {
         const previous = messages[index - 1];
         const day = formatDay(message.createdAt);
@@ -771,6 +795,14 @@ function MessageStream({
               data-sequence={message.sequence}
             >
               <div className="v-message__bubble">
+                {/*
+                  Alignment and colour are the only things that said whose
+                  message this is, and neither reaches a screen reader: the
+                  thread was read out as an undifferentiated run of sentences.
+                */}
+                <span className="v-visually-hidden">
+                  {mine ? 'You said: ' : 'They said: '}
+                </span>
                 <p className="v-wrap">{message.body}</p>
               </div>
               {grouped ? null : (
