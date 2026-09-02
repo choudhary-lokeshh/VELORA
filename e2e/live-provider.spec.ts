@@ -295,6 +295,98 @@ test.describe('Live discovery over a real provider', () => {
           .toBeGreaterThan(0);
       }
 
+      /*
+       * A camera turned off, at the far end. The one behaviour no simulated
+       * adapter can show, proved inside this meeting because the matcher will
+       * not pair the same two people twice.
+       *
+       * Turning a camera off mutes the publication rather than unpublishing
+       * it, so the subscription — and, before this was fixed, the `<video>`
+       * mounted on it — survives; what the other person then saw was the last
+       * frame the camera sent, frozen, under a caption still saying
+       * "Connected." A frozen stranger is worse than an empty pane: a person
+       * who appears to be there and is not.
+       */
+      await pageA.getByTestId('live-toggle-camera').click();
+      await expect(pageA.getByTestId('live-toggle-camera')).toHaveAttribute(
+        'aria-label',
+        'Turn your camera on',
+      );
+
+      // No picture at all rather than a stale one, and a sentence saying which.
+      await expect(pageB.getByTestId('live-peer-video')).toHaveCount(0, {
+        timeout: 30_000,
+      });
+      await expect(pageB.getByTestId('live-media-carried')).toContainText(
+        'camera is off',
+        { timeout: 30_000 },
+      );
+      // A person who is still here, and never an error state: nothing about
+      // somebody covering their camera is a failure.
+      await expect(pageB.getByTestId('live-peer-name')).toBeVisible();
+      await expect(pageB.getByTestId('live-media-failed')).toHaveCount(0);
+      await expect(pageB.getByTestId('live-media-reconnecting')).toHaveCount(0);
+      await expect(pageB.getByTestId('live-no-media')).toHaveCount(0);
+
+      // The voice keeps arriving, measured on the transport rather than on a
+      // caption. This is the whole of "audio only": a camera control inside
+      // the session both people are already in.
+      const audioAtMute = (await inboundTracks(pageB)).audioBytes;
+      await expect
+        .poll(async () => (await inboundTracks(pageB)).audioBytes, {
+          timeout: 30_000,
+        })
+        .toBeGreaterThan(audioAtMute);
+
+      // And the same session carries the rest of itself. The chat crosses it
+      // while the camera is off, in the room neither of them left.
+      if (!(await pageA.getByTestId('live-chat-input').isVisible())) {
+        await pageA.getByTestId('live-toggle-chat').click();
+      }
+      if (!(await pageB.getByTestId('live-chat-list').isVisible())) {
+        await pageB.getByTestId('live-toggle-chat').click();
+      }
+      await pageA.getByTestId('live-chat-input').fill('still here, no camera');
+      await pageA.getByTestId('live-chat-send').click();
+      await expect(pageB.getByTestId('live-chat-list')).toContainText(
+        'still here, no camera',
+        { timeout: 30_000 },
+      );
+
+      // The camera comes back and the real picture does too: decoding, with a
+      // clock that advances, rather than a still left behind.
+      await pageA.getByTestId('live-toggle-camera').click();
+      await expect(pageB.getByTestId('live-peer-video')).toBeVisible({
+        timeout: 60_000,
+      });
+      await expect
+        .poll(async () => (await receivingVideo(pageB)).width, {
+          timeout: 60_000,
+        })
+        .toBeGreaterThan(0);
+      const resumed = await receivingVideo(pageB);
+      await expect
+        .poll(async () => (await receivingVideo(pageB)).currentTime, {
+          timeout: 30_000,
+        })
+        .toBeGreaterThan(resumed.currentTime);
+
+      // One peer connection throughout. A camera control that had rebuilt the
+      // session would have opened a second, which is the separate voice-call
+      // architecture this product deliberately does not have.
+      await expect
+        .poll(async () =>
+          pageA.evaluate(
+            () =>
+              (
+                globalThis as unknown as {
+                  __veloraPeerConnections?: RTCPeerConnection[];
+                }
+              ).__veloraPeerConnections?.length ?? 0,
+          ),
+        )
+        .toBe(1);
+
       // Next is a clean break. The first person moves on, and the second is
       // told their encounter ended rather than being left on a picture that has
       // stopped — and the room they were in is gone from both.

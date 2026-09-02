@@ -135,6 +135,54 @@ the element that mounts when the first video track arrives was never handed the
 stream. Audio arrives before video in the ordinary case, which is why it looked
 like a video element with no picture.
 
+## A camera turned off, proved on a real provider
+
+Recorded 2026-09-02, from the same specification, against a self-hosted
+LiveKit 1.13.6 on loopback — the recipe at the top of this document, with
+Consumer Web on port 3100 because the machine already had somebody else's
+server on 3000.
+
+The behaviour is inside the one meeting rather than a second test, because the
+matcher will not pair the same two people twice and a second meeting between
+them is not something a proof may assume.
+
+What was observed, in order, after both people could already see and hear each
+other:
+
+- **A turned their camera off** — the control on the dock, in the session both
+  were already in. No second session was created, and nothing was renegotiated.
+- **B's remote video element was removed entirely** — `toHaveCount(0)` — rather
+  than left holding a stopped track. This is the defect: muting a publication
+  keeps the subscription alive, so an element mounted on subscription alone
+  goes on painting the last frame the camera sent. A frozen stranger is worse
+  than an empty pane; it is a person who appears to be there and is not.
+- **B was told which absence this is**: "…'s camera is off." — not
+  "Connected.", not a failure, and not "waiting to join". The failure and
+  reconnecting states were asserted absent at the same moment, because a
+  camera somebody switched off is not an error and must never be dressed as
+  one.
+- **B kept seeing who they are with** — the portrait and the name — because
+  the person did not leave.
+- **The voice kept arriving**, measured on the transport rather than on a
+  caption: `inbound-rtp` audio bytes on B strictly increased while the camera
+  was off. This is the whole of "audio only" in this product — a camera
+  control inside one Live session, and no separate voice stack.
+- **The chat crossed the same session** while the camera was off, arriving in
+  B's live chat.
+- **The camera came back and the picture did too**: the remote element
+  returned, decoded a frame (`videoWidth > 0`), and its clock advanced — a
+  live picture rather than a still that had been left behind.
+- **Exactly one `RTCPeerConnection`** existed on A's page for the whole of it,
+  counted from a proxy installed before any script ran. A camera control that
+  had rebuilt the session would have opened a second, which is precisely the
+  separate voice-call architecture this product does not have.
+
+The same rules are proved without a provider in both client suites — web and
+mobile hooks against a room double that fires the provider's own mute events,
+and the mobile stage against the sentence a person reads — but only a real
+provider mutes a real publication, and only a real decoder can hold a frozen
+frame. That is why this run exists.
+
 ## What LiveKit Cloud proved
 
 Recorded 2026-09-01, after everything above, against the LiveKit Cloud project
