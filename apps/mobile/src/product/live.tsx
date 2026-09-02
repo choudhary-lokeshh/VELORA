@@ -230,10 +230,16 @@ const scenarios: readonly {
 export function LiveScreen({
   onOpenConversation,
   onOpenPerson,
+  onOpenSafety,
+  onOpenWallet,
 }: {
   /** Continuing in the Inbox after a mutual connection. The route owns the router. */
   readonly onOpenConversation: (conversationId: string) => void;
   readonly onOpenPerson: (personId: string) => void;
+  /** Where the decisions about an account are read, for the door that says no. */
+  readonly onOpenSafety: () => void;
+  /** Where coins are held and bought, for a balance that is short. */
+  readonly onOpenWallet: () => void;
 }) {
   const api = useApi();
   const insets = useSafeAreaInsets();
@@ -378,6 +384,15 @@ export function LiveScreen({
   if (state?.admission === 'not_eligible') {
     return (
       <EmptyState
+        action={
+          <Button
+            onPress={onOpenSafety}
+            testID="live-not-eligible-safety"
+            tone="secondary"
+          >
+            Review your account
+          </Button>
+        }
         body="Live discovery needs a finished account in good standing. Once that is done this is the first thing here."
         icon="live"
         testID="live-not-eligible"
@@ -395,6 +410,7 @@ export function LiveScreen({
         languageOptions={state?.languageOptions ?? []}
         message={message}
         mode={mode}
+        onOpenWallet={onOpenWallet}
         onModeChange={setMode}
         onPreferences={changePreferences}
         onStart={start}
@@ -423,6 +439,7 @@ export function LiveScreen({
       }}
       onOpenConversation={onOpenConversation}
       onOpenPerson={onOpenPerson}
+      onOpenWallet={onOpenWallet}
       onPreferences={changePreferences}
       onSearchAgain={() => {
         action.run(async () => {
@@ -462,6 +479,7 @@ function LiveDoor({
   message,
   mode,
   onModeChange,
+  onOpenWallet,
   onPreferences,
   onStart,
   onState,
@@ -476,6 +494,7 @@ function LiveDoor({
   readonly message: string | undefined;
   readonly mode: Mode;
   readonly onModeChange: (mode: Mode) => void;
+  readonly onOpenWallet: () => void;
   readonly onPreferences: (preferences: LivePreferences) => void;
   readonly onStart: (medium: LiveMedium) => void;
   readonly onState: (state: LiveState) => void;
@@ -582,6 +601,7 @@ function LiveDoor({
           <PreferenceControls
             languageOptions={languageOptions}
             onChange={onPreferences}
+            onOpenWallet={onOpenWallet}
             preferences={preferences}
             wallet={wallet}
           />
@@ -643,11 +663,13 @@ function LiveDoor({
 function PreferenceControls({
   languageOptions,
   onChange,
+  onOpenWallet,
   preferences,
   wallet,
 }: {
   readonly languageOptions: readonly string[];
   readonly onChange: (preferences: LivePreferences) => void;
+  readonly onOpenWallet: () => void;
   readonly preferences: LivePreferences;
   /**
    * Coins, when this environment has them.
@@ -732,7 +754,11 @@ function PreferenceControls({
         </Pressable>
       )}
 
-      <PremiumPreference languageOptions={languageOptions} wallet={wallet} />
+      <PremiumPreference
+        languageOptions={languageOptions}
+        onOpenWallet={onOpenWallet}
+        wallet={wallet}
+      />
     </View>
   );
 }
@@ -1021,6 +1047,7 @@ function LiveStage({
   onNext,
   onOpenConversation,
   onOpenPerson,
+  onOpenWallet,
   onPreferences,
   onSearchAgain,
   onState,
@@ -1042,6 +1069,7 @@ function LiveStage({
   readonly onNext: (encounterId: string) => void;
   readonly onOpenConversation: (conversationId: string) => void;
   readonly onOpenPerson: (personId: string) => void;
+  readonly onOpenWallet: () => void;
   readonly onPreferences: (preferences: LivePreferences) => void;
   readonly onSearchAgain: () => void;
   readonly onState: (state: LiveState) => void;
@@ -1313,6 +1341,7 @@ function LiveStage({
         ) : (
           <SearchingPane
             languageOptions={languageOptions}
+            onOpenWallet={onOpenWallet}
             onPreferences={onPreferences}
             preferences={preferences}
             searchingSince={searchingSince}
@@ -1696,12 +1725,14 @@ function PeerStrip({
  */
 function SearchingPane({
   languageOptions,
+  onOpenWallet,
   onPreferences,
   preferences,
   searchingSince,
   wallet,
 }: {
   readonly languageOptions: readonly string[];
+  readonly onOpenWallet: () => void;
   readonly onPreferences: (preferences: LivePreferences) => void;
   readonly preferences: LivePreferences;
   readonly searchingSince: string | undefined;
@@ -1777,6 +1808,7 @@ function SearchingPane({
           </Button>
           <PremiumPreference
             languageOptions={languageOptions}
+            onOpenWallet={onOpenWallet}
             wallet={wallet}
           />
         </View>
@@ -1784,6 +1816,7 @@ function SearchingPane({
         <PreferenceControls
           languageOptions={languageOptions}
           onChange={onPreferences}
+          onOpenWallet={onOpenWallet}
           preferences={preferences}
           wallet={wallet}
         />

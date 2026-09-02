@@ -103,8 +103,7 @@ export function MembershipsScreen({
   const invitations = rows.filter(
     (row) => row.state === 'active' && row.source !== 'billing',
   );
-  const loading =
-    access.value === undefined && subscriptions.value === undefined;
+  const loading = access.loading || subscriptions.loading;
 
   return (
     <Screen
@@ -116,11 +115,25 @@ export function MembershipsScreen({
       title="Memberships"
     >
       <Stack gap={6}>
-        {loading ? <RowSkeleton rows={3} /> : null}
+        {loading &&
+        access.value === undefined &&
+        subscriptions.value === undefined ? (
+          <RowSkeleton rows={3} />
+        ) : null}
 
         {subscriptions.error === undefined ? null : (
           <ErrorMessage testID="memberships-failed">
             {subscriptions.error}
+          </ErrorMessage>
+        )}
+        {access.error === undefined ? null : (
+          <ErrorMessage testID="memberships-access-failed">
+            {access.error}
+          </ErrorMessage>
+        )}
+        {payments.error === undefined ? null : (
+          <ErrorMessage testID="memberships-payments-failed">
+            {payments.error}
           </ErrorMessage>
         )}
 

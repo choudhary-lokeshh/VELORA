@@ -20,8 +20,12 @@ module.exports = {
     '^@velora/config/client$': '<rootDir>/../../packages/config/dist/client.js',
     '^@velora/consumer-client$':
       '<rootDir>/../../packages/consumer-client/dist/index.js',
+    '^@velora/creator-client$':
+      '<rootDir>/../../packages/creator-client/dist/index.js',
     '^@velora/design-tokens$':
       '<rootDir>/../../packages/design-tokens/dist/index.js',
+    '^@velora/validation/money$':
+      '<rootDir>/../../packages/validation/dist/money.js',
     '^@velora/validation/money-bounds$':
       '<rootDir>/../../packages/validation/dist/money-bounds.js',
     '^@velora/validation/messaging-bounds$':

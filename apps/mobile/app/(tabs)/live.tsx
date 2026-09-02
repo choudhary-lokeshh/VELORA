@@ -1,6 +1,10 @@
 import { router } from 'expo-router';
 
-import { conversationPath, personPath } from '../../src/frame/links';
+import {
+  conversationPath,
+  personPath,
+  youSectionPath,
+} from '../../src/frame/links';
 import { LiveScreen } from '../../src/product/live';
 
 /**
@@ -18,6 +22,12 @@ export default function Live() {
       }}
       onOpenPerson={(personId) => {
         router.push(personPath(personId));
+      }}
+      onOpenSafety={() => {
+        router.push(youSectionPath('safety'));
+      }}
+      onOpenWallet={() => {
+        router.push(youSectionPath('wallet'));
       }}
     />
   );

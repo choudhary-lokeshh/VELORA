@@ -206,10 +206,13 @@ function priceOf(
 
 export function PremiumPreference({
   languageOptions,
+  onOpenWallet,
   wallet,
 }: {
   /** The caller's own languages. A preference cannot name one they lack. */
   readonly languageOptions: readonly string[];
+  /** Where coins are held and bought, for the balance that is short. */
+  readonly onOpenWallet: () => void;
   readonly wallet: WalletView;
 }) {
   const api = useApi();
@@ -487,6 +490,22 @@ export function PremiumPreference({
             : ''}
         </Text>
       )}
+
+      {chosen && available < price && !developerGrant ? (
+        /*
+          The path out of "not enough", where one exists. The web door offers
+          the same walk; without it a phone said what coins cost and offered
+          no way to hold any.
+        */
+        <Button
+          onPress={onOpenWallet}
+          size="small"
+          testID="live-premium-get"
+          tone="ghost"
+        >
+          Get coins
+        </Button>
+      ) : null}
 
       {developerGrant ? (
         <Button

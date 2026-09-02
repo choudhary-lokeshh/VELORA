@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 
-import { conversationPath } from '../../src/frame/links';
+import { conversationPath, introductionsPath } from '../../src/frame/links';
 import { MessagesScreen } from '../../src/product/messages';
 
 export default function Messages() {
@@ -8,6 +8,9 @@ export default function Messages() {
     <MessagesScreen
       onOpen={(conversationId) => {
         router.push(conversationPath(conversationId));
+      }}
+      onOpenIntroductions={() => {
+        router.push(introductionsPath);
       }}
     />
   );

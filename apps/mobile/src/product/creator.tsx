@@ -3,19 +3,22 @@ import type {
   MembershipOffer,
   PublicClub,
 } from '@velora/consumer-client';
+import type { PublicCreator } from '@velora/creator-client';
 import { useCallback, useMemo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, Linking, Pressable, StyleSheet, View } from 'react-native';
 
-import { useApi } from '../frame/providers';
+import { useApi, useCreatorApi } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import { clubPath } from '../frame/links';
 import {
+  Avatar,
   Badge,
   Button,
   Card,
   Chip,
   Divider,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Notice,
   RowSkeleton,
@@ -55,6 +58,12 @@ export function CreatorScreen({
   readonly onOpenClub: (path: string) => void;
 }) {
   const api = useApi();
+  const creators = useCreatorApi();
+  const loadCreator = useCallback(
+    async () => creators.publicCreator(handle),
+    [creators, handle],
+  );
+  const creator = useResource<PublicCreator>(loadCreator);
   const loadClubs = useCallback(
     async (signal: AbortSignal) => api.publicClubs(handle, signal),
     [api, handle],
@@ -76,19 +85,65 @@ export function CreatorScreen({
 
   const rows = clubs.value?.clubs ?? [];
 
+  const shown = creator.value;
+
   return (
     <Screen
       onBack={onBack}
       onRefresh={() => {
+        creator.reload();
         clubs.reload();
         offers.reload();
       }}
       refreshing={clubs.loading}
       subtitle={`@${handle}`}
       testID="creator-page"
-      title="Creator"
+      title={shown?.displayName ?? 'Creator'}
     >
       <Stack gap={5}>
+        {/*
+          Who this is, before what they sell. The same identity Consumer Web
+          renders from the same public projection: the name, the bio, and the
+          published links. Without it this screen opened on a price list with
+          a handle for a headline, which is a shop and not a person.
+        */}
+        {creator.loading && shown === undefined ? (
+          <RowSkeleton rows={2} />
+        ) : shown !== undefined ? (
+          <View style={styles.identity} testID="creator-identity">
+            <Avatar displayName={shown.displayName} seed={shown.handle} />
+            <Stack gap={1} style={styles.identityBody}>
+              <Text variant="title" weight="semibold">
+                {shown.displayName}
+              </Text>
+              {shown.bio === undefined ? null : (
+                <Text testID="creator-bio" tone="secondary" variant="small">
+                  {shown.bio}
+                </Text>
+              )}
+              {shown.links.length === 0 ? null : (
+                <View style={styles.links}>
+                  {shown.links.map((link) => (
+                    <Pressable
+                      accessibilityRole="link"
+                      key={link.url}
+                      onPress={() => {
+                        void Linking.openURL(link.url);
+                      }}
+                    >
+                      <Chip>{link.label ?? link.url}</Chip>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </Stack>
+          </View>
+        ) : creator.error !== undefined ? (
+          <ErrorMessage testID="creator-identity-failed">
+            {creator.error}
+          </ErrorMessage>
+        ) : null}
+
         {clubs.loading && clubs.value === undefined ? (
           <RowSkeleton rows={3} />
         ) : null}
@@ -100,6 +155,12 @@ export function CreatorScreen({
             testID="creator-page-failed"
             title="This page could not be loaded"
           />
+        )}
+
+        {offers.error === undefined ? null : (
+          <ErrorMessage testID="creator-offers-failed">
+            {offers.error}
+          </ErrorMessage>
         )}
 
         {clubs.value !== undefined && rows.length === 0 ? (
@@ -116,6 +177,10 @@ export function CreatorScreen({
             club={club}
             key={club.slug}
             offer={offerByResource.get(club.id)}
+            // Whether "no prices" means by-invitation is the offers read's
+            // answer. While that read has not answered — or failed — saying
+            // "there is nothing to buy here" would be commercially false.
+            offersKnown={offers.value !== undefined}
             onOpen={() => {
               onOpenClub(clubPath(handle, club.slug));
             }}
@@ -129,14 +194,17 @@ export function CreatorScreen({
 function MembershipCard({
   club,
   offer,
+  offersKnown,
   onOpen,
 }: {
   readonly club: PublicClub;
   readonly offer: MembershipOffer | undefined;
+  readonly offersKnown: boolean;
   readonly onOpen: () => void;
 }) {
   const prices = offer?.prices ?? [];
   const member = club.membership !== undefined;
+  const byInvitation = offersKnown && prices.length === 0;
 
   return (
     <Card testID={`club-card-${club.slug}`}>
@@ -145,7 +213,7 @@ function MembershipCard({
           <Text variant="subheading">{club.name}</Text>
           {member ? (
             <Badge tone="positive">You are in</Badge>
-          ) : prices.length === 0 ? (
+          ) : byInvitation ? (
             <Badge tone="neutral">By invitation</Badge>
           ) : null}
         </View>
@@ -190,12 +258,12 @@ function MembershipCard({
               Open the club
             </Button>
           </>
-        ) : prices.length === 0 ? (
+        ) : byInvitation ? (
           <Text tone="tertiary" variant="caption">
             Membership is by invitation from this creator. There is nothing to
             buy here.
           </Text>
-        ) : (
+        ) : prices.length === 0 ? null : (
           <>
             <Button onPress={onOpen} testID={`club-look-${club.slug}`}>
               Look inside
@@ -352,6 +420,20 @@ export function ClubScreen({
 }
 
 const styles = StyleSheet.create({
+  identity: {
+    flexDirection: 'row',
+    gap: space[3],
+  },
+  identityBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  links: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space[2],
+    marginTop: space[1],
+  },
   cover: {
     aspectRatio: 16 / 9,
     borderRadius: radius.md,

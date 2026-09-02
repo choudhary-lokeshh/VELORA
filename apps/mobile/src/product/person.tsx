@@ -13,6 +13,7 @@ import {
   Chip,
   EmptyState,
   ErrorMessage,
+  ErrorState,
   Inline,
   RowSkeleton,
   Stack,
@@ -107,6 +108,22 @@ export function PersonScreen({
         <Card>
           <RowSkeleton rows={3} />
         </Card>
+      ) : !gone &&
+        person.retryable &&
+        person.error !== undefined &&
+        shown === undefined ? (
+        /*
+          A failed read is not an absent person. The state below asserts there
+          is nothing here, which is a claim about the world; a network that did
+          not answer supports no claim at all. Only a retryable failure lands
+          here — a refusal and an absence keep the deliberately ambiguous
+          answer, which is the privacy answer this screen gives.
+        */
+        <ErrorState
+          body={person.error}
+          onRetry={person.reload}
+          testID="person-error"
+        />
       ) : gone || shown === undefined ? (
         <EmptyState
           action={

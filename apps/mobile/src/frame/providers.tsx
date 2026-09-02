@@ -1,3 +1,4 @@
+import { createCreatorApi, type CreatorApi } from '@velora/creator-client';
 import {
   createMediaAddressBook,
   type ConsumerApi,
@@ -72,6 +73,8 @@ export interface SessionValue {
   readonly account: AccountState;
   readonly api: ConsumerApi;
   readonly auth: MobileAuthManager;
+  /** The public creator projection, asked without a credential. */
+  readonly creators: CreatorApi;
   readonly busy: boolean;
   /** This installation's identifier, for anything that has to name the device. */
   readonly installation: InstallationIdentity;
@@ -116,6 +119,18 @@ export function useApi(): ConsumerApi {
   return useSession().api;
 }
 
+/**
+ * The public creator projection: the directory and a creator's own page.
+ *
+ * A separate client on purpose. These answers are identical for every
+ * requester, so no credential travels with them — attaching a session would
+ * collect an identity for no purpose, which is the same reasoning Consumer
+ * Web records at its own call site.
+ */
+export function useCreatorApi(): CreatorApi {
+  return useSession().creators;
+}
+
 export function useMediaAddressBook(): MediaAddressBook<MediaVariant> {
   return useSession().media;
 }
@@ -131,6 +146,7 @@ export function useMediaAddressBook(): MediaAddressBook<MediaVariant> {
 interface Wiring {
   readonly api: ConsumerApi;
   readonly auth: MobileAuthManager;
+  readonly creators: CreatorApi;
   readonly installation: InstallationIdentity;
   /**
    * Where image references become addresses.
@@ -186,6 +202,13 @@ export function ConsumerProviders({
       return {
         api,
         auth,
+        creators: createCreatorApi({
+          apiBaseUrl: resolved,
+          ...(fetchImplementation === undefined
+            ? {}
+            : { fetch: fetchImplementation }),
+          transport: { headers: () => Promise.resolve({}) },
+        }),
         installation,
         media: createMediaAddressBook<MediaVariant>({
           exchange: async (request) => api.mediaDeliveries(request),
@@ -222,7 +245,7 @@ function SessionProvider({
   readonly children: ReactNode;
   readonly wiring: Wiring;
 }) {
-  const { api, auth, installation, media, push } = wiring;
+  const { api, auth, creators, installation, media, push } = wiring;
   const [state, setState] = useState<MobileAuthState>(initialMobileAuthState);
   const [pushState, setPushState] = useState<PushRegistrationState>(
     initialPushRegistrationState,
@@ -281,6 +304,7 @@ function SessionProvider({
       api,
       auth,
       busy,
+      creators,
       media,
       restore,
       enablePush: () => {
@@ -327,6 +351,7 @@ function SessionProvider({
     api,
     auth,
     busy,
+    creators,
     installation,
     media,
     push,

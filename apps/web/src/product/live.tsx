@@ -33,6 +33,7 @@ import {
   BlockedState,
   Button,
   ButtonLink,
+  Card,
   EmptyState,
   ErrorMessage,
   IconButton,
@@ -438,7 +439,45 @@ export function Live() {
     [releaseMedia],
   );
 
-  if (state?.admission === 'unavailable') {
+  if (state === undefined) {
+    /*
+     * The first read has not answered. Offering Start here would skip every
+     * gate the answer carries — an environment where Live is switched off
+     * looked, for the length of a failed request, exactly like one where it
+     * was on. A failure is said with the retry that might change it.
+     */
+    return (
+      <div className="v-live">
+        <PageHeader
+          lede="Meet one other person who is here right now."
+          title="Live"
+        />
+        {message === undefined ? (
+          <Card testId="live-loading">
+            <Skeleton height={20} width="50%" />
+            <Skeleton height={12} width="70%" />
+          </Card>
+        ) : (
+          <Card>
+            <div className="v-stack v-stack--3">
+              <ErrorMessage testId="live-state-failed">{message}</ErrorMessage>
+              <div>
+                <Button
+                  onClick={() => {
+                    void api.liveState().then(apply);
+                  }}
+                >
+                  Try again
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  if (state.admission === 'unavailable') {
     return (
       <div className="v-live">
         <PageHeader
@@ -458,7 +497,7 @@ export function Live() {
     );
   }
 
-  if (state?.admission === 'not_eligible') {
+  if (state.admission === 'not_eligible') {
     return (
       <div className="v-live">
         <PageHeader

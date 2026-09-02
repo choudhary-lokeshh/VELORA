@@ -460,7 +460,12 @@ describe('where the other person is drawn', () => {
       refreshToken: 'refresh-stored',
     });
     const view = await renderScreen(
-      <LiveScreen onOpenConversation={noop} onOpenPerson={noop} />,
+      <LiveScreen
+        onOpenConversation={noop}
+        onOpenPerson={noop}
+        onOpenSafety={noop}
+        onOpenWallet={noop}
+      />,
       double,
       { store },
     );
@@ -537,7 +542,12 @@ describe('what a mute renders', () => {
       refreshToken: 'refresh-stored',
     });
     const view = await renderScreen(
-      <LiveScreen onOpenConversation={noop} onOpenPerson={noop} />,
+      <LiveScreen
+        onOpenConversation={noop}
+        onOpenPerson={noop}
+        onOpenSafety={noop}
+        onOpenWallet={noop}
+      />,
       double,
       { store },
     );

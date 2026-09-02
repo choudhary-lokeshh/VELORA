@@ -85,9 +85,19 @@ export function CheckoutReturn() {
       <>
         <PageHeader title="Payment" />
         <Card>
-          <ErrorMessage testId="checkout-missing">
-            This address does not name a payment.
-          </ErrorMessage>
+          <div className="v-stack v-stack--3">
+            <ErrorMessage testId="checkout-missing">
+              This address does not name a payment.
+            </ErrorMessage>
+            <div className="v-inline v-inline--tight">
+              <Link className="v-btn v-btn--secondary" href="/you/memberships">
+                Memberships
+              </Link>
+              <Link className="v-btn v-btn--secondary" href="/you/wallet">
+                Coins
+              </Link>
+            </div>
+          </div>
         </Card>
       </>
     );

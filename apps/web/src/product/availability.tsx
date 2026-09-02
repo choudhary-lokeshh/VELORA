@@ -98,6 +98,12 @@ export function AvailabilityCard() {
       actions={
         availability.loading && availability.value === undefined ? (
           <Skeleton height={22} width={110} />
+        ) : availability.error !== undefined &&
+          availability.value === undefined ? (
+          <Badge testId="availability-state" tone="neutral">
+            <Icon name="clock" size="sm" />
+            Unknown
+          </Badge>
         ) : (
           <Badge testId="availability-state" tone={viewTone[view]}>
             <Icon name="clock" size="sm" />
@@ -110,7 +116,17 @@ export function AvailabilityCard() {
       title="Availability"
     >
       <p className="v-small v-muted">
-        {view === 'available' && until !== undefined ? (
+        {availability.error !== undefined &&
+        availability.value === undefined ? (
+          /*
+            Unknown, said as unknown. With no answer from the server this used
+            to fall through to the switched-off copy — a definite claim about
+            visibility the client did not have.
+          */
+          <span data-testid="availability-unknown">
+            Whether you are visible in discovery could not be read just now.
+          </span>
+        ) : view === 'available' && until !== undefined ? (
           <>
             You are being shown to other people until{' '}
             <time dateTime={until} data-testid="availability-until">
@@ -129,9 +145,22 @@ export function AvailabilityCard() {
       </p>
 
       {availability.error === undefined ? null : (
-        <ErrorMessage testId="availability-failed">
-          {availability.error}
-        </ErrorMessage>
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="availability-failed">
+            {availability.error}
+          </ErrorMessage>
+          {availability.retryable ? (
+            <div>
+              <Button
+                data-testid="availability-retry"
+                onClick={availability.reload}
+                size="sm"
+              >
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </div>
       )}
       {error === undefined ? null : (
         <ErrorMessage testId="availability-error">{error}</ErrorMessage>

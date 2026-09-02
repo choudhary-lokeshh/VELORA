@@ -1,9 +1,17 @@
 import type { ApiResult, DiscoveryCandidate } from '@velora/consumer-client';
-import { failureMessage, isRetryable } from '@velora/consumer-client';
+import {
+  availabilityView,
+  failureMessage,
+  isRetryable,
+} from '@velora/consumer-client';
+import {
+  failureMessage as creatorFailureMessage,
+  type PublicCreatorSummary,
+} from '@velora/creator-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
-import { useApi, useToast } from '../frame/providers';
+import { useApi, useCreatorApi, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
   Actions,
@@ -12,16 +20,19 @@ import {
   Card,
   Chip,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Inline,
+  Notice,
   RowSkeleton,
+  Segmented,
   Stack,
   Text,
 } from '../design/primitives';
 import { color, space } from '../design/tokens';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
-import { useSingleFlight } from './resource';
+import { useResource, useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
 
 /**
@@ -62,11 +73,25 @@ const emptyFeed: Feed = {
   exhausted: false,
 };
 
+/** Which half of Discover is being read. Kept in the address by the route. */
+export type DiscoverSection = 'people' | 'creators';
+
 export function DiscoverScreen({
+  onOpenCreator,
   onOpenPerson,
+  onOpenYou,
+  onSection,
+  section,
 }: {
+  /** Opening a creator's public page. The route owns the router. */
+  readonly onOpenCreator: (handle: string) => void;
   /** Opening one person, at their own address. The route owns the router. */
   readonly onOpenPerson: (personId: string) => void;
+  /** Where availability is set, for the notice that says nobody can see you. */
+  readonly onOpenYou: () => void;
+  /** Section changes go to the address, so Back and a relaunch keep it. */
+  readonly onSection: (section: DiscoverSection) => void;
+  readonly section: DiscoverSection;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -178,6 +203,18 @@ export function DiscoverScreen({
     portraitReferences(feed.candidates),
     'display',
   );
+  /*
+   * Whether anybody can currently see this person, said where they are
+   * looking at everybody else. Being available is what makes you visible,
+   * and a feed browsed while invisible quietly answers nothing back — the
+   * web surface says so, and a phone deserves the same sentence.
+   */
+  const loadAvailability = useCallback(
+    async (signal: AbortSignal) => api.availability(signal),
+    [api],
+  );
+  const availability = useResource(loadAvailability);
+  const view = availabilityView(availability.value);
 
   return (
     <Screen
@@ -190,7 +227,46 @@ export function DiscoverScreen({
       testID="discover-screen"
       title="Discover"
     >
-      {loading && !answered ? (
+      <View style={styles.sections}>
+        <Segmented
+          onChange={onSection}
+          options={[
+            { label: 'People', value: 'people' },
+            { label: 'Creators', value: 'creators' },
+          ]}
+          testID="discover-sections"
+          value={section}
+        />
+      </View>
+
+      {section === 'creators' || view === 'available' ? null : (
+        <View style={styles.notice}>
+          <Notice
+            testID="discovery-availability"
+            title={
+              view === 'expired'
+                ? 'Your availability window ended'
+                : 'You are not visible right now'
+            }
+            tone="caution"
+          >
+            Other people only see you while you are available, and being
+            available is also how you appear to them.
+          </Notice>
+          <Button
+            onPress={onOpenYou}
+            size="small"
+            testID="discovery-availability-set"
+            tone="ghost"
+          >
+            Set a window under You
+          </Button>
+        </View>
+      )}
+
+      {section === 'creators' ? (
+        <CreatorsPane onOpenCreator={onOpenCreator} />
+      ) : loading && !answered ? (
         <Card>
           <RowSkeleton rows={3} />
         </Card>
@@ -272,6 +348,146 @@ export function DiscoverScreen({
         />
       )}
     </Screen>
+  );
+}
+
+/**
+ * The creator half of Discover.
+ *
+ * The same public directory Consumer Web renders in its Creators section, on
+ * the same no-credential client: names, handles, and what each has written,
+ * each row leading to the creator's own page. Before this existed the phone
+ * had creator and club screens that nothing linked to — deep-link-only rooms
+ * in a building with no corridor.
+ */
+function CreatorsPane({
+  onOpenCreator,
+}: {
+  readonly onOpenCreator: (handle: string) => void;
+}) {
+  const creators = useCreatorApi();
+  const pageSize = 20;
+  const load = useCallback(
+    async () => creators.publicCreatorDirectory({ pageSize }),
+    [creators],
+  );
+  const first = useResource(load);
+  const [extra, setExtra] = useState<readonly PublicCreatorSummary[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [pagingError, setPagingError] = useState<string | undefined>(undefined);
+  const paging = useSingleFlight();
+
+  useEffect(() => {
+    setExtra([]);
+    setPagingError(undefined);
+    setCursor(first.value?.nextCursor);
+  }, [first.value]);
+
+  const rows = [...(first.value?.creators ?? []), ...extra];
+
+  const more = () => {
+    const from = cursor;
+    if (from === undefined) return;
+    paging.run(async () => {
+      const result = await creators.publicCreatorDirectory({
+        cursor: from,
+        pageSize,
+      });
+      if (result.kind !== 'ok') {
+        setPagingError(
+          creatorFailureMessage(result) ?? 'More creators could not be loaded.',
+        );
+        return;
+      }
+      setPagingError(undefined);
+      setExtra((held) => [...held, ...result.value.creators]);
+      setCursor(result.value.nextCursor);
+    });
+  };
+
+  if (first.loading && first.value === undefined) {
+    return (
+      <Card>
+        <RowSkeleton rows={3} />
+      </Card>
+    );
+  }
+  if (first.error !== undefined && first.value === undefined) {
+    return (
+      <ErrorState
+        body={first.error}
+        testID="creator-directory-failed"
+        {...(first.retryable ? { onRetry: first.reload } : {})}
+      />
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        body="No creators have published a page yet. They appear here the moment one does."
+        icon="sparkle"
+        testID="creator-directory-empty"
+        title="No creators yet"
+      />
+    );
+  }
+
+  return (
+    <FlatList
+      contentContainerStyle={styles.list}
+      data={rows}
+      keyExtractor={(row) => row.handle}
+      ListFooterComponent={
+        cursor === undefined ? null : (
+          <Stack gap={2}>
+            <Button
+              busy={paging.busy}
+              onPress={more}
+              size="small"
+              testID="creator-directory-more"
+              tone="ghost"
+            >
+              Show more creators
+            </Button>
+            {pagingError === undefined ? null : (
+              <ErrorMessage testID="creator-directory-more-failed">
+                {pagingError}
+              </ErrorMessage>
+            )}
+          </Stack>
+        )
+      }
+      renderItem={({ item }) => (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            onOpenCreator(item.handle);
+          }}
+          testID={`creator-open-${item.handle}`}
+        >
+          <Card>
+            <View style={styles.creatorRow}>
+              <Avatar displayName={item.displayName} seed={item.handle} />
+              <Stack gap={1} style={styles.creatorBody}>
+                <Text variant="subheading" weight="semibold">
+                  {item.displayName}
+                </Text>
+                <Text tone="tertiary" variant="caption">
+                  {`@${item.handle}`}
+                </Text>
+                {item.bio === undefined ? null : (
+                  <Text numberOfLines={2} tone="secondary" variant="small">
+                    {item.bio}
+                  </Text>
+                )}
+              </Stack>
+            </View>
+          </Card>
+        </Pressable>
+      )}
+      showsVerticalScrollIndicator={false}
+      testID="creator-directory"
+    />
   );
 }
 
@@ -393,6 +609,23 @@ function CandidateCard({
 }
 
 const styles = StyleSheet.create({
+  creatorBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  creatorRow: {
+    flexDirection: 'row',
+    gap: space[3],
+  },
+  notice: {
+    gap: space[2],
+    marginBottom: space[3],
+    paddingHorizontal: space[4],
+  },
+  sections: {
+    marginBottom: space[3],
+    paddingHorizontal: space[4],
+  },
   actions: {
     borderTopColor: color.borderHairline,
     borderTopWidth: 1,

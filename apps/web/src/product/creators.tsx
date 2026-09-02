@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createCreatorApi,
   createMediaAddressBook,
+  failureMessage,
   type MediaVariant,
   type PublicCreatorDirectory,
   type PublicCreatorSummary,
@@ -86,6 +87,7 @@ export function CreatorDirectory({
   const [extra, setExtra] = useState<readonly PublicCreatorSummary[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const paging = useSingleFlight();
+  const [pagingError, setPagingError] = useState<string | undefined>(undefined);
 
   const load = useCallback(
     async () => api.publicCreatorDirectory({ pageSize }),
@@ -122,7 +124,15 @@ export function CreatorDirectory({
         cursor: from,
         pageSize,
       });
-      if (result.kind !== 'ok') return;
+      if (result.kind !== 'ok') {
+        // The button un-busies either way; silence here read as "there were
+        // no more" when the truth was "the request failed".
+        setPagingError(
+          failureMessage(result) ?? 'More creators could not be loaded.',
+        );
+        return;
+      }
+      setPagingError(undefined);
       setExtra((held) => [...held, ...result.value.creators]);
       setCursor(result.value.nextCursor);
     });
@@ -212,6 +222,11 @@ export function CreatorDirectory({
           <Button busy={paging.busy} onClick={more}>
             Show more creators
           </Button>
+          {pagingError === undefined ? null : (
+            <ErrorMessage testId="creator-directory-more-failed">
+              {pagingError}
+            </ErrorMessage>
+          )}
         </div>
       )}
     </>

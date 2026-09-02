@@ -152,7 +152,16 @@ function StandingCard() {
         <RowSkeleton rows={1} />
       ) : null}
       {standing.error === undefined ? null : (
-        <ErrorMessage testId="standing-failed">{standing.error}</ErrorMessage>
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="standing-failed">{standing.error}</ErrorMessage>
+          {standing.retryable ? (
+            <div>
+              <Button onClick={standing.reload} size="sm">
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {!standing.loading &&
@@ -374,7 +383,16 @@ function BlockedCard() {
         <RowSkeleton rows={2} />
       ) : null}
       {blocks.error === undefined ? null : (
-        <ErrorMessage testId="blocks-failed">{blocks.error}</ErrorMessage>
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="blocks-failed">{blocks.error}</ErrorMessage>
+          {blocks.retryable ? (
+            <div>
+              <Button onClick={blocks.reload} size="sm">
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {!blocks.loading && blocks.error === undefined && blocked.length === 0 ? (
@@ -478,7 +496,16 @@ function ReportsCard() {
         <RowSkeleton rows={2} />
       ) : null}
       {reports.error === undefined ? null : (
-        <ErrorMessage testId="reports-failed">{reports.error}</ErrorMessage>
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="reports-failed">{reports.error}</ErrorMessage>
+          {reports.retryable ? (
+            <div>
+              <Button onClick={reports.reload} size="sm">
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {/*

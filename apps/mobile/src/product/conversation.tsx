@@ -280,6 +280,13 @@ function Thread({
         // A retryable failure is a condition; a refusal is a decision.
         state: isRetryable(result) ? 'failed' : 'refused',
       });
+      /*
+       * The text now lives in the failure block, not the box. Leaving it in
+       * both places armed a second Send with a *new* client message id — and
+       * a request that committed before its response was lost then posts
+       * twice. Try again reuses the one id; Edit puts the words back.
+       */
+      setDraft('');
       if (!isRetryable(result)) onChanged();
     });
   };
@@ -454,29 +461,50 @@ function Thread({
                 <ErrorMessage testID="message-send-failed">
                   {pending.message ?? 'That message was not sent.'}
                 </ErrorMessage>
-                {pending.state === 'failed' ? (
+                <Text
+                  testID="message-send-body"
+                  tone="secondary"
+                  variant="small"
+                >
+                  {pending.body}
+                </Text>
+                <Inline gap={2}>
+                  {pending.state === 'failed' ? (
+                    <Button
+                      icon="refresh"
+                      onPress={() => {
+                        send(pending);
+                      }}
+                      size="small"
+                      testID="message-retry"
+                    >
+                      Try again
+                    </Button>
+                  ) : null}
                   <Button
-                    icon="refresh"
                     onPress={() => {
-                      send(pending);
-                    }}
-                    size="small"
-                    testID="message-retry"
-                  >
-                    Try again
-                  </Button>
-                ) : (
-                  <Button
-                    onPress={() => {
+                      setDraft(pending.body);
                       setPending(undefined);
                     }}
                     size="small"
-                    testID="message-discard"
+                    testID="message-edit"
                     tone="ghost"
                   >
-                    Dismiss
+                    Edit
                   </Button>
-                )}
+                  {pending.state === 'refused' ? (
+                    <Button
+                      onPress={() => {
+                        setPending(undefined);
+                      }}
+                      size="small"
+                      testID="message-discard"
+                      tone="ghost"
+                    >
+                      Dismiss
+                    </Button>
+                  ) : null}
+                </Inline>
               </Stack>
             )}
 

@@ -2,6 +2,7 @@ import {
   accountStanding,
   accountStandingLabels,
 } from '@velora/consumer-client';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { useMediaAddressBook, useSession } from '../frame/providers';
@@ -22,6 +23,7 @@ import {
   Text,
 } from '../design/primitives';
 import { Icon, type IconName } from '../design/icons';
+import { Sheet } from '../design/sheet';
 import type { YouSection } from '../frame/links';
 import { color, space } from '../design/tokens';
 import { profileMediaLabels, profileMediaState } from '@velora/consumer-client';
@@ -261,6 +263,7 @@ export function YouScreen({
  * would be burying the one control that matters in that moment.
  */
 export function AccountScreen({ onBack }: { readonly onBack: () => void }) {
+  const [confirmingEverywhere, setConfirmingEverywhere] = useState(false);
   const session = useSession();
   const current = session.account.account.value;
 
@@ -304,7 +307,11 @@ export function AccountScreen({ onBack }: { readonly onBack: () => void }) {
           <Button
             busy={session.busy}
             icon="lock"
-            onPress={session.signOutEverywhere}
+            onPress={() => {
+              // Asked first, as the web surface asks: this ends every session
+              // on every device, and a thumb slip should not.
+              setConfirmingEverywhere(true);
+            }}
             testID="auth-sign-out-everywhere"
             tone="danger"
             wide
@@ -316,6 +323,42 @@ export function AccountScreen({ onBack }: { readonly onBack: () => void }) {
             this one. Use it if you have lost a device.
           </Text>
         </Stack>
+
+        {confirmingEverywhere ? (
+          <Sheet
+            onClose={() => {
+              setConfirmingEverywhere(false);
+            }}
+            testID="sign-out-everywhere-confirm"
+            title="Sign out everywhere?"
+          >
+            <Text tone="secondary" variant="small">
+              Every session on every device ends, including this one. You will
+              need to sign in again wherever you use VELORA.
+            </Text>
+            <Button
+              busy={session.busy}
+              icon="lock"
+              onPress={() => {
+                setConfirmingEverywhere(false);
+                session.signOutEverywhere();
+              }}
+              testID="sign-out-everywhere-do"
+              tone="danger"
+            >
+              Sign out everywhere
+            </Button>
+            <Button
+              onPress={() => {
+                setConfirmingEverywhere(false);
+              }}
+              testID="sign-out-everywhere-stay"
+              tone="secondary"
+            >
+              Keep this session
+            </Button>
+          </Sheet>
+        ) : null}
 
         {/*
           Closing an account is defined in `docs/flows/account-deletion.md` and

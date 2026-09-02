@@ -1,7 +1,12 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import type { ReactElement } from 'react';
 
-import { youPath, type YouSection } from '../../src/frame/links';
+import {
+  creatorPath,
+  discoverPath,
+  youPath,
+  type YouSection,
+} from '../../src/frame/links';
 import { leave } from '../../src/frame/navigation';
 import { Screen } from '../../src/frame/shell';
 import { Button, EmptyState } from '../../src/design/primitives';
@@ -40,7 +45,17 @@ const screens: Readonly<
 > = {
   account: (onBack) => <AccountScreen onBack={onBack} />,
   availability: (onBack) => <AvailabilityScreen onBack={onBack} />,
-  gifts: (onBack) => <SentGiftsScreen onBack={onBack} />,
+  gifts: (onBack) => (
+    <SentGiftsScreen
+      onBack={onBack}
+      onOpenCreator={(handle) => {
+        router.push(creatorPath(handle));
+      }}
+      onOpenCreators={() => {
+        router.push(`${discoverPath}?show=creators`);
+      }}
+    />
+  ),
   memberships: (onBack) => (
     <MembershipsScreen
       onBack={onBack}

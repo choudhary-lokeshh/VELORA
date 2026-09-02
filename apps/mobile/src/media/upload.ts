@@ -95,14 +95,13 @@ export async function uploadProfilePhoto(
   let body: Blob;
   try {
     body = await readBytes(image, read);
-  } catch (error) {
+  } catch {
     stage('idle');
     return {
       kind: 'failed',
-      message:
-        error instanceof Error
-          ? error.message
-          : 'The chosen photo could not be read from the device.',
+      // The written sentence, always: a filesystem error's own message names
+      // paths and native codes, which is nothing a person can act on.
+      message: 'The chosen photo could not be read from the device.',
     };
   }
 

@@ -645,7 +645,18 @@ function PaymentHistory({
         payments.error === undefined ? (
           <RowSkeleton rows={2} />
         ) : (
-          <ErrorMessage testId="payments-failed">{payments.error}</ErrorMessage>
+          <div className="v-stack v-stack--3">
+            <ErrorMessage testId="payments-failed">
+              {payments.error}
+            </ErrorMessage>
+            {payments.retryable ? (
+              <div>
+                <Button onClick={payments.reload} size="sm">
+                  Try again
+                </Button>
+              </div>
+            ) : null}
+          </div>
         )
       ) : (
         <ul className="v-list v-list--divided">
@@ -667,9 +678,10 @@ function PaymentHistory({
                       <time dateTime={row.createdAt}>
                         {formatDay(row.createdAt)}
                       </time>
-                      {row.failureReason === undefined
+                      {row.failureReason === undefined ||
+                      paymentFailureLabels[row.failureReason] === undefined
                         ? null
-                        : ` · ${paymentFailureLabels[row.failureReason] ?? ''}`}
+                        : ` · ${paymentFailureLabels[row.failureReason]}`}
                     </span>
                   </span>
                   <Badge tone={look.tone}>{look.label}</Badge>

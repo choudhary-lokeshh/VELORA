@@ -1,10 +1,11 @@
 import type { ConsumerGiftList } from '@velora/consumer-client';
 import { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useApi } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
+  Button,
   Badge,
   Card,
   Divider,
@@ -92,7 +93,17 @@ const unknownState: StateLook = {
   tone: 'neutral',
 };
 
-export function SentGiftsScreen({ onBack }: { readonly onBack: () => void }) {
+export function SentGiftsScreen({
+  onBack,
+  onOpenCreator,
+  onOpenCreators,
+}: {
+  readonly onBack: () => void;
+  /** The creator a gift went to, at their own page. The route owns the router. */
+  readonly onOpenCreator: (handle: string) => void;
+  /** Where creators are found, for the list that has nobody in it yet. */
+  readonly onOpenCreators: () => void;
+}) {
   const api = useApi();
   const load = useCallback(async () => api.sentGifts(), [api]);
   const history = useResource<ConsumerGiftList>(load);
@@ -121,7 +132,16 @@ export function SentGiftsScreen({ onBack }: { readonly onBack: () => void }) {
           </Card>
         ) : rows.length === 0 ? (
           <EmptyState
-            body="A gift is support and nothing else — it unlocks no content and gives no access."
+            action={
+              <Button
+                onPress={onOpenCreators}
+                testID="sent-gifts-browse"
+                tone="secondary"
+              >
+                Browse creators
+              </Button>
+            }
+            body="A gift is support and nothing else — it unlocks no content and gives no access. A creator's page is where you choose one."
             icon="sparkle"
             testID="sent-gifts-empty"
             title="No gifts sent"
@@ -144,9 +164,17 @@ export function SentGiftsScreen({ onBack }: { readonly onBack: () => void }) {
                       </View>
                       <View style={styles.body}>
                         <Text weight="medium">{row.gift.name}</Text>
-                        <Text tone="tertiary" variant="caption">
-                          {`${row.creator.displayName} · ${formatPrice(row.price)} · ${formatDate(row.sentAt ?? row.createdAt)}`}
-                        </Text>
+                        <Pressable
+                          accessibilityRole="link"
+                          onPress={() => {
+                            onOpenCreator(row.creator.handle);
+                          }}
+                          testID={`sent-gift-creator-${row.id}`}
+                        >
+                          <Text tone="tertiary" variant="caption">
+                            {`${row.creator.displayName} · ${formatPrice(row.price)} · ${formatDate(row.sentAt ?? row.createdAt)}`}
+                          </Text>
+                        </Pressable>
                         {look.meaning === '' ? null : (
                           <Text
                             testID={`sent-gift-meaning-${row.id}`}

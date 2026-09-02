@@ -434,6 +434,9 @@ importers:
       '@velora/consumer-client':
         specifier: workspace:*
         version: link:../../packages/consumer-client
+      '@velora/creator-client':
+        specifier: workspace:*
+        version: link:../../packages/creator-client
       '@velora/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens

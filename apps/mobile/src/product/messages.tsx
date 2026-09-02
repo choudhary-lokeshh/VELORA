@@ -4,6 +4,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 import { useApi } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
+  Button,
   Avatar,
   Badge,
   Card,
@@ -34,9 +35,12 @@ import { useResource, useRevalidateOnForeground } from './resource';
 const pageSize = 20;
 
 export function MessagesScreen({
+  onOpenIntroductions,
   onOpen,
 }: {
   readonly onOpen: (conversationId: string) => void;
+  /** Where a first conversation comes from; the empty state offers the walk. */
+  readonly onOpenIntroductions: () => void;
 }) {
   const api = useApi();
   const load = useCallback(
@@ -76,6 +80,15 @@ export function MessagesScreen({
         />
       ) : rows.length === 0 ? (
         <EmptyState
+          action={
+            <Button
+              onPress={onOpenIntroductions}
+              testID="conversations-empty-introductions"
+              tone="secondary"
+            >
+              See your introductions
+            </Button>
+          }
           body="A conversation starts from a mutual introduction. Open one under Introductions and it appears here."
           icon="message"
           testID="conversations-empty"

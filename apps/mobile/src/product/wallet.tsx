@@ -13,6 +13,8 @@ import {
   Card,
   Divider,
   EmptyState,
+  ErrorMessage,
+  ErrorState,
   RowSkeleton,
   Stack,
   Text,
@@ -123,11 +125,21 @@ export function WalletScreen({ onBack }: { readonly onBack: () => void }) {
   return (
     <Screen
       onBack={onBack}
+      onRefresh={() => {
+        wallet.refresh();
+        load();
+      }}
       subtitle="What you hold, and what you have spent it on."
       testID="wallet-screen"
       title="Coins"
     >
-      {state === undefined ? (
+      {state === undefined && wallet.message !== undefined ? (
+        <ErrorState
+          body={wallet.message}
+          onRetry={wallet.refresh}
+          testID="wallet-failed"
+        />
+      ) : state === undefined ? (
         <Card testID="wallet-loading">
           <RowSkeleton rows={2} />
         </Card>
@@ -253,7 +265,23 @@ export function WalletScreen({ onBack }: { readonly onBack: () => void }) {
               <Text variant="subheading" weight="semibold">
                 What happened
               </Text>
-              {activity === undefined ? (
+              {activity === undefined && message !== undefined ? (
+                <Stack gap={3}>
+                  <ErrorMessage testID="wallet-history-failed">
+                    {message}
+                  </ErrorMessage>
+                  <Button
+                    onPress={() => {
+                      load();
+                    }}
+                    size="small"
+                    testID="wallet-history-retry"
+                    tone="ghost"
+                  >
+                    Try again
+                  </Button>
+                </Stack>
+              ) : activity === undefined ? (
                 <RowSkeleton rows={2} />
               ) : activity.length === 0 ? (
                 <Text
@@ -286,7 +314,7 @@ export function WalletScreen({ onBack }: { readonly onBack: () => void }) {
             </Stack>
           </Card>
 
-          {message === undefined ? null : (
+          {message === undefined || activity === undefined ? null : (
             <Text testID="wallet-message" tone="secondary" variant="caption">
               {message}
             </Text>

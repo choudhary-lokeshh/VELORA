@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorMessage,
   PageHeader,
   Section,
   Skeleton,
@@ -126,7 +127,22 @@ export function Wallet() {
   return (
     <>
       <PageHeader title="Coins" />
-      {state === undefined ? (
+      {state === undefined && wallet.message !== undefined ? (
+        /*
+          A failed read, said and recoverable. The skeleton below promises an
+          answer is coming; after a refusal or an outage none is, and a
+          skeleton that never resolves is the one outcome the resource shape
+          exists to prevent.
+        */
+        <Card>
+          <div className="v-stack v-stack--3">
+            <ErrorMessage testId="wallet-failed">{wallet.message}</ErrorMessage>
+            <div>
+              <Button onClick={wallet.refresh}>Try again</Button>
+            </div>
+          </div>
+        </Card>
+      ) : state === undefined ? (
         <Card testId="wallet-loading">
           <Skeleton height={28} width="40%" />
           <Skeleton height={12} width="70%" />
@@ -164,7 +180,23 @@ export function Wallet() {
           />
 
           <Section raised testId="wallet-history" title="What happened">
-            {activity === undefined ? (
+            {activity === undefined && message !== undefined ? (
+              <div className="v-stack v-stack--3">
+                <ErrorMessage testId="wallet-history-failed">
+                  {message}
+                </ErrorMessage>
+                <div>
+                  <Button
+                    onClick={() => {
+                      load();
+                    }}
+                    size="sm"
+                  >
+                    Try again
+                  </Button>
+                </div>
+              </div>
+            ) : activity === undefined ? (
               <Skeleton height={12} width="60%" />
             ) : activity.length === 0 ? (
               <p className="v-small v-quiet" data-testid="wallet-history-empty">
@@ -190,7 +222,7 @@ export function Wallet() {
             )}
           </Section>
 
-          {message === undefined ? null : (
+          {message === undefined || activity === undefined ? null : (
             <p className="v-caption v-quiet" data-testid="wallet-message">
               {message}
             </p>
@@ -282,14 +314,22 @@ function Acquisition({
   const intent = useRef(new Map<string, string>());
   const sellable = state.acquisition.web === 'local-test';
 
-  useEffect(() => {
-    if (!sellable) return;
+  const [packsError, setPacksError] = useState<string | undefined>(undefined);
+  const loadPacks = useCallback(() => {
     void api.coinPacks().then((result) => {
-      if (!isOk(result)) return;
+      if (!isOk(result)) {
+        // Said, not skeletoned over: this is the code a real provider runs.
+        setPacksError(failureMessage(result));
+        return;
+      }
+      setPacksError(undefined);
       setPacks([...result.value.packs]);
       setGates(result.value.gates);
     });
-  }, [api, sellable]);
+  }, [api]);
+  useEffect(() => {
+    if (sellable) loadPacks();
+  }, [loadPacks, sellable]);
 
   if (!sellable) {
     return (
@@ -304,7 +344,12 @@ function Acquisition({
           There is no way to buy coins in this environment yet. Everyone
           matching is free and always will be.
         </p>
-        {state.acquisition.android === 'unavailable' ? (
+        {state.acquisition.web === 'unavailable' ? (
+          /*
+            Gated on this surface's own channel. It read Android's before, so
+            an environment selling on Android and not here offered a web
+            developer neither a purchase nor a grant.
+          */
           <Button
             busy={busy}
             data-testid="wallet-grant"
@@ -329,7 +374,16 @@ function Acquisition({
         */}
         Coins buy narrowed Live matching. Everyone stays free.
       </p>
-      {packs === undefined ? (
+      {packs === undefined && packsError !== undefined ? (
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="wallet-packs-failed">{packsError}</ErrorMessage>
+          <div>
+            <Button onClick={loadPacks} size="sm">
+              Try again
+            </Button>
+          </div>
+        </div>
+      ) : packs === undefined ? (
         <Skeleton height={12} width="60%" />
       ) : gates !== undefined && gates.length > 0 ? (
         /*

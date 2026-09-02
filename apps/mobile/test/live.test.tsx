@@ -78,6 +78,8 @@ async function mountLive(
     <LiveScreen
       onOpenConversation={handlers.onOpenConversation ?? noop}
       onOpenPerson={handlers.onOpenPerson ?? noop}
+      onOpenSafety={noop}
+      onOpenWallet={noop}
     />
   );
   await renderScreen(element, double, { store });

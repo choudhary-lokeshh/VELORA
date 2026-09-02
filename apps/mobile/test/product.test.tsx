@@ -94,7 +94,13 @@ function withCandidates(): MobileApiState {
 describe('discover', () => {
   it('shows a person with what the contract publishes, photograph included', async () => {
     const { view } = await mount(
-      <DiscoverScreen onOpenPerson={() => undefined} />,
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
       withCandidates(),
     );
 
@@ -117,7 +123,13 @@ describe('discover', () => {
 
   it('draws an identity mark, and says nothing, when no address is granted', async () => {
     const { view } = await mount(
-      <DiscoverScreen onOpenPerson={() => undefined} />,
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
       {
         ...withCandidates(),
         mediaDelivery: 'declined',
@@ -140,7 +152,13 @@ describe('discover', () => {
 
   it('takes a person off the feed once interest is sent', async () => {
     const { double, view } = await mount(
-      <DiscoverScreen onOpenPerson={() => undefined} />,
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
       withCandidates(),
     );
     await waitFor(() => {
@@ -166,7 +184,13 @@ describe('discover', () => {
     const state = admittedState();
     state.candidates = [];
     const { view } = await mount(
-      <DiscoverScreen onOpenPerson={() => undefined} />,
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
       state,
     );
 
@@ -180,7 +204,13 @@ describe('discover', () => {
 
   it('keeps the person on the feed when the decision is refused', async () => {
     const { double, view } = await mount(
-      <DiscoverScreen onOpenPerson={() => undefined} />,
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
       withCandidates(),
     );
     await waitFor(() => {
@@ -201,7 +231,13 @@ describe('discover', () => {
 
   it('offers safety beside the person rather than on a screen somebody has to find', async () => {
     const { view } = await mount(
-      <DiscoverScreen onOpenPerson={() => undefined} />,
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
       withCandidates(),
     );
     await waitFor(() => {
@@ -301,7 +337,10 @@ describe('messages', () => {
         },
       ];
     }
-    const { view } = await mount(<MessagesScreen onOpen={nothing} />, state);
+    const { view } = await mount(
+      <MessagesScreen onOpen={nothing} onOpenIntroductions={nothing} />,
+      state,
+    );
 
     await waitFor(() => {
       expect(
@@ -453,8 +492,18 @@ describe('messages', () => {
     await waitFor(() => {
       expect(view.getByTestId('message-retry')).toBeTruthy();
     });
-    // The draft survives, because losing somebody's words to a dropped
-    // connection is the one failure a messaging surface must not have.
+    // The words survive — losing somebody's sentence to a dropped connection
+    // is the one failure a messaging surface must not have — but they survive
+    // in the failure block, not the box. Both places at once armed a second
+    // Send with a new client identifier, which is how one message posts
+    // twice; the id-reusing Try again is the sender now, and Edit puts the
+    // words back in the box for rewriting.
+    expect(view.getByTestId('message-send-body').props.children).toBe(
+      'Still here?',
+    );
+    expect(view.getByTestId('message-input').props.value).toBe('');
+
+    await fireEvent.press(view.getByTestId('message-edit'));
     expect(view.getByTestId('message-input').props.value).toBe('Still here?');
   });
 
@@ -1105,6 +1154,59 @@ describe('a creator page on a phone', () => {
     return state;
   }
 
+  it('shows who the creator is, from the public projection', async () => {
+    const state = selling();
+    state.publicCreators.ember_vale = {
+      bio: 'Slow letters from a fast city.',
+      displayName: 'Ember Vale',
+      links: [{ label: 'Site', url: 'https://example.test/ember' }],
+    };
+    const { view } = await mount(
+      <CreatorScreen
+        handle="ember_vale"
+        onBack={nothing}
+        onOpenClub={nothing}
+      />,
+      state,
+    );
+
+    // A person, before a price list: the same identity Consumer Web renders.
+    await waitFor(() => {
+      expect(view.getByTestId('creator-identity')).toBeTruthy();
+    });
+    // Twice, and both on purpose: the screen's own title now carries the
+    // name instead of the word "Creator", and the identity block repeats it
+    // beside the portrait.
+    expect(view.getAllByText('Ember Vale').length).toBeGreaterThanOrEqual(2);
+    expect(view.getByTestId('creator-bio')).toBeTruthy();
+  });
+
+  it('never calls a club by-invitation because the offers read failed', async () => {
+    const state = selling();
+    const { double, view } = await mount(
+      <CreatorScreen
+        handle="ember_vale"
+        onBack={nothing}
+        onOpenClub={nothing}
+      />,
+      state,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('club-card-inner')).toBeTruthy();
+    });
+
+    double.failNext('/v1/creators/memberships');
+    await fireEvent(view.getByTestId('creator-page'), 'refresh');
+
+    // "By invitation. There is nothing to buy here" is a commercial claim,
+    // and a failed read supports no claim at all — the failure is said
+    // instead. (The prices are still on screen from the last good read.)
+    await waitFor(() => {
+      expect(view.getByText(/15\.00 USD/u)).toBeTruthy();
+    });
+    expect(view.queryByText(/nothing to buy here/u)).toBeNull();
+  });
+
   it('shows what a membership costs and says where it can be bought', async () => {
     const { view } = await mount(
       <CreatorScreen
@@ -1187,6 +1289,80 @@ describe('a creator page on a phone', () => {
   });
 });
 
+describe('the creator half of Discover', () => {
+  function directory(): MobileApiState {
+    const state = admittedState();
+    state.publicCreators.ember_vale = {
+      bio: 'Slow letters from a fast city.',
+      displayName: 'Ember Vale',
+      links: [],
+    };
+    return state;
+  }
+
+  it('lists the public directory and opens a creator from it', async () => {
+    const opened: string[] = [];
+    const { view } = await mount(
+      <DiscoverScreen
+        onOpenCreator={(handle) => {
+          opened.push(handle);
+        }}
+        onOpenPerson={nothing}
+        onOpenYou={nothing}
+        onSection={nothing}
+        section="creators"
+      />,
+      directory(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('creator-open-ember_vale')).toBeTruthy();
+    });
+    await fireEvent.press(view.getByTestId('creator-open-ember_vale'));
+    // The corridor this pane exists for: the phone had creator and club
+    // screens that nothing linked to.
+    expect(opened).toEqual(['ember_vale']);
+  });
+
+  it('says the truth when no creator has published a page', async () => {
+    const { view } = await mount(
+      <DiscoverScreen
+        onOpenCreator={nothing}
+        onOpenPerson={nothing}
+        onOpenYou={nothing}
+        onSection={nothing}
+        section="creators"
+      />,
+      admittedState(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('creator-directory-empty')).toBeTruthy();
+    });
+  });
+
+  it('tells an invisible person that nobody can see them', async () => {
+    // The seeded availability is unavailable, which is exactly the state the
+    // notice exists for: browsing a feed while invisible quietly answers
+    // nothing back.
+    const { view } = await mount(
+      <DiscoverScreen
+        onOpenCreator={nothing}
+        onOpenPerson={nothing}
+        onOpenYou={nothing}
+        onSection={nothing}
+        section="people"
+      />,
+      withCandidates(),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId('discovery-availability')).toBeTruthy();
+    });
+    expect(view.getByTestId('discovery-availability-set')).toBeTruthy();
+  });
+});
+
 describe('a person at their own address', () => {
   /** A second image, so there is a gallery and not only a portrait. */
   const secondImageId = '66666666-6666-4666-8666-666666666666';
@@ -1245,9 +1421,13 @@ describe('a person at their own address', () => {
     const opened: string[] = [];
     const { view } = await mount(
       <DiscoverScreen
+        onOpenCreator={() => undefined}
         onOpenPerson={(personId) => {
           opened.push(personId);
         }}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
       />,
       withCandidates(),
     );
@@ -1287,7 +1467,11 @@ describe('gifts sent', () => {
 
   it('reads back what was sent, and what happened to each one', async () => {
     const { view } = await mount(
-      <SentGiftsScreen onBack={nothing} />,
+      <SentGiftsScreen
+        onBack={nothing}
+        onOpenCreator={nothing}
+        onOpenCreators={nothing}
+      />,
       withGifts(),
     );
 
@@ -1311,7 +1495,11 @@ describe('gifts sent', () => {
 
   it('offers no way to send one, and says where sending happens', async () => {
     const { view } = await mount(
-      <SentGiftsScreen onBack={nothing} />,
+      <SentGiftsScreen
+        onBack={nothing}
+        onOpenCreator={nothing}
+        onOpenCreators={nothing}
+      />,
       withGifts(),
     );
 
@@ -1325,7 +1513,13 @@ describe('gifts sent', () => {
   });
 
   it('says nothing was sent rather than showing an empty frame', async () => {
-    const { view } = await mount(<SentGiftsScreen onBack={nothing} />);
+    const { view } = await mount(
+      <SentGiftsScreen
+        onBack={nothing}
+        onOpenCreator={nothing}
+        onOpenCreators={nothing}
+      />,
+    );
 
     await waitFor(() => {
       expect(view.getByTestId('sent-gifts-empty')).toBeTruthy();

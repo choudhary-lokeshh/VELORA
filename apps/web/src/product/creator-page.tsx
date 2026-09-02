@@ -268,6 +268,7 @@ function GiftPicker({
   const [selected, setSelected] = useState<GiftCatalogItem>();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | undefined>(undefined);
   const [sent, setSent] = useState<GiftCatalogItem>();
   const inFlight = useRef(false);
   const intentKey = useRef<string | undefined>(undefined);
@@ -300,12 +301,18 @@ function GiftPicker({
     );
   }
   if (catalog.value?.enabled !== true) {
+    // Two different absences. A read that failed says so — blaming the
+    // creator for the network would be commercially false in the unkind
+    // direction — and only the server's own answer gets to say gifts are off.
+    const failed = catalog.error !== undefined && catalog.value === undefined;
     return (
       <Card>
         <div className="v-stack v-stack--3">
           <h2 className="v-heading">Send a gift</h2>
           <p className="v-small v-muted">
-            Gifts are not available for this creator right now.
+            {failed
+              ? 'Gifts could not be loaded just now.'
+              : 'Gifts are not available for this creator right now.'}
           </p>
           {catalog.retryable ? (
             <div>
@@ -319,6 +326,7 @@ function GiftPicker({
 
   const send = async () => {
     if (selected === undefined || api === undefined || inFlight.current) return;
+    setSendError(undefined);
     const idempotencyKey = intentKey.current ?? crypto.randomUUID();
     intentKey.current = idempotencyKey;
     inFlight.current = true;
@@ -352,12 +360,11 @@ function GiftPicker({
         }
         return;
       }
-      showToast?.(
-        failureMessage(result) ?? 'Gift could not be sent.',
-        'critical',
-      );
+      // Into the dialog somebody is looking at, not only a toast behind it:
+      // the confirm stays open, and it says why nothing happened.
+      setSendError(failureMessage(result) ?? 'Gift could not be sent.');
     } catch {
-      showToast?.('Gift could not be sent.', 'critical');
+      setSendError('Gift could not be sent.');
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -424,6 +431,7 @@ function GiftPicker({
           confirmLabel={`Send ${selected.name}`}
           confirmTone="primary"
           onCancel={() => {
+            setSendError(undefined);
             setConfirming(false);
           }}
           onConfirm={() => {
@@ -436,6 +444,11 @@ function GiftPicker({
             You are sending {selected.name} for {formatGiftPrice(selected)}.
             This supports the creator and unlocks no content.
           </p>
+          {sendError === undefined ? null : (
+            <ErrorMessage testId="gift-confirm-failed">
+              {sendError}
+            </ErrorMessage>
+          )}
         </ConfirmDialog>
       ) : null}
     </section>

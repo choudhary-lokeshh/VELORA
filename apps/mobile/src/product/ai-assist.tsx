@@ -65,10 +65,10 @@ export function MobileAiAssist({
     let runId: string;
     try {
       runId = createAiRunId();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Suggestion unavailable.',
-      );
+    } catch {
+      // The engine's own words are about a missing crypto API, which is a
+      // sentence for a developer and noise for the person reading it.
+      setError('Suggestion unavailable.');
       return;
     }
     const nextController = new AbortController();

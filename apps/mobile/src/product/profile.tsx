@@ -10,8 +10,8 @@ import { StyleSheet, View } from 'react-native';
 import { useApi, useSession, useToast } from '../frame/providers';
 import { openApplicationSettings } from '../device/permissions';
 import { Screen } from '../frame/shell';
+import { LanguagePicker } from './onboarding';
 import {
-  Badge,
   BlockedState,
   Button,
   Card,
@@ -19,7 +19,6 @@ import {
   Divider,
   ErrorState,
   Field,
-  Inline,
   Notice,
   RowSkeleton,
   Stack,
@@ -27,7 +26,6 @@ import {
   Text,
   TextField,
 } from '../design/primitives';
-import { languageName } from './locale';
 import { ProfilePhotos } from './photos';
 import { MobileAiAssist } from './ai-assist';
 import {
@@ -59,17 +57,24 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
 
   const [displayName, setDisplayName] = useState<string | undefined>(undefined);
   const [bio, setBio] = useState<string | undefined>(undefined);
+  const [languageDraft, setLanguageDraft] = useState<
+    readonly string[] | undefined
+  >(undefined);
 
   // Held only once somebody types. Until then the server's value is what is
   // shown, so a profile edited on another device is not overwritten by a stale
   // draft this screen was holding.
   const name = displayName ?? held?.displayName ?? '';
   const about = bio ?? held?.bio ?? '';
+  const languages = languageDraft ?? held?.languages ?? [];
   const nameTooLong = name.trim().length > 80;
   const bioTooLong = about.trim().length > maximumBio;
+  const languagesMissing = languages.length === 0;
   const changed =
     (displayName !== undefined && name !== (held?.displayName ?? '')) ||
-    (bio !== undefined && about !== (held?.bio ?? ''));
+    (bio !== undefined && about !== (held?.bio ?? '')) ||
+    (languageDraft !== undefined &&
+      languageDraft.join(',') !== (held?.languages ?? []).join(','));
 
   return (
     <Screen
@@ -149,7 +154,9 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
 
               <Button
                 busy={busy}
-                disabled={!changed || nameTooLong || bioTooLong}
+                disabled={
+                  !changed || nameTooLong || bioTooLong || languagesMissing
+                }
                 icon="check"
                 onPress={() => {
                   run(async () => {
@@ -161,7 +168,7 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                       ...(held?.version === undefined
                         ? {}
                         : { expectedVersion: held.version }),
-                      languages: held?.languages ?? [],
+                      languages: [...languages],
                     });
                     const failure = failureMessage(result);
                     if (failure !== undefined) {
@@ -171,6 +178,7 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                     toast.show('Profile saved.', 'positive');
                     setDisplayName(undefined);
                     setBio(undefined);
+                    setLanguageDraft(undefined);
                     session.account.reloadAll();
                   });
                 }}
@@ -194,21 +202,23 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                   Languages
                 </Text>
                 <Text tone="secondary" variant="small">
-                  Discovery uses these to find people you can actually talk to.
+                  Discovery uses these to find people you can actually talk to,
+                  and a paid Live language preference can only name one of them.
+                  Save above to keep a change.
                 </Text>
-                <Inline gap={2} wrap>
-                  {held.languages.length === 0 ? (
-                    <Text tone="tertiary" variant="small">
-                      None yet.
-                    </Text>
-                  ) : (
-                    held.languages.map((code) => (
-                      <Badge key={code} testID={`profile-language-${code}`}>
-                        {languageName(code)}
-                      </Badge>
-                    ))
-                  )}
-                </Inline>
+                {/*
+                  Editable, not a plaque. These were badges: the one field
+                  that gates both discovery matching and the paid language
+                  filter was locked to whatever somebody answered during
+                  onboarding, on the only device many people have.
+                */}
+                <LanguagePicker
+                  error={
+                    languagesMissing ? 'Add at least one language.' : undefined
+                  }
+                  onChange={setLanguageDraft}
+                  value={languages}
+                />
               </Stack>
             </Card>
           )}

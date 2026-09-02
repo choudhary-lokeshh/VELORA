@@ -69,6 +69,15 @@ export interface MobileApiState {
       creatorHandle: string;
     }
   >;
+  /** The public creator projection: who they are, credential-free. */
+  publicCreators: Record<
+    string,
+    {
+      bio?: string;
+      displayName: string;
+      links: { label?: string; url: string }[];
+    }
+  >;
   /** What creators publish, by handle: clubs from one owner, prices from another. */
   publicClubs: Record<
     string,
@@ -494,6 +503,7 @@ export function admittedState(): MobileApiState {
     membershipOffers: {},
     payments: [],
     publicClubs: {},
+    publicCreators: {},
     subscriptions: [],
     mediaDelivery: 'granted',
     live: {
@@ -964,6 +974,26 @@ export function createMobileApiDouble(
 
     // Every product route is bearer-authenticated. A request with no token, or
     // one made after the session ended, is refused exactly as the server does.
+    // The public creator projection. Reachable without a credential, exactly
+    // as the contract publishes it — the phone asks on a client that sends
+    // none, so these answer before the guard below.
+    if (path === '/v1/creators' && method === 'GET') {
+      const handle = url.searchParams.get('handle') ?? '';
+      const found = state.publicCreators[handle];
+      if (found === undefined) return json(404, { error: 'not_found' });
+      return json(200, { handle, ...found });
+    }
+    if (path === '/v1/creators/directory' && method === 'GET') {
+      const creators = Object.entries(state.publicCreators).map(
+        ([handle, row]) => ({
+          handle,
+          displayName: row.displayName,
+          ...(row.bio === undefined ? {} : { bio: row.bio }),
+        }),
+      );
+      return json(200, { creators });
+    }
+
     const authorization = request.headers.get('authorization');
     if (authorization === null || !state.sessionLive) {
       return error(401, 'AUTH_REQUIRED');
