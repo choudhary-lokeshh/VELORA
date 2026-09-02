@@ -79,7 +79,7 @@ Playwright reuses whatever already listens on a `webServer` URL outside CI and n
 - A form on a phone can be filled in with the keyboard open, on every screen rather than on the one screen that had solved it.
 - Creators are a reachable part of the consumer product on both surfaces, and a creator is a person on both.
 - No consumer surface can produce an infinite skeleton, and no failure can be read as a fact about somebody else.
-- Camera-off is a rendered product state proved against a real provider, and audio-only needs no second architecture. The proof is recorded in [live-provider evidence](../evidence/live-provider/README.md).
+- Camera-off is a rendered product state proved against a real provider, and audio-only needs no second architecture. The proof is recorded in [live-provider evidence](../evidence/live-provider/README.md), and what was watched happen on a device and in a browser for the rest of this phase is in [consumer-completion evidence](../evidence/consumer-completion/README.md).
 - A browser run on a shared machine either owns its ports or says so.
 
 ## Alternatives considered
