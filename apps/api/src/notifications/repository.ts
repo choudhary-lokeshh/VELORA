@@ -658,6 +658,24 @@ export class NotificationRepository {
    * A repeated registration of an unchanged token is a heartbeat rather than a
    * new device, so it moves `lastSeenAt` and nothing else. That is what keeps
    * an app that registers on every launch from accumulating rows.
+   *
+   * `lastSeenAt` is taken as the later of what is known rather than as
+   * "whatever this request carried". Fifty registrations of one device can be
+   * in flight at once — a retry storm, or an app reconnecting — and the one
+   * that reaches this statement second is not necessarily the one with the
+   * later clock: each captured its own `now` before queueing on the
+   * registration lock, so a request that started earlier can commit after a
+   * request that started later. Assigning `last_seen_at` unconditionally then
+   * writes a moment before the row's own `created_at`, which
+   * `notifications_push_devices_seen_check` refuses — correctly, because that
+   * pair of values would be a lie — and the refusal fails a registration that
+   * had already been authorised, as a 500.
+   *
+   * `greatest` is enough on its own here, and `created_at` is deliberately
+   * left alone: the existing row's `last_seen_at` is already at or after its
+   * `created_at`, so the later of the two can only be at or after it too. A
+   * straggler refreshes the heartbeat or changes nothing, and never rewrites
+   * when the registration came into being.
    */
   async upsertPushDevice(
     executor: Executor,
@@ -683,7 +701,7 @@ export class NotificationRepository {
       .onConflictDoUpdate({
         set: {
           installationId: input.installationId,
-          lastSeenAt: input.now,
+          lastSeenAt: sql`greatest(${notificationPushDevices.lastSeenAt}, excluded.last_seen_at)`,
           platform: input.platform,
           recipientId: input.recipientId,
         },

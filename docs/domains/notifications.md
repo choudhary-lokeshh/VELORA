@@ -88,6 +88,8 @@ One live registration per token, across the platform. Registering a token anothe
 
 Registration is serialized by two transaction-scoped advisory locks, on the token and on the installation, taken in sorted order. All three of its decisions are about the *absence* of a row, which has nothing to lock, and fifty concurrent registrations of one token demonstrated the gap before the locks were added: some of them lost the insert race on the partial unique index and failed rather than settling on the row that won. Two locks rather than one because two different uniqueness rules are being protected, and sorted because two transactions needing both must ask in the same order.
 
+The locks decide who writes, and not with which clock. Each registration captures its own instant before it queues, so the one that reaches the row second is not necessarily the one with the later clock, and a heartbeat is therefore recorded as the *later* of what is known rather than as whatever the arriving request carried. A registration that ran behind refreshes nothing and changes nothing; it never moves `last_seen_at` back before the row's own `created_at`, which the table refuses — correctly, because that pair of values would be a lie about a device nobody can reach twice.
+
 Revocation is scoped to the caller's own principal and succeeds silently when nothing is registered, so it cannot be used to discover whether an installation identifier exists.
 
 ## Provider feedback, and what a verified event is allowed to change

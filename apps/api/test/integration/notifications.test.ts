@@ -2069,6 +2069,41 @@ describe('push device registration', () => {
     expect(response.status).toBe(401);
   });
 
+  it('keeps a registration whose clock runs behind the row it refreshes', async () => {
+    /*
+     * The fifty-way test above, made deterministic.
+     *
+     * Each registration captures its own `now` before it queues on the
+     * registration lock, so the one that reaches the upsert second is not
+     * necessarily the one with the later clock. Writing `last_seen_at`
+     * unconditionally then puts it before the row's own `created_at`, which
+     * `notifications_push_devices_seen_check` refuses — and a registration
+     * that had already been authorised answered 500. Rewinding the clock
+     * between two registrations produces that interleaving on demand, instead
+     * of waiting for a hosted run to lose the race.
+     */
+    const recipient = await deviceOwner();
+    clockOffsetMilliseconds += 60_000;
+    const first = await register(recipient);
+    clockOffsetMilliseconds -= 60_000;
+
+    const second = await register(recipient);
+
+    expect(second.status).toBe(200);
+    expect(second.devices).toHaveLength(1);
+    // The heartbeat never goes backwards, so the row keeps saying something
+    // true about itself whichever order the two writes land in.
+    expect(second.devices[0]?.lastSeenAt).toBe(
+      first.devices[0]?.lastSeenAt ?? '',
+    );
+    const rows = await rowsOf<{ ordered: boolean }>(
+      database.sql`select last_seen_at >= created_at as ordered
+        from notifications_push_devices
+        where recipient_id = ${recipient.id} and disabled_at is null`,
+    );
+    expect(rows).toEqual([{ ordered: true }]);
+  });
+
   it('leaves exactly one live registration under fifty concurrent registrations', async () => {
     const recipient = await deviceOwner();
     const logMark = logs.length;
