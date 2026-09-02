@@ -5,8 +5,11 @@ import {
   ConnectionState,
   RoomEvent,
   Track,
+  type Participant,
   type RemoteTrack,
+  type RemoteTrackPublication,
   type Room,
+  type TrackPublication,
 } from 'livekit-client';
 
 import {
@@ -65,10 +68,29 @@ export type LiveTransportState =
   | 'failed';
 
 export interface LiveTransport {
-  /** True once a remote video track has actually been subscribed. */
+  /**
+   * True while a remote video track is subscribed *and* unmuted.
+   *
+   * Mute matters as much as subscription. A peer who turns their camera off
+   * mutes the publication rather than unpublishing it, so the subscription
+   * survives — and a fact that only tracked subscription kept a `<video>`
+   * mounted over a track that had stopped producing frames. What that renders
+   * is the last frame the camera sent, frozen, which reads as a broken product
+   * wearing a real person's face.
+   */
   readonly peerVideo: boolean;
-  /** True once a remote audio track has actually been subscribed. */
+  /** True while a remote audio track is subscribed and unmuted. */
   readonly peerAudio: boolean;
+  /**
+   * True while the other person is in the room, whatever they are sending.
+   *
+   * A separate fact from the two above because their absence is ambiguous
+   * without it: no video and no audio is what "not here yet" looks like, and
+   * also what "here, with the camera and microphone off" looks like. The first
+   * should read as waiting and the second as a person who is present and can
+   * still be typed to, and only the room knows which.
+   */
+  readonly peerJoined: boolean;
   /** What the peer is sending, ready to attach to a `<video>`. */
   readonly remoteStream: MediaStream | undefined;
   readonly state: LiveTransportState;
@@ -170,6 +192,7 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
   );
   const [peerVideo, setPeerVideo] = useState(false);
   const [peerAudio, setPeerAudio] = useState(false);
+  const [peerJoined, setPeerJoined] = useState(false);
 
   /**
    * The joined room, in state rather than only in a ref.
@@ -199,6 +222,7 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
     setRemoteStream(undefined);
     setPeerAudio(false);
     setPeerVideo(false);
+    setPeerJoined(false);
   }, []);
 
   useEffect(() => {
@@ -251,26 +275,61 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
       });
       joined = opened;
 
+      /**
+       * Whether a track of this kind is arriving, as one rule for the three
+       * events that can change it. Subscription alone is not the fact the
+       * surface renders: a peer who turns their camera off mutes the
+       * publication and stays subscribed, so "subscribed" without "unmuted"
+       * kept a frozen last frame on screen wearing a live person's face.
+       */
+      const setPeerTrack = (kind: Track.Kind, live: boolean) => {
+        if (kind === Track.Kind.Video) setPeerVideo(live);
+        if (kind === Track.Kind.Audio) setPeerAudio(live);
+      };
       opened
-        .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-          if (cancelled()) return;
-          // A *new* stream every time, rather than a mutated one.
-          //
-          // React bails out of a state update that returns the same reference,
-          // so adding a second track to the stream already in state changes
-          // nothing that anything downstream can observe — and the element that
-          // mounts when the first video track arrives is then never handed the
-          // stream at all. Audio arriving before video is the ordinary case,
-          // which is why this looked like "a video element with no picture"
-          // rather than like nothing working.
-          setRemoteStream((current) => {
-            const next = new MediaStream(current?.getTracks() ?? []);
-            next.addTrack(track.mediaStreamTrack);
-            return next;
-          });
-          if (track.kind === Track.Kind.Video) setPeerVideo(true);
-          if (track.kind === Track.Kind.Audio) setPeerAudio(true);
-        })
+        .on(
+          RoomEvent.TrackSubscribed,
+          (track: RemoteTrack, publication: RemoteTrackPublication) => {
+            if (cancelled()) return;
+            // A *new* stream every time, rather than a mutated one.
+            //
+            // React bails out of a state update that returns the same reference,
+            // so adding a second track to the stream already in state changes
+            // nothing that anything downstream can observe — and the element that
+            // mounts when the first video track arrives is then never handed the
+            // stream at all. Audio arriving before video is the ordinary case,
+            // which is why this looked like "a video element with no picture"
+            // rather than like nothing working.
+            setRemoteStream((current) => {
+              const next = new MediaStream(current?.getTracks() ?? []);
+              next.addTrack(track.mediaStreamTrack);
+              return next;
+            });
+            // A track can arrive already muted — a camera switched off before
+            // the match publishes, then mutes — and rendering it would mount a
+            // video element with nothing behind it.
+            setPeerTrack(track.kind, !publication.isMuted);
+            setPeerJoined(true);
+          },
+        )
+        .on(
+          RoomEvent.TrackMuted,
+          (publication: TrackPublication, participant: Participant) => {
+            // This event reports the local mute too — it is how this side's own
+            // camera toggle is signalled — and a handler that did not ask whose
+            // publication this is would blank the peer every time *this* person
+            // muted.
+            if (cancelled() || participant.isLocal) return;
+            setPeerTrack(publication.kind, false);
+          },
+        )
+        .on(
+          RoomEvent.TrackUnmuted,
+          (publication: TrackPublication, participant: Participant) => {
+            if (cancelled() || participant.isLocal) return;
+            setPeerTrack(publication.kind, true);
+          },
+        )
         .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
           if (cancelled()) return;
           setRemoteStream((current) => {
@@ -282,8 +341,15 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
               ? undefined
               : new MediaStream(remaining);
           });
-          if (track.kind === Track.Kind.Video) setPeerVideo(false);
-          if (track.kind === Track.Kind.Audio) setPeerAudio(false);
+          setPeerTrack(track.kind, false);
+        })
+        .on(RoomEvent.ParticipantConnected, () => {
+          if (cancelled()) return;
+          // Present before publishing anything. A peer whose camera and
+          // microphone are both off sends no tracks at all, and without this
+          // fact the surface would go on saying "waiting to join" about a
+          // person who is already here and typing.
+          setPeerJoined(true);
         })
         .on(RoomEvent.ParticipantDisconnected, () => {
           if (cancelled()) return;
@@ -326,6 +392,9 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
       }
       active.current = opened;
       setRoom(opened);
+      // The peer may have been in the room before this side joined, in which
+      // case no ParticipantConnected ever fires for them here.
+      if (opened.remoteParticipants.size > 0) setPeerJoined(true);
       setState('connected');
     };
     void open();
@@ -426,5 +495,5 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
     }
   }, [options.cameraOn, options.microphoneOn, room]);
 
-  return { peerAudio, peerVideo, remoteStream, state };
+  return { peerAudio, peerJoined, peerVideo, remoteStream, state };
 }

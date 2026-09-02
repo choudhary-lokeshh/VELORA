@@ -1550,6 +1550,17 @@ function RemotePane({
             ? `${encounter.peer.displayName}'s camera is off.`
             : 'Connected.'}
         </Text>
+      ) : transport.peerJoined ? (
+        <Text testID="live-media-quiet" tone="tertiary" variant="caption">
+          {/*
+            Here, sending nothing. A peer with the camera and the microphone
+            both off publishes no tracks at all, and before the room's own
+            presence was a fact this screen could read, that person was
+            described as not having joined yet — the wrong thing to say about
+            somebody already here and able to type.
+          */}
+          {`${encounter.peer.displayName}'s camera and microphone are off. The chat still works.`}
+        </Text>
       ) : (
         <Text testID="live-media-waiting" tone="tertiary" variant="caption">
           Waiting for {encounter.peer.displayName} to join…

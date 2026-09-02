@@ -1405,6 +1405,24 @@ function RemotePane({
     remoteVideo.current = element;
     if (element === null) return;
     element.srcObject = remoteStreamRef.current ?? null;
+    void element.play().catch(() => undefined);
+  }, []);
+  /**
+   * The voice, in its own element.
+   *
+   * The video element cannot be the audio sink, because it exists only while a
+   * picture is arriving: a peer with the camera off — muted from the start, or
+   * turned off mid-call — still speaks, and a sink that unmounted with the
+   * picture took their voice with it. This element is always mounted while the
+   * encounter is carried, draws nothing, and is the one place their audio
+   * plays; the video element above it is muted so a camera coming on does not
+   * add a second copy of the same voice.
+   */
+  const remoteAudio = useRef<HTMLAudioElement | null>(null);
+  const attachAudio = useCallback((element: HTMLAudioElement | null) => {
+    remoteAudio.current = element;
+    if (element === null) return;
+    element.srcObject = remoteStreamRef.current ?? null;
     // Autoplay with sound is refused unless the element is muted or the page
     // has been interacted with. Reaching this screen requires pressing Start,
     // so it has been — and a rejection is recoverable by the person pressing
@@ -1414,11 +1432,12 @@ function RemotePane({
   const remoteStreamRef = useRef<MediaStream | undefined>(undefined);
   remoteStreamRef.current = transport.remoteStream;
   useEffect(() => {
-    const element = remoteVideo.current;
-    if (element === null) return;
-    element.srcObject = transport.remoteStream ?? null;
-    if (transport.remoteStream !== undefined) {
-      void element.play().catch(() => undefined);
+    for (const element of [remoteVideo.current, remoteAudio.current]) {
+      if (element === null) continue;
+      element.srcObject = transport.remoteStream ?? null;
+      if (transport.remoteStream !== undefined) {
+        void element.play().catch(() => undefined);
+      }
     }
   }, [transport.remoteStream]);
 
@@ -1440,9 +1459,13 @@ function RemotePane({
           autoPlay
           className="v-live__peer-video"
           data-testid="live-peer-video"
+          muted
           playsInline
           ref={attach}
         />
+      ) : null}
+      {carried ? (
+        <audio autoPlay data-testid="live-peer-audio" ref={attachAudio} />
       ) : null}
       {/*
         The person, and what is carrying them. Nothing about the arrangement
@@ -1525,6 +1548,20 @@ function RemotePane({
             {transport.peerVideo
               ? 'Connected.'
               : `${encounter.peer.displayName}'s camera is off.`}
+          </span>
+        </p>
+      ) : transport.peerJoined ? (
+        <p className="v-live__transport" data-testid="live-media-quiet">
+          <Icon name="cameraOff" size="sm" />
+          {/*
+            Here, sending nothing. A peer with the camera and the microphone
+            both off publishes no tracks at all, and before the room's own
+            presence was a fact this screen could read, that person was
+            described as not having joined yet — which is the wrong thing to say
+            about somebody already here and able to type.
+          */}
+          <span>
+            {`${encounter.peer.displayName}'s camera and microphone are off. The chat still works.`}
           </span>
         </p>
       ) : (

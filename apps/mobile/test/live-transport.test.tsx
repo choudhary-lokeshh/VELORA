@@ -95,6 +95,8 @@ jest.mock('../src/product/live-rtc', () => {
       },
     };
 
+    readonly remoteParticipants = new Map<string, unknown>();
+
     connect(): Promise<void> {
       mockRecord.connects += 1;
       return Promise.resolve();
@@ -125,8 +127,11 @@ jest.mock('../src/product/live-rtc', () => {
     RoomEvent: {
       ConnectionStateChanged: 'connectionStateChanged',
       LocalTrackPublished: 'localTrackPublished',
+      ParticipantConnected: 'participantConnected',
       ParticipantDisconnected: 'participantDisconnected',
+      TrackMuted: 'trackMuted',
       TrackSubscribed: 'trackSubscribed',
+      TrackUnmuted: 'trackUnmuted',
       TrackUnsubscribed: 'trackUnsubscribed',
     },
     Track: {
@@ -308,6 +313,108 @@ describe('what a phone publishes into a call', () => {
 });
 
 /**
+ * What the other person's mute means on this side.
+ *
+ * A web peer's camera toggle mutes the publication rather than unpublishing
+ * it, so the subscription — and the last frame it carried — survives. Before
+ * these facts existed the provider's video view stayed mounted over a track
+ * that had stopped producing frames, which renders as a person frozen
+ * mid-sentence: a broken product wearing a live face. None of this is
+ * reachable from the shared double, whose room refuses to connect.
+ */
+describe("the other person's mute, on this side", () => {
+  /** Fires every handler registered for one of the provider's events. */
+  async function fire(event: string, ...args: unknown[]): Promise<void> {
+    await act(async () => {
+      for (const each of mockRecord.handlers) {
+        if (each.event === event) each.handler(...args);
+      }
+      await Promise.resolve();
+    });
+  }
+
+  const peer = { isLocal: false };
+  const me = { isLocal: true };
+
+  it('takes a muted camera off the stage and keeps the audio', async () => {
+    const view = await renderHook(useLiveTransport, {
+      initialProps: options({}),
+    });
+    await settle();
+    await fire('trackSubscribed', { kind: 'video' }, { isMuted: false }, peer);
+    await fire('trackSubscribed', { kind: 'audio' }, { isMuted: false }, peer);
+    expect(view.result.current.peerVideo).toBeDefined();
+    expect(view.result.current.peerAudio).toBe(true);
+
+    await fire('trackMuted', { kind: 'video' }, peer);
+
+    // The picture is gone, the voice is not, and the person has not left.
+    expect(view.result.current.peerVideo).toBeUndefined();
+    expect(view.result.current.peerAudio).toBe(true);
+    expect(view.result.current.peerJoined).toBe(true);
+  });
+
+  it('puts the same picture back when the camera returns', async () => {
+    const view = await renderHook(useLiveTransport, {
+      initialProps: options({}),
+    });
+    await settle();
+    await fire('trackSubscribed', { kind: 'video' }, { isMuted: false }, peer);
+    const before = view.result.current.peerVideo;
+    await fire('trackMuted', { kind: 'video' }, peer);
+    await fire('trackUnmuted', { kind: 'video' }, peer);
+
+    // The same subscription, not a new one: nothing was re-negotiated.
+    expect(view.result.current.peerVideo).toBe(before);
+  });
+
+  it("ignores this side's own mute", async () => {
+    const view = await renderHook(useLiveTransport, {
+      initialProps: options({}),
+    });
+    await settle();
+    await fire('trackSubscribed', { kind: 'video' }, { isMuted: false }, peer);
+
+    await fire('trackMuted', { kind: 'video' }, me);
+
+    // The event reports local mutes too, and blanking the peer because *this*
+    // person covered their camera would be the wrong face going dark.
+    expect(view.result.current.peerVideo).toBeDefined();
+  });
+
+  it('never renders a track that arrives already muted', async () => {
+    const view = await renderHook(useLiveTransport, {
+      initialProps: options({}),
+    });
+    await settle();
+    await fire('trackSubscribed', { kind: 'video' }, { isMuted: true }, peer);
+    expect(view.result.current.peerVideo).toBeUndefined();
+
+    await fire('trackUnmuted', { kind: 'video' }, peer);
+    expect(view.result.current.peerVideo).toBeDefined();
+  });
+
+  it('knows a silent peer has joined', async () => {
+    const view = await renderHook(useLiveTransport, {
+      initialProps: options({}),
+    });
+    await settle();
+    expect(view.result.current.peerJoined).toBe(false);
+
+    await fire('participantConnected');
+
+    // Camera and microphone both off publishes no tracks at all. Present and
+    // quiet is a different fact from absent, and the surface says which.
+    expect(view.result.current.peerJoined).toBe(true);
+    expect(view.result.current.peerVideo).toBeUndefined();
+    expect(view.result.current.peerAudio).toBe(false);
+
+    await fire('participantDisconnected');
+    expect(view.result.current.peerJoined).toBe(false);
+  });
+});
+
+/**
  * Where the other person's picture is mounted, which is a different question
  * from whether it arrives.
  *
@@ -386,5 +493,97 @@ describe('where the other person is drawn', () => {
     }
     expect(ancestors).toContain('live-room');
     expect(ancestors).not.toContain('live-peer');
+  });
+});
+
+/**
+ * What the stage says while the other person mutes, in their words.
+ *
+ * The transport facts are proved above; this proves the sentence a person
+ * actually reads. A muted camera is "their camera is off", not a frozen frame
+ * and not "waiting to join" — and a peer with everything off is still here.
+ */
+describe('what a mute renders', () => {
+  it('replaces the picture with the truth, and never says anybody left', async () => {
+    const state = admittedState();
+    state.live = {
+      ...state.live,
+      encounter: {
+        call: {
+          id: 'call-1',
+          mediaTransport: 'provider',
+          medium: 'video',
+          state: 'connecting',
+        },
+        connection: { state: 'none' },
+        id: 'encounter-1',
+        messageSequence: 0,
+        peer: {
+          displayName: 'Robin',
+          id: '11111111-1111-4111-8111-111111111111',
+          region: 'PT',
+          sharedLanguages: ['en'],
+        },
+        startedAt: new Date().toISOString(),
+      },
+      state: 'matched',
+    };
+    const double = createMobileApiDouble(state);
+    const store = createInMemorySecureTokenStore();
+    await store.write({
+      accessToken: 'access-stored',
+      accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      installationId: 'installation-local-device',
+      refreshToken: 'refresh-stored',
+    });
+    const view = await renderScreen(
+      <LiveScreen onOpenConversation={noop} onOpenPerson={noop} />,
+      double,
+      { store },
+    );
+    await waitFor(() => {
+      expect(
+        mockRecord.handlers.some((each) => each.event === 'trackSubscribed'),
+      ).toBe(true);
+    });
+    const fire = async (event: string, ...args: unknown[]) => {
+      await act(async () => {
+        for (const each of mockRecord.handlers) {
+          if (each.event === event) each.handler(...args);
+        }
+        await Promise.resolve();
+      });
+    };
+    const them = { isLocal: false };
+
+    await fire('trackSubscribed', { kind: 'video' }, { isMuted: false }, them);
+    await fire('trackSubscribed', { kind: 'audio' }, { isMuted: false }, them);
+    // The caption waits out the reveal, which holds for its own moment.
+    await waitFor(
+      () => {
+        expect(view.getByTestId('live-media-carried').props.children).toContain(
+          'Connected.',
+        );
+      },
+      { timeout: 3000 },
+    );
+
+    // Their camera goes off: the picture leaves, the voice stays, and the
+    // caption says exactly that.
+    await fire('trackMuted', { kind: 'video' }, them);
+    expect(view.queryByTestId('live-peer-video')).toBeNull();
+    expect(view.getByTestId('live-media-carried').props.children).toContain(
+      "Robin's camera is off.",
+    );
+
+    // Everything off: still here, still able to type, and said that way.
+    await fire('trackMuted', { kind: 'audio' }, them);
+    expect(view.getByTestId('live-media-quiet').props.children).toContain(
+      "Robin's camera and microphone are off",
+    );
+
+    // The camera comes back and so does the picture.
+    await fire('trackUnmuted', { kind: 'video' }, them);
+    expect(view.getByTestId('live-peer-video')).toBeTruthy();
   });
 });

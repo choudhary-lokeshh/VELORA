@@ -25,13 +25,17 @@ export const ConnectionState = {
 export const RoomEvent = {
   ConnectionStateChanged: 'connectionStateChanged',
   LocalTrackPublished: 'localTrackPublished',
+  ParticipantConnected: 'participantConnected',
   ParticipantDisconnected: 'participantDisconnected',
+  TrackMuted: 'trackMuted',
   TrackSubscribed: 'trackSubscribed',
+  TrackUnmuted: 'trackUnmuted',
   TrackUnsubscribed: 'trackUnsubscribed',
 } as const;
 
 export const Track = {
   Kind: { Audio: 'audio', Video: 'video' },
+  Source: { Camera: 'camera' },
 } as const;
 
 export const AudioSession = {

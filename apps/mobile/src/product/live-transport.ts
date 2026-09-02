@@ -18,6 +18,7 @@ import {
   type Participant,
   type RemoteTrack,
   type RemoteTrackPublication,
+  type TrackPublication,
   type TrackReference,
 } from './live-rtc';
 
@@ -53,9 +54,27 @@ export interface LiveTransport {
    * A reference rather than a track: the view needs the participant, the
    * publication, and which source it is, and assembling those at the render
    * site would put three vendor types into a component.
+   *
+   * Present only while the track is subscribed *and* unmuted. A web peer who
+   * turns their camera off mutes the publication rather than unpublishing it,
+   * so the subscription survives — and a reference that only tracked
+   * subscription kept the provider's video view mounted over a track that had
+   * stopped producing frames. What that renders is the last frame the camera
+   * sent, frozen, wearing a live person's face.
    */
   readonly peerVideo: TrackReference | undefined;
+  /** True while a remote audio track is subscribed and unmuted. */
   readonly peerAudio: boolean;
+  /**
+   * True while the other person is in the room, whatever they are sending.
+   *
+   * A separate fact because their absence is ambiguous without it: no video
+   * and no audio is what "not here yet" looks like, and also what "here, with
+   * the camera and microphone off" looks like. The first should read as
+   * waiting and the second as a person who is present and can still be typed
+   * to, and only the room knows which.
+   */
+  readonly peerJoined: boolean;
   readonly state: LiveTransportState;
   /**
    * Whether the provider currently owns the camera and the microphone.
@@ -160,6 +179,16 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
     undefined,
   );
   const [peerAudio, setPeerAudio] = useState(false);
+  const [peerJoined, setPeerJoined] = useState(false);
+  /**
+   * The remote camera as subscribed, whether or not it is muted.
+   *
+   * `peerVideo` above is the *rendered* fact — subscribed and unmuted — so a
+   * mute takes the reference out of it. The unmute that follows has to put the
+   * same reference back, and by then the subscription events are long past;
+   * this ref is where it waits.
+   */
+  const subscribedVideo = useRef<TrackReference | undefined>(undefined);
   /**
    * The joined room, in state rather than only in a ref.
    *
@@ -177,8 +206,10 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
   const carried = mediaTransport === 'provider' && callId !== undefined;
 
   const clearRemote = useCallback(() => {
+    subscribedVideo.current = undefined;
     setPeerVideo(undefined);
     setPeerAudio(false);
+    setPeerJoined(false);
   }, []);
 
   /*
@@ -248,19 +279,61 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
           ) => {
             if (cancelled()) return;
             if (track.kind === Track.Kind.Video) {
-              setPeerVideo({
+              const reference = {
                 participant,
                 publication,
                 source: Track.Source.Camera,
-              });
+              };
+              subscribedVideo.current = reference;
+              // A track can arrive already muted — a camera switched off
+              // before the match publishes, then mutes — and rendering it
+              // would mount a video view with nothing behind it.
+              setPeerVideo(publication.isMuted ? undefined : reference);
             }
-            if (track.kind === Track.Kind.Audio) setPeerAudio(true);
+            if (track.kind === Track.Kind.Audio) {
+              setPeerAudio(!publication.isMuted);
+            }
+            setPeerJoined(true);
           },
         )
         .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
           if (cancelled()) return;
-          if (track.kind === Track.Kind.Video) setPeerVideo(undefined);
+          if (track.kind === Track.Kind.Video) {
+            subscribedVideo.current = undefined;
+            setPeerVideo(undefined);
+          }
           if (track.kind === Track.Kind.Audio) setPeerAudio(false);
+        })
+        .on(
+          RoomEvent.TrackMuted,
+          (publication: TrackPublication, participant: Participant) => {
+            // A web peer's camera toggle mutes the publication rather than
+            // unpublishing it, so the subscription — and without this, the
+            // last frame it carried — survives. The event reports the local
+            // mute too, and a handler that did not ask whose publication this
+            // is would blank the peer every time *this* person muted.
+            if (cancelled() || participant.isLocal) return;
+            if (publication.kind === Track.Kind.Video) setPeerVideo(undefined);
+            if (publication.kind === Track.Kind.Audio) setPeerAudio(false);
+          },
+        )
+        .on(
+          RoomEvent.TrackUnmuted,
+          (publication: TrackPublication, participant: Participant) => {
+            if (cancelled() || participant.isLocal) return;
+            if (publication.kind === Track.Kind.Video) {
+              setPeerVideo(subscribedVideo.current);
+            }
+            if (publication.kind === Track.Kind.Audio) setPeerAudio(true);
+          },
+        )
+        .on(RoomEvent.ParticipantConnected, () => {
+          if (cancelled()) return;
+          // Present before publishing anything. A peer whose camera and
+          // microphone are both off sends no tracks at all, and without this
+          // fact the surface would go on saying "waiting to join" about a
+          // person who is already here and typing.
+          setPeerJoined(true);
         })
         .on(RoomEvent.ParticipantDisconnected, () => {
           if (cancelled()) return;
@@ -312,6 +385,9 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
       }
       active.current = opened;
       setRoom(opened);
+      // The peer may have been in the room before this side joined, in which
+      // case no ParticipantConnected ever fires for them here.
+      if (opened.remoteParticipants.size > 0) setPeerJoined(true);
       setState('connected');
       // The devices are not opened here. Publishing is owned by the effect
       // below, which is keyed on the room and on what the person has actually
@@ -440,6 +516,7 @@ export function useLiveTransport(options: LiveTransportOptions): LiveTransport {
   return {
     localVideo,
     peerAudio,
+    peerJoined,
     peerVideo,
     state,
     // True from the first attempt rather than from a successful connection.
