@@ -583,6 +583,67 @@ describe('matching two strangers', () => {
     expect(encounters[0]?.count).toBe('0');
   });
 
+  it('refuses a pair blocked while both were already waiting', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+
+    // Alex enters the pool first and is the only other person in the world, so
+    // nothing here depends on who the matcher happens to prefer.
+    await search(alex);
+    const blocked = await handle(
+      post('/v1/safety/blocks', alex, { targetId: remi.id }),
+    );
+    expect(blocked.status).toBe(200);
+
+    // The block is what refuses, not an absence: Alex is still searching, still
+    // eligible, and still the only candidate there is.
+    const attempted = await search(remi);
+    expect(attempted.state).toBe('searching');
+    const alexState = await readState(alex);
+    expect(alexState.state).toBe('searching');
+    const encounters = await rowsOf<{ count: string }>(
+      database.sql`select count(*)::text as count from live_encounters`,
+    );
+    expect(encounters[0]?.count).toBe('0');
+  });
+
+  it('ends one encounter when both people press Next at the same instant', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const encounterId = matched.encounter?.id ?? '';
+
+    // Both at once, on the same encounter. Two transactions racing for the same
+    // row, and the pair lock is what makes one of them the ending and the other
+    // an answer about an encounter that is already over.
+    const [first, second] = await Promise.all([
+      handle(post('/v1/live/transitions', alex, { encounterId })),
+      handle(post('/v1/live/transitions', remi, { encounterId })),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    // One ending, recorded once. A second would be a second account of what
+    // happened to one encounter.
+    const ended = await rowsOf<{ count: string; ended_at: Date | null }>(
+      database.sql`
+        select count(*)::text as count, max(ended_at) as ended_at
+        from live_encounters where id = ${encounterId}::uuid and state = 'ended'
+      `,
+    );
+    expect(ended[0]?.count).toBe('1');
+    expect(ended[0]?.ended_at).not.toBeNull();
+
+    // And neither person is left holding a participation that names it.
+    const stuck = await rowsOf<{ count: string }>(
+      database.sql`
+        select count(*)::text as count from live_participations
+        where encounter_id = ${encounterId}::uuid and state = 'matched'
+      `,
+    );
+    expect(stuck[0]?.count).toBe('0');
+  });
+
   it('does not hand back the person somebody just moved on from', async () => {
     const alex = await consumer('alex@live.test');
     const remi = await consumer('remi@live.test');
