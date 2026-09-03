@@ -20,6 +20,7 @@ import {
   type Tone,
 } from '../design/primitives';
 import { space } from '../design/tokens';
+import { mintUuid } from '../device/installation';
 import { useApi, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import { formatDate } from './locale';
@@ -93,15 +94,14 @@ const maximumDescription = 4000;
 /**
  * A per-ticket identifier that makes a retry safe.
  *
- * The Expo runtime provides `crypto.randomUUID`, and the fallback exists for
- * the one case where it does not: a ticket that could not be sent because an
- * identifier could not be made would be the worst possible failure on the one
- * screen somebody reaches when everything else has already failed them.
+ * `mintUuid` rather than `crypto.randomUUID`, because Hermes has no
+ * `globalThis.crypto`. That matters most here: this is the one screen somebody
+ * reaches when everything else has already failed them, and an identifier
+ * minted from `Math.random` on every real device — while every test saw the
+ * good path — is not what a retry-safe submission should rest on.
  */
 function clientTicketId(): string {
-  const source = globalThis.crypto as { randomUUID?: () => string } | undefined;
-  if (typeof source?.randomUUID === 'function') return source.randomUUID();
-  return `ticket-${String(Date.now())}-${Math.random().toString(36).slice(2, 12)}`;
+  return mintUuid();
 }
 
 export function SupportScreen({ onBack }: { readonly onBack: () => void }) {

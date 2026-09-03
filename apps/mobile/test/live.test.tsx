@@ -275,6 +275,9 @@ describe('reporting somebody after they have gone', () => {
     await press(`safety-menu-${otherPersonId}`);
     await press('safety-open-report-and-block');
     await screen.findByTestId('report-person');
+    // Said before the tap that does it, and on this surface as well as the
+    // other one: blocking is not a side effect somebody discovers afterwards.
+    await screen.findByTestId('report-and-block-effect');
     await press('report-submit');
 
     await waitFor(() => {

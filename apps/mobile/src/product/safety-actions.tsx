@@ -2,6 +2,7 @@ import { failureMessage } from '@velora/consumer-client';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { mintUuid } from '../device/installation';
 import { useApi, useToast } from '../frame/providers';
 import {
   Button,
@@ -9,6 +10,7 @@ import {
   ErrorMessage,
   Field,
   IconButton,
+  Notice,
   Stack,
   Text,
   TextField,
@@ -59,16 +61,14 @@ const maximumReportDetail = 2000;
 /**
  * A per-report identifier that makes submission retry-safe.
  *
- * The Expo runtime provides `crypto.randomUUID`, and the fallback exists for
- * the one case where it does not: a report that could not be sent because an
- * identifier could not be made would be the worst possible failure on this
- * particular flow. The server scopes the value to the reporter, so it cannot
- * collide with anybody else's.
+ * `mintUuid` rather than `crypto.randomUUID`, because Hermes has no
+ * `globalThis.crypto` at all: reading it on a device took a fallback that was
+ * written for a case that never happens and skipped on every runtime a test
+ * runs in. The server scopes the value to the reporter, so it cannot collide
+ * with anybody else's.
  */
 function clientReportId(): string {
-  const source = globalThis.crypto as { randomUUID?: () => string } | undefined;
-  if (typeof source?.randomUUID === 'function') return source.randomUUID();
-  return `report-${String(Date.now())}-${Math.random().toString(36).slice(2, 12)}`;
+  return mintUuid();
 }
 
 type Mode = 'menu' | 'block' | 'report' | 'report-and-block';
@@ -281,12 +281,6 @@ export function ReportSheet({
       }
     >
       <Stack gap={4}>
-        <Text tone="secondary" variant="small">
-          {alsoBlock
-            ? `VELORA reviews this, and sending it blocks ${person.displayName} straight away. They are told neither.`
-            : 'VELORA reviews this. They are not told who reported them.'}
-        </Text>
-
         <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
           <Text tone="secondary" variant="small" weight="medium">
             What is wrong?
@@ -329,6 +323,29 @@ export function ReportSheet({
             />
           )}
         </Field>
+
+        {alsoBlock ? (
+          <Notice
+            testID="report-and-block-effect"
+            title="What this does"
+            tone="neutral"
+          >
+            <Text tone="secondary" variant="small">
+              Sending this blocks {person.displayName} straight away: you will
+              not see each other in discovery, no message or call can reach
+              either of you, and the matcher will not put you together again.
+              Nothing tells them any of it happened.
+            </Text>
+          </Notice>
+        ) : null}
+
+        <Notice title="After you send" tone="neutral">
+          <Text tone="secondary" variant="small">
+            You will not be told what happens next. That is deliberate: an
+            outcome told to a reporter is an outcome the reported person can
+            work out.
+          </Text>
+        </Notice>
 
         {error === undefined ? null : (
           <ErrorMessage testID="report-error">{error}</ErrorMessage>

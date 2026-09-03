@@ -9,6 +9,7 @@ import { maximumMessageBodyCharacters } from '@velora/validation/messaging-bound
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
+import { mintUuid } from '../device/installation';
 import { useApi, useSession, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
 import {
@@ -64,14 +65,13 @@ interface PendingMessage {
 /**
  * A per-message identifier that makes a retry safe.
  *
- * The Expo runtime provides `crypto.randomUUID`; the fallback exists so that a
- * message can still be sent if it does not. The server scopes the value to the
- * sender, so it cannot collide with anybody else's.
+ * `mintUuid` rather than `crypto.randomUUID`, because Hermes has no
+ * `globalThis.crypto` and every send from a real device was therefore keyed by
+ * the fallback rather than by the primitive Expo actually exposes. The server
+ * scopes the value to the sender, so it cannot collide with anybody else's.
  */
 function clientMessageId(): string {
-  const source = globalThis.crypto as { randomUUID?: () => string } | undefined;
-  if (typeof source?.randomUUID === 'function') return source.randomUUID();
-  return `message-${String(Date.now())}-${Math.random().toString(36).slice(2, 12)}`;
+  return mintUuid();
 }
 
 /**
