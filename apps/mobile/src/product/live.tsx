@@ -1827,6 +1827,14 @@ function SearchingPane({
   );
 }
 
+/**
+ * What became of the person who just left, and what can still be done about it.
+ *
+ * The safety control is the reason this pane is not merely informational. A
+ * random encounter has no relationship behind it, so the moment the other
+ * person presses Next they stop being addressable anywhere on the product —
+ * which is exactly when somebody who was just abused wants to report them.
+ */
 function EndedPane({
   encounter,
   onOpenConversation,
@@ -1873,6 +1881,17 @@ function EndedPane({
           both your inboxes.
         </Text>
       ) : null}
+      <View style={styles.endedSafety} testID="live-ended-safety">
+        <Text style={styles.centred} tone="tertiary" variant="caption">
+          Was something wrong with that conversation?
+        </Text>
+        <PersonSafetyMenu
+          person={{
+            displayName: encounter.peer.displayName,
+            id: encounter.peer.id,
+          }}
+        />
+      </View>
     </View>
   );
 }
@@ -3057,6 +3076,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[5],
   },
   centred: { textAlign: 'center' },
+  // Wraps rather than truncating: at the largest system text the prompt and
+  // the control do not fit on one line, and a clipped safety control is a
+  // safety control that is not there.
+  endedSafety: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space[2],
+    justifyContent: 'center',
+  },
   /*
    * A sheet, flush to the bottom of the stage and to both its sides, with only
    * its top corners rounded. Bounded to part of the screen so filling it can

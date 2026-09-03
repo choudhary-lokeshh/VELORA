@@ -1757,6 +1757,12 @@ export function createApplication(
       admitted(liveRoute(async (routes, input) => routes.leave(input))),
     )
     .get(
+      apiRoutePaths.liveRecentPeople,
+      admitted(
+        liveRoute(async (routes, input) => routes.getRecentPeople(input)),
+      ),
+    )
+    .get(
       apiRoutePaths.liveMessages,
       admitted(liveRoute(async (routes, input) => routes.getMessages(input))),
     )
@@ -1807,6 +1813,10 @@ export function createApplication(
     .post(
       apiRoutePaths.safetyReports,
       admitted(async (input) => safety.routes.createReport(input)),
+    )
+    .post(
+      apiRoutePaths.safetyReportsWithBlock,
+      admitted(async (input) => safety.routes.createReportWithBlock(input)),
     )
     .get(
       apiRoutePaths.safetyReports,

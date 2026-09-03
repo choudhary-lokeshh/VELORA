@@ -248,6 +248,18 @@ export const liveEncounters = pgTable(
       table.pairHighId,
       table.createdAt,
     ),
+    // "Who did this person just finish meeting", from either side of the
+    // ordered pair. Keyed on when it *ended* rather than when it started,
+    // because that is what "just met" means to somebody reaching for a report,
+    // and partial on the finished state so live encounters never enter the
+    // plan. Two indexes rather than one because the pair is ordered and a
+    // caller is on whichever side of it they happen to be.
+    index('live_encounters_low_ended_idx')
+      .on(table.pairLowId, table.endedAt)
+      .where(sql`${table.state} = 'ended'`),
+    index('live_encounters_high_ended_idx')
+      .on(table.pairHighId, table.endedAt)
+      .where(sql`${table.state} = 'ended'`),
     uniqueIndex('live_encounters_sequence_uk').on(table.sequence),
     // One encounter per RTC session. A session reference arriving for a second
     // encounter is a binding error rather than a second attempt.

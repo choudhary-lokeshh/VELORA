@@ -8,6 +8,7 @@ import {
   admittedState,
   createMobileApiDouble,
   liveConversationId,
+  otherPersonId,
   type MobileApiState,
 } from './support/api-double';
 import { renderScreen } from './support/render';
@@ -65,7 +66,7 @@ async function mountLive(
     readonly onOpenConversation?: (conversationId: string) => void;
     readonly onOpenPerson?: (personId: string) => void;
   } = {},
-): Promise<void> {
+): Promise<ReturnType<typeof createMobileApiDouble>> {
   const double = createMobileApiDouble(state);
   const store = createInMemorySecureTokenStore();
   await store.write({
@@ -83,6 +84,9 @@ async function mountLive(
     />
   );
   await renderScreen(element, double, { store });
+  // Returned so a test can assert what the surface actually asked the server
+  // for, rather than only what it rendered afterwards.
+  return double;
 }
 
 async function press(testID: string): Promise<void> {
@@ -241,6 +245,69 @@ describe('when the other person moves on', () => {
     const ended = await screen.findByTestId('live-ended');
     expect(ended).toHaveTextContent(/They moved on/u);
     expect(screen.getByTestId('live-search-again')).toBeTruthy();
+  });
+});
+
+describe('reporting somebody after they have gone', () => {
+  it('keeps a safety control on the ended encounter', async () => {
+    await mountLive(liveState({ simulated: true }));
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    // The complaint this exists for: the other person behaves badly and leaves,
+    // and every control that named them leaves with them.
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+
+    expect(await screen.findByTestId('live-ended-safety')).toBeTruthy();
+    expect(screen.getByTestId(`safety-menu-${otherPersonId}`)).toBeTruthy();
+  });
+
+  it('reports and blocks in one act', async () => {
+    const double = await mountLive(liveState({ simulated: true }));
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+
+    await press(`safety-menu-${otherPersonId}`);
+    await press('safety-open-report-and-block');
+    await screen.findByTestId('report-person');
+    await press('report-submit');
+
+    await waitFor(() => {
+      expect(
+        double.state.blocks.some((block) => block.blockedId === otherPersonId),
+      ).toBe(true);
+    });
+    expect(double.state.reports).toHaveLength(1);
+  });
+
+  it('says the block still stands when no report could be taken', async () => {
+    const double = await mountLive({
+      ...liveState({ simulated: true }),
+      reportingBoundReached: true,
+    });
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+
+    await press(`safety-menu-${otherPersonId}`);
+    await press('safety-open-report-and-block');
+    await press('report-submit');
+
+    // The half that protects somebody landed, and nothing claims the other one
+    // did.
+    await waitFor(() => {
+      expect(
+        double.state.blocks.some((block) => block.blockedId === otherPersonId),
+      ).toBe(true);
+    });
+    expect(double.state.reports).toHaveLength(0);
   });
 });
 

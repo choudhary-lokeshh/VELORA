@@ -29,6 +29,10 @@ export const reportPolicyVersion = 'v1-provisional';
 export const reportReasonCodes = [
   'underage_concern',
   'harassment',
+  /** Abuse aimed at who somebody is rather than at what they said. */
+  'hate_or_abuse',
+  /** A threat, an incitement, or a demand backed by one. */
+  'threats_or_violence',
   'sexual_content_violation',
   'impersonation',
   'spam_or_scam',

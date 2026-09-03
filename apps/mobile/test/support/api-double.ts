@@ -375,7 +375,33 @@ export interface MobileApiState {
     channel: string;
     enabled: boolean;
   }[];
-  reports: { createdAt: string; id: string; state: string }[];
+  reports: {
+    createdAt: string;
+    id: string;
+    reasonCode?: string;
+    state: string;
+    targetType?: string;
+  }[];
+  /**
+   * The people a live encounter has already ended with.
+   *
+   * Held separately from the encounter, because that is how the server holds
+   * it: the encounter leaves live state the moment somebody searches again,
+   * and this is what keeps the person reportable afterwards.
+   */
+  recentLivePeople: {
+    endedAt: string;
+    encounterId: string;
+    person: {
+      bio?: string;
+      displayName: string;
+      id: string;
+      region?: string;
+      sharedLanguages: string[];
+    };
+  }[];
+  /** When true, the composite call blocks and records no report. */
+  reportingBoundReached: boolean;
   sessionLive: boolean;
   standing: {
     appealWindowClosesAt?: string;
@@ -592,6 +618,8 @@ export function admittedState(): MobileApiState {
       { category: 'account_security', channel: 'email', enabled: true },
     ],
     pushDevices: new Map(),
+    recentLivePeople: [],
+    reportingBoundReached: false,
     reports: [],
     sessionLive: true,
     standing: [],
@@ -1536,6 +1564,9 @@ export function createMobileApiDouble(
       state.live.state = 'idle';
       return json(200, liveBody(state));
     }
+    if (path === '/v1/live/recent-people' && method === 'GET') {
+      return json(200, { people: state.recentLivePeople, windowHours: 24 });
+    }
     if (path === '/v1/live/messages' && method === 'GET') {
       const encounterId = url.searchParams.get('encounterId');
       if (state.live.encounter?.id !== encounterId) {
@@ -1954,13 +1985,41 @@ export function createMobileApiDouble(
         reasonCode: string;
         target: { readonly type: string };
       };
-      return json(200, {
+      const report = {
         createdAt: iso(),
         id: '66666666-6666-4666-8666-666666666666',
         reasonCode: input.reasonCode,
         state: 'received',
         targetType: input.target.type,
-      });
+      };
+      state.reports = [...state.reports, report];
+      return json(200, report);
+    }
+    if (path === '/v1/safety/reports/with-block' && method === 'POST') {
+      const input = body as { reasonCode: string; targetAccountId: string };
+      // The block first, exactly as the server applies it, so a test that
+      // stops the report can still assert the separation happened.
+      state.blocks = [
+        ...state.blocks,
+        { blockedId: input.targetAccountId, createdAt: iso() },
+      ];
+      state.candidates = state.candidates.filter(
+        (candidate) => candidate.id !== input.targetAccountId,
+      );
+      state.recentLivePeople = state.recentLivePeople.filter(
+        (entry) => entry.person.id !== input.targetAccountId,
+      );
+      const blocked = { blockedId: input.targetAccountId, createdAt: iso() };
+      if (state.reportingBoundReached) return json(200, { block: blocked });
+      const report = {
+        createdAt: iso(),
+        id: '55555555-5555-4555-8555-555555555555',
+        reasonCode: input.reasonCode,
+        state: 'received',
+        targetType: 'consumer_account',
+      };
+      state.reports = [...state.reports, report];
+      return json(200, { block: blocked, report });
     }
 
     if (path === '/v1/users/me/profile/media' && method === 'POST') {

@@ -131,6 +131,16 @@ Nothing translates anything, and no surface offers or implies that it does.
 
 The seam exists: the AI gateway carries capability manifests, per-capability activation, and a provider that is `unavailable` by default and refused in staging and production, and a translation capability would sit behind it unchanged. It is not taken because no provider is approved — a control that never works is worse than an absent one, and text labelled as translated when nothing translated it is worse than either. Recorded as an open decision in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md).
 
+## Somebody who left can still be reported
+
+A random encounter has no relationship behind it. That is the product working as intended, and it used to make one thing impossible: the other person behaved badly, pressed Next, and every control that named them left the screen with them. There was nowhere on the product to reach for, and asking somebody to remember a stranger's display name in order to report them is asking them not to bother.
+
+`GET /v1/live/recent-people` answers who this caller met and has already finished with, newest first, bounded to ten people over twenty-four hours. It publishes the same minimized public shape a peer is shown during an encounter — name, roughly where, shared languages, whatever they wrote — and carries no message, no duration, no end reason, and nothing about the call. It is a way back to somebody for a safety action, not a history of the meeting and not a directory of strangers.
+
+Two rules make it safe. It reports **ended** encounters only, because a live one is already published in live state and returning it twice would put the same person on the screen under two meanings. And it is deliberately not gated on the caller's own live eligibility: somebody whose standing lapsed, or who has been restricted since, must still be able to report the person they met, on the same rule TRUST & SAFETY already applies to blocking and reporting.
+
+Retention is unchanged by it. Nothing expires when an encounter passes out of the window; the list stops offering it, and the row stays exactly as long as it did before — which is still `DECISION REQUIRED / LEGAL REVIEW REQUIRED`.
+
 ## Configuration and blockers
 
 `LIVE_DISCOVERY_MODE` defaults to `unavailable`, admits nobody to the pool, and is rejected at startup in staging and production. Random discovery ends in a call between two strangers, so it inherits every blocker calling has and adds one of its own:

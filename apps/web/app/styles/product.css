@@ -2531,6 +2531,21 @@
   max-inline-size: 42ch;
 }
 
+/*
+ * The safety row on the finished encounter.
+ *
+ * Wraps rather than truncating: at 200% text the prompt and the control do not
+ * fit on one line on a phone, and a clipped safety control is a safety control
+ * that is not there.
+ */
+.v-live__ended-safety {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
 /* ------------------------------------------------------ local camera -- */
 
 /*

@@ -274,6 +274,56 @@ export const liveEncounterSchema = z
   .strict();
 
 /**
+ * Somebody this person met, after the meeting is over.
+ *
+ * This exists for one complaint and answers it exactly: the other person
+ * behaved badly, left, and the control that would have reported them left with
+ * them. A random encounter has no durable relationship behind it, so once the
+ * ended screen is dismissed there is nothing on any surface that names who that
+ * was — and asking somebody to remember a stranger's display name in order to
+ * report them is asking them not to bother.
+ *
+ * It carries the same minimized public shape they were already shown while the
+ * encounter was live, and nothing more. No message, no duration, no transport
+ * detail, no end reason: this is an address for a safety action, not a history
+ * of the meeting. It is bounded in both count and age by
+ * {@link liveRecentCounterpartWindowHours}, so it is a way back to somebody you
+ * just met rather than a list of everyone you ever have.
+ */
+export const liveRecentCounterpartSchema = z
+  .object({
+    /** When the encounter finished. Newest first in the list below. */
+    endedAt: z.iso.datetime(),
+    /** The encounter itself, so a report can name what it was about. */
+    encounterId: z.uuid(),
+    person: livePeerSchema,
+  })
+  .strict();
+
+/**
+ * How far back this list reaches, published so a surface can say so.
+ *
+ * A product bound rather than a retention one: nothing is deleted when it
+ * passes, the list simply stops offering it. Long enough that somebody who
+ * closed the tab in shock and came back can still act, short enough that it
+ * never becomes a standing directory of strangers.
+ */
+export const liveRecentCounterpartWindowHours = 24;
+
+/** How many of them are offered. Small, because it is a way back, not a log. */
+export const maximumLiveRecentCounterparts = 10;
+
+export const liveRecentCounterpartListResponseSchema = z
+  .object({
+    people: z
+      .array(liveRecentCounterpartSchema)
+      .max(maximumLiveRecentCounterparts),
+    /** The bound above, so no surface has to restate it and get it wrong. */
+    windowHours: z.number().int().positive(),
+  })
+  .strict();
+
+/**
  * Choosing somebody, and what the platform will and will not promise about it.
  *
  * Instant live discovery is the server choosing; this is a person choosing, and
@@ -594,6 +644,10 @@ export type LiveMediaTransport = z.infer<typeof liveMediaTransportSchema>;
 export type LiveMedium = z.infer<typeof liveMediumSchema>;
 export type LiveMessage = z.infer<typeof liveMessageSchema>;
 export type LivePeer = z.infer<typeof livePeerSchema>;
+export type LiveRecentCounterpart = z.infer<typeof liveRecentCounterpartSchema>;
+export type LiveRecentCounterpartListResponse = z.infer<
+  typeof liveRecentCounterpartListResponseSchema
+>;
 export type LiveSimulationScenario = z.infer<
   typeof liveSimulationScenarioSchema
 >;

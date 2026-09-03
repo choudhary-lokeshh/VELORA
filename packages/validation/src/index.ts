@@ -157,6 +157,7 @@ import {
   liveEncounterActionRequestSchema,
   liveInvitationListResponseSchema,
   liveMessageListResponseSchema,
+  liveRecentCounterpartListResponseSchema,
   liveSearchRequestSchema,
   respondToLiveInvitationRequestSchema,
   sendLiveReactionRequestSchema,
@@ -201,6 +202,8 @@ import {
   createAppealRequestSchema,
   creatorMatureReadinessResponseSchema,
   reportListResponseSchema,
+  reportWithBlockRequestSchema,
+  reportWithBlockResponseSchema,
   safetyStandingResponseSchema,
   withdrawAppealRequestSchema,
   reportSchema,
@@ -416,6 +419,7 @@ export const apiRoutePaths = {
   liveInvitations: '/v1/live/invitations',
   liveMessages: '/v1/live/messages',
   liveReactions: '/v1/live/reactions',
+  liveRecentPeople: '/v1/live/recent-people',
   liveSessions: '/v1/live/sessions',
   liveSimulation: '/v1/live/simulation',
   liveTransitions: '/v1/live/transitions',
@@ -436,6 +440,7 @@ export const apiRoutePaths = {
   safetyBlockRemoval: '/v1/safety/blocks/removal',
   safetyBlocks: '/v1/safety/blocks',
   safetyReports: '/v1/safety/reports',
+  safetyReportsWithBlock: '/v1/safety/reports/with-block',
   logout: '/v1/auth/logout',
   logoutAll: '/v1/auth/logout-all',
   mobileRefresh: '/v1/auth/mobile/refresh',
@@ -610,6 +615,7 @@ export const apiSchemas = {
   SendLiveReactionRequest: sendLiveReactionRequestSchema,
   LiveSimulationRequest: liveSimulationRequestSchema,
   LiveSimulationResponse: liveSimulationResponseSchema,
+  LiveRecentCounterpartListResponse: liveRecentCounterpartListResponseSchema,
   LiveStateResponse: liveStateResponseSchema,
   ActivateLivePreferenceRequest: activateLivePreferenceRequestSchema,
   AndroidCoinPurchaseRequest: androidCoinPurchaseRequestSchema,
@@ -650,6 +656,8 @@ export const apiSchemas = {
   CreateReportRequest: createReportRequestSchema,
   Report: reportSchema,
   ReportListResponse: reportListResponseSchema,
+  ReportWithBlockRequest: reportWithBlockRequestSchema,
+  ReportWithBlockResponse: reportWithBlockResponseSchema,
   Appeal: appealSchema,
   AppealListResponse: appealListResponseSchema,
   CreateAppealRequest: createAppealRequestSchema,
@@ -3470,6 +3478,24 @@ export const apiOperations = [
   },
   {
     method: 'get',
+    operationId: 'listRecentLiveCounterparts',
+    path: apiRoutePaths.liveRecentPeople,
+    responses: {
+      '200': {
+        description:
+          'The people this caller met live recently, newest first, in the same minimized public shape they were shown during the encounter. It exists so somebody can still report or block the person who behaved badly and then left, without having to remember who they were. It carries no message, no duration, and no end reason.',
+        schemaName: 'LiveRecentCounterpartListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+      '503': liveDiscoveryUnavailableResponse,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'A short-lived way back to somebody a random encounter has already ended with. Bounded in count and in age, and never a directory of everybody the caller has met.',
+  },
+  {
+    method: 'get',
     operationId: 'getLiveState',
     path: apiRoutePaths.liveSessions,
     responses: {
@@ -4405,6 +4431,28 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'Reporter identity, narrative, and every internal rationale are absent from every response this API can produce. The person reported is never told that a report exists.',
+  },
+  {
+    method: 'post',
+    operationId: 'createReportWithBlock',
+    path: apiRoutePaths.safetyReportsWithBlock,
+    requestSchemaName: 'ReportWithBlockRequest',
+    responses: {
+      '200': {
+        description:
+          'The block that now stands, and the report when one was recorded. The block is applied first and unconditionally, so the response never reports a separation that did not happen; an absent report means the reporting bound was reached and nothing was recorded. Repeating the call with the same client report identifier returns the original report and creates nothing.',
+        schemaName: 'ReportWithBlockResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': {
+        description: `The body failed contract validation, or the subject is the caller or is not an account this platform has. The body is an ApiError with code ${productErrorCodes.validationFailed}.`,
+        schemaName: 'ApiError',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Reporting somebody and stopping them reaching you, as one act, so a lost second request cannot leave somebody believing they are separated when they are not. Neither half tells the other person anything.',
   },
   {
     method: 'get',

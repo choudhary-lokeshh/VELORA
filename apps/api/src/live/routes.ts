@@ -5,6 +5,8 @@ import {
   liveEncounterActionRequestSchema,
   liveInvitationListResponseSchema,
   liveMessageListResponseSchema,
+  liveRecentCounterpartListResponseSchema,
+  liveRecentCounterpartWindowHours,
   liveSearchRequestSchema,
   liveSimulationRequestSchema,
   liveSimulationResponseSchema,
@@ -114,6 +116,41 @@ export class LiveRoutes {
       input,
       await this.dependencies.live.leave(resolved.context.account),
     );
+  }
+
+  /**
+   * The people a random encounter has already ended with.
+   *
+   * A separate read rather than a field on live state, because it is answering
+   * a different question: live state says what is happening now, and this says
+   * who somebody can still act against after it stopped happening. Folding it
+   * into the state read would put a list of past strangers into the response a
+   * surface polls several times a minute.
+   */
+  async getRecentPeople(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const outcome = await this.dependencies.live.recentCounterparts(
+      resolved.context.account,
+    );
+    if (outcome.kind === 'unavailable') {
+      return routeFailure(
+        503,
+        productErrorCodes.dependencyUnavailable,
+        input.correlationId,
+      );
+    }
+    return {
+      body: liveRecentCounterpartListResponseSchema.parse({
+        people: outcome.people.map((entry) => ({
+          endedAt: entry.endedAt.toISOString(),
+          encounterId: entry.encounterId,
+          person: personBody(entry.person),
+        })),
+        windowHours: liveRecentCounterpartWindowHours,
+      }),
+      status: 200,
+    };
   }
 
   async getMessages(input: RouteRequest): Promise<RouteResult> {

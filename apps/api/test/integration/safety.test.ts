@@ -938,6 +938,156 @@ describe('a report is evidence, not a message to the person reported', () => {
   });
 });
 
+describe('report and block is one act, and the block is the half that lands', () => {
+  it('blocks and reports in one call, and neither is told to the subject', async () => {
+    const reporter = await consumer('rb-reporter@velora.test');
+    const subject = await consumer('rb-subject@velora.test');
+
+    const response = await handle(
+      post('/v1/safety/reports/with-block', reporter, {
+        clientReportId: 'report-and-block-0001',
+        detail: 'what happened, written once and never echoed back',
+        reasonCode: 'threats_or_violence',
+        targetAccountId: subject.id,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      block: { blockedId: string };
+      report?: { reasonCode: string; state: string };
+    };
+    expect(body.block.blockedId).toBe(subject.id);
+    expect(body.report?.state).toBe('received');
+    expect(body.report?.reasonCode).toBe('threats_or_violence');
+
+    // The block is real, not a claim in a response body.
+    const blocks = await handle(get('/v1/safety/blocks', reporter));
+    const held = ((await blocks.json()) as { blocks: { blockedId: string }[] })
+      .blocks;
+    expect(held.map((entry) => entry.blockedId)).toEqual([subject.id]);
+
+    // And the subject learns nothing from either half.
+    const theirBlocks = await handle(get('/v1/safety/blocks', subject));
+    expect(
+      ((await theirBlocks.json()) as { blocks: unknown[] }).blocks,
+    ).toHaveLength(0);
+    const theirReports = await handle(get('/v1/safety/reports', subject));
+    expect(
+      ((await theirReports.json()) as { reports: unknown[] }).reports,
+    ).toHaveLength(0);
+  });
+
+  it('is idempotent on the client report identifier and on the block', async () => {
+    const reporter = await consumer('rb-retry-reporter@velora.test');
+    const subject = await consumer('rb-retry-subject@velora.test');
+    const body = {
+      clientReportId: 'report-and-block-retry-0001',
+      reasonCode: 'hate_or_abuse',
+      targetAccountId: subject.id,
+    };
+
+    const first = await handle(
+      post('/v1/safety/reports/with-block', reporter, body),
+    );
+    const second = await handle(
+      post('/v1/safety/reports/with-block', reporter, body),
+    );
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const one = (await first.json()) as { report?: { id: string } };
+    const two = (await second.json()) as { report?: { id: string } };
+    // The same report, not a second one: a retry after a lost response is the
+    // same submission.
+    expect(two.report?.id).toBe(one.report?.id ?? '');
+
+    const reports = await handle(get('/v1/safety/reports', reporter));
+    expect(
+      ((await reports.json()) as { reports: unknown[] }).reports,
+    ).toHaveLength(1);
+    const blocks = await handle(get('/v1/safety/blocks', reporter));
+    expect(
+      ((await blocks.json()) as { blocks: unknown[] }).blocks,
+    ).toHaveLength(1);
+  });
+
+  it('still separates the pair when the reporting bound refuses the report', async () => {
+    const reporter = await consumer('rb-bound-reporter@velora.test');
+    const subject = await consumer('rb-bound-subject@velora.test');
+
+    // Spend the whole reporting window on other people, so the composite call
+    // arrives with nothing left in the budget.
+    for (let index = 0; index < reportRateLimitCount; index += 1) {
+      const other = await consumer(
+        `rb-bound-other-${String(index)}@velora.test`,
+      );
+      const spent = await handle(
+        post('/v1/safety/reports', reporter, {
+          clientReportId: `rb-bound-spend-${String(index)}`,
+          reasonCode: 'spam_or_scam',
+          target: { accountId: other.id, type: 'consumer_account' },
+        }),
+      );
+      expect(spent.status).toBe(200);
+    }
+
+    const response = await handle(
+      post('/v1/safety/reports/with-block', reporter, {
+        clientReportId: 'rb-bound-final-0001',
+        reasonCode: 'harassment',
+        targetAccountId: subject.id,
+      }),
+    );
+    // The block is the half that protects somebody, so it is applied and
+    // reported. The report is absent rather than invented, and the caller is
+    // never told they were separated when they were not.
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      block: { blockedId: string };
+      report?: unknown;
+    };
+    expect(body.block.blockedId).toBe(subject.id);
+    expect(body.report).toBeUndefined();
+
+    const blocks = await handle(get('/v1/safety/blocks', reporter));
+    const blocked = (
+      (await blocks.json()) as { blocks: { blockedId: string }[] }
+    ).blocks;
+    expect(blocked.map((entry) => entry.blockedId)).toContain(subject.id);
+  });
+
+  it('answers a target that is the caller, or is nobody, identically', async () => {
+    const reporter = await consumer('rb-invalid-reporter@velora.test');
+    const self = await handle(
+      post('/v1/safety/reports/with-block', reporter, {
+        clientReportId: 'rb-invalid-0001',
+        reasonCode: 'other',
+        targetAccountId: reporter.id,
+      }),
+    );
+    const nobody = await handle(
+      post('/v1/safety/reports/with-block', reporter, {
+        clientReportId: 'rb-invalid-0002',
+        reasonCode: 'other',
+        targetAccountId: '11111111-1111-4111-8111-111111111111',
+      }),
+    );
+    expect(self.status).toBe(422);
+    expect(nobody.status).toBe(422);
+    // Identical but for the correlation identifier, which is per-request by
+    // construction. A caller cannot tell "that is you" from "that is nobody",
+    // which is what stops this endpoint enumerating accounts.
+    const withoutCorrelation = (body: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(body).filter(([key]) => key !== 'correlationId'),
+      );
+    expect(
+      withoutCorrelation((await self.json()) as Record<string, unknown>),
+    ).toEqual(
+      withoutCorrelation((await nobody.json()) as Record<string, unknown>),
+    );
+  });
+});
+
 describe('a consumer cannot become a moderator', () => {
   it('keeps every review route behind the operator prefix', () => {
     const paths = application.app.routes.map((route) => route.path);
@@ -963,6 +1113,7 @@ describe('a consumer cannot become a moderator', () => {
       '/v1/safety/blocks/removal',
       '/v1/safety/reports',
       '/v1/safety/reports',
+      '/v1/safety/reports/with-block',
       '/v1/safety/standing',
     ]);
   });

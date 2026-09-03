@@ -808,6 +808,71 @@ export class LiveRepository {
   }
 
   /**
+   * The people this person met live and has already finished with.
+   *
+   * Newest first, bounded in count and in age. It exists so a safety action
+   * survives the other person leaving: the ended screen is the only place a
+   * random counterpart is ever named, and it disappears the moment somebody
+   * searches again.
+   *
+   * Ended encounters only. One still running is the current encounter and is
+   * already published in live state; returning it here as well would put the
+   * same person on the screen twice under two different meanings.
+   *
+   * The pair is stored ordered, so the counterpart is whichever side of it this
+   * caller is not — computed here rather than by two queries, because the two
+   * partial recency indexes are on `(pairLowId, createdAt)` and
+   * `(pairHighId, createdAt)` and a single `or` over both is one plan.
+   */
+  async listRecentCounterparts(
+    executor: Executor,
+    input: {
+      readonly limit: number;
+      readonly since: Date;
+      readonly userId: string;
+    },
+  ): Promise<
+    readonly {
+      readonly counterpartId: string;
+      readonly encounterId: string;
+      readonly endedAt: Date;
+    }[]
+  > {
+    const rows = await executor
+      .select({
+        endedAt: liveEncounters.endedAt,
+        id: liveEncounters.id,
+        pairHighId: liveEncounters.pairHighId,
+        pairLowId: liveEncounters.pairLowId,
+      })
+      .from(liveEncounters)
+      .where(
+        and(
+          eq(liveEncounters.state, 'ended'),
+          gte(liveEncounters.endedAt, input.since),
+          or(
+            eq(liveEncounters.pairLowId, input.userId),
+            eq(liveEncounters.pairHighId, input.userId),
+          ),
+        ),
+      )
+      .orderBy(desc(liveEncounters.endedAt), desc(liveEncounters.sequence))
+      .limit(input.limit);
+    return rows.flatMap((row) =>
+      row.endedAt === null
+        ? []
+        : [
+            {
+              counterpartId:
+                row.pairLowId === input.userId ? row.pairHighId : row.pairLowId,
+              encounterId: row.id,
+              endedAt: row.endedAt,
+            },
+          ],
+    );
+  }
+
+  /**
    * The people this person has agreed to meet and has not met yet.
    *
    * The matcher's first question, asked before the general pool scan. It

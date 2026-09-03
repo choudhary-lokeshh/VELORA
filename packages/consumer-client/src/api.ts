@@ -18,6 +18,7 @@ import type {
   LivePreferenceSelection,
   LivePreferences,
   LiveReaction,
+  LiveRecentPeople,
   LiveSimulationScenario,
   LiveState,
   CheckoutResponse,
@@ -64,6 +65,8 @@ import type {
   RedeemClubInviteBody,
   Report,
   ReportList,
+  ReportWithBlock,
+  ReportWithBlockBody,
   SafetyStanding,
   SaveNotificationPreferenceBody,
   SaveAvailabilityBody,
@@ -321,6 +324,14 @@ export interface ConsumerApi {
     encounterId: string,
     signal?: AbortSignal,
   ): Promise<ApiResult<LiveMessageList>>;
+  /**
+   * The people this caller met live and has already finished with.
+   *
+   * The one thing about live discovery that outlives the encounter, and it
+   * exists for one reason: somebody was abusive and then left, taking the only
+   * control that named them off the screen. Bounded in count and in age.
+   */
+  recentLivePeople(signal?: AbortSignal): Promise<ApiResult<LiveRecentPeople>>;
   sendLiveMessage(input: {
     readonly body: string;
     readonly clientMessageId: string;
@@ -559,6 +570,17 @@ export interface ConsumerApi {
   appeals(signal?: AbortSignal): Promise<ApiResult<AppealList>>;
   appeal(body: CreateAppealBody): Promise<ApiResult<Appeal>>;
   report(body: CreateReportBody): Promise<ApiResult<Report>>;
+  /**
+   * Reports somebody and blocks them, in one call.
+   *
+   * Two calls could have the block land and the report be lost, or the reverse,
+   * and only one of those leaves somebody believing they are separated when
+   * they are not. The server applies the block first, so the answer always
+   * carries one; an absent `report` means the reporting bound was reached.
+   */
+  reportWithBlock(
+    body: ReportWithBlockBody,
+  ): Promise<ApiResult<ReportWithBlock>>;
   reports(
     query: PageQuery,
     signal?: AbortSignal,
@@ -958,6 +980,11 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         }),
       ),
 
+    recentLivePeople: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/live/recent-people', { ...(await reading(signal)) }),
+      ),
+
     sendLiveMessage: async (input) =>
       attempt(async () =>
         api.POST('/v1/live/messages', {
@@ -1163,6 +1190,14 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     report: async (body) =>
       attempt(async () =>
         api.POST('/v1/safety/reports', { ...(await writing()), body }),
+      ),
+
+    reportWithBlock: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/safety/reports/with-block', {
+          ...(await writing()),
+          body,
+        }),
       ),
 
     standing: async (signal) =>

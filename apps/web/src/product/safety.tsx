@@ -23,6 +23,7 @@ import {
 } from '../design/primitives';
 import { formatFullDay, formatRelative } from './locale';
 import { useResource, useSingleFlight } from './resource';
+import { PersonSafetyMenu } from './safety-actions';
 
 /**
  * Blocks, reports, and what the platform has decided about this account.
@@ -44,11 +45,13 @@ import { useResource, useSingleFlight } from './resource';
  */
 
 const reportReasonLabels: Readonly<Record<string, string>> = {
-  harassment: 'Harassment',
-  impersonation: 'Impersonation',
+  harassment: 'Harassment or bullying',
+  hate_or_abuse: 'Hate or abuse',
+  impersonation: 'Impersonation or a fake profile',
   other: 'Something else',
   sexual_content_violation: 'Sexual content violation',
   spam_or_scam: 'Spam or a scam',
+  threats_or_violence: 'Threats or violence',
   underage_concern: 'They may be under 18',
 };
 
@@ -101,6 +104,7 @@ export function Safety() {
       />
       <div className="v-stack v-stack--6">
         <StandingCard />
+        <RecentlyMetCard />
         <BlockedCard />
         <ReportsCard />
       </div>
@@ -364,6 +368,112 @@ function AppealDialog({
 }
 
 /* ---------------------------------------------------------------- blocked */
+
+/* ------------------------------------------------------------ recently met */
+
+/**
+ * The people a random encounter has already ended with.
+ *
+ * This exists for one complaint and answers it exactly. Every other surface
+ * that shows somebody carries a safety action, but a random stranger is on no
+ * other surface: the moment the encounter is over they are nowhere, and the
+ * person who was just abused is left with a display name they did not write
+ * down. So the platform keeps a short-lived way back to them, here, where
+ * somebody would look for it.
+ *
+ * It is not a history. Nothing here says what was said, how long it lasted, or
+ * why it ended, and the server bounds it in both count and age — a permanent
+ * list of every stranger somebody has been shown would be a directory this
+ * product has spent its whole design refusing to build.
+ */
+function RecentlyMetCard() {
+  const api = useApi();
+  const load = useCallback(
+    async (signal: AbortSignal) => api.recentLivePeople(signal),
+    [api],
+  );
+  const met = useResource(load);
+  const people = met.value?.people ?? [];
+  const windowHours = met.value?.windowHours;
+
+  // Live discovery is switched off in this environment, so there is nobody to
+  // have met and nothing honest to render. A card saying "none" would be a
+  // claim about a feature that is not running.
+  if (met.error !== undefined && !met.retryable) return null;
+
+  return (
+    <Section
+      raised
+      testId="recently-met-card"
+      title="People you recently met on Live"
+    >
+      {met.loading && met.value === undefined ? <RowSkeleton rows={2} /> : null}
+
+      {met.error === undefined ? null : (
+        <div className="v-stack v-stack--3">
+          <ErrorMessage testId="recently-met-failed">{met.error}</ErrorMessage>
+          {met.retryable ? (
+            <div>
+              <Button onClick={met.reload} size="sm">
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {!met.loading && met.error === undefined && people.length === 0 ? (
+        <p className="v-small v-muted" data-testid="recently-met-empty">
+          Nobody yet. After a Live conversation ends, the person you met stays
+          here for a while so you can still report or block them.
+        </p>
+      ) : null}
+
+      {people.length === 0 ? null : (
+        <>
+          <Notice tone="quiet">
+            {windowHours === undefined
+              ? 'They stay here for a short while after the conversation ends, so a conversation that went wrong can still be reported once it is over.'
+              : `They stay here for ${String(windowHours)} hours after the conversation ends, so a conversation that went wrong can still be reported once it is over.`}
+          </Notice>
+          <ul
+            className="v-list v-list--divided"
+            data-testid="recently-met-list"
+          >
+            {people.map((entry) => (
+              <li key={entry.encounterId}>
+                <div className="v-row">
+                  <span
+                    aria-hidden="true"
+                    className={`v-avatar v-avatar--sm v-avatar--tone-${String(
+                      toneOf(entry.person.id),
+                    )}`}
+                  >
+                    {entry.person.displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="v-row__body">
+                    <p className="v-strong">{entry.person.displayName}</p>
+                    <p className="v-caption v-quiet">
+                      Met {formatRelative(entry.endedAt)}
+                    </p>
+                  </div>
+                  <PersonSafetyMenu
+                    onBlocked={met.reload}
+                    person={{
+                      displayName: entry.person.displayName,
+                      id: entry.person.id,
+                    }}
+                    size="sm"
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Section>
+  );
+}
 
 function BlockedCard() {
   const api = useApi();

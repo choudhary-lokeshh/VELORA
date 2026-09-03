@@ -148,6 +148,14 @@ export type LiveConnectionState = LiveEncounter['connection']['state'];
 export type LiveEndReason = NonNullable<LiveEncounter['endReason']>;
 export type LiveMedium = NonNullable<LiveState['medium']>;
 export type LiveMessageList = JsonBody<'/v1/live/messages', 'get', 200>;
+/**
+ * The people a random encounter has already ended with.
+ *
+ * A separate read from live state on purpose: state says what is happening now,
+ * this says who can still be reported after it stopped happening.
+ */
+export type LiveRecentPeople = JsonBody<'/v1/live/recent-people', 'get', 200>;
+export type LiveRecentPerson = LiveRecentPeople['people'][number];
 export type LiveMessage = LiveMessageList['messages'][number];
 export type LivePerson = LiveEncounter['peer'];
 /** How wide a net the matcher is casting. A preference, never a promise. */
@@ -203,6 +211,23 @@ export type ReportList = JsonBody<'/v1/safety/reports', 'get', 200>;
 export type Report = ReportList['reports'][number];
 
 export type CreateReportBody = RequestBody<'/v1/safety/reports', 'post'>;
+
+/**
+ * Reporting somebody and stopping them reaching you, as one call.
+ *
+ * The response always carries the block. `report` is absent when the reporting
+ * bound was reached — the caller is still separated, and a surface says so
+ * rather than claiming both halves landed.
+ */
+export type ReportWithBlockBody = RequestBody<
+  '/v1/safety/reports/with-block',
+  'post'
+>;
+export type ReportWithBlock = JsonBody<
+  '/v1/safety/reports/with-block',
+  'post',
+  200
+>;
 
 /**
  * What the caller may be told about a decision that affected them, and how to

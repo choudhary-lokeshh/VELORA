@@ -292,6 +292,25 @@ export const enforcementReasonLabels: Readonly<Record<string, string>> = {
   underage_risk: 'Underage risk',
 };
 
+/**
+ * The reason codes a *reporter* may choose, in an operator's words.
+ *
+ * Deliberately a separate map from the enforcement one above. A report is an
+ * allegation and an enforcement is a finding, the two vocabularies are not the
+ * same list, and rendering a reporter's choice through the enforcement labels
+ * silently mislabelled every one that had no enforcement twin.
+ */
+export const reportReasonLabels: Readonly<Record<string, string>> = {
+  harassment: 'Harassment or bullying',
+  hate_or_abuse: 'Hate or abuse',
+  impersonation: 'Impersonation or fake profile',
+  other: 'Something else',
+  sexual_content_violation: 'Sexual content violation',
+  spam_or_scam: 'Spam or scam',
+  threats_or_violence: 'Threats or violence',
+  underage_concern: 'May be under 18',
+};
+
 export const decisionActionLabels: Readonly<Record<string, string>> = {
   escalate: 'Escalate',
   no_action: 'No action',

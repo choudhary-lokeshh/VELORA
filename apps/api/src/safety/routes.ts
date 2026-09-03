@@ -12,6 +12,8 @@ import {
   productErrorCodes,
   reportListResponseSchema,
   reportSchema,
+  reportWithBlockRequestSchema,
+  reportWithBlockResponseSchema,
   safetyStandingResponseSchema,
   withdrawAppealRequestSchema,
 } from '@velora/validation';
@@ -157,6 +159,52 @@ export class SafetyRoutes {
           productErrorCodes.rateLimited,
           input.correlationId,
         );
+      }
+      case 'invalid_target': {
+        return this.invalid(input);
+      }
+      default: {
+        return routeFailure(
+          409,
+          productErrorCodes.accountNotEligible,
+          input.correlationId,
+        );
+      }
+    }
+  }
+
+  /**
+   * Report and block, as one call.
+   *
+   * It answers 200 whenever the block was applied, whatever became of the
+   * report, because the block is the half that changes what can happen next. A
+   * client rendering this says what actually occurred rather than assuming both
+   * halves landed.
+   */
+  async createReportWithBlock(input: RouteRequest): Promise<RouteResult> {
+    const resolved = await this.requireConsumer(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(reportWithBlockRequestSchema, input.body);
+    if (!parsed.ok) return this.invalid(input);
+
+    const sourceSurface = surfaceOf(resolved.context.auth.audience);
+    if (sourceSurface === undefined) return this.invalid(input);
+
+    const outcome = await this.dependencies.safety.reportWithBlock(
+      resolved.context.account,
+      { ...parsed.value, sourceSurface },
+    );
+    switch (outcome.kind) {
+      case 'applied': {
+        return {
+          body: reportWithBlockResponseSchema.parse({
+            block: blockBody(outcome.block),
+            ...(outcome.report === undefined
+              ? {}
+              : { report: reportBody(outcome.report) }),
+          }),
+          status: 200,
+        };
       }
       case 'invalid_target': {
         return this.invalid(input);

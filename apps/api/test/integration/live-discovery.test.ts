@@ -392,6 +392,26 @@ async function meet(
   return matched;
 }
 
+async function recentPeople(caller: Credentials): Promise<{
+  readonly people: readonly {
+    readonly endedAt: string;
+    readonly encounterId: string;
+    readonly person: { readonly displayName: string; readonly id: string };
+  }[];
+  readonly windowHours: number;
+}> {
+  const response = await handle(get('/v1/live/recent-people', caller));
+  expect(response.status).toBe(200);
+  return (await response.json()) as {
+    people: {
+      endedAt: string;
+      encounterId: string;
+      person: { displayName: string; id: string };
+    }[];
+    windowHours: number;
+  };
+}
+
 describe('entering live discovery', () => {
   it('admits an onboarded account and puts it in the pool', async () => {
     const alex = await consumer('alex@live.test');
@@ -914,6 +934,108 @@ function gate(): { readonly open: () => void; readonly passed: Promise<void> } {
     passed,
   };
 }
+
+describe('somebody who left can still be reported', () => {
+  it('keeps the person on a short list after the encounter is over', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const encounterId = matched.encounter?.id ?? '';
+
+    // Nothing to act on while the encounter is still running: the current
+    // encounter is already published in live state, and repeating it here
+    // would put the same person on the screen twice under two meanings.
+    const during = await recentPeople(alex);
+    expect(during.people).toHaveLength(0);
+
+    // Remi presses Next and is gone from Alex's screen.
+    await handle(post('/v1/live/transitions', remi, { encounterId }));
+
+    const after = await recentPeople(alex);
+    expect(after.people).toHaveLength(1);
+    expect(after.people[0]?.encounterId).toBe(encounterId);
+    expect(after.people[0]?.person.id).toBe(remi.id);
+    expect(after.windowHours).toBeGreaterThan(0);
+
+    // And the person who left has the same way back to the person they left.
+    const theirs = await recentPeople(remi);
+    expect(theirs.people[0]?.person.id).toBe(alex.id);
+  });
+
+  it('survives the caller searching again, which is when the screen forgets', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const encounterId = matched.encounter?.id ?? '';
+
+    // Alex is the one who moves on, so nothing ever showed them an ended pane.
+    await handle(post('/v1/live/transitions', alex, { encounterId }));
+    const state = await readState(alex);
+    expect(state.state).toBe('searching');
+    expect(state.encounter).toBeUndefined();
+
+    // The person is still addressable, which is the whole point: a report has
+    // to survive the moment the surface stops naming anybody.
+    const after = await recentPeople(alex);
+    expect(after.people.map((entry) => entry.person.id)).toEqual([remi.id]);
+
+    // And it is enough to report and block them with.
+    const acted = await handle(
+      post('/v1/safety/reports/with-block', alex, {
+        clientReportId: 'live-post-encounter-0001',
+        reasonCode: 'harassment',
+        targetAccountId: after.people[0]?.person.id ?? '',
+      }),
+    );
+    expect(acted.status).toBe(200);
+    expect(
+      ((await acted.json()) as { block: { blockedId: string } }).block
+        .blockedId,
+    ).toBe(remi.id);
+  });
+
+  it('publishes the same minimized shape a peer was already shown, and no more', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    await handle(
+      post('/v1/live/transitions', remi, {
+        encounterId: matched.encounter?.id ?? '',
+      }),
+    );
+
+    const after = await recentPeople(alex);
+    const entry = after.people[0];
+    expect(entry).toBeDefined();
+    expect(Object.keys(entry ?? {}).sort()).toEqual([
+      'encounterId',
+      'endedAt',
+      'person',
+    ]);
+    // No message, no duration, no end reason, and nothing about the call.
+    const serialized = JSON.stringify(after);
+    expect(serialized).not.toContain('endReason');
+    expect(serialized).not.toContain('mediaTransport');
+    expect(serialized).not.toContain('realtimeSession');
+  });
+
+  it('does not hand somebody another person’s encounters', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const jules = await consumer('jules@live.test');
+    const matched = await meet(alex, remi);
+    await handle(
+      post('/v1/live/transitions', remi, {
+        encounterId: matched.encounter?.id ?? '',
+      }),
+    );
+
+    // Jules met nobody, and the list is scoped to the caller rather than to a
+    // window of time.
+    const theirs = await recentPeople(jules);
+    expect(theirs.people).toHaveLength(0);
+  });
+});
 
 describe('the session a match publishes', () => {
   it('reaches the provider before the encounter names the session', async () => {

@@ -293,6 +293,16 @@ Two consequences are worth stating. A hold stops **new** delivery authorizations
 
 Revoking already-issued delivery credentials is a separate matter with a bounded window; see [MEDIA](media.md) and [ADR-0023](../decisions/ADR-0023-media-platform-architecture.md).
 
+## Reporting and blocking as one act
+
+`POST /v1/safety/reports/with-block` does both, in that order, and the order is the design. Two client calls could have the block land and the report be lost, or the report land and the block be lost, and only one of those failures is dangerous: somebody who believes they are separated and is not. So the block is applied first and unconditionally, and the response always carries it.
+
+The report follows and may be refused by the submission bound, in which case the response carries the block and no report. That is deliberately not an error. The caller is still separated, the bound still holds, and a surface renders what actually happened rather than claiming a report was filed when none was — telling somebody their evidence was taken when it was not would be worse than telling them it was not.
+
+The two halves are not one transaction. A block takes the pair lock and ends whatever is running between these two; a report takes the subject lock and joins a moderation case. Holding both would introduce a lock order this domain does not otherwise have, for no gain: each half is already idempotent, so a retry after a crash between them re-applies the block it already made and files the report it did not.
+
+The reporter vocabulary gains `hate_or_abuse` and `threats_or_violence`. Both were previously filed as `harassment`, which describes the wrong thing about the two allegations where describing it correctly matters most: one is a pattern between two people, one is a statement about a group, and one is the single allegation on the list where the right operator response may be immediate. The vocabulary remains reporter-facing and provisional, and it remains deliberately not the vocabulary an enforcement decision records.
+
 ## Where this domain is going
 
 [ADR-0022](../decisions/ADR-0022-trust-safety-policy-enforcement-authority.md) records the architecture this milestone builds against. The policy authority, the scoped append-only enforcement model with supersession, the published capability answer, reports and cases and evidence and decisions as separate append-oriented records, and depicted-person consent held as scoped references to an approved verifier rather than as documents are built and described above. Still to come: appeals, surface as a first-class closed vocabulary, deadlines read from a versioned published policy, and mature-content enablement as configuration that refuses in every deployed environment. None of it enables mature content, and the ADR is explicit that its presence must not be capable of doing so.

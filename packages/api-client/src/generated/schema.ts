@@ -1864,6 +1864,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/live/recent-people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A short-lived way back to somebody a random encounter has already ended with. Bounded in count and in age, and never a directory of everybody the caller has met. */
+        get: operations["listRecentLiveCounterparts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/live/sessions": {
         parameters: {
             query?: never;
@@ -2388,6 +2405,23 @@ export interface paths {
         put?: never;
         /** Reporter identity, narrative, and every internal rationale are absent from every response this API can produce. The person reported is never told that a report exists. */
         post: operations["createReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/safety/reports/with-block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reporting somebody and stopping them reaching you, as one act, so a lost second request cannot leave somebody believing they are separated when they are not. Neither half tells the other person anything. */
+        post: operations["createReportWithBlock"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4697,6 +4731,23 @@ export interface components {
             /** @enum {string} */
             scenario: "peer_message" | "peer_connect" | "peer_reaction" | "peer_invitation" | "peer_accepts_invitation" | "peer_next" | "peer_disconnect" | "nobody_available";
         };
+        LiveRecentCounterpartListResponse: {
+            people: {
+                /** Format: date-time */
+                endedAt: string;
+                /** Format: uuid */
+                encounterId: string;
+                person: {
+                    bio?: string;
+                    displayName: string;
+                    /** Format: uuid */
+                    id: string;
+                    region?: string;
+                    sharedLanguages: string[];
+                };
+            }[];
+            windowHours: number;
+        };
         LiveStateResponse: {
             /** @enum {string} */
             admission: "eligible" | "not_eligible" | "unavailable";
@@ -5150,7 +5201,7 @@ export interface components {
             /** Format: uuid */
             messageId?: string;
             /** @enum {string} */
-            reasonCode: "underage_concern" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
+            reasonCode: "underage_concern" | "harassment" | "hate_or_abuse" | "threats_or_violence" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
             target: {
                 /** Format: uuid */
                 accountId: string;
@@ -5183,7 +5234,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            reasonCode: "underage_concern" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
+            reasonCode: "underage_concern" | "harassment" | "hate_or_abuse" | "threats_or_violence" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
             /** @enum {string} */
             state: "received" | "under_review" | "actioned" | "dismissed";
             /** @enum {string} */
@@ -5197,12 +5248,44 @@ export interface components {
                 /** Format: uuid */
                 id: string;
                 /** @enum {string} */
-                reasonCode: "underage_concern" | "harassment" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
+                reasonCode: "underage_concern" | "harassment" | "hate_or_abuse" | "threats_or_violence" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
                 /** @enum {string} */
                 state: "received" | "under_review" | "actioned" | "dismissed";
                 /** @enum {string} */
                 targetType: "consumer_account" | "creator_profile" | "creator_content" | "club" | "conversation";
             }[];
+        };
+        ReportWithBlockRequest: {
+            clientReportId: string;
+            /** Format: uuid */
+            conversationId?: string;
+            detail?: string;
+            /** Format: uuid */
+            messageId?: string;
+            /** @enum {string} */
+            reasonCode: "underage_concern" | "harassment" | "hate_or_abuse" | "threats_or_violence" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
+            /** Format: uuid */
+            targetAccountId: string;
+        };
+        ReportWithBlockResponse: {
+            block: {
+                /** Format: uuid */
+                blockedId: string;
+                /** Format: date-time */
+                createdAt: string;
+            };
+            report?: {
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                reasonCode: "underage_concern" | "harassment" | "hate_or_abuse" | "threats_or_violence" | "sexual_content_violation" | "impersonation" | "spam_or_scam" | "other";
+                /** @enum {string} */
+                state: "received" | "under_review" | "actioned" | "dismissed";
+                /** @enum {string} */
+                targetType: "consumer_account" | "creator_profile" | "creator_content" | "club" | "conversation";
+            };
         };
         Appeal: {
             /** Format: uuid */
@@ -18550,6 +18633,99 @@ export interface operations {
             };
         };
     };
+    listRecentLiveCounterparts: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The people this caller met live recently, newest first, in the same minimized public shape they were shown during the encounter. It exists so somebody can still report or block the person who behaved badly and then left, without having to remember who they were. It carries no message, no duration, and no end reason. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveRecentCounterpartListResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getLiveState: {
         parameters: {
             query?: never;
@@ -22842,6 +23018,114 @@ export interface operations {
             };
             /** @description Too many reports from this account in the current window. The body is an ApiError with code RATE_LIMITED. No report already made is removed or altered. */
             409: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The body failed contract validation, or the subject is the caller or is not an account this platform has. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createReportWithBlock: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportWithBlockRequest"];
+            };
+        };
+        responses: {
+            /** @description The block that now stands, and the report when one was recorded. The block is applied first and unconditionally, so the response never reports a separation that did not happen; an absent report means the reporting bound was reached and nothing was recorded. Repeating the call with the same client report identifier returns the original report and creates nothing. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWithBlockResponse"];
+                };
+            };
+            /** @description No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
                 headers: {
                     /** @description Request correlation identifier */
                     "x-correlation-id"?: string;

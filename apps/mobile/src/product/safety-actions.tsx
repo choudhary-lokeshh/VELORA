@@ -42,9 +42,11 @@ export interface Person {
 
 const reportReasons = [
   { label: 'They may be under 18', value: 'underage_concern' },
-  { label: 'Harassment', value: 'harassment' },
+  { label: 'Harassment or bullying', value: 'harassment' },
+  { label: 'Hate or abuse', value: 'hate_or_abuse' },
+  { label: 'Threats or violence', value: 'threats_or_violence' },
   { label: 'Sexual content violation', value: 'sexual_content_violation' },
-  { label: 'Impersonation', value: 'impersonation' },
+  { label: 'Impersonation or a fake profile', value: 'impersonation' },
   { label: 'Spam or a scam', value: 'spam_or_scam' },
   { label: 'Something else', value: 'other' },
 ] as const;
@@ -69,7 +71,7 @@ function clientReportId(): string {
   return `report-${String(Date.now())}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-type Mode = 'menu' | 'block' | 'report';
+type Mode = 'menu' | 'block' | 'report' | 'report-and-block';
 
 /**
  * One unobtrusive control beside a person, and everything safety behind it.
@@ -130,9 +132,26 @@ export function PersonSafetyMenu({
             >
               Report them
             </Button>
+            {/*
+              The two together, because that is usually what somebody actually
+              wants and doing it as two taps means two chances to stop halfway.
+              The server applies the block first, so this cannot leave somebody
+              believing they are separated when they are not.
+            */}
+            <Button
+              icon="shield"
+              onPress={() => {
+                setMode('report-and-block');
+              }}
+              testID="safety-open-report-and-block"
+              tone="secondary"
+              wide
+            >
+              Report and block
+            </Button>
             <Text tone="tertiary" variant="caption">
-              Neither tells them anything. Blocking stops all contact both ways;
-              reporting sends what happened to VELORA.
+              None of them tells the other person anything. Blocking stops all
+              contact both ways; reporting sends what happened to VELORA.
             </Text>
           </Stack>
         </Sheet>
@@ -148,8 +167,10 @@ export function PersonSafetyMenu({
         />
       ) : null}
 
-      {mode === 'report' ? (
+      {mode === 'report' || mode === 'report-and-block' ? (
         <ReportSheet
+          alsoBlock={mode === 'report-and-block'}
+          {...(onBlocked === undefined ? {} : { onBlocked })}
           onClose={() => {
             setMode(undefined);
           }}
@@ -219,11 +240,24 @@ export function BlockSheet({
   );
 }
 
+/**
+ * Reporting, optionally with the block that usually belongs with it.
+ *
+ * `alsoBlock` picks the endpoint rather than making a second request. The
+ * server applies the block first and answers with it, so what this renders
+ * afterwards is what actually happened: separated, and reported when a report
+ * was taken. The reporting bound is real, and claiming a report was filed when
+ * it was not would be worse than saying so.
+ */
 export function ReportSheet({
+  alsoBlock = false,
+  onBlocked,
   onClose,
   onSubmitted,
   person,
 }: {
+  readonly alsoBlock?: boolean;
+  readonly onBlocked?: (() => void) | undefined;
   readonly onClose: () => void;
   readonly onSubmitted?: (() => void) | undefined;
   readonly person: Person;
@@ -240,11 +274,17 @@ export function ReportSheet({
     <Sheet
       onClose={onClose}
       testID="report-person"
-      title={`Report ${person.displayName}`}
+      title={
+        alsoBlock
+          ? `Report and block ${person.displayName}`
+          : `Report ${person.displayName}`
+      }
     >
       <Stack gap={4}>
         <Text tone="secondary" variant="small">
-          VELORA reviews this. They are not told who reported them.
+          {alsoBlock
+            ? `VELORA reviews this, and sending it blocks ${person.displayName} straight away. They are told neither.`
+            : 'VELORA reviews this. They are not told who reported them.'}
         </Text>
 
         <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
@@ -301,11 +341,39 @@ export function ReportSheet({
           onPress={() => {
             run(async () => {
               setError(undefined);
+              // Generated once per submission. The server scopes it to the
+              // reporter, so a retry of the same submission is one report.
+              const reportId = clientReportId();
+              const detailFields =
+                detail.trim().length === 0 ? {} : { detail: detail.trim() };
+              if (alsoBlock) {
+                const result = await api.reportWithBlock({
+                  clientReportId: reportId,
+                  ...detailFields,
+                  reasonCode,
+                  targetAccountId: person.id,
+                });
+                const failure = failureMessage(result);
+                if (failure !== undefined) {
+                  setError(failure);
+                  return;
+                }
+                const reported =
+                  'value' in result && result.value.report !== undefined;
+                toast.show(
+                  reported
+                    ? `${person.displayName} is blocked and your report was received.`
+                    : `${person.displayName} is blocked. We could not take another report right now, and the block still stands.`,
+                  reported ? 'positive' : 'neutral',
+                );
+                onBlocked?.();
+                onSubmitted?.();
+                onClose();
+                return;
+              }
               const result = await api.report({
-                clientReportId: clientReportId(),
-                ...(detail.trim().length === 0
-                  ? {}
-                  : { detail: detail.trim() }),
+                clientReportId: reportId,
+                ...detailFields,
                 reasonCode,
                 target: { accountId: person.id, type: 'consumer_account' },
               });
@@ -326,7 +394,7 @@ export function ReportSheet({
           tone="primary"
           wide
         >
-          Send the report
+          {alsoBlock ? 'Report and block' : 'Send the report'}
         </Button>
       </Stack>
     </Sheet>

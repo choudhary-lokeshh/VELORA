@@ -1844,6 +1844,16 @@ function SearchingPane({
   );
 }
 
+/**
+ * What became of the person who just left, and what can still be done about it.
+ *
+ * The safety control is the reason this pane is not merely informational. A
+ * random encounter has no relationship behind it, so the moment the other
+ * person presses Next they stop being addressable anywhere on the product —
+ * which is exactly when somebody who was just abused wants to report them. It
+ * sits here, on the screen they are already looking at, rather than behind a
+ * memory of a stranger's display name.
+ */
 function EndedPane({ encounter }: { readonly encounter: LiveEncounter }) {
   const copy =
     endReasonCopy[encounter.endReason ?? ''] ?? endReasonCopy.peer_left;
@@ -1863,6 +1873,18 @@ function EndedPane({ encounter }: { readonly encounter: LiveEncounter }) {
         {copy?.title ?? 'That conversation ended'}
       </p>
       <p className="v-small v-live__ended-body">{copy?.body ?? ''}</p>
+      <div className="v-live__ended-safety" data-testid="live-ended-safety">
+        <span className="v-caption v-quiet">
+          Was something wrong with that conversation?
+        </span>
+        <PersonSafetyMenu
+          person={{
+            displayName: encounter.peer.displayName,
+            id: encounter.peer.id,
+          }}
+          size="sm"
+        />
+      </div>
       {connected ? (
         <Notice
           icon="message"

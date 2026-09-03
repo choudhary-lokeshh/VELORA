@@ -133,6 +133,23 @@ export const livePresenceSweepIntervalMilliseconds = 10_000;
  */
 export const liveRematchSuppressionMilliseconds = 3_600_000;
 
+/**
+ * How far back "somebody I just met" reaches, and how many of them are offered.
+ *
+ * A product bound and deliberately not a retention one: nothing is deleted when
+ * an encounter passes out of this window, the list simply stops offering it.
+ * The two exist so that a safety action survives the other person leaving —
+ * an abusive stranger pressing Next used to take the only control that named
+ * them off the screen with him.
+ *
+ * Both restate published contract values, on the same rule the message bounds
+ * follow, and `test/unit/live-policy.test.ts` asserts each equals the one the
+ * contract publishes so a change on either side that is not made on both fails
+ * the build.
+ */
+export const liveRecentCounterpartWindowMilliseconds = 86_400_000;
+export const maximumLiveRecentCounterparts = 10;
+
 /** The window the bounds below are counted over. One value, one scan. */
 export const liveAbuseWindowMilliseconds = 3_600_000;
 

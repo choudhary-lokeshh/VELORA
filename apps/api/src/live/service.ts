@@ -14,11 +14,13 @@ import {
   liveInvitationExpiryMilliseconds,
   liveInvitationOpenStates,
   livePresenceGraceMilliseconds,
+  liveRecentCounterpartWindowMilliseconds,
   liveRematchSuppressionMilliseconds,
   liveSearchGraceMilliseconds,
   maximumLiveEncountersPerUser,
   maximumLiveInvitationsPerWindow,
   maximumLiveMessagesPerEncounter,
+  maximumLiveRecentCounterparts,
   maximumOpenLiveInvitations,
   type LiveEndReason,
   type LiveInvitationState,
@@ -146,6 +148,17 @@ export type LiveMessagesOutcome =
   | { readonly kind: 'not_permitted' }
   | { readonly kind: 'rate_limited' }
   | { readonly kind: 'not_eligible' }
+  | { readonly kind: 'unavailable' };
+
+export type LiveRecentCounterpartsOutcome =
+  | {
+      readonly kind: 'people';
+      readonly people: readonly {
+        readonly endedAt: Date;
+        readonly encounterId: string;
+        readonly person: LivePersonView;
+      }[];
+    }
   | { readonly kind: 'unavailable' };
 
 export type LiveConnectOutcome =
@@ -703,6 +716,64 @@ export class LiveService {
     // acts on immediately — they are closing the camera — so it reports what is
     // actually true rather than what was intended.
     return { kind: 'state', view: await this.read(actor) };
+  }
+
+  /**
+   * The people this person met live and has already finished with.
+   *
+   * The one thing on this domain that outlives the encounter it came from, and
+   * it exists for one reason: somebody was abusive and then pressed Next, and
+   * the control that would have reported them left the screen with them. What
+   * is published is the same minimized public shape they were already shown —
+   * a name, roughly where, shared languages, whatever they wrote about
+   * themselves — and never a message, a duration, or an end reason.
+   *
+   * Deliberately not gated on the caller's own live eligibility. Somebody whose
+   * standing lapsed, or who has been restricted since the encounter, must still
+   * be able to report the person they met; requiring good standing here would
+   * deny the safety action to the accounts most likely to need it, which is the
+   * rule TRUST & SAFETY already applies to blocking and reporting.
+   */
+  async recentCounterparts(
+    actor: UserAccountRow,
+  ): Promise<LiveRecentCounterpartsOutcome> {
+    if (this.dependencies.mode === 'unavailable') {
+      return { kind: 'unavailable' };
+    }
+    const now = this.dependencies.now();
+    const met = await this.dependencies.repository.listRecentCounterparts(
+      this.dependencies.repository.transactionless,
+      {
+        limit: maximumLiveRecentCounterparts,
+        since: new Date(
+          now.getTime() - liveRecentCounterpartWindowMilliseconds,
+        ),
+        userId: actor.id,
+      },
+    );
+    if (met.length === 0) return { kind: 'people', people: [] };
+    const people = await this.peopleFor(
+      actor,
+      met.map((entry) => entry.counterpartId),
+    );
+    // An entry whose counterpart USERS no longer publishes at all is dropped
+    // rather than rendered nameless: an account that is gone is not somebody
+    // this surface can offer an action against.
+    return {
+      kind: 'people',
+      people: met.flatMap((entry) => {
+        const person = people.get(entry.counterpartId);
+        return person === undefined
+          ? []
+          : [
+              {
+                encounterId: entry.encounterId,
+                endedAt: entry.endedAt,
+                person,
+              },
+            ];
+      }),
+    };
   }
 
   /** The messages exchanged inside one encounter the caller was in. */

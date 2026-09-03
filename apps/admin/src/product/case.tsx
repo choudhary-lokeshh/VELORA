@@ -43,6 +43,7 @@ import {
   casePriorityLook,
   decisionActionLabels,
   enforcementReasonLabels,
+  reportReasonLabels,
   enforcementScopeLabels,
   formatDateTime,
   formatRemaining,
@@ -445,7 +446,7 @@ function Reports({ detail }: { readonly detail: CaseDetail }) {
                 {detail.reports.map((report) => (
                   <tr data-testid={`report-${report.id}`} key={report.id}>
                     <td>
-                      {enforcementReasonLabels[report.reasonCode] ??
+                      {reportReasonLabels[report.reasonCode] ??
                         humanState(report.reasonCode)}
                     </td>
                     <td>

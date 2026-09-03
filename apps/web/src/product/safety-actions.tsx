@@ -40,9 +40,11 @@ export interface Person {
 
 const reportReasons = [
   { label: 'They may be under 18', value: 'underage_concern' },
-  { label: 'Harassment', value: 'harassment' },
+  { label: 'Harassment or bullying', value: 'harassment' },
+  { label: 'Hate or abuse', value: 'hate_or_abuse' },
+  { label: 'Threats or violence', value: 'threats_or_violence' },
   { label: 'Sexual content violation', value: 'sexual_content_violation' },
-  { label: 'Impersonation', value: 'impersonation' },
+  { label: 'Impersonation or a fake profile', value: 'impersonation' },
   { label: 'Spam or a scam', value: 'spam_or_scam' },
   { label: 'Something else', value: 'other' },
 ] as const;
@@ -52,7 +54,7 @@ type ReasonCode = (typeof reportReasons)[number]['value'];
 /** The narrative bound the contract publishes for a report. */
 const maximumReportDetail = 2000;
 
-type Mode = 'menu' | 'block' | 'report';
+type Mode = 'menu' | 'block' | 'report' | 'report-and-block';
 
 export function PersonSafetyMenu({
   onBlocked,
@@ -108,6 +110,23 @@ export function PersonSafetyMenu({
             >
               Report this person
             </Button>
+            {/*
+              The two together, because that is usually what somebody actually
+              wants and doing it as two taps means two chances to stop halfway.
+              The server applies the block first, so this cannot leave somebody
+              believing they are separated when they are not.
+            */}
+            <Button
+              block
+              data-testid="safety-open-report-and-block"
+              icon="shield"
+              onClick={() => {
+                setMode('report-and-block');
+              }}
+              tone="ghost"
+            >
+              Report and block
+            </Button>
           </div>
           <p className="v-caption v-quiet">
             Neither action tells them anything.
@@ -125,11 +144,13 @@ export function PersonSafetyMenu({
         />
       ) : null}
 
-      {mode === 'report' ? (
+      {mode === 'report' || mode === 'report-and-block' ? (
         <ReportDialog
+          alsoBlock={mode === 'report-and-block'}
           onClose={() => {
             setMode(undefined);
           }}
+          {...(onBlocked === undefined ? {} : { onBlocked })}
           person={person}
         />
       ) : null}
@@ -189,11 +210,25 @@ export function BlockDialog({
   );
 }
 
+/**
+ * Reporting, optionally with the block that usually belongs with it.
+ *
+ * `alsoBlock` picks the endpoint rather than adding a second request. The
+ * server applies the block first and answers with it, so what this renders
+ * afterwards is what actually happened: separated, and reported when a report
+ * was taken. That distinction matters — the reporting bound exists, and telling
+ * somebody their report was filed when it was not would be worse than telling
+ * them it was not.
+ */
 export function ReportDialog({
+  alsoBlock = false,
+  onBlocked,
   onClose,
   onSubmitted,
   person,
 }: {
+  readonly alsoBlock?: boolean;
+  readonly onBlocked?: (() => void) | undefined;
   readonly onClose: () => void;
   readonly onSubmitted?: (() => void) | undefined;
   readonly person: Person;
@@ -209,7 +244,11 @@ export function ReportDialog({
     <Dialog
       onClose={onClose}
       testId="report-person"
-      title={`Report ${person.displayName}`}
+      title={
+        alsoBlock
+          ? `Report and block ${person.displayName}`
+          : `Report ${person.displayName}`
+      }
     >
       <form
         className="v-stack v-stack--5"
@@ -217,11 +256,40 @@ export function ReportDialog({
           event.preventDefault();
           run(async () => {
             setError(undefined);
+            // Generated once per submission and reused by nothing else. The
+            // server scopes it to the reporter, so it cannot collide with
+            // anybody else's, and a retry of the same submission is one report.
+            const clientReportId = crypto.randomUUID();
+            const detailFields =
+              detail.trim().length === 0 ? {} : { detail: detail.trim() };
+            if (alsoBlock) {
+              const result = await api.reportWithBlock({
+                clientReportId,
+                ...detailFields,
+                reasonCode,
+                targetAccountId: person.id,
+              });
+              const failure = failureMessage(result);
+              if (failure !== undefined) {
+                setError(failure);
+                return;
+              }
+              const reported =
+                'value' in result && result.value.report !== undefined;
+              toast.show(
+                reported
+                  ? `${person.displayName} is blocked and your report was received. They are not told either happened.`
+                  : `${person.displayName} is blocked. We could not take another report from you right now, and the block still stands.`,
+                reported ? 'positive' : 'neutral',
+              );
+              onBlocked?.();
+              onSubmitted?.();
+              onClose();
+              return;
+            }
             const result = await api.report({
-              // Makes submission retry-safe. The server scopes it to the
-              // reporter, so it cannot collide with anybody else's.
-              clientReportId: crypto.randomUUID(),
-              ...(detail.trim().length === 0 ? {} : { detail: detail.trim() }),
+              clientReportId,
+              ...detailFields,
               reasonCode,
               target: { accountId: person.id, type: 'consumer_account' },
             });
@@ -276,6 +344,17 @@ export function ReportDialog({
           )}
         </Field>
 
+        {alsoBlock ? (
+          <Notice icon="ban" testId="report-and-block-effect" tone="quiet">
+            <p>
+              Sending this blocks {person.displayName} straight away: you will
+              not see each other in discovery, no message or call can reach
+              either of you, and the matcher will not put you together again.
+              Nothing tells them any of it happened.
+            </p>
+          </Notice>
+        ) : null}
+
         <Notice tone="quiet">
           You will not be told what happens next. That is deliberate: an outcome
           told to a reporter is an outcome the reported person can work out.
@@ -295,7 +374,7 @@ export function ReportDialog({
             tone="primary"
             type="submit"
           >
-            Send report
+            {alsoBlock ? 'Report and block' : 'Send report'}
           </Button>
         </div>
       </form>

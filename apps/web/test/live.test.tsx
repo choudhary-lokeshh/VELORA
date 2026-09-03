@@ -6,6 +6,7 @@ import {
   admittedState,
   createApiDouble,
   liveConversationId,
+  otherPersonId,
   type ApiDoubleState,
 } from './support/api-double';
 import { renderProduct } from './support/render';
@@ -337,6 +338,77 @@ describe('when the other person moves on', () => {
     const ended = await screen.findByTestId('live-ended');
     expect(ended.textContent).toContain('You lost each other');
     expect(ended.textContent).not.toContain('They moved on');
+  });
+});
+
+describe('reporting somebody after they have gone', () => {
+  it('keeps a safety control on the ended encounter', async () => {
+    const double = createApiDouble(liveState({ simulated: true }));
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-door');
+    await click('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    // The complaint this exists for: the other person behaves badly and leaves,
+    // and every control that named them leaves with them.
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+
+    const safety = await screen.findByTestId('live-ended-safety');
+    expect(safety).toBeTruthy();
+    // And it is the real control, addressed to the person who just left.
+    expect(
+      safety.querySelector(`[data-testid="safety-menu-${otherPersonId}"]`),
+    ).toBeTruthy();
+  });
+
+  it('reports and blocks in one act, and says both happened', async () => {
+    const double = createApiDouble(liveState({ simulated: true }));
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-door');
+    await click('live-start-video');
+    await screen.findByTestId('live-peer-name');
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+
+    await click(`safety-menu-${otherPersonId}`);
+    await click('safety-open-report-and-block');
+    await screen.findByTestId('report-and-block-effect');
+    await click('report-submit');
+
+    await waitFor(() => {
+      expect(
+        double.state.blocks.some((block) => block.blockedId === otherPersonId),
+      ).toBe(true);
+    });
+    expect(double.state.reports).toHaveLength(1);
+  });
+
+  it('says the block still stands when no report could be taken', async () => {
+    const double = createApiDouble({
+      ...liveState({ simulated: true }),
+      reportingBoundReached: true,
+    });
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-door');
+    await click('live-start-video');
+    await screen.findByTestId('live-peer-name');
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+
+    await click(`safety-menu-${otherPersonId}`);
+    await click('safety-open-report-and-block');
+    await click('report-submit');
+
+    // The half that protects somebody landed, and nothing claims the other one
+    // did. A surface that said "report received" here would be lying about
+    // evidence.
+    await waitFor(() => {
+      expect(
+        double.state.blocks.some((block) => block.blockedId === otherPersonId),
+      ).toBe(true);
+    });
+    expect(double.state.reports).toHaveLength(0);
   });
 });
 

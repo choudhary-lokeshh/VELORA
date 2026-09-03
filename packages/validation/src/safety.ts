@@ -31,6 +31,23 @@ import { idempotencyKeySchema } from './product.js';
 export const reportReasonSchema = z.enum([
   'underage_concern',
   'harassment',
+  /**
+   * Abuse directed at who somebody is rather than at what they said.
+   *
+   * Separate from `harassment` because the two are answered differently: one
+   * is a pattern between two people and the other is a statement about a group,
+   * and a reporter who could only say "harassment" would be describing the
+   * wrong thing about the report that most needs describing correctly.
+   */
+  'hate_or_abuse',
+  /**
+   * A threat, an incitement, or a demand backed by one.
+   *
+   * Its own reason rather than a shade of harassment, because it is the one
+   * allegation on this list where the right operator response may be immediate
+   * and the wrong one may be irreversible.
+   */
+  'threats_or_violence',
   'sexual_content_violation',
   'impersonation',
   'spam_or_scam',
@@ -164,6 +181,56 @@ export const reportListResponseSchema = z
   .strict();
 
 /**
+ * Reporting somebody and stopping them reaching you, as one act.
+ *
+ * The two already exist separately and both stay. This is the shape for the
+ * moment they are one decision — somebody has just been abusive and wants them
+ * gone as well as answered — because a client that made two calls could have
+ * the first succeed and the second lost, and the person would be left believing
+ * they were separated when they were not.
+ *
+ * The target is an account identifier and only an account identifier. A block
+ * is about a person; there is no shape here for reporting a club, a content
+ * item, or a conversation, because none of those is something a block applies
+ * to and offering one would be a control that half-worked.
+ */
+export const reportWithBlockRequestSchema = z
+  .object({
+    /** Makes submission retry-safe. Scoped by the server to the reporter. */
+    clientReportId: idempotencyKeySchema,
+    /** Opaque conversation reference, when the report comes from one. */
+    conversationId: z.uuid().optional(),
+    detail: z.string().min(1).max(maximumReportDetailCharacters).optional(),
+    /** Opaque message reference. Only meaningful with a conversation. */
+    messageId: z.uuid().optional(),
+    reasonCode: reportReasonSchema,
+    targetAccountId: z.uuid(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.messageId === undefined || value.conversationId !== undefined,
+    'Evidence about a message must name the conversation it is in',
+  );
+
+/**
+ * What happened, in the order it happened.
+ *
+ * The block is not optional and the report is. That asymmetry is the whole
+ * contract: separation is applied first and unconditionally, so a response
+ * always carries the block that now stands. A missing `report` means the
+ * reporting bound was reached and no report was recorded — the caller is still
+ * separated, and telling them otherwise would be the lie this shape exists to
+ * make unsayable.
+ */
+export const reportWithBlockResponseSchema = z
+  .object({
+    block: blockSchema,
+    report: reportSchema.optional(),
+  })
+  .strict();
+
+/**
  * What an enforcement decision is about, on the wire.
  *
  * A closed vocabulary rather than a string, because a wire field that accepts
@@ -189,6 +256,9 @@ export type EnforcementDispositionValue = z.infer<
 
 export type Block = z.infer<typeof blockSchema>;
 export type Report = z.infer<typeof reportSchema>;
+export type ReportWithBlockResponse = z.infer<
+  typeof reportWithBlockResponseSchema
+>;
 
 /**
  * What a person may be told about a decision that affected them.

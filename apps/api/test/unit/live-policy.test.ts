@@ -3,7 +3,9 @@ import {
   idempotencyKeySchema,
   liveEndReasonSchema,
   liveMediumSchema,
+  liveRecentCounterpartWindowHours as contractRecentWindowHours,
   liveStateSchema,
+  maximumLiveRecentCounterparts as contractMaximumRecentCounterparts,
   maximumMessageBodyCharacters as contractMessageBodyCharacters,
   messageBodySchema,
   sendLiveMessageRequestSchema,
@@ -17,12 +19,14 @@ import {
   liveParticipationLiveStates,
   liveParticipationStates,
   livePresenceGraceMilliseconds,
+  liveRecentCounterpartWindowMilliseconds,
   liveRecordingImplemented,
   liveRematchSuppressionMilliseconds,
   liveRetentionDuration,
   liveSearchGraceMilliseconds,
   maximumLiveClientMessageIdCharacters,
   maximumLiveMessageBodyCharacters,
+  maximumLiveRecentCounterparts,
   minimumLiveClientMessageIdCharacters,
   productionBlockers,
 } from '../../src/live/policy.js';
@@ -42,6 +46,30 @@ describe('live bounds match the published contract', () => {
     );
     expect(messageBodySchema.safeParse('a'.repeat(4_000)).success).toBe(true);
     expect(messageBodySchema.safeParse('a'.repeat(4_001)).success).toBe(false);
+  });
+
+  it('bounds the recently-met list identically in policy and contract', () => {
+    // Published as hours because that is the unit a surface says out loud, and
+    // held here as milliseconds because that is the unit a clock subtracts.
+    expect(liveRecentCounterpartWindowMilliseconds).toBe(
+      contractRecentWindowHours * 60 * 60 * 1000,
+    );
+    expect(maximumLiveRecentCounterparts).toBe(
+      contractMaximumRecentCounterparts,
+    );
+  });
+
+  it('keeps the recently-met window shorter than nothing it may outlive', () => {
+    // A day is long enough that somebody who closed the tab in shock can still
+    // act, and it is deliberately not open-ended: a permanent list of every
+    // stranger somebody has been shown would be a directory this product has
+    // spent its whole design refusing to build.
+    expect(liveRecentCounterpartWindowMilliseconds).toBeLessThanOrEqual(
+      24 * 60 * 60 * 1000,
+    );
+    expect(liveRecentCounterpartWindowMilliseconds).toBeGreaterThan(
+      liveRematchSuppressionMilliseconds,
+    );
   });
 
   it('bounds the client message identifier identically', () => {

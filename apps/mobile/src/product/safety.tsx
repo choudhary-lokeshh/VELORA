@@ -22,6 +22,7 @@ import { Sheet } from '../design/sheet';
 import { color, space } from '../design/tokens';
 import { formatDate } from './locale';
 import { useResource, useSingleFlight } from './resource';
+import { PersonSafetyMenu } from './safety-actions';
 
 /**
  * Everything VELORA is holding on somebody's behalf, and everything it has
@@ -97,6 +98,10 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
     async (signal: AbortSignal) => api.blocks({ pageSize }, signal),
     [api],
   );
+  const loadRecentlyMet = useCallback(
+    async (signal: AbortSignal) => api.recentLivePeople(signal),
+    [api],
+  );
   const loadReports = useCallback(
     async (signal: AbortSignal) => api.reports({ pageSize }, signal),
     [api],
@@ -105,6 +110,7 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
   const standing = useResource(loadStanding);
   const appeals = useResource(loadAppeals);
   const blocks = useResource(loadBlocks);
+  const recentlyMet = useResource(loadRecentlyMet);
   const reports = useResource(loadReports);
   const [appealing, setAppealing] = useState<SafetyStatement | undefined>(
     undefined,
@@ -113,12 +119,15 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
   const statements = standing.value?.statements ?? [];
   const complaints = appeals.value?.appeals ?? [];
   const blocked = blocks.value?.blocks ?? [];
+  const met = recentlyMet.value?.people ?? [];
+  const metWindowHours = recentlyMet.value?.windowHours;
   const filed = reports.value?.reports ?? [];
 
   const reloadAll = () => {
     standing.reload();
     appeals.reload();
     blocks.reload();
+    recentlyMet.reload();
     reports.reload();
   };
 
@@ -234,6 +243,75 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
             )}
           </Stack>
         </Card>
+
+        {/* --------------------------------------------- recently met */}
+        {/*
+          The people a random encounter has already ended with.
+
+          This exists for one complaint and answers it exactly. Every other
+          surface that shows somebody carries a safety action, but a random
+          stranger is on no other surface: the moment the encounter is over they
+          are nowhere, and the person who was just abused is left with a display
+          name they did not write down.
+
+          Absent entirely where live discovery is switched off — a card saying
+          "nobody yet" would be a claim about a feature that is not running.
+        */}
+        {recentlyMet.error !== undefined && !recentlyMet.retryable ? null : (
+          <Card testID="recently-met-card">
+            <Stack gap={3}>
+              <Text variant="subheading" weight="semibold">
+                People you recently met on Live
+              </Text>
+              <Text tone="secondary" variant="small">
+                {metWindowHours === undefined
+                  ? 'They stay here for a short while after the conversation ends, so a conversation that went wrong can still be reported once it is over.'
+                  : `They stay here for ${String(metWindowHours)} hours after the conversation ends, so a conversation that went wrong can still be reported once it is over.`}
+              </Text>
+
+              {recentlyMet.loading && recentlyMet.value === undefined ? (
+                <RowSkeleton rows={1} />
+              ) : recentlyMet.error !== undefined ? (
+                <ErrorMessage testID="recently-met-failed">
+                  {recentlyMet.error}
+                </ErrorMessage>
+              ) : met.length === 0 ? (
+                <Text
+                  testID="recently-met-empty"
+                  tone="tertiary"
+                  variant="small"
+                >
+                  Nobody yet.
+                </Text>
+              ) : (
+                <View testID="recently-met-list">
+                  {met.map((entry, index) => (
+                    <View key={entry.encounterId}>
+                      {index === 0 ? null : <Divider />}
+                      <View style={styles.row}>
+                        <View style={styles.rowBody}>
+                          <Text variant="small" weight="medium">
+                            {entry.person.displayName}
+                          </Text>
+                          <Text tone="tertiary" variant="caption">
+                            {`Met ${formatDate(entry.endedAt)}`}
+                          </Text>
+                        </View>
+                        <PersonSafetyMenu
+                          onBlocked={recentlyMet.reload}
+                          person={{
+                            displayName: entry.person.displayName,
+                            id: entry.person.id,
+                          }}
+                        />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </Stack>
+          </Card>
+        )}
 
         {/* --------------------------------------------------- blocks */}
         <Card testID="blocked-card">

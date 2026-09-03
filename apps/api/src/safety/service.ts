@@ -83,6 +83,24 @@ export type ReportOutcome =
   | { readonly kind: 'invalid_target' }
   | { readonly kind: 'rate_limited' };
 
+/**
+ * Reporting somebody and separating from them, as one answer.
+ *
+ * The block is not optional here for the same reason it is not optional in the
+ * contract: it is applied first, so anything this returns has a block behind
+ * it. `report` absent means the reporting bound was reached — the person is
+ * still separated, and saying otherwise would be the one lie a safety response
+ * must not tell.
+ */
+export type ReportWithBlockOutcome =
+  | {
+      readonly kind: 'applied';
+      readonly block: BlockView;
+      readonly report: ReportView | undefined;
+    }
+  | { readonly kind: 'not_eligible' }
+  | { readonly kind: 'invalid_target' };
+
 export type ReportListOutcome =
   | {
       readonly kind: 'page';
@@ -379,6 +397,59 @@ export class SafetyService {
     return row === undefined
       ? { kind: 'invalid_target' }
       : { kind: 'report', view: reportView(row) };
+  }
+
+  /**
+   * Blocks somebody and reports them, in that order.
+   *
+   * The order is the design. Two clients calls could have the block land and
+   * the report be lost, or the report land and the block be lost, and only one
+   * of those failures is dangerous: somebody who believes they are separated
+   * and is not. So separation happens first and unconditionally, and the report
+   * follows. If the reporting bound refuses the second half, the caller is told
+   * — with the block that stands — rather than being refused outright and left
+   * to guess whether anything happened.
+   *
+   * They are deliberately not one transaction. A block takes the pair lock and
+   * ends whatever is running between these two; a report takes the *subject*
+   * lock and joins a moderation case. Holding both at once would introduce a
+   * lock order this domain does not otherwise have, for no gain — each half is
+   * already idempotent, and a retry after a crash between them re-applies the
+   * block it already made and files the report it did not.
+   */
+  async reportWithBlock(
+    actor: UserAccountRow,
+    input: {
+      readonly clientReportId: string;
+      readonly conversationId?: string | undefined;
+      readonly detail?: string | undefined;
+      readonly messageId?: string | undefined;
+      readonly reasonCode: ReportReasonCode;
+      readonly sourceSurface: ReportSourceSurface;
+      readonly targetAccountId: string;
+    },
+  ): Promise<ReportWithBlockOutcome> {
+    const blocked = await this.block(actor, input.targetAccountId);
+    if (blocked.kind === 'invalid_target') return { kind: 'invalid_target' };
+    if (blocked.kind !== 'blocked') return { kind: 'not_eligible' };
+
+    const reported = await this.report(actor, {
+      clientReportId: input.clientReportId,
+      conversationId: input.conversationId,
+      detail: input.detail,
+      messageId: input.messageId,
+      reasonCode: input.reasonCode,
+      sourceSurface: input.sourceSurface,
+      target: { accountId: input.targetAccountId, type: 'consumer_account' },
+    });
+    // A rate-limited or unresolvable report is reported as an absent report
+    // rather than as a failure of the whole call. The block stands either way,
+    // and it is the half that protects somebody.
+    return {
+      block: blocked.view,
+      kind: 'applied',
+      report: reported.kind === 'report' ? reported.view : undefined,
+    };
   }
 
   /**

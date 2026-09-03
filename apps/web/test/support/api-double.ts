@@ -394,8 +394,29 @@ export interface ApiDoubleState {
     id: string;
     reasonCode: string;
     state: string;
-    subjectId: string;
+    subjectId?: string;
+    targetType?: string;
   }[];
+  /**
+   * The people a live encounter has already ended with.
+   *
+   * Held separately from the live encounter, because that is how the server
+   * holds it: the encounter disappears from live state the moment somebody
+   * searches again, and this is what makes the person still reportable.
+   */
+  recentLivePeople: {
+    endedAt: string;
+    encounterId: string;
+    person: {
+      bio?: string;
+      displayName: string;
+      id: string;
+      region?: string;
+      sharedLanguages: string[];
+    };
+  }[];
+  /** When true, the composite call blocks and records no report. */
+  reportingBoundReached: boolean;
   /** Complaints the account has made about decisions. */
   appeals: {
     decisionId: string;
@@ -522,6 +543,8 @@ export function emptyState(): ApiDoubleState {
     onboarding: null,
     profile: null,
     appeals: [],
+    recentLivePeople: [],
+    reportingBoundReached: false,
     reports: [],
     session: null,
     statements: [],
@@ -1701,6 +1724,12 @@ export function createApiDouble(
       state.live.state = 'idle';
       return json(200, liveBody(state));
     }
+    if (path === '/v1/live/recent-people' && method === 'GET') {
+      return json(200, {
+        people: state.recentLivePeople,
+        windowHours: 24,
+      });
+    }
     if (path === '/v1/live/messages' && method === 'GET') {
       const encounterId = url.searchParams.get('encounterId');
       if (state.live.encounter?.id !== encounterId) {
@@ -2009,6 +2038,33 @@ export function createApiDouble(
       };
       state.reports = [...state.reports, report];
       return json(200, report);
+    }
+
+    if (path === '/v1/safety/reports/with-block' && method === 'POST') {
+      const input = body as { reasonCode: string; targetAccountId: string };
+      // The block first, exactly as the server applies it, so a test that
+      // stops the report can still assert the separation happened.
+      state.blocks = [
+        ...state.blocks,
+        { blockedId: input.targetAccountId, createdAt: iso() },
+      ];
+      state.candidates = state.candidates.filter(
+        (candidate) => candidate.id !== input.targetAccountId,
+      );
+      state.recentLivePeople = state.recentLivePeople.filter(
+        (entry) => entry.person.id !== input.targetAccountId,
+      );
+      const blocked = { blockedId: input.targetAccountId, createdAt: iso() };
+      if (state.reportingBoundReached) return json(200, { block: blocked });
+      const report = {
+        createdAt: iso(),
+        id: '99999999-9999-4999-8999-999999999999',
+        reasonCode: input.reasonCode,
+        state: 'received',
+        targetType: 'consumer_account',
+      };
+      state.reports = [...state.reports, report];
+      return json(200, { block: blocked, report });
     }
 
     if (path === '/v1/safety/standing' && method === 'GET') {
