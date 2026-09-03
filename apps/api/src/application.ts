@@ -950,6 +950,38 @@ export function createApplication(
   }
 
   /**
+   * Wraps one operator support handler, refusing the audience first.
+   *
+   * `supportRoute` answers `503` before anything else, which is right for a
+   * consumer path — somebody looking for help is owed "not right now" rather
+   * than a page that behaves as though the feature does not exist. On an
+   * operator path it is wrong in the same breath: it tells a consumer session
+   * that the route is there and that a dependency is missing, which is a fact
+   * about the platform disclosed to somebody with no business on the route.
+   *
+   * `docs/decisions/ADR-0036-platform-admin-operations-console.md` sets the
+   * order every other admin route follows: resolve the operator first, which
+   * refuses a wrong audience and a stale assurance before any lookup happens.
+   * Availability is answered after that, to a caller who was allowed to ask.
+   */
+  function adminSupportRoute(
+    run: (runtime: SupportRuntime, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      const operator = await admin.adminContext.resolve(input);
+      if ('failure' in operator) return operator.failure;
+      if (support === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(support, input);
+    };
+  }
+
+  /**
    * Wraps one account-closure handler on the same terms as `supportRoute`.
    *
    * `503` rather than `404` where the runtime is absent, because a person
@@ -1969,7 +2001,7 @@ export function createApplication(
     .get(
       apiRoutePaths.adminSupportTickets,
       admitted(
-        supportRoute(async (runtime, input) =>
+        adminSupportRoute(async (runtime, input) =>
           runtime.adminRoutes.listTickets(input),
         ),
       ),
@@ -1977,7 +2009,7 @@ export function createApplication(
     .get(
       apiRoutePaths.adminSupportTicket,
       admitted(
-        supportRoute(async (runtime, input) =>
+        adminSupportRoute(async (runtime, input) =>
           runtime.adminRoutes.getTicket(input),
         ),
       ),
@@ -1985,7 +2017,7 @@ export function createApplication(
     .post(
       apiRoutePaths.adminSupportTicketUpdate,
       admitted(
-        supportRoute(async (runtime, input) =>
+        adminSupportRoute(async (runtime, input) =>
           runtime.adminRoutes.updateTicket(input),
         ),
       ),

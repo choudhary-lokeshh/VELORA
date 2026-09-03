@@ -258,6 +258,8 @@ describe('real PostgreSQL, Redis, and BullMQ foundation', () => {
         'safety_evidence',
         'safety_reports',
         'safety_takedown_claims',
+        'support_ticket_events',
+        'support_tickets',
         'users_accounts',
         'users_adult_declarations',
         'users_availability',
