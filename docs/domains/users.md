@@ -76,6 +76,14 @@ The minimum discoverable profile is a display name, a coarse region, at least on
 
 A declared matching category exists and is **not** part of that minimum — see below.
 
+### What a name and a bio may not contain
+
+A display name and a bio are refused when they carry a character whose only effect is to change how the text around it is drawn: the C0 and C1 controls other than tab, newline and carriage return, and the bidirectional embeddings, overrides, isolates and marks. Those are what let a stored name render as somebody else's without a single code point of it being that person's, and a product whose whole surface is other people's names cannot leave that to a reader's font.
+
+It is deliberately narrow and it is deliberately not a content policy. Nothing here decides what somebody may say — that is moderation, with a taxonomy and a human reviewer. The zero-width joiner and non-joiner are absent from the list on purpose: Arabic, Persian, several Indic scripts and every multi-part emoji need them, and refusing them would be refusing people their own names in order to stop a trick.
+
+The predicate is one shared rule in `@velora/validation` rather than a per-field regular expression, because the same characters have to be refused everywhere text is written for somebody else to read. MESSAGING applies the same rule to a message body; see [MESSAGING](messaging.md).
+
 A consumer profile is not a public page. It is served to its owner and, through the projections other domains build, only to authenticated consumers whose relationship permits it. Public creator storefront behaviour belongs to CREATORS and must not reach this model.
 
 Languages are rows rather than an array column, because discovery ranks on language overlap and that is a join. The secondary index is ordered language-first for that query.

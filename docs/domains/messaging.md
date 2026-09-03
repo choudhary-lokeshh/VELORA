@@ -111,7 +111,11 @@ It is counted inside the transaction that writes, and after the idempotency read
 
 Reaching it refuses further sends for the window and removes or alters nothing already sent. It is a bound on what one account may start, so the person being written to is unaffected — which is what stops one abuser silencing the person they were writing to.
 
-## Cross-references## Cross-references
+## What a message body may not contain
+
+A body is refused when it carries a character whose only effect is to change how the text around it is drawn — the same shared rule USERS applies to a display name and a bio, applied here for the same reason: a message that shows one thing and contains another is an impersonation trick rather than something somebody said. It is not a content policy and it decides nothing about what a person may write. The rule and the reasoning are [USERS'](users.md).
+
+## Cross-references
 
 [messaging and blocks](../flows/messaging-and-blocks.md), [media security](../security/04-media-upload-delivery.md), [Trust & Safety](trust-safety.md), [NOTIFICATIONS](notifications.md), [DISCOVERY](discovery.md).
 

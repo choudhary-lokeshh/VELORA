@@ -165,7 +165,7 @@ It is counted only where a row would be created, so re-reading a signal the pair
 
 Inside a live encounter, Connect is one tap and a person who is told mid-conversation that they have signalled too many people learns nothing they can act on, so LIVE answers with where the pair now stands rather than surfacing the bound as its own state.
 
-## Cross-references## Cross-references
+## Cross-references
 
 [discovery flow](../flows/discovery-introductions.md), [Trust & Safety](trust-safety.md), [consumer product](../product/02-consumer-product.md), [monetisation](../product/05-monetisation.md).
 

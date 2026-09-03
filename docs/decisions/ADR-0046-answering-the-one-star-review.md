@@ -10,7 +10,7 @@ Every previous phase built VELORA against its own design. This one built it agai
 
 There are no fabricated users, counts, or presence anywhere: `LIVE_DISCOVERY_SIMULATION` and every provider adapter refuse outside local and test, the seed script refuses a non-local target, and no surface publishes a number the platform does not measure. Session recovery, rotation, reuse detection and audience isolation are proved against real PostgreSQL. Availability is a bounded user-declared window rather than a decorative "online" badge, and live presence expires on a sweep. The live transport renders five honest states and distinguishes a muted camera from a dead one. Coins reconcile, prices are server-authoritative, and matching is free. Blocks are re-checked inside the pair lock at allocation. Enforcement carries a disclosable reason and a real appeal. Messaging sends are idempotent with recoverable failures on both surfaces.
 
-Four complaints were not answered, and each was answered here.
+Four complaints were not answered at all, and a fifth group was answered only in part: the ones about what a script can do that a person cannot, and about being told things nobody asked to be told. Each is answered here.
 
 **A stranger who behaved badly and left could not be reported.** A random encounter has no relationship behind it — that is the product working correctly — and it meant that the moment the other person pressed Next, they stopped being addressable anywhere. The ended screen named them and carried no safety control; searching again removed even that. The one flow in this product where a person is most likely to meet somebody abusive was the one flow with no way back to them.
 
@@ -19,6 +19,8 @@ Four complaints were not answered, and each was answered here.
 **There was no way to reach a person.** VELORA had no support path of any kind. That is the flattest complaint in the whole category — "there is no support", "they say email us and nobody replies" — and an address in a policy document is not an answer, because whoever uses it cannot tell whether anything happened.
 
 **Nobody could leave.** The account lifecycle vocabulary, the `deletion_pending` status, the `deletion_requested_at` column and the CHECK that binds them had been in `0002_users` since Phase 1. No route or screen reached any of it, and the settings screen said the path was not finished — which is the polite version of the complaint people make loudest about everything else in this category.
+
+**A script could do things a person could not, and consent could only be recorded too late.** Nothing bounded how fast one account could send messages or signal introductions, so the complaint about being written to by something that is not a person had no answer in the code. The rule on display names refused the wrong half of the characters that make one name render as another. And the notification preferences covered only what the platform can already send, which meant the one category people complain about loudest — promotional notices — could not be refused until the day it was too late to refuse it in advance.
 
 ## Decision
 
@@ -68,6 +70,22 @@ Closure is composed after every domain it reaches, so no dependency direction ch
 
 Two vocabularies gain `account_closed` — AUTH's revocation reasons and NOTIFICATIONS' device disable reasons — because the nearest existing values were both wrong. `administrative` would record an operator acting on somebody who acted on themselves; `logout_all` is a person signing other devices out of an account they still hold; `retired` is somebody else acting on a registration.
 
+### What one account may do at machine speed, and what it may be told in advance
+
+Four complaints in this category are about scripts rather than about people: messages arriving faster than anybody could type them, introductions signalled to everybody, a name that renders as somebody else's, and promotional notifications drowning the ones that matter.
+
+**MESSAGING bounds sending across conversations, not within one.** Three hundred an hour, counted for the whole account. A per-conversation bound is evaded by opening more conversations, and somebody being written to at machine speed does not care which conversation it arrived in. It is counted inside the transaction that writes, so a burst cannot walk through a check made on another connection, and after the idempotency read, so a retry of a send that already committed is never refused by a bound it did not consume. It bounds what one account may start; the person being written to is unaffected, which is what stops an abuser using the bound to silence somebody.
+
+**DISCOVERY bounds signalling the same way.** Sixty an hour, counted from the initiator, because a signal somebody received is not something they did, and only where a row would be created. Inside a live encounter Connect stays one tap: somebody told mid-conversation that they have signalled too many people learns nothing they can act on, so LIVE answers with where the pair stands instead.
+
+Neither bound is low enough for a person to feel. A bound a person feels is a bound that gets removed the first time somebody complains.
+
+**Text somebody else reads refuses the characters that make one string render as another.** The old rule on display names was `\p{Cc}`, which is the wrong half of the problem: what actually lets a name render as somebody else's is the bidirectional overrides, isolates and marks, and a name carrying one was stored as written and drawn backwards. `\p{Cf}` as a whole is not the answer either — it would refuse the joiners Arabic, Persian, several Indic scripts and every multi-part emoji need, which is refusing people their own names in order to stop a trick. One shared predicate now covers display names, bios and message bodies. It is not a content policy and decides nothing about what somebody may say.
+
+**Marketing consent is recorded before there is anything to spend it on.** The settable preference pairs are derived from the approved template catalogue, so a transactional switch cannot outlive the template it governs. Marketing is the deliberate exception, for the opposite reason: consent is not the absence of a refusal, and the moment a marketing template exists is the moment it is too late to have refused in advance. It is settable on push and email, defaults to off, and both consumer surfaces say plainly that VELORA sends none of these today and that the switch records an answer for the day it might. SMS is absent, because a switch for a channel nobody has decided to use would be inviting a decision rather than recording one.
+
+The separation is the complaint being answered: promotional notifications spam a phone while the useful ones go missing. Refusing marketing is a row of its own, and a test proves a message notice still reaches somebody who refused it.
+
 ## Consequences
 
 Somebody who is abused in a random encounter can report the person after they leave, on either surface, with or without blocking them in the same act. Somebody who cannot sign in can reach a person and hold a reference for it. Somebody who wants to leave can, from the app, without emailing anybody.
@@ -80,4 +98,4 @@ Retention remains the open question it was. Nothing added here expires anything,
 
 ## Cross-references
 
-[SUPPORT](../domains/support.md), [USERS](../domains/users.md), [TRUST & SAFETY](../domains/trust-safety.md), [LIVE](../domains/live.md), [account deletion](../flows/account-deletion.md), [ADR-0017](ADR-0017-auth-session-recovery-security-policy.md), [ADR-0022](ADR-0022-trust-safety-policy-enforcement-authority.md), [ADR-0036](ADR-0036-platform-admin-operations-console.md), [ADR-0040](ADR-0040-random-live-discovery.md), [DECISIONS_REQUIRED](DECISIONS_REQUIRED.md).
+[SUPPORT](../domains/support.md), [USERS](../domains/users.md), [TRUST & SAFETY](../domains/trust-safety.md), [LIVE](../domains/live.md), [MESSAGING](../domains/messaging.md), [DISCOVERY](../domains/discovery.md), [NOTIFICATIONS](../domains/notifications.md), [account deletion](../flows/account-deletion.md), [ADR-0017](ADR-0017-auth-session-recovery-security-policy.md), [ADR-0022](ADR-0022-trust-safety-policy-enforcement-authority.md), [ADR-0036](ADR-0036-platform-admin-operations-console.md), [ADR-0040](ADR-0040-random-live-discovery.md), [DECISIONS_REQUIRED](DECISIONS_REQUIRED.md).
