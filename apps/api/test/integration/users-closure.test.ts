@@ -368,6 +368,60 @@ describe('somebody can actually leave', () => {
     expect(rows[0]?.count).toBe('1');
   });
 
+  it('answers two closures asked at the same instant with one transition', async () => {
+    const caller = await consumer('closure-race@velora.test');
+    // Two devices, both already signed in, both asked at once. This is the
+    // shape the compare-and-set exists for: the second request reads the same
+    // open status the first did, and only one of them may write.
+    const other = await signIn('closure-race@velora.test');
+    const [first, second] = await Promise.all([
+      close(caller),
+      close({ ...other, id: caller.id }),
+    ]);
+
+    // Whichever lost may find the session it was holding already revoked by
+    // the closure it raced with — that is the closure working, not a fault.
+    // What must never happen is a failure that says the product broke.
+    for (const answer of [first, second]) {
+      expect(answer.status === 200 || answer.status === 401).toBe(true);
+    }
+    expect(first.status === 200 || second.status === 200).toBe(true);
+
+    const rows = await rowsOf<{
+      count: string;
+      requested: Date | null;
+    }>(
+      database.sql`
+        select count(*)::text as count, max(deletion_requested_at) as requested
+        from users_accounts
+        where id = ${caller.id}::uuid and status = 'deletion_pending'
+      `,
+    );
+    expect(rows[0]?.count).toBe('1');
+    const requested = rows[0]?.requested;
+    if (requested === null || requested === undefined) {
+      throw new Error('the closure recorded no moment it was asked for');
+    }
+    const asked = requested.toISOString();
+
+    // Every answer that succeeded names the one moment this was asked for, and
+    // the loser did not restamp it. A closure whose recorded request moves is a
+    // closure no retention schedule could ever be measured from.
+    for (const answer of [first, second]) {
+      if (answer.status !== 200) continue;
+      expect(answer.body.requestedAt).toBe(asked);
+    }
+
+    const again = await signIn('closure-race@velora.test');
+    const readBack = await handle(
+      get('/v1/users/me/closure', { ...again, id: caller.id }),
+    );
+    expect(readBack.status).toBe(200);
+    expect(
+      ((await readBack.json()) as { requestedAt: string }).requestedAt,
+    ).toBe(asked);
+  });
+
   it('lets somebody who signs back in read what happened to their account', async () => {
     const caller = await consumer('closure-readback@velora.test');
     expect((await close(caller)).status).toBe(200);

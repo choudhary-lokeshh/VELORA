@@ -338,6 +338,42 @@ describe('somebody can actually reach support', () => {
     ).toHaveLength(1);
   });
 
+  it('answers two submissions of one key at the same instant with one ticket', async () => {
+    const caller = await consumer('support-race@velora.test');
+    const clientTicketId = crypto.randomUUID();
+
+    // The retry that matters is not the polite one. A connection that dropped
+    // after the request left is retried while the first attempt is still being
+    // written, so both reach the unique index rather than one reaching the read
+    // in front of it — which is the path the read alone never exercises.
+    const [first, second] = await Promise.all([
+      openTicket(caller, { clientTicketId }),
+      openTicket(caller, { clientTicketId }),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.reference).toBe(first.body.reference);
+
+    // One ticket, and one account of it being opened. A second event would be
+    // a history saying this was submitted twice, which is what an operator
+    // relies on not being true.
+    const tickets = await rowsOf<{ count: string }>(
+      database.sql`
+        select count(*)::text as count from support_tickets
+        where owner_id = ${caller.id}::uuid
+      `,
+    );
+    expect(tickets[0]?.count).toBe('1');
+    const events = await rowsOf<{ count: string }>(
+      database.sql`
+        select count(*)::text as count from support_ticket_events
+        where ticket_id = ${first.body.id}::uuid and kind = 'opened'
+      `,
+    );
+    expect(events[0]?.count).toBe('1');
+  });
+
   it('lets somebody read their ticket back and nobody else read it', async () => {
     const mine = await consumer('support-mine@velora.test');
     const theirs = await consumer('support-theirs@velora.test');
