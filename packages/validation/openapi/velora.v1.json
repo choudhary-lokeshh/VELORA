@@ -2746,6 +2746,388 @@
         ]
       }
     },
+    "/v1/users/me/closure": {
+      "post": {
+        "operationId": "closeConsumerAccount",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountClosureResponse"
+                }
+              }
+            },
+            "description": "The closure, as it now stands. It is immediate: every session and refresh family is revoked, every push registration is retired, any live encounter ends and the matching pool is left, any availability window closes, and the account moves to a status every product predicate already refuses. Repeating the call answers with the closure that already exists rather than refusing, so somebody who tapped twice or lost a response is never left unsure whether it worked. `erasureScheduled` is false and says so: physically destroying what remains depends on retention schedules nobody has approved, and no field here claims otherwise.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The account is not in a state closure acts on. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerAccessToken": []
+          }
+        ],
+        "summary": "Closing an account, from inside the product. There is no undo, and no path here asks anybody to email support."
+      },
+      "get": {
+        "operationId": "getConsumerAccountClosure",
+        "parameters": [
+          {
+            "description": "Caller-provided correlation identifier",
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountClosureResponse"
+                }
+              }
+            },
+            "description": "The closure this account is under, if it is under one. A closed account can still read this: signing in again lands on an account that says what happened to it rather than on a screen that refuses without explaining.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No valid session or access token accompanied the request. The body is an ApiError with code AUTH_REQUIRED.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The browser origin or CSRF evidence was rejected, or the caller is not a Consumer Web or Consumer Mobile audience. The body is an ApiError, with code CONSUMER_SURFACE_REQUIRED in the audience case.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies.",
+            "headers": {
+              "x-correlation-id": {
+                "description": "Request correlation identifier",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before retrying. Present on a capacity refusal.",
+                "required": false,
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerAccessToken": []
+          }
+        ],
+        "summary": "Answers 404 when nothing has been requested, which is the ordinary case for an account that is simply open."
+      }
+    },
     "/v1/users/me/onboarding": {
       "get": {
         "operationId": "getConsumerOnboarding",
@@ -35959,6 +36341,46 @@
           "code",
           "correlationId",
           "message"
+        ],
+        "additionalProperties": false
+      },
+      "AccountClosureResponse": {
+        "type": "object",
+        "properties": {
+          "erasureScheduled": {
+            "type": "boolean"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "deletion_pending",
+              "deactivated",
+              "erased"
+            ]
+          }
+        },
+        "required": [
+          "erasureScheduled",
+          "requestedAt",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "CloseAccountRequest": {
+        "type": "object",
+        "properties": {
+          "acknowledgement": {
+            "type": "string",
+            "const": "close-my-account"
+          }
+        },
+        "required": [
+          "acknowledgement"
         ],
         "additionalProperties": false
       },

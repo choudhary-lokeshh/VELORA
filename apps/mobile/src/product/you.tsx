@@ -2,10 +2,16 @@ import {
   accountStanding,
   accountStandingLabels,
 } from '@velora/consumer-client';
-import { useState } from 'react';
+import { failureMessage } from '@velora/consumer-client';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { useMediaAddressBook, useSession } from '../frame/providers';
+import {
+  useApi,
+  useMediaAddressBook,
+  useSession,
+  useToast,
+} from '../frame/providers';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { formatFullDate } from './locale';
 import { Screen } from '../frame/shell';
@@ -15,6 +21,7 @@ import {
   Button,
   Card,
   Divider,
+  ErrorMessage,
   ErrorState,
   ListRow,
   Notice,
@@ -27,6 +34,7 @@ import { Sheet } from '../design/sheet';
 import type { YouSection } from '../frame/links';
 import { color, space } from '../design/tokens';
 import { profileMediaLabels, profileMediaState } from '@velora/consumer-client';
+import { useResource, useSingleFlight } from './resource';
 
 /**
  * You: the account, and everywhere that acts on it.
@@ -367,22 +375,145 @@ export function AccountScreen({ onBack }: { readonly onBack: () => void }) {
         ) : null}
 
         {/*
-          Closing an account is defined in `docs/flows/account-deletion.md` and
-          has no route on any surface, because every retention schedule it
-          depends on is an open legal decision. Saying so is better than a
-          control that would refuse.
+          Leaving, from inside the product.
+
+          This used to say the path was not finished, which was true and was
+          also the exact shape of the complaint people make about every other
+          product in this category: the button is missing, or it is there and it
+          tells you to email somebody. The control does what it says now, and
+          the copy promises only what actually happens — closing is immediate
+          and total; erasing what remains depends on retention schedules VELORA
+          has not published, and the screen says so rather than claiming data
+          has been destroyed.
         */}
-        <Notice
-          testID="account-closure-unavailable"
-          title="Closing your account is not finished yet"
-          tone="neutral"
-        >
-          VELORA cannot delete an account from here yet. What is kept, and for
-          how long, is still being decided, and building the control before that
-          answer exists would mean deleting under a rule nobody has approved.
-        </Notice>
+        <CloseAccountCard />
       </Stack>
     </Screen>
+  );
+}
+
+function CloseAccountCard() {
+  const api = useApi();
+  const session = useSession();
+  const toast = useToast();
+  const { busy, run } = useSingleFlight();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const load = useCallback(
+    async (signal: AbortSignal) => api.accountClosure(signal),
+    [api],
+  );
+  const closure = useResource(load);
+  const closed = closure.value;
+
+  if (closed !== undefined) {
+    return (
+      <Card testID="closure-card">
+        <Stack gap={3}>
+          <Text variant="subheading" weight="semibold">
+            Your account is closed
+          </Text>
+          <Text testID="closure-done" tone="secondary" variant="small">
+            {`You asked to close this account on ${formatFullDate(closed.requestedAt)}. Nobody can reach you through VELORA and nothing here can be used.`}
+          </Text>
+          <Text testID="closure-retention" tone="tertiary" variant="caption">
+            {closed.erasureScheduled
+              ? 'What remains is scheduled for erasure.'
+              : 'Records VELORA is legally required to keep — payments, safety evidence — are retained. VELORA has not yet published a schedule for erasing the rest, and this screen will not pretend otherwise.'}
+          </Text>
+        </Stack>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card testID="closure-card">
+        <Stack gap={3}>
+          <Text variant="subheading" weight="semibold">
+            Close your account
+          </Text>
+          <Text tone="secondary" variant="small">
+            Closing is immediate: every session ends, your notifications stop,
+            any Live conversation ends, and nobody can find or reach you. It
+            cannot be undone from here.
+          </Text>
+          <Text tone="tertiary" variant="caption">
+            Records VELORA is legally required to keep — payments, and safety
+            evidence about reports involving you — are retained. VELORA has not
+            yet published a schedule for erasing the rest.
+          </Text>
+          {error === undefined ? null : (
+            <ErrorMessage testID="closure-error">{error}</ErrorMessage>
+          )}
+          <Button
+            disabled={busy}
+            icon="trash"
+            onPress={() => {
+              setConfirming(true);
+            }}
+            testID="close-account"
+            tone="danger"
+            wide
+          >
+            Close my account
+          </Button>
+        </Stack>
+      </Card>
+
+      {confirming ? (
+        <Sheet
+          onClose={() => {
+            setConfirming(false);
+          }}
+          testID="close-account-confirm"
+          title="Close your account for good?"
+        >
+          <Text tone="secondary" variant="small">
+            Every session ends now, on every device. Your profile stops being
+            visible, no message or call can reach you, and any Live conversation
+            ends. There is no way to undo this from the app.
+          </Text>
+          <Button
+            busy={busy}
+            icon="trash"
+            onPress={() => {
+              run(async () => {
+                setError(undefined);
+                const result = await api.closeAccount({
+                  acknowledgement: 'close-my-account',
+                });
+                const failure = failureMessage(result);
+                setConfirming(false);
+                if (failure !== undefined) {
+                  setError(failure);
+                  toast.show(failure, 'critical');
+                  return;
+                }
+                closure.reload();
+                // The server has already revoked everything; this brings the
+                // device's own state in line rather than leaving a signed-in
+                // shell over an account that no longer works.
+                session.signOut();
+              });
+            }}
+            testID="close-account-do"
+            tone="danger"
+          >
+            Close my account
+          </Button>
+          <Button
+            onPress={() => {
+              setConfirming(false);
+            }}
+            testID="close-account-keep"
+            tone="secondary"
+          >
+            Keep my account
+          </Button>
+        </Sheet>
+      ) : null}
+    </>
   );
 }
 

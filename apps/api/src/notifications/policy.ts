@@ -404,6 +404,15 @@ export const pushDeviceDisableReasons = [
   'provider_invalidated',
   /** An operator or a retention pass retired it. */
   'retired',
+  /**
+   * The person closed their account.
+   *
+   * Its own reason rather than `retired`, which records somebody else acting on
+   * a registration, and rather than `signed_out`, which is a device leaving an
+   * account that still exists. A registration retired for this reason is never
+   * re-enabled, like every other one here — there is nothing left to reach.
+   */
+  'account_closed',
 ] as const;
 export type PushDeviceDisableReason = (typeof pushDeviceDisableReasons)[number];
 

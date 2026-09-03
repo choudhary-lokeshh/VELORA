@@ -554,7 +554,11 @@ export class AuthService {
     readonly accountId: string;
     readonly audience: AuthAudience;
     readonly correlationId: string;
-    readonly reason: 'logout_all' | 'account_recovery' | 'privileged_recovery';
+    readonly reason:
+      | 'logout_all'
+      | 'account_recovery'
+      | 'privileged_recovery'
+      | 'account_closed';
   }): Promise<{ readonly families: number; readonly sessions: number }> {
     const { repository } = this.dependencies;
     const now = this.dependencies.now();

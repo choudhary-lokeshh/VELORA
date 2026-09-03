@@ -416,6 +416,14 @@ export interface MobileApiState {
   }[];
   /** When true, a support submission is refused for the window. */
   supportBoundReached: boolean;
+  /**
+   * The closure this account is under, if it is under one.
+   *
+   * Held rather than derived, because that is how the server holds it: a closed
+   * account can still read what happened to it, which is the whole reason the
+   * read exists.
+   */
+  closure: { requestedAt: string; status: string } | null;
   supportSequence: number;
   sessionLive: boolean;
   standing: {
@@ -657,6 +665,7 @@ export function admittedState(): MobileApiState {
     recentLivePeople: [],
     reportingBoundReached: false,
     reports: [],
+    closure: null,
     supportBoundReached: false,
     supportSequence: 0,
     supportTickets: [],
@@ -1965,6 +1974,19 @@ export function createMobileApiDouble(
         ),
       });
     }
+    if (path === '/v1/users/me/closure' && method === 'POST') {
+      // The server applies the closure before it answers, and the double does
+      // the same: a test that asserts the session is gone afterwards is
+      // asserting what actually happens.
+      state.closure ??= { requestedAt: iso(), status: 'deletion_pending' };
+      return json(200, { erasureScheduled: false, ...state.closure });
+    }
+    if (path === '/v1/users/me/closure' && method === 'GET') {
+      return state.closure === null
+        ? error(404, 'NOT_FOUND')
+        : json(200, { erasureScheduled: false, ...state.closure });
+    }
+
     // SUPPORT.
     if (path === '/v1/support/tickets' && method === 'GET') {
       return json(200, { tickets: state.supportTickets.map(ticketBody) });

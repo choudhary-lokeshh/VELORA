@@ -229,6 +229,8 @@ import {
 } from './profile.js';
 import { productErrorCodes } from './product.js';
 import {
+  accountClosureResponseSchema,
+  closeAccountRequestSchema,
   adultDeclarationRequestSchema,
   consumerAccountResponseSchema,
   createConsumerAccountRequestSchema,
@@ -311,6 +313,7 @@ export const apiRoutePaths = {
   consumerOnboarding: '/v1/users/me/onboarding',
   consumerPolicyAcknowledgements: '/v1/users/me/onboarding/acknowledgements',
   consumerAvailability: '/v1/users/me/availability',
+  consumerAccountClosure: '/v1/users/me/closure',
   creatorAccount: '/v1/creator',
   creatorAccountSelf: '/v1/creator/me',
   creatorEarnings: '/v1/creator/earnings',
@@ -514,6 +517,8 @@ export const apiSchemas = {
   AiSuggestionResponse: aiSuggestionResponseSchema,
   AdultDeclarationRequest: adultDeclarationRequestSchema,
   ApiError: apiErrorSchema,
+  AccountClosureResponse: accountClosureResponseSchema,
+  CloseAccountRequest: closeAccountRequestSchema,
   ConsumerAccountResponse: consumerAccountResponseSchema,
   CreateConsumerAccountRequest: createConsumerAccountRequestSchema,
   CreateCreatorAccountRequest: createCreatorAccountRequestSchema,
@@ -1250,6 +1255,46 @@ export const apiOperations = [
       ...sharedErrorResponses,
     },
     security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'post',
+    operationId: 'closeConsumerAccount',
+    path: apiRoutePaths.consumerAccountClosure,
+    requestSchemaName: 'CloseAccountRequest',
+    responses: {
+      '200': {
+        description:
+          'The closure, as it now stands. It is immediate: every session and refresh family is revoked, every push registration is retired, any live encounter ends and the matching pool is left, any availability window closes, and the account moves to a status every product predicate already refuses. Repeating the call answers with the closure that already exists rather than refusing, so somebody who tapped twice or lost a response is never left unsure whether it worked. `erasureScheduled` is false and says so: physically destroying what remains depends on retention schedules nobody has approved, and no field here claims otherwise.',
+        schemaName: 'AccountClosureResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `The account is not in a state closure acts on. The body is an ApiError with code ${productErrorCodes.accountNotEligible}.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Closing an account, from inside the product. There is no undo, and no path here asks anybody to email support.',
+  },
+  {
+    method: 'get',
+    operationId: 'getConsumerAccountClosure',
+    path: apiRoutePaths.consumerAccountClosure,
+    responses: {
+      '200': {
+        description:
+          'The closure this account is under, if it is under one. A closed account can still read this: signing in again lands on an account that says what happened to it rather than on a screen that refuses without explaining.',
+        schemaName: 'AccountClosureResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Answers 404 when nothing has been requested, which is the ordinary case for an account that is simply open.',
   },
   {
     method: 'get',

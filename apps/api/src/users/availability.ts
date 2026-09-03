@@ -140,6 +140,27 @@ export class AvailabilityRepository {
     }
     return row;
   }
+
+  /**
+   * Closes any window this account is holding.
+   *
+   * For account closure, and deliberately a write rather than a delete: the
+   * row is this domain's record that somebody once made themselves available,
+   * and discovery reads the *state* rather than the presence of a row. Safe on
+   * an account that never had one — the upsert inserts an unavailable row, and
+   * an unavailable row is what an absent one already means.
+   */
+  async close(
+    executor: AnyExecutor,
+    input: { readonly now: Date; readonly userId: string },
+  ): Promise<void> {
+    await this.set(executor, {
+      availableUntil: null,
+      now: input.now,
+      state: 'unavailable',
+      userId: input.userId,
+    });
+  }
 }
 
 export interface AvailabilityServiceDependencies {

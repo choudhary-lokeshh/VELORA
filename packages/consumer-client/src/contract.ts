@@ -39,6 +39,16 @@ export type ProfileMediaUpload = JsonBody<
   201
 >;
 export type Availability = JsonBody<'/v1/users/me/availability', 'get', 200>;
+/**
+ * Leaving.
+ *
+ * `erasureScheduled` is published and currently false. A surface reads it and
+ * says what is true — the account is closed and what remains follows a
+ * retention schedule that is not yet published — rather than writing "your data
+ * has been deleted" on the strength of an assumption.
+ */
+export type AccountClosure = JsonBody<'/v1/users/me/closure', 'get', 200>;
+export type CloseAccountBody = RequestBody<'/v1/users/me/closure', 'post'>;
 export type DiscoveryFeed = JsonBody<'/v1/discovery/candidates', 'get', 200>;
 export type DiscoveryCandidate = DiscoveryFeed['candidates'][number];
 export type DiscoveryPerson = JsonBody<'/v1/discovery/people', 'get', 200>;

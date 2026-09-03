@@ -1520,6 +1520,45 @@ describe('settings', () => {
     // that would do nothing.
     expect(document.querySelectorAll('.v-switch')).toHaveLength(0);
   });
+
+  it('closes the account for real, and says only what actually happened', async () => {
+    const double = createApiDouble(admittedState());
+    renderProduct(<Settings />, double, { pathname: '/you/settings' });
+
+    // The control exists. This screen used to say the path was not finished,
+    // which is the exact shape of the complaint people make about every other
+    // product in this category.
+    await screen.findByTestId('close-account');
+    fireEvent.click(screen.getByTestId('close-account'));
+    fireEvent.click(screen.getByTestId('close-account-confirm-accept'));
+
+    await waitFor(() => {
+      expect(double.state.closure?.status).toBe('deletion_pending');
+    });
+    // The server revoked everything; the browser's own state follows rather
+    // than leaving a signed-in shell over an account that no longer works.
+    await waitFor(() => {
+      expect(double.state.session).toBeNull();
+    });
+  });
+
+  it('never claims data has been erased', async () => {
+    const double = createApiDouble({
+      ...admittedState(),
+      closure: {
+        requestedAt: new Date().toISOString(),
+        status: 'deletion_pending',
+      },
+    });
+    renderProduct(<Settings />, double, { pathname: '/you/settings' });
+
+    const retention = await screen.findByTestId('closure-retention');
+    // Destroying what remains depends on retention schedules nobody has
+    // approved. Saying it has happened would be the one claim on this screen
+    // that could not be walked back.
+    expect(retention.textContent.toLowerCase()).not.toContain('erased');
+    expect(retention.textContent).toContain('has not yet published');
+  });
 });
 
 /* ============================ memberships ============================ */

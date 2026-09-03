@@ -621,6 +621,36 @@ export class NotificationRepository {
       );
   }
 
+  /**
+   * Retires every live registration this recipient holds.
+   *
+   * For account closure, which is about a person rather than about a device or
+   * a token. It is deliberately not a delete: the registration is evidence that
+   * a device was reachable, and a row that is gone cannot answer why a notice
+   * stopped being delivered. A retired registration is never re-enabled, so
+   * nothing here can quietly become a way back in.
+   */
+  async disableDevicesForRecipient(
+    executor: Executor,
+    input: {
+      readonly now: Date;
+      readonly reason: PushDeviceDisableReason;
+      readonly recipientId: string;
+    },
+  ): Promise<number> {
+    const rows = await executor
+      .update(notificationPushDevices)
+      .set({ disableReason: input.reason, disabledAt: input.now })
+      .where(
+        and(
+          eq(notificationPushDevices.recipientId, input.recipientId),
+          isNull(notificationPushDevices.disabledAt),
+        ),
+      )
+      .returning({ id: notificationPushDevices.id });
+    return rows.length;
+  }
+
   /** Retires this installation's live registrations. */
   async disableDevicesByInstallation(
     executor: Executor,

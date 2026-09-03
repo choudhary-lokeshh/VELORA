@@ -7,6 +7,7 @@ import {
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { SupportScreen } from '../src/product/support';
+import { AccountScreen } from '../src/product/you';
 import {
   admittedState,
   createMobileApiDouble,
@@ -107,5 +108,68 @@ describe('help on a phone', () => {
     });
     expect(screen.queryByTestId('support-reference')).toBeNull();
     expect(double.state.supportTickets).toHaveLength(0);
+  });
+});
+
+/**
+ * Leaving, on a phone.
+ *
+ * The control used to be absent and the screen said the path was not finished,
+ * which is the exact shape of the complaint people make about every other
+ * product in this category. What is asserted here is that the control does what
+ * it says and that the copy claims only what actually happened.
+ */
+describe('closing an account', () => {
+  it('closes for real, and does not claim data has been erased', async () => {
+    const double = createMobileApiDouble(admittedState());
+    const store = createInMemorySecureTokenStore();
+    await store.write({
+      accessToken: 'access-stored',
+      accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      installationId: 'installation-local-device',
+      refreshToken: 'refresh-stored',
+    });
+    await renderScreen(<AccountScreen onBack={() => undefined} />, double, {
+      store,
+    });
+
+    await press('close-account');
+    await screen.findByTestId('close-account-confirm');
+    await press('close-account-do');
+
+    await waitFor(() => {
+      expect(double.state.closure?.status).toBe('deletion_pending');
+    });
+
+    const retention = await screen.findByTestId('closure-retention');
+    // Destroying what remains depends on retention schedules nobody has
+    // approved. Saying it has happened would be the one claim on this screen
+    // that could not be walked back.
+    expect(retention).not.toHaveTextContent(/erased/u);
+    expect(retention).toHaveTextContent(/has not yet published/u);
+  });
+
+  it('lets somebody change their mind at the confirmation', async () => {
+    const double = createMobileApiDouble(admittedState());
+    const store = createInMemorySecureTokenStore();
+    await store.write({
+      accessToken: 'access-stored',
+      accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      installationId: 'installation-local-device',
+      refreshToken: 'refresh-stored',
+    });
+    await renderScreen(<AccountScreen onBack={() => undefined} />, double, {
+      store,
+    });
+
+    await press('close-account');
+    await press('close-account-keep');
+
+    // The confirmation is where the caution lives, because there is no undo
+    // once it is answered.
+    await waitFor(() => {
+      expect(screen.queryByTestId('close-account-confirm')).toBeNull();
+    });
+    expect(double.state.closure).toBeNull();
   });
 });

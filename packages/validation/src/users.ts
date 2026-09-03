@@ -100,6 +100,67 @@ export type ConsumerAccountResponse = z.infer<
 >;
 
 /**
+ * Closing an account, and what that actually means today.
+ *
+ * The complaint this answers is one of the loudest in the category: the Delete
+ * Account button does not delete anything, and often is not there at all — the
+ * settings screen tells somebody to email support and nothing happens. So this
+ * contract is careful to promise exactly what the platform does, and nothing
+ * beyond it.
+ *
+ * **What is immediate.** Closure revokes every session and refresh family,
+ * retires every push registration, ends any live encounter and leaves the
+ * matching pool, closes any availability window, and moves the account to a
+ * status every product predicate already refuses. From the moment it answers,
+ * nobody can reach this person and this person can reach nothing.
+ *
+ * **What is not claimed.** Physically destroying what remains depends on
+ * retention schedules that are undecided across messaging, safety evidence,
+ * financial records, identity evidence, and media. There is no field here that
+ * says data has been erased, because inventing a destruction period would be
+ * the one retention error nobody could undo. `erasureScheduled` is deliberately
+ * a boolean that is currently always false, and the surfaces say so in words.
+ *
+ * **There is no undo.** A reversal window is a retention and consent decision
+ * nobody has taken, so no shape here can express one.
+ */
+export const accountClosureResponseSchema = z
+  .object({
+    /**
+     * Whether a retention schedule exists that will physically erase what
+     * remains. False today, and published rather than omitted so a surface can
+     * say what is true instead of implying the other answer.
+     */
+    erasureScheduled: z.boolean(),
+    requestedAt: z.iso.datetime(),
+    /**
+     * Where the closure is. `deletion_pending` is where a consumer request
+     * lands; the later two are stages a retention pass performs.
+     */
+    status: z.enum(['deletion_pending', 'deactivated', 'erased']),
+  })
+  .strict();
+export type AccountClosureResponse = z.infer<
+  typeof accountClosureResponseSchema
+>;
+
+/**
+ * Asking to close the account.
+ *
+ * It carries an acknowledgement rather than being an empty body, because this
+ * is the one consumer action with no way back and a request that could be made
+ * by an empty POST is a request a mistyped script can make. The value is fixed
+ * and checked, so a client cannot send something that merely looks like
+ * agreement.
+ */
+export const closeAccountRequestSchema = z
+  .object({
+    acknowledgement: z.literal('close-my-account'),
+  })
+  .strict();
+export type CloseAccountRequest = z.infer<typeof closeAccountRequestSchema>;
+
+/**
  * Account creation carries no identity input at all. The server derives the
  * AUTH account from the presented credential, so a client cannot name another
  * account and become it.

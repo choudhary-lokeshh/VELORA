@@ -52,6 +52,16 @@ export const authRevocationReasons = [
   'refresh_reuse_detected',
   'superseded',
   'administrative',
+  /**
+   * The person closed their account.
+   *
+   * Its own reason rather than `administrative`, which would record an operator
+   * acting on somebody who in fact acted on themselves, and rather than
+   * `logout_all`, which is a person signing other devices out of an account
+   * they still hold. What actually happened is the only thing worth recording
+   * here.
+   */
+  'account_closed',
 ] as const;
 
 export const authSecurityEventTypes = [

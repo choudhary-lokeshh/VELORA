@@ -240,6 +240,33 @@ export class UsersRepository {
    * predicate, so a concurrent transition is lost rather than silently
    * overwritten, and the caller learns which one happened.
    */
+  /**
+   * Moves an account into closure, recording when it was asked for.
+   *
+   * A compare-and-set on the status the caller read, so two simultaneous
+   * requests produce one transition and the loser re-reads. `deletionRequestedAt`
+   * is written in the same statement because the table's own CHECK refuses a
+   * deletion state with no recorded request — the invariant is the database's
+   * rather than this method's, and this only satisfies it.
+   */
+  async requestAccountDeletion(
+    executor: AnyExecutor,
+    input: {
+      readonly expectedStatus: UserAccountStatus;
+      readonly now: Date;
+      readonly userId: string;
+    },
+  ): Promise<UserAccountRow | undefined> {
+    return this.transitionAccountStatus(executor, {
+      deletionRequestedAt: input.now,
+      expectedStatus: input.expectedStatus,
+      now: input.now,
+      status: 'deletion_pending',
+      statusReason: 'user_requested',
+      userId: input.userId,
+    });
+  }
+
   async transitionAccountStatus(
     executor: AnyExecutor,
     input: {

@@ -116,6 +116,10 @@ import {
   type SupportRuntime,
 } from './support/composition.js';
 import {
+  createAccountClosureRuntime,
+  type AccountClosureRuntime,
+} from './users/closure-composition.js';
+import {
   createSafetyRuntime,
   type SafetyRuntime,
 } from './safety/composition.js';
@@ -190,6 +194,13 @@ export interface ApplicationDependencies {
    * database it did not supply.
    */
   readonly support?: SupportRuntime;
+  /**
+   * Present on the same terms as `support`: every composition that owns its
+   * database. A test that injects its own runtimes may omit it, and then
+   * answers `503` on the closure routes rather than publishing ones wired to a
+   * database it did not supply.
+   */
+  readonly accountClosure?: AccountClosureRuntime;
   readonly users: UsersRuntime;
   /**
    * Present in every composition that owns its database, which is every
@@ -264,6 +275,7 @@ export function createApplication(
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
   const injectedSupport = options.dependencies?.support;
+  const injectedAccountClosure = options.dependencies?.accountClosure;
 
   let database: HealthDependency;
   let ownedDatabaseService: DatabaseService | undefined;
@@ -285,6 +297,7 @@ export function createApplication(
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
   let support: SupportRuntime | undefined;
+  let accountClosure: AccountClosureRuntime | undefined;
   if (injectedDatabase === undefined) {
     const ownedDatabase = new DatabaseService(config);
     ownedDependencies.push(ownedDatabase);
@@ -699,6 +712,31 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
+    // Account closure last of all, because it is the one act that reaches
+    // across AUTH, NOTIFICATIONS, and LIVE at once — each of which is composed
+    // after USERS because each consumes something USERS publishes. Composing it
+    // here keeps every dependency pointing the way it already does and needs no
+    // late setter. Both LIVE and REALTIME are optional on the closure runtime
+    // itself, so a test composition without them closes an account and ends no
+    // encounter — because there was none — but a composition that owns its
+    // database always has both.
+    accountClosure =
+      injectedAccountClosure ??
+      createAccountClosureRuntime({
+        auth: auth.service,
+        // LIVE's and REALTIME's own enforcement contracts, both constructed
+        // from the handle rather than from their runtimes, exactly as TRUST &
+        // SAFETY takes them. Two of them because they are two rows owned by two
+        // domains: ending the encounter does not tear down the session, and
+        // ending the session does not end the encounter.
+        calls: new RtcCallEnforcement(ownedDatabase.database),
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        devices: notifications.repository,
+        live: live.enforcement,
+        logger,
+        repository: users.repository,
+      });
   } else {
     // Domains need typed data access, not a health probe. A caller that
     // substitutes the database dependency must therefore supply the domain
@@ -745,6 +783,7 @@ export function createApplication(
     payouts = injectedPayouts;
     safety = injectedSafety;
     support = injectedSupport;
+    accountClosure = injectedAccountClosure;
   }
 
   const ephemeralRedis =
@@ -791,6 +830,7 @@ export function createApplication(
     ...(realtime === undefined ? {} : { realtime }),
     queueRedis,
     safety,
+    ...(accountClosure === undefined ? {} : { accountClosure }),
     ...(support === undefined ? {} : { support }),
     users,
   };
@@ -906,6 +946,32 @@ export function createApplication(
         );
       }
       return run(support, input);
+    };
+  }
+
+  /**
+   * Wraps one account-closure handler on the same terms as `supportRoute`.
+   *
+   * `503` rather than `404` where the runtime is absent, because a person
+   * trying to close their account deserves "not right now" rather than a page
+   * that behaves as though the feature does not exist — which is the exact
+   * complaint this whole path answers.
+   */
+  function closureRoute(
+    run: (
+      runtime: AccountClosureRuntime,
+      input: RouteRequest,
+    ) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (accountClosure === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(accountClosure, input);
     };
   }
 
@@ -1861,6 +1927,22 @@ export function createApplication(
     .post(
       apiRoutePaths.safetyBlockRemoval,
       admitted(async (input) => safety.routes.removeBlock(input)),
+    )
+    .post(
+      apiRoutePaths.consumerAccountClosure,
+      admitted(
+        closureRoute(async (runtime, input) =>
+          runtime.routes.closeAccount(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.consumerAccountClosure,
+      admitted(
+        closureRoute(async (runtime, input) =>
+          runtime.routes.getClosure(input),
+        ),
+      ),
     )
     .post(
       apiRoutePaths.supportTickets,

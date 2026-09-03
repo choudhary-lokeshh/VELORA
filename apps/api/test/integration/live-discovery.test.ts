@@ -19,6 +19,7 @@ import { ConversationParticipation } from '../../src/messaging/participation.js'
 import { createRealtimeRuntime } from '../../src/realtime/composition.js';
 import { RtcCallEnforcement } from '../../src/realtime/enforcement.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
+import { createAccountClosureRuntime } from '../../src/users/closure-composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
 import {
@@ -208,9 +209,31 @@ const billingRuntime = testBillingRuntime({
   database: database.drizzle,
   users,
 });
+const notifications = testNotificationsApiRuntime({
+  database: database.drizzle,
+  now,
+  safety,
+  users,
+});
+// Closure composed with LIVE's own enforcement contract, exactly as the
+// application composes it. Somebody who closes their account while on camera
+// should not stay on camera, and this is the suite where an encounter to end
+// actually exists.
+const accountClosure = createAccountClosureRuntime({
+  auth: auth.service,
+  calls: new RtcCallEnforcement(database.drizzle),
+  consumerContext: users.consumerContext,
+  database: database.drizzle,
+  devices: notifications.repository,
+  live: live.enforcement,
+  logger,
+  now,
+  repository: users.repository,
+});
 const application = createApplication({
   config,
   dependencies: {
+    accountClosure,
     admin: testAdminRuntime({
       billing: billingRuntime,
       caller: auth.caller,
@@ -238,12 +261,7 @@ const application = createApplication({
     logger,
     media: mediaRuntime,
     messaging,
-    notifications: testNotificationsApiRuntime({
-      database: database.drizzle,
-      now,
-      safety,
-      users,
-    }),
+    notifications,
     payouts: testPayoutsRuntime({
       config,
       creators,
@@ -1274,6 +1292,69 @@ describe('safety inside a live encounter', () => {
       post('/v1/rtc/calls/join-authorization', alex, { callId }),
     );
     expect(authorized.status).toBe(409);
+  });
+});
+
+describe('closing an account while on camera', () => {
+  it('ends the encounter, the session, and the participation together', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    const encounterId = matched.encounter?.id ?? '';
+    const callId = matched.encounter?.call?.id ?? '';
+    expect(callId).not.toBe('');
+
+    const closed = await handle(
+      post('/v1/users/me/closure', alex, {
+        acknowledgement: 'close-my-account',
+      }),
+    );
+    expect(closed.status).toBe(200);
+
+    // Somebody who closes their account while on camera does not stay on
+    // camera. Refusing the *next* thing they did would leave the conversation
+    // they are having right now running, which is the one moment it matters.
+    const encounters = await rowsOf<{ end_reason: string; state: string }>(
+      database.sql`select state, end_reason from live_encounters where id = ${encounterId}::uuid`,
+    );
+    expect(encounters[0]?.state).toBe('ended');
+
+    const sessions = await rowsOf<{ state: string }>(
+      database.sql`select state from realtime_sessions where id = ${callId}::uuid`,
+    );
+    expect(sessions[0]?.state).toBe('ended');
+
+    // And they are out of the pool, so the matcher cannot hand them to the
+    // next person waiting.
+    const live = await rowsOf<{ count: string }>(
+      database.sql`
+        select count(*)::text as count from live_participations
+        where user_id = ${alex.id}::uuid and state <> 'left'
+      `,
+    );
+    expect(live[0]?.count).toBe('0');
+  });
+
+  it('tells the other person the encounter ended without saying why', async () => {
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    const matched = await meet(alex, remi);
+    expect(matched.encounter?.id ?? '').not.toBe('');
+
+    await handle(
+      post('/v1/users/me/closure', alex, {
+        acknowledgement: 'close-my-account',
+      }),
+    );
+
+    const left = await readState(remi);
+    expect(left.state).toBe('ended');
+    // `ended_by_platform`, the same coarse reason a safety decision collapses
+    // to. Remi is never told that the other person deleted their account: what
+    // somebody did with their own account is not a fact about the person they
+    // were talking to.
+    expect(left.encounter?.endReason).toBe('ended_by_platform');
+    expect(JSON.stringify(left)).not.toContain('deletion');
   });
 });
 

@@ -74,6 +74,8 @@ import type {
   SavePreferencesBody,
   SaveProfileBody,
   SendMessageBody,
+  AccountClosure,
+  CloseAccountBody,
   SupportTicket,
   SupportTicketList,
   CreateSupportTicketBody,
@@ -579,6 +581,17 @@ export interface ConsumerApi {
    * than almost anywhere else: the connection that lost the response is often
    * the thing being reported.
    */
+  /**
+   * Closes the account, for good.
+   *
+   * Immediate and total: every session and refresh family is revoked, every
+   * push registration retired, any live encounter ended, and the account moves
+   * to a status every product predicate refuses. There is no undo. Repeating it
+   * answers with the closure that already exists rather than refusing.
+   */
+  closeAccount(body: CloseAccountBody): Promise<ApiResult<AccountClosure>>;
+  /** The closure this account is under, if it is under one. */
+  accountClosure(signal?: AbortSignal): Promise<ApiResult<AccountClosure>>;
   createSupportTicket(
     body: CreateSupportTicketBody,
   ): Promise<ApiResult<SupportTicket>>;
@@ -1206,6 +1219,16 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     appeals: async (signal) =>
       attempt(async () =>
         api.GET('/v1/safety/appeals', { ...(await reading(signal)) }),
+      ),
+
+    closeAccount: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/users/me/closure', { ...(await writing()), body }),
+      ),
+
+    accountClosure: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/users/me/closure', { ...(await reading(signal)) }),
       ),
 
     createSupportTicket: async (body) =>

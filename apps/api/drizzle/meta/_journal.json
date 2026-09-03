@@ -547,6 +547,13 @@
       "when": 1788456474838,
       "tag": "0077_consumer-support",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1788457832174,
+      "tag": "0078_account-closure",
+      "breakpoints": true
     }
   ]
 }
