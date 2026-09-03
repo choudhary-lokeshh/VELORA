@@ -79,15 +79,6 @@ saveExact: true
 strictPeerDependencies: true
 minimumReleaseAge: 1440
 
-# A native module may exist once in a build, so a second copy of one is a build
-# error rather than a preference. `expo-asset` asks for `expo-constants` as
-# `~57.0.15`, which the catalog's 57.0.16 satisfies, but the resolver keeps the
-# older resolution it already had and installs both — and `expo-doctor` refuses
-# the duplicate, correctly. Pinned to the catalog version so the whole tree
-# resolves to the one copy; raise both together whenever the catalog moves.
-overrides:
-  expo-constants: 57.0.17
-
 allowBuilds:
   cpu-features: false
   esbuild: true
