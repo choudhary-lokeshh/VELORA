@@ -39,6 +39,13 @@ const routes = [
   '/you/safety',
   '/you/memberships',
   '/you/gifts',
+  /*
+   * Help: a form above a list of tickets, where every row carries a reference,
+   * a status and the subject somebody wrote. The reference is a fixed
+   * fourteen-character string that cannot wrap anywhere sensible, which is the
+   * same shape as the wallet row below and fails for the same reason.
+   */
+  '/you/help',
   // The coin screen: a balance, a running window, a list of packs, and a
   // history whose rows carry an amount and a reason side by side. The history
   // row is the one that fails first — at 200% text on a 320 px phone the
@@ -195,6 +202,28 @@ test.describe('Consumer Web responsive behaviour', () => {
     // Text scaling rather than page zoom: it is the case that breaks fixed
     // heights, and it is what somebody with low vision actually turns on.
     await page.addStyleTag({ content: 'html { font-size: 200% }' });
+
+    /*
+     * Help, with something in it. The list of tickets is the part of that
+     * screen that can fail — a reference, a status and a subject on one row —
+     * and an account with no tickets renders an empty state instead, which
+     * would sweep the route while measuring none of it. One ticket, opened the
+     * way a person opens one, and well inside the five this account may hold.
+     */
+    await page.goto(`${consumerWebOrigin}/you/help`);
+    await page.addStyleTag({ content: 'html { font-size: 200% }' });
+    await page.getByTestId('support-subject').fill('I cannot sign in');
+    await page
+      .getByTestId('support-description')
+      .fill('The screen spins after I enter my email and nothing happens.');
+    await page.getByTestId('support-submit').click();
+    await expect(page.getByTestId('support-ticket-list')).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(
+      await overflowingElements(page),
+      '/you/help with a ticket at 200% text',
+    ).toEqual([]);
 
     // Every screen, not one. Two of these overflowed at this size while `/you`
     // was clean: a card grid whose track had no floor, and a row whose status
