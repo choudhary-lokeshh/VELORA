@@ -92,6 +92,8 @@ Somebody who is abused in a random encounter can report the person after they le
 
 An operator gains one queue and three routes, all under the existing Platform Admin audience and step-up. There is no new authority: an operator cannot delete a ticket, edit what somebody wrote, or reach an account, an enforcement, or a balance from it.
 
+The frozen runtime inventory rises from 173 operations to 183. Three are `/v1/admin/` and classify as `ADMIN_BLOCKED`, as every operator route does. The other seven — the recently-met list, report-with-block, the three consumer support routes, and the two closure routes — classify as `PASS`: none of them waits on a provider, a credential, or a policy decision, which is the whole point of a support path and a way out.
+
 Retention remains the open question it was. Nothing added here expires anything, and every new record class inherits the same posture: nothing depends on a row being physically gone, so an approved schedule later applies as a deletion pass.
 
 `docs/decisions/DECISIONS_REQUIRED.md` keeps every retention entry and updates the account-closure entry to record the consumer path as built and the erasure schedule as still owed.
