@@ -18666,7 +18666,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE. */
+            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. A signal may additionally be refused because a concurrent change won, or because the signalling bound has been reached for the current window — nothing already open is closed by reaching it. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, STATE_CONFLICT, or RATE_LIMITED. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -18894,7 +18894,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE. */
+            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. A signal may additionally be refused because a concurrent change won, or because the signalling bound has been reached for the current window — nothing already open is closed by reaching it. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, STATE_CONFLICT, or RATE_LIMITED. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -19013,7 +19013,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE. */
+            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. A signal may additionally be refused because a concurrent change won, or because the signalling bound has been reached for the current window — nothing already open is closed by reaching it. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, STATE_CONFLICT, or RATE_LIMITED. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -22478,7 +22478,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The caller may not send here — account, conversation state, or current safety eligibility — or the same client message identifier was already used for a different body. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, ACTION_NOT_PERMITTED, or IDEMPOTENCY_KEY_MISMATCH. */
+            /** @description The caller may not send here — account, conversation state, or current safety eligibility — the same client message identifier was already used for a different body, or the sending bound has been reached for the current window. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, ACTION_NOT_PERMITTED, IDEMPOTENCY_KEY_MISMATCH, or RATE_LIMITED. The bound is counted across every conversation the caller is in, because a per-conversation one is evaded by opening more of them, and it is generous enough that no ordinary use reaches it. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -24473,7 +24473,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE. */
+            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. A signal may additionally be refused because a concurrent change won, or because the signalling bound has been reached for the current window — nothing already open is closed by reaching it. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, STATE_CONFLICT, or RATE_LIMITED. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -24592,7 +24592,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE. */
+            /** @description The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. A signal may additionally be refused because a concurrent change won, or because the signalling bound has been reached for the current window — nothing already open is closed by reaching it. The body is an ApiError with code ACCOUNT_NOT_ELIGIBLE, STATE_CONFLICT, or RATE_LIMITED. */
             409: {
                 headers: {
                     /** @description Request correlation identifier */

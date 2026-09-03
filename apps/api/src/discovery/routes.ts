@@ -283,6 +283,11 @@ export class DiscoveryRoutes {
       case 'conflict': {
         return routeFailure(409, productErrorCodes.conflict, correlationId);
       }
+      case 'rate_limited': {
+        // The product convention for a bound reached. It says only that, never
+        // which bound or how much remains, and nothing already open is closed.
+        return routeFailure(409, productErrorCodes.rateLimited, correlationId);
+      }
       default: {
         return routeFailure(
           409,

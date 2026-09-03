@@ -58,6 +58,21 @@ export function pendingSignalExpiry(
  * case — a viewer with few live suppressions among the people ranked next to
  * them — completes in a single round trip.
  */
+/**
+ * How many introductions one account may open in the window.
+ *
+ * A cap on automation rather than on interest. Signalling is already bounded in
+ * practice by having to be shown somebody first, but "shown somebody" is a read
+ * a script can repeat, and the product intent is choosing people rather than
+ * signalling everybody. Reaching the bound refuses further signals for a while
+ * and closes nothing already open.
+ *
+ * Counted from the initiator, because a signal somebody received is not
+ * something they did.
+ */
+export const maximumIntroductionSignalsPerWindow = 60;
+export const introductionSignalWindowMilliseconds = 60 * 60 * 1000;
+
 export const candidateOverFetchFactor = 4;
 
 /**

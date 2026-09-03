@@ -39,7 +39,7 @@ const categoryLabels: Readonly<Record<string, string>> = {
   call: 'Calls',
   direct_message: 'New messages',
   introduction: 'Introductions',
-  marketing: 'News from VELORA',
+  marketing: 'News and offers from VELORA',
   safety_legal: 'Safety and legal notices',
 };
 
@@ -149,7 +149,11 @@ function NotificationPreferences() {
           return (
             <Switch
               checked={preference.enabled}
-              description={`Reach me ${channelLabels[preference.channel] ?? preference.channel}.`}
+              description={
+                preference.category === 'marketing'
+                  ? `Reach me ${channelLabels[preference.channel] ?? preference.channel}. VELORA sends none of these today; this records your answer for the day it might.`
+                  : `Reach me ${channelLabels[preference.channel] ?? preference.channel}.`
+              }
               disabled={saving !== undefined}
               key={key}
               label={categoryLabels[preference.category] ?? preference.category}

@@ -10,7 +10,10 @@ import { CreatorDirectory } from '../../src/creators/directory.js';
 import { ConversationEnforcement } from '../../src/messaging/enforcement.js';
 import { ConversationParticipation } from '../../src/messaging/participation.js';
 import { createSafetyRuntime } from '../../src/safety/composition.js';
-import { passSuppressionMilliseconds } from '../../src/discovery/policy.js';
+import {
+  maximumIntroductionSignalsPerWindow,
+  passSuppressionMilliseconds,
+} from '../../src/discovery/policy.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
 import {
@@ -720,6 +723,78 @@ describe('introduction listing', () => {
     for (const leak of ['initiatorId', 'pairLow', 'closedReason', 'version']) {
       expect(serialized, leak).not.toContain(leak);
     }
+  });
+});
+
+describe('the signalling bound is a server control, not a client one', () => {
+  it('refuses a further signal past the bound, and closes nothing already open', async () => {
+    const alice = await consumer('bound-alice@velora.test');
+    const bob = await consumer('bound-bob@velora.test');
+
+    // The window is seeded directly rather than by driving sixty real signals
+    // through the deck: the assertion is about the bound the server applies,
+    // and reaching it through the route would be a test about how long a loop
+    // takes. Every row is closed, so none of them occupies the live-pair index
+    // and none of them changes what Alice may do with anybody.
+    for (let index = 0; index < maximumIntroductionSignalsPerWindow; index++) {
+      const other = crypto.randomUUID();
+      const [low, high] =
+        alice.id < other ? [alice.id, other] : [other, alice.id];
+      await execute(
+        database.sql`
+          insert into discovery_introductions
+            (id, initiator_id, pair_low_id, pair_high_id, state,
+             closed_at, closed_reason, created_at, updated_at)
+          values (
+            ${crypto.randomUUID()}, ${alice.id}::uuid, ${low}::uuid,
+            ${high}::uuid, 'closed', now(), 'withdrawn', now(), now()
+          )
+        `,
+      );
+    }
+
+    const refusedSignal = await signal(alice, bob);
+    expect(refusedSignal.status).toBe(409);
+    expect((refusedSignal.body as { code?: string }).code).toBe('RATE_LIMITED');
+
+    // Nothing already open is closed by reaching a bound, and the other person
+    // is unaffected: a bound on what Alice may start is not a bound on what Bob
+    // may.
+    const theirs = await signal(bob, alice);
+    expect(theirs.status).toBe(200);
+    expect(theirs.body.state).toBe('pending');
+  });
+
+  it('still answers a signal the pair already has', async () => {
+    const alice = await consumer('bound-open-alice@velora.test');
+    const bob = await consumer('bound-open-bob@velora.test');
+    const first = await signal(alice, bob);
+    expect(first.status).toBe(200);
+
+    for (let index = 0; index < maximumIntroductionSignalsPerWindow; index++) {
+      const other = crypto.randomUUID();
+      const [low, high] =
+        alice.id < other ? [alice.id, other] : [other, alice.id];
+      await execute(
+        database.sql`
+          insert into discovery_introductions
+            (id, initiator_id, pair_low_id, pair_high_id, state,
+             closed_at, closed_reason, created_at, updated_at)
+          values (
+            ${crypto.randomUUID()}, ${alice.id}::uuid, ${low}::uuid,
+            ${high}::uuid, 'closed', now(), 'withdrawn', now(), now()
+          )
+        `,
+      );
+    }
+
+    // The bound is counted only where a row would be created, so re-reading a
+    // signal that already exists is never refused by a bound it did not
+    // consume. Getting this the other way round would make a lost response an
+    // error the client could never resolve.
+    const again = await signal(alice, bob);
+    expect(again.status).toBe(200);
+    expect(again.body.id).toBe(first.body.id);
   });
 });
 

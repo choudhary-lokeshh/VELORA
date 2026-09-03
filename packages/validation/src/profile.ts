@@ -11,6 +11,7 @@ import {
   minimumDisplayNameLength,
   minimumProfileLanguages,
 } from './profile-bounds.js';
+import { hasDisplayControlCharacters } from './text-safety.js';
 import {
   matchingGenderSchema,
   profileRequirementSchema,
@@ -64,8 +65,16 @@ export {
  * Display names are neither unique nor reserved. Impersonation and offensive
  * naming are moderation questions whose taxonomy is `DECISION REQUIRED`, so
  * nothing here invents one. What is enforced is structural: bounded length, no
- * control characters, and no leading or trailing whitespace that would let two
- * names render identically.
+ * leading or trailing whitespace that would let two names render identically,
+ * and none of the characters that exist only to change how text is drawn.
+ *
+ * That last group used to be `\p{Cc}` alone, which is the wrong half. The
+ * characters that actually let one name render as another are the
+ * bidirectional overrides and isolates, and they are not control characters —
+ * a name carrying one is stored as written and drawn backwards. `p{Cf}` as a
+ * whole is not the answer either: it would refuse the joiners Arabic, Persian,
+ * several Indic scripts and every multi-part emoji require, which is refusing
+ * people's own names to stop a trick.
  */
 export const displayNameSchema = z
   .string()
@@ -76,11 +85,34 @@ export const displayNameSchema = z
     'Display name must not begin or end with whitespace',
   )
   .refine(
-    (value) => !/\p{Cc}/u.test(value),
-    'Display name must not contain control characters',
+    (value) => !hasDisplayControlCharacters(value),
+    'Display name must not contain characters that change how text is drawn',
   );
 
-export const bioSchema = z.string().max(maximumBioLength);
+/**
+ * What somebody writes about themselves.
+ *
+ * Bounded, and refused the same characters a display name and a message are
+ * refused. A bidirectional override in a bio is the same trick it is in a name:
+ * it makes the rendered text differ from the stored text, which is how a
+ * profile shows one thing to a reader and holds another. The joiners real
+ * scripts and emoji need are still allowed.
+ *
+ * Leading and trailing whitespace is refused for the same reason it is on a
+ * name: two bios that render identically must not be two different values, and
+ * a client that trims before sending is not a guarantee.
+ */
+export const bioSchema = z
+  .string()
+  .max(maximumBioLength)
+  .refine(
+    (value) => value.trim() === value,
+    'A bio must not begin or end with whitespace',
+  )
+  .refine(
+    (value) => !hasDisplayControlCharacters(value),
+    'A bio must not contain characters that change how text is drawn',
+  );
 
 export const profileLanguageSchema = z.string().regex(languagePattern);
 

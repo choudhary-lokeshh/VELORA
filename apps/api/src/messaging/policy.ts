@@ -74,6 +74,24 @@ export const maximumClientMessageIdCharacters = 128;
  * Bounded independently of the requested page size, because a conversation is
  * the one object in the product whose history is unbounded.
  */
+/**
+ * How many messages one account may send in the window, across every
+ * conversation it is in.
+ *
+ * A cap on automation rather than on conversation. Somebody typing to one
+ * person, or to several, comes nowhere near it: it is deliberately generous
+ * enough that no ordinary use notices, and low enough that a script cannot turn
+ * durable messaging into a delivery pipe. Counting across conversations rather
+ * than within one is the point — a per-conversation bound is trivially evaded
+ * by opening more of them, and a person who is being messaged at machine speed
+ * does not care which conversation it arrived in.
+ *
+ * It exists because client throttling is not a control. Every send goes through
+ * one server path and this is where the bound belongs.
+ */
+export const maximumMessagesPerWindow = 300;
+export const messageRateWindowMilliseconds = 60 * 60 * 1000;
+
 export const maximumMessagePageSize = 50;
 
 /**

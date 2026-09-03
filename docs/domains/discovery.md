@@ -157,7 +157,15 @@ The second question accepts the caller's executor. MESSAGING asks it inside the 
 
 A closure keeps its evidence. `0010_introduction_closure_evidence` corrects a constraint that would have forced an enforcement closure of a mutual introduction to erase `mutual_at`; a closed row now keeps the moment the two people connected, which is what an audit of an enforcement action needs to be able to read.
 
-## Cross-references
+## The signalling bound
+
+One account may open `maximumIntroductionSignalsPerWindow` introductions an hour, counted from the initiator because a signal somebody received is not something they did. Signalling is already bounded in practice by having to be shown somebody first, but "shown somebody" is a read a script can repeat, and the product intent is choosing people rather than signalling everybody.
+
+It is counted only where a row would be created, so re-reading a signal the pair already has is never refused by a bound it did not consume. Reaching it closes nothing already open and says nothing beyond "a bound was reached" — never which, never how much remains.
+
+Inside a live encounter, Connect is one tap and a person who is told mid-conversation that they have signalled too many people learns nothing they can act on, so LIVE answers with where the pair now stands rather than surfacing the bound as its own state.
+
+## Cross-references## Cross-references
 
 [discovery flow](../flows/discovery-introductions.md), [Trust & Safety](trust-safety.md), [consumer product](../product/02-consumer-product.md), [monetisation](../product/05-monetisation.md).
 

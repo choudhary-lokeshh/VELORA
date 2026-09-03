@@ -170,3 +170,13 @@ Everything else was evaluated and rejected. A pass, a suppression, and a block a
 `discovery_outbox` and `realtime_outbox` follow the same ownership rule as `messaging_outbox`: the fact that an introduction became mutual, a call was invited, or its deadline elapsed is appended by the transaction that makes that transition, under the pair lock it already holds. One relay drains all three, and it hands facts to consumers rather than granting anybody access to a source table.
 
 Consumer Web and Mobile resolve `subjectId` through DISCOVERY's authorized person projection before rendering display name or media. A missing or newly refused projection becomes an unavailable activity in place; transport failures remain explicit retryable errors. Message notices open their conversation, introduction notices open Introductions, and call history opens the current relationship rather than trying to revive a stale call. Read acknowledgement remains monotonic for both openable and unavailable rows.
+
+## Consent recorded before it can be spent
+
+The settable preference pairs are derived from the approved template catalogue, so a transactional switch cannot outlive the template it governs — a control for something the platform has no way to send is a control that does nothing.
+
+`marketing` is the one deliberate exception, and the reasoning is the opposite. Consent is not the absence of a refusal, and the moment a marketing template exists is exactly the moment it is too late for somebody to have refused in advance. So the category is settable on push and email today, defaults to off, and both consumer surfaces say plainly that VELORA sends none of these and that the switch records an answer for the day it might. The delivery path reads the stored pair, so a refusal recorded now is honoured by the first marketing notice that could ever be written, without anybody remembering to check.
+
+SMS is absent. It is the most invasive of the three channels and nobody has decided the platform will use it for anything, so a switch for it would be inviting a decision rather than recording one.
+
+The independence this produces is the point of the complaint it answers: promotional notifications spam a phone while the useful ones go missing. Refusing marketing is a row of its own, and an integration test proves a message notice still reaches somebody who refused it.

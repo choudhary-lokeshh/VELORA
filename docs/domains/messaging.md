@@ -101,7 +101,17 @@ Message bodies never appear in a log, in an error, or in an event. A regression 
 
 No attachment, no voice note, no editing, no deletion by a participant, no disappearing message, no typing indicator, no delivery receipt beyond the caller's own read state, no real-time message transport. None of them is approved for V1, and a contract is the easiest place for an unapproved capability to appear by accident, so none has a schema. Consumer composers state the text-only and no-attachment boundary explicitly rather than presenting a dead attachment control.
 
-## Cross-references
+## The sending bound
+
+One account may send `maximumMessagesPerWindow` messages an hour, counted across every conversation it is in. It is a cap on automation rather than on conversation: somebody typing to one person, or to several, comes nowhere near it, and a bound low enough for a person to feel is a bound that would be removed the first time somebody complained.
+
+Counting across conversations rather than within one is the point. A per-conversation bound is evaded by opening more of them, and somebody being written to at machine speed does not care which conversation it arrived in.
+
+It is counted inside the transaction that writes, and after the idempotency read. Both orderings matter. Counting on a separate connection is a bound a burst walks straight through; counting before the idempotency read would refuse a retry of a send that already committed, turning a lost response into an error the client could never resolve.
+
+Reaching it refuses further sends for the window and removes or alters nothing already sent. It is a bound on what one account may start, so the person being written to is unaffected — which is what stops one abuser silencing the person they were writing to.
+
+## Cross-references## Cross-references
 
 [messaging and blocks](../flows/messaging-and-blocks.md), [media security](../security/04-media-upload-delivery.md), [Trust & Safety](trust-safety.md), [NOTIFICATIONS](notifications.md), [DISCOVERY](discovery.md).
 

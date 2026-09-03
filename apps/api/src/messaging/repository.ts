@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
 
 import type {
   DatabaseHandle,
@@ -232,6 +232,31 @@ export class MessagingRepository {
       throw new Error('Conversation vanished while allocating a sequence');
     }
     return row.sequence;
+  }
+
+  /**
+   * How many messages this account has sent since the given instant, across
+   * every conversation.
+   *
+   * Across conversations rather than within one: a per-conversation bound is
+   * evaded by opening more of them, and somebody being written to at machine
+   * speed does not care which conversation it arrived in. The sender index
+   * makes this an index range rather than a scan.
+   */
+  async countMessagesSince(
+    executor: Executor,
+    input: { readonly senderId: string; readonly since: Date },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ count: sql<string>`count(*)::text` })
+      .from(messagingMessages)
+      .where(
+        and(
+          eq(messagingMessages.senderId, input.senderId),
+          gte(messagingMessages.createdAt, input.since),
+        ),
+      );
+    return Number(rows.at(0)?.count ?? '0');
   }
 
   async insertMessage(

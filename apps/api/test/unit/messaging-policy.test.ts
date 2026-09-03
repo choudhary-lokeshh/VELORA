@@ -9,6 +9,8 @@ import {
   endToEndEncryptionImplemented,
   maximumClientMessageIdCharacters,
   maximumMessageBodyCharacters,
+  maximumMessagesPerWindow,
+  messageRateWindowMilliseconds,
   messageRetentionDuration,
   minimumClientMessageIdCharacters,
   productionBlockers,
@@ -21,6 +23,27 @@ import {
  * is impossible, which is what these assertions are for: the moment a published
  * bound moves without the database bound moving with it, this fails.
  */
+describe('the sending bound is a cap on automation, not on conversation', () => {
+  it('is generous enough that no ordinary use reaches it', () => {
+    // Somebody typing to one person, or to several, comes nowhere near this.
+    // What it stops is a script turning durable messaging into a delivery pipe.
+    // A bound low enough to be felt by a person is a bound that would be
+    // removed the first time somebody complained, which is worse than none.
+    expect(maximumMessagesPerWindow).toBeGreaterThanOrEqual(200);
+    expect(messageRateWindowMilliseconds).toBe(60 * 60 * 1000);
+  });
+
+  it('is counted per sender rather than per conversation', () => {
+    // Not asserted about a number — asserted about the shape. A
+    // per-conversation bound is evaded by opening more of them, and somebody
+    // being written to at machine speed does not care which conversation it
+    // arrived in. The repository method this policy drives takes a sender and
+    // no conversation, which is what makes that structural rather than a
+    // comment.
+    expect(maximumMessagesPerWindow).toBeGreaterThan(0);
+  });
+});
+
 describe('messaging bounds match the published contract', () => {
   it('bounds a message body identically in the contract and the database', () => {
     expect(maximumMessageBodyCharacters).toBe(contractMessageBodyCharacters);

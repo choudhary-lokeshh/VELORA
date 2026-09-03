@@ -480,7 +480,7 @@ const categoryLabels: Readonly<Record<string, string>> = {
   call: 'Calls',
   direct_message: 'New messages',
   introduction: 'Introductions',
-  marketing: 'News from VELORA',
+  marketing: 'News and offers from VELORA',
   safety_legal: 'Safety and legal notices',
 };
 
@@ -561,7 +561,9 @@ export function NoticePreferencesScreen({
                           {category}
                         </Text>
                         <Text tone="tertiary" variant="caption">
-                          {`Reach me ${channel}.`}
+                          {preference.category === 'marketing'
+                            ? `Reach me ${channel}. VELORA sends none of these today; this records your answer for the day it might.`
+                            : `Reach me ${channel}.`}
                         </Text>
                       </View>
                       <Switch

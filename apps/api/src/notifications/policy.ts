@@ -428,12 +428,44 @@ export const minimumPushTokenLength = 32;
 export const maximumPushTokenLength = 4_096;
 
 /**
+ * The consent decisions a person may record before anything can be sent on
+ * them.
+ *
+ * The one deliberate exception to the derivation below, and the reasoning is
+ * the opposite of the reasoning behind it. A transactional switch with no
+ * template would be a control that does nothing — the platform cannot send the
+ * thing, so a preference about it is theatre. A *marketing* switch with no
+ * template is the opposite: consent is not the absence of a refusal, and the
+ * moment a marketing template exists is exactly the moment it is too late for
+ * somebody to have refused in advance. Recording the decision before the
+ * capability exists is what makes the capability safe to add.
+ *
+ * The delivery path reads the stored pair, so a refusal recorded today is
+ * honoured by the first marketing notice that could ever be written, without
+ * anybody remembering to check.
+ *
+ * Two channels rather than three. Push and email are the two a promotional
+ * notice could plausibly use; SMS is the most invasive of the three and nobody
+ * has decided the platform will use it for anything, so offering a switch for
+ * it would be inviting a decision rather than recording one.
+ */
+export const consentPreferencePairs: readonly {
+  readonly category: NotificationCategory;
+  readonly channel: NotificationChannel;
+}[] = [
+  { category: 'marketing', channel: 'email' },
+  { category: 'marketing', channel: 'push' },
+];
+
+/**
  * The category and channel pairs a person can actually decide about.
  *
- * Derived from the approved catalogue rather than listed by hand, so a setting
- * cannot outlive the template it governs. Offering a switch for something the
- * platform has no template to send would be a control that does nothing, which
- * misrepresents what the platform does more than offering no control would.
+ * Derived from the approved catalogue rather than listed by hand, so a
+ * transactional setting cannot outlive the template it governs. Offering a
+ * switch for something the platform has no template to send would be a control
+ * that does nothing, which misrepresents what the platform does more than
+ * offering no control would — except for the consent pairs above, where the
+ * absence of a template is precisely why the decision has to be available.
  *
  * Mandatory categories are excluded because they are not offers. They are
  * absent from this list, absent from the read surface, and refused by the
@@ -442,12 +474,15 @@ export const maximumPushTokenLength = 4_096;
 export const settablePreferencePairs: readonly {
   readonly category: NotificationCategory;
   readonly channel: NotificationChannel;
-}[] = Object.values(notificationTemplates)
-  .filter((template) => !isMandatoryCategory(template.category))
-  .map((template) => ({
-    category: template.category,
-    channel: template.channel,
-  }))
+}[] = [
+  ...Object.values(notificationTemplates)
+    .filter((template) => !isMandatoryCategory(template.category))
+    .map((template) => ({
+      category: template.category,
+      channel: template.channel,
+    })),
+  ...consentPreferencePairs,
+]
   .filter(
     (pair, index, all) =>
       all.findIndex(

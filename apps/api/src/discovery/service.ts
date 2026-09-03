@@ -31,8 +31,10 @@ import {
 import {
   availabilityFreshnessBucketSeconds,
   candidateOverFetchFactor,
+  introductionSignalWindowMilliseconds,
   maximumCandidateBatchSize,
   maximumFilterRounds,
+  maximumIntroductionSignalsPerWindow,
   passSuppressionMilliseconds,
   pendingSignalExpiry,
   rankingVersion,
@@ -81,14 +83,17 @@ export type IntroductionOutcome =
   | { readonly kind: 'not_eligible' }
   /** Deliberately indistinguishable from a target that does not exist. */
   | { readonly kind: 'not_found' }
-  | { readonly kind: 'conflict' };
+  | { readonly kind: 'conflict' }
+  /** The signalling bound was reached. Says only that, and nothing else. */
+  | { readonly kind: 'rate_limited' };
 
 /** What the signal transaction decides, before any profile is rendered. */
 type SignalOutcome =
   | { readonly kind: 'introduction'; readonly row: IntroductionRow }
   | { readonly kind: 'not_eligible' }
   | { readonly kind: 'not_found' }
-  | { readonly kind: 'conflict' };
+  | { readonly kind: 'conflict' }
+  | { readonly kind: 'rate_limited' };
 
 export type IntroductionListOutcome =
   | {
@@ -500,6 +505,23 @@ export class DiscoveryService {
           // Absent and not-permitted answer identically, so probing this
           // endpoint discloses nothing about another account.
           return { kind: 'not_found' };
+        }
+
+        // Counted after the existing-row read, so answering an already-open
+        // signal is never refused by a bound it did not consume, and inside
+        // the transaction that writes, because a bound checked on a separate
+        // connection is one a burst walks straight through.
+        if (existing === undefined) {
+          const recent =
+            await this.dependencies.introductions.countSignalsSince(executor, {
+              initiatorId: viewer.id,
+              since: new Date(
+                now.getTime() - introductionSignalWindowMilliseconds,
+              ),
+            });
+          if (recent >= maximumIntroductionSignalsPerWindow) {
+            return { kind: 'rate_limited' };
+          }
         }
 
         const created =

@@ -1545,17 +1545,89 @@ describe('notification preferences', () => {
     const listed = await preferences(recipient);
 
     expect(listed.status).toBe(200);
-    // Derived from the approved catalogue, not hand-listed: a switch for
-    // something with no template would be a control that does nothing.
+    // The transactional pairs are derived from the approved catalogue, not
+    // hand-listed: a switch for something with no template would be a control
+    // that does nothing. The marketing pairs are the one exception, and for the
+    // opposite reason — consent is not the absence of a refusal, and the moment
+    // a marketing template exists is exactly the moment it is too late for
+    // somebody to have refused in advance.
     expect(
-      listed.preferences.toSorted((first, second) =>
-        first.category.localeCompare(second.category),
+      listed.preferences.toSorted(
+        (first, second) =>
+          first.category.localeCompare(second.category) ||
+          first.channel.localeCompare(second.channel),
       ),
     ).toEqual([
       { category: 'call', channel: 'push', enabled: true },
       { category: 'direct_message', channel: 'push', enabled: true },
       { category: 'introduction', channel: 'push', enabled: true },
+      // Off by default, because consent is not the absence of a refusal.
+      { category: 'marketing', channel: 'email', enabled: false },
+      { category: 'marketing', channel: 'push', enabled: false },
     ]);
+  });
+
+  it('lets somebody refuse marketing without touching anything essential', async () => {
+    const { recipient } = await pair();
+    const refusedMarketing = await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'marketing',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+    expect(refusedMarketing.status).toBe(200);
+
+    // The complaint this answers: promotional notifications spam the phone
+    // while the useful ones go missing. Refusing one must not silence the
+    // other, and here they are separate rows with separate decisions.
+    const body = (await refusedMarketing.json()) as {
+      preferences: PreferenceEntry[];
+    };
+    expect(
+      body.preferences.find(
+        (entry) => entry.category === 'marketing' && entry.channel === 'push',
+      )?.enabled,
+    ).toBe(false);
+    expect(
+      body.preferences.find((entry) => entry.category === 'direct_message')
+        ?.enabled,
+    ).toBe(true);
+    expect(
+      body.preferences.find((entry) => entry.category === 'call')?.enabled,
+    ).toBe(true);
+  });
+
+  it('still delivers a message notice to somebody who refused marketing', async () => {
+    const { conversationId, recipient, sender } = await pair();
+    await handle(
+      post('/v1/notifications/preferences', recipient, {
+        category: 'marketing',
+        channel: 'push',
+        enabled: false,
+      }),
+    );
+
+    await sendMessage(sender, {
+      body: 'Marketing off, messages still on.',
+      clientMessageId: 'marketing-independence-0001',
+      conversationId,
+    });
+    await relay.dispatchOnce();
+
+    // A marketing refusal governs the marketing category and nothing else. If
+    // this ever stopped being true, the failure would be silent and in the
+    // direction nobody notices: somebody stops being told they have a message.
+    const intents = await rowsOf<{ state: string; template_key: string }>(
+      database.sql`
+        select state, template_key from notifications_intents
+        where recipient_id = ${recipient.id}::uuid
+      `,
+    );
+    expect(intents.map((intent) => intent.template_key)).toContain(
+      'messaging.message.received.v1',
+    );
+    expect(intents.every((intent) => intent.state !== 'suppressed')).toBe(true);
   });
 
   it('never offers a mandatory category as a switch', async () => {
@@ -1584,7 +1656,7 @@ describe('notification preferences', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { preferences: PreferenceEntry[] };
     // The whole set, so a client never merges a response into local state.
-    expect(body.preferences).toHaveLength(3);
+    expect(body.preferences).toHaveLength(5);
     expect(
       body.preferences.find((entry) => entry.category === 'direct_message')
         ?.enabled,

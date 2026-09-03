@@ -21,6 +21,8 @@ import {
 import {
   maximumConversationPageSize,
   maximumMessagePageSize,
+  maximumMessagesPerWindow,
+  messageRateWindowMilliseconds,
 } from './policy.js';
 import type {
   ConversationMembership,
@@ -104,7 +106,9 @@ export type SendOutcome =
   | { readonly kind: 'not_found' }
   | { readonly kind: 'not_permitted' }
   /** The same client message identifier already carried a different body. */
-  | { readonly kind: 'idempotency_mismatch' };
+  | { readonly kind: 'idempotency_mismatch' }
+  /** The sending bound was reached. Says only that, and never how much remains. */
+  | { readonly kind: 'rate_limited' };
 
 export type ReadOutcome =
   | {
@@ -424,6 +428,19 @@ export class MessagingService {
             ? { kind: 'message', view: messageView(existing) }
             : { kind: 'idempotency_mismatch' };
         }
+
+        // Counted after the idempotency read, so a retry of a send that already
+        // happened is never refused by a bound it did not consume. Counted
+        // inside the transaction that writes, because a bound checked on a
+        // separate connection is a bound a burst walks straight through.
+        const recent = await this.dependencies.repository.countMessagesSince(
+          executor,
+          {
+            senderId: actor.id,
+            since: new Date(now.getTime() - messageRateWindowMilliseconds),
+          },
+        );
+        if (recent >= maximumMessagesPerWindow) return { kind: 'rate_limited' };
 
         const message = await this.persist(executor, {
           body: input.body,

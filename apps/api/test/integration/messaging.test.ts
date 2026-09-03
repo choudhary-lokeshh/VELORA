@@ -13,6 +13,7 @@ import { ConversationParticipation } from '../../src/messaging/participation.js'
 import { createSafetyRuntime } from '../../src/safety/composition.js';
 import { createUsersRuntime } from '../../src/users/composition.js';
 import { requiredPolicyDocuments } from '../../src/users/onboarding-policy.js';
+import { maximumMessagesPerWindow } from '../../src/messaging/policy.js';
 import {
   connectDatabase,
   execute,
@@ -769,6 +770,98 @@ describe('the complete two-person social loop works through real HTTP', () => {
     expect(
       ((await subjectView.json()) as { reports: unknown[] }).reports,
     ).toHaveLength(0);
+  });
+});
+
+describe('the sending bound is a server control, not a client one', () => {
+  it('refuses a sender past the bound, and closes nothing already sent', async () => {
+    const { conversationId, first, second } = await connectedPair('bound');
+
+    // The window is seeded directly rather than by making three hundred real
+    // sends: the assertion is about the bound the server applies, and driving
+    // it through the route would be a test about how long a loop takes. Every
+    // row satisfies the same constraints a real send does, and every one is
+    // this sender's, which is the axis the bound counts on.
+    const rows = maximumMessagesPerWindow;
+    for (let index = 0; index < rows; index += 1) {
+      await execute(
+        database.sql`
+          insert into messaging_messages
+            (id, conversation_id, sender_id, client_message_id, body,
+             sequence, created_at, updated_at)
+          values (
+            ${crypto.randomUUID()}, ${conversationId}::uuid, ${first.id}::uuid,
+            ${`seeded-${String(index)}`}, 'seeded',
+            ${index + 1000}, now(), now()
+          )
+        `,
+      );
+    }
+
+    const refusedSend = await send(first, {
+      body: 'One more, from a script.',
+      clientMessageId: 'bound-refused-0001',
+      conversationId,
+    });
+    expect(refusedSend.status).toBe(409);
+    expect(refusedSend.body.code).toBe('RATE_LIMITED');
+
+    // Nothing already sent is removed or altered by reaching a bound.
+    const stored = await rowsOf<{ count: string }>(
+      database.sql`
+        select count(*)::text as count from messaging_messages
+        where sender_id = ${first.id}::uuid
+      `,
+    );
+    expect(Number(stored[0]?.count ?? '0')).toBe(rows);
+
+    // And the bound is about the sender rather than about the conversation:
+    // the other person is unaffected, which is what stops one abuser silencing
+    // the person they were writing to.
+    const theirs = await send(second, {
+      body: 'I can still write to you.',
+      clientMessageId: 'bound-other-0001',
+      conversationId,
+    });
+    expect(theirs.status).toBe(200);
+  });
+
+  it('answers a retry of a send that already happened rather than refusing it', async () => {
+    const { conversationId, first } = await connectedPair('bound-retry');
+    const sent = await send(first, {
+      body: 'The one that got through.',
+      clientMessageId: 'bound-retry-0001',
+      conversationId,
+    });
+    expect(sent.status).toBe(200);
+
+    // Fill the window after the send, so the retry arrives with nothing left.
+    for (let index = 0; index < maximumMessagesPerWindow; index += 1) {
+      await execute(
+        database.sql`
+          insert into messaging_messages
+            (id, conversation_id, sender_id, client_message_id, body,
+             sequence, created_at, updated_at)
+          values (
+            ${crypto.randomUUID()}, ${conversationId}::uuid, ${first.id}::uuid,
+            ${`retry-seeded-${String(index)}`}, 'seeded',
+            ${index + 2000}, now(), now()
+          )
+        `,
+      );
+    }
+
+    // The bound is counted after the idempotency read, so a retry of a send
+    // that already committed is answered with the original rather than refused
+    // by a bound it did not consume. Getting this the other way round would
+    // mean a lost response became an error the client could never resolve.
+    const retried = await send(first, {
+      body: 'The one that got through.',
+      clientMessageId: 'bound-retry-0001',
+      conversationId,
+    });
+    expect(retried.status).toBe(200);
+    expect(retried.body.id).toBe(sent.body.id);
   });
 });
 

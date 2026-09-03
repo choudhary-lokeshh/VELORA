@@ -268,6 +268,7 @@ export * from './product.js';
 export * from './profile.js';
 export * from './safety.js';
 export * from './support.js';
+export * from './text-safety.js';
 export * from './users.js';
 export * from './wallet.js';
 
@@ -904,7 +905,7 @@ const profileNotEligibleResponse = {
 } as const;
 
 const introductionNotEligibleResponse = {
-  description: `The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. The body is an ApiError with code ${productErrorCodes.accountNotEligible}.`,
+  description: `The caller is not eligible to act on introductions: the account is not active or the minimum discoverable profile is incomplete. A signal may additionally be refused because a concurrent change won, or because the signalling bound has been reached for the current window — nothing already open is closed by reaching it. The body is an ApiError with code ${productErrorCodes.accountNotEligible}, ${productErrorCodes.conflict}, or ${productErrorCodes.rateLimited}.`,
   schemaName: 'ApiError',
 } as const;
 
@@ -914,7 +915,7 @@ const messagingNotPermittedResponse = {
 } as const;
 
 const messageSendConflictResponse = {
-  description: `The caller may not send here — account, conversation state, or current safety eligibility — or the same client message identifier was already used for a different body. The body is an ApiError with code ${productErrorCodes.accountNotEligible}, ${productErrorCodes.actionNotPermitted}, or ${productErrorCodes.idempotencyMismatch}.`,
+  description: `The caller may not send here — account, conversation state, or current safety eligibility — the same client message identifier was already used for a different body, or the sending bound has been reached for the current window. The body is an ApiError with code ${productErrorCodes.accountNotEligible}, ${productErrorCodes.actionNotPermitted}, ${productErrorCodes.idempotencyMismatch}, or ${productErrorCodes.rateLimited}. The bound is counted across every conversation the caller is in, because a per-conversation one is evaded by opening more of them, and it is generous enough that no ordinary use reaches it.`,
   schemaName: 'ApiError',
 } as const;
 

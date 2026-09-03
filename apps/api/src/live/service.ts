@@ -263,6 +263,8 @@ export interface LiveIntroductionPort {
     | { readonly kind: 'not_eligible' }
     | { readonly kind: 'not_found' }
     | { readonly kind: 'conflict' }
+    /** DISCOVERY's signalling bound was reached. Nothing was created. */
+    | { readonly kind: 'rate_limited' }
   >;
 }
 
@@ -959,9 +961,13 @@ export class LiveService {
     );
     if (signalled.kind === 'not_eligible') return { kind: 'not_eligible' };
     if (signalled.kind === 'not_found') return { kind: 'not_permitted' };
-    if (signalled.kind === 'conflict') {
-      // A concurrent change won. The honest answer is where the pair now
-      // stands, read fresh rather than guessed at.
+    if (signalled.kind === 'conflict' || signalled.kind === 'rate_limited') {
+      // A concurrent change won, or DISCOVERY's signalling bound refused this
+      // one. Either way nothing was created, and the honest answer is where the
+      // pair now stands — read fresh rather than guessed at. A bound reached is
+      // deliberately not surfaced as a different state here: Connect is one tap
+      // inside a live encounter, and a person who is told "you have signalled
+      // too many people" mid-conversation learns nothing they can act on.
       return {
         connection: await this.connectionOf(actor, counterpartId),
         encounterId,

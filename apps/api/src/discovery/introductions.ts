@@ -101,6 +101,29 @@ export class IntroductionRepository {
   }
 
   /**
+   * How many introductions this account has opened since the given instant.
+   *
+   * From the initiator, because a signal somebody received is not something
+   * they did. Counted inside the caller's transaction, so a bound checked on a
+   * separate connection cannot be walked through by a burst.
+   */
+  async countSignalsSince(
+    executor: AnyExecutor,
+    input: { readonly initiatorId: string; readonly since: Date },
+  ): Promise<number> {
+    const rows = await executor
+      .select({ count: sql<string>`count(*)::text` })
+      .from(discoveryIntroductions)
+      .where(
+        and(
+          eq(discoveryIntroductions.initiatorId, input.initiatorId),
+          gt(discoveryIntroductions.createdAt, input.since),
+        ),
+      );
+    return Number(rows.at(0)?.count ?? '0');
+  }
+
+  /**
    * The pair's row that the unique index considers to exist, expired or not.
    *
    * Expiry is not filtered here on purpose. A pending signal whose window has

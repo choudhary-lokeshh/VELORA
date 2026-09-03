@@ -203,6 +203,16 @@ export class MessagingRoutes {
           input.correlationId,
         );
       }
+      case 'rate_limited': {
+        // The product convention for a bound reached. It says only that, never
+        // which bound or how much of it remains, and the failure is retryable
+        // rather than a decision about this person.
+        return routeFailure(
+          409,
+          productErrorCodes.rateLimited,
+          input.correlationId,
+        );
+      }
       default: {
         return routeFailure(
           409,

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { idempotencyKeySchema } from './product.js';
+import { hasDisplayControlCharacters } from './text-safety.js';
 import { maximumMessageBodyCharacters } from './messaging-bounds.js';
 
 export { maximumMessageBodyCharacters } from './messaging-bounds.js';
@@ -104,20 +105,15 @@ export const conversationListResponseSchema = z
   .strict();
 
 /**
- * C0 and C1 controls other than tab, newline, and carriage return. Named as
- * escapes rather than written literally so the source stays readable text.
- */
-const controlCharacters =
-  // eslint-disable-next-line no-control-regex -- naming them is the purpose.
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u;
-
-/**
  * A message body.
  *
- * Bounded, non-blank, and free of control characters other than tab, newline,
- * and carriage return. Those characters carry no text; what they do carry is
- * the ability to make one string render as another, which is the beginning of
- * every impersonation trick a chat product has to refuse.
+ * Bounded, non-blank, and free of every character that carries no text and
+ * exists only to change how the text around it is drawn — the C0 and C1
+ * controls other than tab, newline and carriage return, and the bidirectional
+ * formatting characters. The second group is the one that matters most here: a
+ * message can otherwise show one thing and contain another, which is the
+ * beginning of every impersonation trick a chat product has to refuse. The
+ * joiners real scripts and emoji need are deliberately still allowed.
  */
 export const messageBodySchema = z
   .string()
@@ -128,8 +124,8 @@ export const messageBodySchema = z
     'A message must contain something other than whitespace',
   )
   .refine(
-    (value) => !controlCharacters.test(value),
-    'A message must not contain control characters',
+    (value) => !hasDisplayControlCharacters(value),
+    'A message must not contain characters that change how text is drawn',
   );
 
 /**
