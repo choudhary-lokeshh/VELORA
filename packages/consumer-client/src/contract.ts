@@ -205,6 +205,22 @@ export type LiveSimulationScenario = RequestBody<
   'post'
 >['scenario'];
 
+/**
+ * Consumer support.
+ *
+ * Separate from safety on purpose: a report is evidence about somebody else and
+ * its reporter is told nothing, while a ticket is a person asking about their
+ * own account and the whole point is that they are told what happened.
+ */
+export type SupportTicketList = JsonBody<'/v1/support/tickets', 'get', 200>;
+export type SupportTicket = SupportTicketList['tickets'][number];
+export type CreateSupportTicketBody = RequestBody<
+  '/v1/support/tickets',
+  'post'
+>;
+export type SupportCategory = CreateSupportTicketBody['category'];
+export type SupportTicketStatus = SupportTicket['status'];
+
 export type BlockList = JsonBody<'/v1/safety/blocks', 'get', 200>;
 export type Block = BlockList['blocks'][number];
 export type ReportList = JsonBody<'/v1/safety/reports', 'get', 200>;

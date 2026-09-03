@@ -402,6 +402,21 @@ export interface MobileApiState {
   }[];
   /** When true, the composite call blocks and records no report. */
   reportingBoundReached: boolean;
+  /** Support tickets this account has opened, newest first. */
+  supportTickets: {
+    category: string;
+    clientTicketId: string;
+    createdAt: string;
+    description: string;
+    id: string;
+    reference: string;
+    status: string;
+    subject: string;
+    updatedAt: string;
+  }[];
+  /** When true, a support submission is refused for the window. */
+  supportBoundReached: boolean;
+  supportSequence: number;
   sessionLive: boolean;
   standing: {
     appealWindowClosesAt?: string;
@@ -442,6 +457,27 @@ export const livePreferenceId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 export const conversationId = '33333333-3333-4333-8333-333333333333';
 export const introductionId = '55555555-5555-4555-8555-555555555555';
 export const callId = '66666666-6666-4666-8666-666666666666';
+
+/**
+ * A ticket as the contract publishes it.
+ *
+ * The stored shape carries the client identifier so the double can be
+ * retry-safe the way the server is; the published shape never does.
+ */
+function ticketBody(
+  ticket: MobileApiState['supportTickets'][number],
+): Record<string, unknown> {
+  return {
+    category: ticket.category,
+    createdAt: ticket.createdAt,
+    description: ticket.description,
+    id: ticket.id,
+    reference: ticket.reference,
+    status: ticket.status,
+    subject: ticket.subject,
+    updatedAt: ticket.updatedAt,
+  };
+}
 
 const iso = (offset = 0) =>
   new Date(Date.UTC(2026, 7, 14, 12, 0, 0) + offset).toISOString();
@@ -621,6 +657,9 @@ export function admittedState(): MobileApiState {
     recentLivePeople: [],
     reportingBoundReached: false,
     reports: [],
+    supportBoundReached: false,
+    supportSequence: 0,
+    supportTickets: [],
     sessionLive: true,
     standing: [],
     storageAvailable: true,
@@ -1926,6 +1965,39 @@ export function createMobileApiDouble(
         ),
       });
     }
+    // SUPPORT.
+    if (path === '/v1/support/tickets' && method === 'GET') {
+      return json(200, { tickets: state.supportTickets.map(ticketBody) });
+    }
+    if (path === '/v1/support/tickets' && method === 'POST') {
+      const input = body as {
+        category: string;
+        clientTicketId: string;
+        description: string;
+        subject: string;
+      };
+      const existing = state.supportTickets.find(
+        (ticket) => ticket.clientTicketId === input.clientTicketId,
+      );
+      // Retry-safe on the client identifier, exactly as the server is.
+      if (existing !== undefined) return json(200, ticketBody(existing));
+      if (state.supportBoundReached) return error(409, 'RATE_LIMITED');
+      state.supportSequence += 1;
+      const ticket = {
+        category: input.category,
+        clientTicketId: input.clientTicketId,
+        createdAt: iso(),
+        description: input.description,
+        id: `55555555-5555-4555-8555-00000000000${String(state.supportSequence)}`,
+        reference: `VS-TEST-000${String(state.supportSequence)}`,
+        status: 'received',
+        subject: input.subject,
+        updatedAt: iso(),
+      };
+      state.supportTickets = [ticket, ...state.supportTickets];
+      return json(200, ticketBody(ticket));
+    }
+
     if (path === '/v1/safety/blocks' && method === 'GET') {
       return json(200, { blocks: state.blocks });
     }

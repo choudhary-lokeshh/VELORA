@@ -19,6 +19,11 @@ import type {
   AiSuggestionBody,
   AppealList,
   AppealOutcomeBody,
+  SupportTicket,
+  SupportTicketDetail,
+  SupportTicketList,
+  SupportTicketStatus,
+  SupportTicketUpdateBody,
   CaseDetail,
   CreatorEnforcement,
   DecisionBody,
@@ -211,6 +216,19 @@ export interface AdminApi {
     readonly pageSize?: number | undefined;
   }): Promise<ApiResult<AppealList>>;
   resolveAppeal(body: AppealOutcomeBody): Promise<ApiResult<unknown>>;
+  /** The support queue. Oldest first, optionally narrowed to one status. */
+  supportTickets(query?: {
+    readonly pageSize?: number | undefined;
+    readonly status?: SupportTicketStatus | undefined;
+  }): Promise<ApiResult<SupportTicketList>>;
+  supportTicket(ticketId: string): Promise<ApiResult<SupportTicketDetail>>;
+  /**
+   * The only write an operator has on a ticket. There is no path from here to
+   * an account status, an enforcement, or a balance.
+   */
+  updateSupportTicket(
+    body: SupportTicketUpdateBody,
+  ): Promise<ApiResult<SupportTicket>>;
 }
 
 export interface AdminApiOptions {
@@ -514,6 +532,37 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
     async resolveAppeal(body) {
       return attempt(async () =>
         api.POST('/v1/admin/safety/appeals/outcome', { ...write(), body }),
+      );
+    },
+
+    async supportTickets(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/support/tickets', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.pageSize === undefined
+                ? {}
+                : { pageSize: query.pageSize }),
+              ...(query?.status === undefined ? {} : { status: query.status }),
+            },
+          },
+        }),
+      );
+    },
+
+    async supportTicket(ticketId) {
+      return attempt(async () =>
+        api.GET('/v1/admin/support/ticket', {
+          ...read(),
+          params: { query: { ticketId } },
+        }),
+      );
+    },
+
+    async updateSupportTicket(body) {
+      return attempt(async () =>
+        api.POST('/v1/admin/support/tickets/update', { ...write(), body }),
       );
     },
 

@@ -417,6 +417,21 @@ export interface ApiDoubleState {
   }[];
   /** When true, the composite call blocks and records no report. */
   reportingBoundReached: boolean;
+  /** Support tickets this account has opened, newest first. */
+  supportTickets: {
+    category: string;
+    clientTicketId: string;
+    createdAt: string;
+    description: string;
+    id: string;
+    reference: string;
+    status: string;
+    subject: string;
+    updatedAt: string;
+  }[];
+  /** When true, a support submission is refused for the window. */
+  supportBoundReached: boolean;
+  supportSequence: number;
   /** Complaints the account has made about decisions. */
   appeals: {
     decisionId: string;
@@ -480,6 +495,28 @@ export const livePreferenceId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const liveIntroductionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 export const liveConversationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const ownAccountId = '11111111-1111-4111-8111-111111111111';
+
+/**
+ * A ticket as the contract publishes it.
+ *
+ * The stored shape carries the client identifier so the double can be
+ * retry-safe the way the server is; the published shape never does, because
+ * echoing somebody's idempotency key back serves nothing.
+ */
+function ticketBody(
+  ticket: ApiDoubleState['supportTickets'][number],
+): Record<string, unknown> {
+  return {
+    category: ticket.category,
+    createdAt: ticket.createdAt,
+    description: ticket.description,
+    id: ticket.id,
+    reference: ticket.reference,
+    status: ticket.status,
+    subject: ticket.subject,
+    updatedAt: ticket.updatedAt,
+  };
+}
 
 export function emptyState(): ApiDoubleState {
   return {
@@ -546,6 +583,9 @@ export function emptyState(): ApiDoubleState {
     recentLivePeople: [],
     reportingBoundReached: false,
     reports: [],
+    supportBoundReached: false,
+    supportSequence: 0,
+    supportTickets: [],
     session: null,
     statements: [],
   };
@@ -1992,6 +2032,51 @@ export function createApiDouble(
             : preference,
       );
       return json(200, { preferences: state.notificationPreferences });
+    }
+
+    // SUPPORT.
+    if (path === '/v1/support/tickets' && method === 'GET') {
+      return json(200, { tickets: state.supportTickets });
+    }
+    if (path === '/v1/support/tickets' && method === 'POST') {
+      const input = body as {
+        category: string;
+        clientTicketId: string;
+        description: string;
+        subject: string;
+      };
+      const existing = state.supportTickets.find(
+        (ticket) => ticket.clientTicketId === input.clientTicketId,
+      );
+      // Retry-safe on the client identifier, exactly as the server is: this is
+      // the property the whole surface is built on.
+      if (existing !== undefined) return json(200, ticketBody(existing));
+      if (state.supportBoundReached) {
+        return error(409, 'RATE_LIMITED');
+      }
+      state.supportSequence += 1;
+      const ticket = {
+        category: input.category,
+        clientTicketId: input.clientTicketId,
+        createdAt: iso(),
+        description: input.description,
+        id: `55555555-5555-4555-8555-00000000000${String(state.supportSequence)}`,
+        reference: `VS-TEST-000${String(state.supportSequence)}`,
+        status: 'received',
+        subject: input.subject,
+        updatedAt: iso(),
+      };
+      state.supportTickets = [ticket, ...state.supportTickets];
+      return json(200, ticketBody(ticket));
+    }
+    if (path === '/v1/support/ticket' && method === 'GET') {
+      const ticketId = url.searchParams.get('ticketId') ?? '';
+      const ticket = state.supportTickets.find(
+        (entry) => entry.id === ticketId,
+      );
+      return ticket === undefined
+        ? error(404, 'NOT_FOUND')
+        : json(200, ticketBody(ticket));
     }
 
     // SAFETY.

@@ -74,6 +74,9 @@ import type {
   SavePreferencesBody,
   SaveProfileBody,
   SendMessageBody,
+  SupportTicket,
+  SupportTicketList,
+  CreateSupportTicketBody,
 } from './contract.js';
 import { attempt, type ApiResult } from './result.js';
 
@@ -569,6 +572,24 @@ export interface ConsumerApi {
   removeProfileMedia(mediaId: string): Promise<ApiResult<ConsumerProfile>>;
   appeals(signal?: AbortSignal): Promise<ApiResult<AppealList>>;
   appeal(body: CreateAppealBody): Promise<ApiResult<Appeal>>;
+  /**
+   * Opens a support ticket.
+   *
+   * Retry-safe on the caller's own client identifier, which matters more here
+   * than almost anywhere else: the connection that lost the response is often
+   * the thing being reported.
+   */
+  createSupportTicket(
+    body: CreateSupportTicketBody,
+  ): Promise<ApiResult<SupportTicket>>;
+  supportTickets(
+    query: PageQuery,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<SupportTicketList>>;
+  supportTicket(
+    ticketId: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<SupportTicket>>;
   report(body: CreateReportBody): Promise<ApiResult<Report>>;
   /**
    * Reports somebody and blocks them, in one call.
@@ -1185,6 +1206,27 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
     appeals: async (signal) =>
       attempt(async () =>
         api.GET('/v1/safety/appeals', { ...(await reading(signal)) }),
+      ),
+
+    createSupportTicket: async (body) =>
+      attempt(async () =>
+        api.POST('/v1/support/tickets', { ...(await writing()), body }),
+      ),
+
+    supportTickets: async (query, signal) =>
+      attempt(async () =>
+        api.GET('/v1/support/tickets', {
+          ...(await reading(signal)),
+          params: { query: pageParameters(query) },
+        }),
+      ),
+
+    supportTicket: async (ticketId, signal) =>
+      attempt(async () =>
+        api.GET('/v1/support/ticket', {
+          ...(await reading(signal)),
+          params: { query: { ticketId } },
+        }),
       ),
 
     report: async (body) =>

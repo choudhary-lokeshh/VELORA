@@ -32,6 +32,7 @@ export const iconNames = [
   'compass',
   'flag',
   'globe',
+  'help',
   'heart',
   'info',
   'languages',
@@ -108,6 +109,13 @@ const paths: Readonly<Record<IconName, readonly string[]>> = {
     'M3.5 9.5h17',
     'M3.5 14.5h17',
     'M12 3c-2.4 2.6-3.6 5.6-3.6 9s1.2 6.4 3.6 9c2.4-2.6 3.6-5.6 3.6-9S14.4 5.6 12 3Z',
+  ],
+  // A question inside the same circle `info` uses, so the two read as the same
+  // family: one tells somebody something, the other asks on their behalf.
+  help: [
+    'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z',
+    'M9.6 9.4a2.5 2.5 0 0 1 4.9.6c0 1.7-2.5 2-2.5 3.6',
+    'M12 17.2v.1',
   ],
   heart: [
     'M12 20s-7.5-4.4-7.5-9.4A4.1 4.1 0 0 1 12 8.2a4.1 4.1 0 0 1 7.5 2.4C19.5 15.6 12 20 12 20Z',

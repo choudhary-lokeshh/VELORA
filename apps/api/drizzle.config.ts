@@ -23,6 +23,7 @@ export default defineConfig({
     './src/payouts/schema.ts',
     './src/realtime/schema.ts',
     './src/safety/schema.ts',
+    './src/support/schema.ts',
     './src/users/schema.ts',
     './src/wallet/schema.ts',
   ],

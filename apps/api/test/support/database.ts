@@ -175,6 +175,12 @@ const truncationRoots = [
   'safety_content_depictions',
   'safety_depicted_participants',
   'safety_consent_records',
+  // SUPPORT's ticket and its append-only history. The history cascades from
+  // the ticket, and both are listed for the same reason the safety tables
+  // above are. `truncate` fires no row trigger, so the append-only and frozen
+  // triggers do not stand in the way of resetting a test database.
+  'support_ticket_events',
+  'support_tickets',
   'users_accounts',
   // WALLET's coin books. Entries and acquisitions carry `no action` foreign
   // keys to the transaction they belong to — nothing may delete a posted entry

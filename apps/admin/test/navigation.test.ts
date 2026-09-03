@@ -50,6 +50,7 @@ const served: readonly string[] = [
   '/queues/[caseId]',
   '/queues/appeals',
   '/queues/decisions',
+  '/queues/support',
 ];
 
 const literalRoutes = served.filter((route) => !route.includes('['));

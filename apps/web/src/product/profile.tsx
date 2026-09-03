@@ -282,6 +282,23 @@ export function You() {
             <li>
               <ListRow
                 aside={<Icon name="chevronRight" size="sm" />}
+                href="/you/help"
+                testId="link-help"
+              >
+                <span className="v-notification__mark">
+                  <Icon name="help" size="md" />
+                </span>
+                <span className="v-row__body">
+                  <span className="v-subheading">Help</span>
+                  <span className="v-caption v-quiet">
+                    Tell VELORA what is wrong and follow what happens next
+                  </span>
+                </span>
+              </ListRow>
+            </li>
+            <li>
+              <ListRow
+                aside={<Icon name="chevronRight" size="sm" />}
                 href="/you/memberships"
                 testId="link-memberships"
               >

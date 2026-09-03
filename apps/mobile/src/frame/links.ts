@@ -43,6 +43,7 @@ export const youSections = [
   'account',
   'availability',
   'gifts',
+  'help',
   'memberships',
   'notices',
   'profile',

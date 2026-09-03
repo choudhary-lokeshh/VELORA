@@ -18,6 +18,7 @@ import {
 import { SentGiftsScreen } from '../../src/product/gifts';
 import { MembershipsScreen } from '../../src/product/memberships';
 import { SafetyScreen } from '../../src/product/safety';
+import { SupportScreen } from '../../src/product/support';
 import { WalletScreen } from '../../src/product/wallet';
 import { AccountScreen } from '../../src/product/you';
 
@@ -56,6 +57,7 @@ const screens: Readonly<
       }}
     />
   ),
+  help: (onBack) => <SupportScreen onBack={onBack} />,
   memberships: (onBack) => (
     <MembershipsScreen
       onBack={onBack}

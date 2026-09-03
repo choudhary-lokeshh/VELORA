@@ -70,6 +70,12 @@ export const queueAreas: readonly Area[] = [
   { label: 'Cases', path: '/queues', title: 'Queues' },
   { label: 'Appeals', path: '/queues/appeals', title: 'Appeals' },
   { label: 'Decisions', path: '/queues/decisions', title: 'Decisions' },
+  // Support sits here because that is what it is: work waiting for a person.
+  // It is deliberately not merged with the moderation queues — a report is
+  // evidence about somebody else and its reporter is told nothing, while a
+  // ticket is a person asking about their own account and the whole point is
+  // that they are told what happened.
+  { label: 'Support', path: '/queues/support', title: 'Support' },
 ];
 
 export const creatorAreas: readonly Area[] = [

@@ -91,6 +91,12 @@ const entries: readonly Entry[] = [
     label: 'Safety',
   },
   {
+    caption: 'Tell VELORA what is wrong and follow what happens next.',
+    icon: 'help',
+    id: 'help',
+    label: 'Help',
+  },
+  {
     caption: 'This device, your other devices, and signing out.',
     icon: 'lock',
     id: 'account',

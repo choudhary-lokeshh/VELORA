@@ -95,6 +95,10 @@ import {
   type SafetyRuntime,
 } from '../../src/safety/composition.js';
 import type { SafetyEligibilityPort } from '../../src/messaging/safety.js';
+import {
+  createSupportRuntime,
+  type SupportRuntime,
+} from '../../src/support/composition.js';
 import type { UsersDatabase } from '../../src/users/repository.js';
 
 export const testConsumerOrigin = 'http://127.0.0.1:3000';
@@ -637,6 +641,7 @@ export function testProductRuntimes(input: {
   readonly notifications: NotificationsApiRuntime;
   readonly payouts: PayoutsRuntime;
   readonly safety: SafetyRuntime;
+  readonly support: SupportRuntime;
 } {
   // MEDIA first, exactly as the application composes it: CREATORS and PRIVATE
   // CLUBS both hold page and item imagery and reach it through MEDIA's
@@ -698,18 +703,29 @@ export function testProductRuntimes(input: {
   // receives the service rather than a database of its own.
   const billing = testBillingRuntime({ ...input, clubs, creators, safety });
   const identity = testIdentityRuntime(input);
+  const admin = testAdminRuntime({
+    ...input,
+    billing,
+    clubs,
+    creators,
+    media,
+    identity,
+    ...(input.privilegedAccess === undefined
+      ? {}
+      : { privilegedAccess: input.privilegedAccess }),
+    safety,
+  });
   return {
-    admin: testAdminRuntime({
-      ...input,
-      billing,
-      clubs,
-      creators,
-      media,
-      identity,
-      ...(input.privilegedAccess === undefined
-        ? {}
-        : { privilegedAccess: input.privilegedAccess }),
-      safety,
+    admin,
+    // SUPPORT after ADMIN, exactly as the application composes it: it needs the
+    // operator context ADMIN builds and the consumer context USERS builds, and
+    // hands nothing back to either.
+    support: createSupportRuntime({
+      adminContext: admin.adminContext,
+      consumerContext: input.users.consumerContext,
+      database: mediaDatabase,
+      logger: input.logger ?? silentLogger(),
+      ...(input.now === undefined ? {} : { now: input.now }),
     }),
     billing,
     clubs,

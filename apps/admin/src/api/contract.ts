@@ -180,6 +180,31 @@ export type DecisionBody = RequestBody<
 >;
 export type DecisionAction = DecisionBody['action'];
 export type DecisionReasonCode = DecisionBody['reasonCode'];
+/**
+ * Consumer support, as an operator sees it.
+ *
+ * Deliberately separate from the moderation shapes above: a ticket is somebody
+ * asking for help with their own account, not evidence about another person,
+ * and the two carry different disclosure rules.
+ */
+export type SupportTicketList = JsonBody<
+  '/v1/admin/support/tickets',
+  'get',
+  200
+>;
+export type SupportTicket = SupportTicketList['tickets'][number];
+export type SupportTicketDetail = JsonBody<
+  '/v1/admin/support/ticket',
+  'get',
+  200
+>;
+export type SupportTicketEvent = SupportTicketDetail['events'][number];
+export type SupportTicketUpdateBody = RequestBody<
+  '/v1/admin/support/tickets/update',
+  'post'
+>;
+export type SupportTicketStatus = SupportTicketUpdateBody['status'];
+
 export type AppealList = JsonBody<'/v1/admin/safety/appeals', 'get', 200>;
 export type Appeal = AppealList['appeals'][number];
 export type AppealOutcomeBody = RequestBody<

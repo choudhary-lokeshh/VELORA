@@ -193,6 +193,15 @@ import {
   pageSizeSchema,
 } from './product.js';
 import {
+  adminSupportTicketDetailResponseSchema,
+  adminSupportTicketSchema,
+  adminSupportTicketListResponseSchema,
+  adminUpdateSupportTicketRequestSchema,
+  createSupportTicketRequestSchema,
+  supportTicketListResponseSchema,
+  supportTicketSchema,
+} from './support.js';
+import {
   blockListResponseSchema,
   blockRequestSchema,
   blockSchema,
@@ -256,6 +265,7 @@ export * from './notifications.js';
 export * from './product.js';
 export * from './profile.js';
 export * from './safety.js';
+export * from './support.js';
 export * from './users.js';
 export * from './wallet.js';
 
@@ -437,6 +447,11 @@ export const apiRoutePaths = {
   notificationProviderEvents: '/v1/notifications/provider-events',
   notificationPreferences: '/v1/notifications/preferences',
   notificationsRead: '/v1/notifications/read',
+  supportTicket: '/v1/support/ticket',
+  supportTickets: '/v1/support/tickets',
+  adminSupportTicket: '/v1/admin/support/ticket',
+  adminSupportTickets: '/v1/admin/support/tickets',
+  adminSupportTicketUpdate: '/v1/admin/support/tickets/update',
   safetyBlockRemoval: '/v1/safety/blocks/removal',
   safetyBlocks: '/v1/safety/blocks',
   safetyReports: '/v1/safety/reports',
@@ -650,6 +665,13 @@ export const apiSchemas = {
   RevokePushDeviceRequest: revokePushDeviceRequestSchema,
   UpdateNotificationPreferenceRequest:
     updateNotificationPreferenceRequestSchema,
+  AdminSupportTicket: adminSupportTicketSchema,
+  AdminSupportTicketDetailResponse: adminSupportTicketDetailResponseSchema,
+  AdminSupportTicketListResponse: adminSupportTicketListResponseSchema,
+  AdminUpdateSupportTicketRequest: adminUpdateSupportTicketRequestSchema,
+  CreateSupportTicketRequest: createSupportTicketRequestSchema,
+  SupportTicket: supportTicketSchema,
+  SupportTicketListResponse: supportTicketListResponseSchema,
   Block: blockSchema,
   BlockListResponse: blockListResponseSchema,
   BlockRequest: blockRequestSchema,
@@ -725,6 +747,8 @@ export const apiQueryParameters = {
   /** One account lifecycle status, on the same terms as `state`. */
   status: z.string().min(1).max(32),
   stream: adminAuditStreamSchema,
+  /** One support ticket by identifier. */
+  ticketId: z.uuid(),
 } as const;
 export type ApiQueryParameterName = keyof typeof apiQueryParameters;
 
@@ -4405,6 +4429,141 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieOrBearer,
     summary:
       'Withdrawing leaves the record. Both facts matter: a complaint was made, and the person decided not to pursue it.',
+  },
+  {
+    method: 'post',
+    operationId: 'createSupportTicket',
+    path: apiRoutePaths.supportTickets,
+    requestSchemaName: 'CreateSupportTicketRequest',
+    responses: {
+      '200': {
+        description:
+          'The ticket, with the reference to quote and the status the server holds. Repeating the call with the same client ticket identifier returns the original and creates nothing, which matters most here: the connection that lost the response is often the thing being reported.',
+        schemaName: 'SupportTicket',
+      },
+      ...consumerAuthenticationResponses,
+      '409': {
+        description: `Too many tickets from this account in the current window, or too many still unanswered. The body is an ApiError with code ${productErrorCodes.rateLimited}. Nothing already submitted is removed or altered.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Opens a support ticket. It is answered by VELORA operators through Platform Admin; no external help desk is involved, and no response-time promise appears anywhere in this contract.',
+  },
+  {
+    method: 'get',
+    operationId: 'listOwnSupportTickets',
+    path: apiRoutePaths.supportTickets,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum tickets to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          "Tickets the caller opened, newest first. There is no route to anybody else's, and no response here carries an operator note, an operator identity, or anything about how a ticket is being handled.",
+        schemaName: 'SupportTicketListResponse',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+  },
+  {
+    method: 'get',
+    operationId: 'getOwnSupportTicket',
+    path: apiRoutePaths.supportTicket,
+    requestQuery: [
+      { description: 'The ticket to read', name: 'ticketId', required: true },
+    ],
+    responses: {
+      '200': {
+        description: 'One of the caller\u2019s own tickets, with its status.',
+        schemaName: 'SupportTicket',
+      },
+      ...consumerAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'A ticket belonging to somebody else is answered exactly as one that does not exist, so an identifier cannot be probed.',
+  },
+  {
+    method: 'get',
+    operationId: 'listSupportTicketsForOperator',
+    path: apiRoutePaths.adminSupportTickets,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum tickets to return', name: 'pageSize' },
+      {
+        description: 'One ticket status to narrow the queue to',
+        name: 'status',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'The support queue, oldest first, which is the opposite order to the owner\u2019s own list and deliberately so.',
+        schemaName: 'AdminSupportTicketListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'get',
+    operationId: 'getSupportTicketForOperator',
+    path: apiRoutePaths.adminSupportTicket,
+    requestQuery: [
+      { description: 'The ticket to read', name: 'ticketId', required: true },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One ticket and everything recorded against it, oldest first. The history is append-only and includes operator notes, which are never published to the ticket\u2019s owner.',
+        schemaName: 'AdminSupportTicketDetailResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+  },
+  {
+    method: 'post',
+    operationId: 'updateSupportTicketStatus',
+    path: apiRoutePaths.adminSupportTicketUpdate,
+    requestSchemaName: 'AdminUpdateSupportTicketRequest',
+    responses: {
+      '200': {
+        description:
+          'The ticket after the move. A move to the status it already holds is answered idempotently and records no lifecycle entry; a note supplied alongside it is still recorded.',
+        schemaName: 'AdminSupportTicket',
+      },
+      ...adminAuthenticationResponses,
+      '409': {
+        description: `The move is not one this status may make. The body is an ApiError with code ${productErrorCodes.conflict}.`,
+        schemaName: 'ApiError',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The only write an operator has on a ticket. There is no path from here to an account status, an enforcement, or a balance.',
   },
   {
     method: 'post',

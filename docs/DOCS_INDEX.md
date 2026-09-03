@@ -89,6 +89,7 @@ These are one ecosystem, not four independent products. Surface documents never 
 | PAYOUTS | [PAYOUTS](domains/payouts.md) | payout compliance, finance operations, BILLING/CREATORS |
 | TRUST & SAFETY | [TRUST & SAFETY](domains/trust-safety.md) | report/enforcement, MODERATION, safety operations |
 | MODERATION | [MODERATION](domains/moderation.md) | moderation operations, report flow, evidence/privacy |
+| SUPPORT | [SUPPORT](domains/support.md) | consumer help tickets, Platform Admin queue, TRUST & SAFETY (kept separate) |
 | NOTIFICATIONS | [NOTIFICATIONS](domains/notifications.md) | notification flow, notification provider eligibility, ADR-0026, privacy, provider adapters |
 | ADMIN | [ADMIN](domains/admin.md) | Admin surface/product, RBAC, Admin operation flow |
 | ANALYTICS | [ANALYTICS](domains/analytics.md) | privacy, observability, metric governance |

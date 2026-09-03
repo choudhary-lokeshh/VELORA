@@ -112,6 +112,10 @@ import {
 } from './payouts/composition.js';
 import { CreatorSafetyRoutes } from './safety/creator-routes.js';
 import {
+  createSupportRuntime,
+  type SupportRuntime,
+} from './support/composition.js';
+import {
   createSafetyRuntime,
   type SafetyRuntime,
 } from './safety/composition.js';
@@ -179,6 +183,13 @@ export interface ApplicationDependencies {
   readonly payouts: PayoutsRuntime;
   readonly queueRedis: HealthDependency;
   readonly safety: SafetyRuntime;
+  /**
+   * Present in every composition that owns its database, which is every
+   * production one. A test that injects its own runtimes may omit it, and then
+   * answers `503` on the support routes rather than publishing ones wired to a
+   * database it did not supply.
+   */
+  readonly support?: SupportRuntime;
   readonly users: UsersRuntime;
   /**
    * Present in every composition that owns its database, which is every
@@ -252,6 +263,7 @@ export function createApplication(
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
+  const injectedSupport = options.dependencies?.support;
 
   let database: HealthDependency;
   let ownedDatabaseService: DatabaseService | undefined;
@@ -272,6 +284,7 @@ export function createApplication(
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
+  let support: SupportRuntime | undefined;
   if (injectedDatabase === undefined) {
     const ownedDatabase = new DatabaseService(config);
     ownedDependencies.push(ownedDatabase);
@@ -672,6 +685,20 @@ export function createApplication(
         moderation: safety.moderation,
         safety: safety.authority,
       });
+    // SUPPORT after ADMIN, because it needs the operator context ADMIN builds
+    // and the consumer context USERS builds, and it hands nothing back to
+    // either. It composes unconditionally: there is no provider to be
+    // unavailable and no configuration value to refuse, which is the whole
+    // reason a ticket is a row in this database rather than a call to a help
+    // desk somebody would have to pay for.
+    support =
+      injectedSupport ??
+      createSupportRuntime({
+        adminContext: admin.adminContext,
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        logger,
+      });
   } else {
     // Domains need typed data access, not a health probe. A caller that
     // substitutes the database dependency must therefore supply the domain
@@ -717,6 +744,7 @@ export function createApplication(
     notifications = injectedNotifications;
     payouts = injectedPayouts;
     safety = injectedSafety;
+    support = injectedSupport;
   }
 
   const ephemeralRedis =
@@ -763,6 +791,7 @@ export function createApplication(
     ...(realtime === undefined ? {} : { realtime }),
     queueRedis,
     safety,
+    ...(support === undefined ? {} : { support }),
     users,
   };
   const correlationIds = new WeakMap<Request, string>();
@@ -854,6 +883,29 @@ export function createApplication(
         );
       }
       return run(wallet.routes, input);
+    };
+  }
+
+  /**
+   * Wraps one support handler on the same terms as `liveRoute`.
+   *
+   * The paths exist even where the runtime does not, so a composition that
+   * injected its own domains answers `503` rather than `404`: a route that is
+   * absent and a route that cannot serve are different facts, and a person
+   * looking for help deserves the second one.
+   */
+  function supportRoute(
+    run: (runtime: SupportRuntime, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (support === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(support, input);
     };
   }
 
@@ -1809,6 +1861,52 @@ export function createApplication(
     .post(
       apiRoutePaths.safetyBlockRemoval,
       admitted(async (input) => safety.routes.removeBlock(input)),
+    )
+    .post(
+      apiRoutePaths.supportTickets,
+      admitted(
+        supportRoute(async (runtime, input) =>
+          runtime.routes.createTicket(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.supportTickets,
+      admitted(
+        supportRoute(async (runtime, input) =>
+          runtime.routes.listTickets(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.supportTicket,
+      admitted(
+        supportRoute(async (runtime, input) => runtime.routes.getTicket(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminSupportTickets,
+      admitted(
+        supportRoute(async (runtime, input) =>
+          runtime.adminRoutes.listTickets(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminSupportTicket,
+      admitted(
+        supportRoute(async (runtime, input) =>
+          runtime.adminRoutes.getTicket(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.adminSupportTicketUpdate,
+      admitted(
+        supportRoute(async (runtime, input) =>
+          runtime.adminRoutes.updateTicket(input),
+        ),
+      ),
     )
     .post(
       apiRoutePaths.safetyReports,
