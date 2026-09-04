@@ -118,6 +118,32 @@ test.describe('reporting somebody who has already gone', () => {
     await page.getByTestId('report-submit').click();
 
     // Both halves landed, and the surface says so rather than assuming.
+    //
+    // This is the product's own account of what the server did, raised from
+    // the response and worded differently when the block stands but the report
+    // was refused, so reading it is reading that both were accepted. The ended
+    // screen underneath proves neither: it was already there before the dialog
+    // opened, and asserting it let this walk on while the submission was still
+    // in flight.
+    await expect(page.getByTestId('toaster')).toContainText(
+      `${met} is blocked and your report was received`,
+    );
+    await expect(page.getByTestId('report-person')).toBeHidden();
+    // And the dialog took its history entry with it. A leftover overlay entry
+    // is what makes the next Back do nothing and leaves a route change one
+    // late consume away from being spent.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const state: unknown = window.history.state;
+          return (
+            typeof state === 'object' &&
+            state !== null &&
+            'veloraOverlay' in state
+          );
+        }),
+      )
+      .toBe(false);
     await expect(page.getByTestId('live-ended')).toBeVisible();
 
     // The block is real. Safety lists it, and the recently-met list no longer
