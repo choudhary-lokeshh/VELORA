@@ -59,11 +59,22 @@ function onOverlayPop(): void {
   overlayClosers.at(-1)?.();
 }
 
-/** Registers an open overlay, pushing the group's entry if it is the first. */
+/**
+ * Registers an open overlay, pushing the group's entry if it has none.
+ *
+ * Holding the entry is what decides this, not how many overlays are open. A
+ * handover runs the departing dialog's cleanup and the arriving dialog's effect
+ * in one passive-effect flush, so the count goes 1 → 0 → 1 and the arriving
+ * dialog is indistinguishable, by count alone, from the first overlay on the
+ * page — which is how it came to push a second entry, while the departing one's
+ * consume, deferred to a microtask and finding something open again, declined
+ * to spend the first. The group's entry outlives the handover, so asking
+ * whether one is already held is the question that dip cannot answer wrongly.
+ */
 function enterOverlay(close: () => void): void {
   overlayClosers.push(close);
   openOverlays += 1;
-  if (openOverlays > 1) return;
+  if (overlayMark !== undefined) return;
   overlayMarks += 1;
   overlayMark = overlayMarks;
   window.history.pushState({ veloraOverlay: overlayMark }, '');

@@ -95,6 +95,77 @@ describe('a dialog and the Back button', () => {
     });
   });
 
+  it('pushes nothing extra when one dialog hands over to another', async () => {
+    const view = render(
+      <Dialog key="menu" onClose={() => undefined} title="A menu">
+        <p>menu</p>
+      </Dialog>,
+    );
+    // Counted with one overlay open rather than with none, because a push that
+    // follows a traversal truncates whatever was ahead of it: only the delta
+    // across the handover says whether a second entry appeared.
+    const entries = window.history.length;
+
+    // A real handover, which the test above is not: the menu's instance is
+    // destroyed and the report dialog's is created, both in one passive-effect
+    // flush, exactly as Report and block replacing the safety menu does it.
+    // The count goes 1 → 0 → 1 there, so a count that decided the push read the
+    // arriving dialog as the first overlay on the page and pushed a second
+    // entry — which the departing dialog's consume, finding something open
+    // again, then declined to spend.
+    const onClose = vi.fn();
+    view.rerender(
+      <Dialog key="report" onClose={onClose} title="A report">
+        <p>report</p>
+      </Dialog>,
+    );
+
+    await waitFor(() => {
+      expect(marked()).toBe(true);
+    });
+    expect(window.history.length).toBe(entries);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // One Back still closes what is open, once.
+    window.history.back();
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(marked()).toBe(false);
+    });
+  });
+
+  it('leaves no entry behind when a handover ends by closing', async () => {
+    const view = render(
+      <Dialog key="menu" onClose={() => undefined} title="A menu">
+        <p>menu</p>
+      </Dialog>,
+    );
+    view.rerender(
+      <Dialog key="report" onClose={() => undefined} title="A report">
+        <p>report</p>
+      </Dialog>,
+    );
+    await waitFor(() => {
+      expect(marked()).toBe(true);
+    });
+
+    // The action completed and the dialog closed itself, which is how the
+    // safety flow ends. Standing on a leftover overlay entry afterwards is what
+    // makes the next Back do nothing and puts a route change one entry away
+    // from being spent by a consume that arrives late.
+    const entries = window.history.length;
+    view.unmount();
+
+    await waitFor(() => {
+      expect(marked()).toBe(false);
+    });
+    // One consume for one entry: nothing was left to spend, and nothing spent
+    // twice, which is what would have taken the page with it.
+    expect(window.history.length).toBe(entries);
+  });
+
   it('consumes its entry when closed some other way', async () => {
     const view = render(
       <Dialog onClose={() => undefined} title="A choice">
