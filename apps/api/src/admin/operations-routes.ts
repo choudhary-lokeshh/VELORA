@@ -236,7 +236,10 @@ export class AdminOperationsRoutes {
 
   /** What needs a person right now, counted over whole tables. */
   async getOverview(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'operations.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const overview = await this.dependencies.operations.overview();
@@ -255,7 +258,10 @@ export class AdminOperationsRoutes {
   }
 
   async listAccounts(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'users.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;
@@ -291,7 +297,10 @@ export class AdminOperationsRoutes {
   }
 
   async listPayments(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'billing.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;
@@ -324,7 +333,10 @@ export class AdminOperationsRoutes {
 
   /** One payment, with every reversal and claim recorded against it. */
   async getPayment(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'billing.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const paymentId = optionalIdentifier(
@@ -349,7 +361,10 @@ export class AdminOperationsRoutes {
   }
 
   async listPayouts(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'billing.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;
@@ -384,7 +399,10 @@ export class AdminOperationsRoutes {
   }
 
   async listClubs(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'creators.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;
@@ -419,7 +437,10 @@ export class AdminOperationsRoutes {
   }
 
   async listAudit(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'audit.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;

@@ -23,6 +23,7 @@ This document assigns durable domain ownership. Owning module validates state, w
 | NOTIFICATIONS | delivery orchestration, preferences, delivery attempts | source-domain state |
 | ADMIN | privileged workflows, approvals, operation UI/API | core domain source-of-truth data |
 | GROWTH | invitation links, signup attribution, acquisition counts, scheduled live windows | entitlement, balance, standing, reward, profile, session, live encounters, anybody's identity behind an opaque reference |
+| OPERATIONS | operator capability grants, operational control values, the operator action log | product activity (every fact is the owning domain's row and is composed at read time), any domain's state a control governs, anything a control-plane write could change directly |
 | ANALYTICS | event definitions, derived metrics | transactional product state |
 | AI PLATFORM | AI capability/prompt/tool registry metadata, provider/model routing, orchestration runs, ephemeral context, non-authoritative memory/RAG projections, AI budgets/evaluations | any other domain's truth, authorization, approval, private persistence, or analytics metric definitions |
 
@@ -31,6 +32,8 @@ This document assigns durable domain ownership. Owning module validates state, w
 Command only through service contract when caller needs validated synchronous result. Event only for durable fact after owner commits transaction. Consumers must dedupe events and tolerate delayed/out-of-order delivery. Contract has version, actor context where needed, correlation ID, and clear data classification.
 
 ## Important separation
+
+OPERATIONS publishes two narrow answers and consumes none. ADMIN's context resolver asks it what one operator may do, on every privileged request; LIVE and GROWTH each ask it one question about their own path, through a port that names that question rather than the control store — so neither learns that a control store exists or what else is switchable. OPERATIONS reads no other domain's table and writes none. The composed operator reads — activity, one account's record, live operations, money reconciliation, public entry, platform health — live in ADMIN's directories under the read-model exception this document already grants ADMIN, and they only select.
 
 Blocks/enforcement from Trust & Safety constrain Discovery, Messaging, Realtime, Clubs, and Notifications through published eligibility/authorization contracts. Private Clubs decides content entitlement; Billing reports financial status; neither makes Discovery candidates. Admin invokes domain operations with a privileged actor and audit reason; no direct table mutation.
 

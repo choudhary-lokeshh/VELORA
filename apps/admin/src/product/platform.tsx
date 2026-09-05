@@ -24,6 +24,7 @@ import {
 import { platformAreas } from '../app/navigation';
 import { useApi } from '../app/providers';
 import { Audit } from './audit';
+import { OperatorActions } from './operator-audit';
 import { Adapters, Availability, Backlogs, StateCounts } from './readouts';
 import { humanState, identityPurposeLabels, plural, totalOf } from './format';
 import { useResource } from './resource';
@@ -519,7 +520,7 @@ export function PlatformSecurity() {
   return (
     <>
       <PageHeader
-        lede="Every authentication, session, and recovery event AUTH recorded, newest first. No account, no address, and no device appears."
+        lede="What the platform recorded about authentication, and what operators did to the platform. Both records are append-only."
         title="Platform"
       />
       <PlatformNav />
@@ -530,6 +531,13 @@ export function PlatformSecurity() {
         stream="security"
         title="Authentication and session events"
       />
+      {/*
+        The operator's own record sits beside AUTH's rather than in a
+        destination of its own, because the question they answer together is one
+        question: what happened to this platform, and who did it. A separate
+        "Audit" area would have meant an operator reading half a timeline.
+      */}
+      <OperatorActions />
     </>
   );
 }

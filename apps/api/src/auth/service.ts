@@ -558,7 +558,17 @@ export class AuthService {
       | 'logout_all'
       | 'account_recovery'
       | 'privileged_recovery'
-      | 'account_closed';
+      | 'account_closed'
+      /**
+       * An operator signed this account out of everything.
+       *
+       * Its own reason rather than `logout_all`, which would record the person
+       * signing their own other devices out of an account they still hold.
+       * What actually happened — somebody else ended their sessions — is the
+       * only thing worth writing down, and it is what an appeal or a support
+       * conversation about it will need to read back.
+       */
+      | 'administrative';
   }): Promise<{ readonly families: number; readonly sessions: number }> {
     const { repository } = this.dependencies;
     const now = this.dependencies.now();

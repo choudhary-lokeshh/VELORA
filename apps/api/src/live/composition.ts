@@ -24,6 +24,7 @@ import {
   type LiveIntroducibilityPort,
   type LiveIntroductionPort,
   type LivePremiumPreferencePort,
+  type LiveSearchAdmissionControl,
   type LiveRtcSessionPort,
   type LiveSafetyPort,
   type LiveStandingPort,
@@ -112,6 +113,14 @@ export function createLiveRuntime(input: {
   readonly connections: ConnectionDirectoryPort;
   /** Present when this composition publishes routes. */
   readonly consumerContext?: ConsumerContextResolver;
+  /**
+   * OPERATIONS' one answer to this domain: may anybody enter the pool.
+   *
+   * Absent where no control plane is composed, and then every search is
+   * admitted — the product as it shipped, rather than a live feature silently
+   * off because an optional dependency was not wired.
+   */
+  readonly controls?: LiveSearchAdmissionControl;
   readonly conversations: LiveConversationPort;
   readonly database: DatabaseHandle;
   readonly directory: LiveDirectoryPort;
@@ -143,6 +152,7 @@ export function createLiveRuntime(input: {
   const service = new LiveService({
     admission: input.admission,
     connections: input.connections,
+    ...(input.controls === undefined ? {} : { controls: input.controls }),
     conversations: input.conversations,
     directory: input.directory,
     enforcement: input.enforcement,

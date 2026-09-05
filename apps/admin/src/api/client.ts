@@ -5,6 +5,28 @@ import {
 } from '@velora/api-client';
 
 import type {
+  AccountDetail,
+  ActivityDomainName,
+  ActivityEntry,
+  ActivityPage,
+  OperatorAction,
+  ControlBody,
+  ControlList,
+  ControlResult,
+  LiveEncounterDetail,
+  LiveOperationsState,
+  OperationsState,
+  OperatorActionList,
+  OperatorGrantList,
+  OperatorRoleBody,
+  OperatorRoleResult,
+  OperatorStanding,
+  PublicEntryState,
+  ReconciliationState,
+  SessionRevocationBody,
+  SessionRevocationResult,
+  SubjectSearch,
+  WalletDetail,
   AcquisitionSummary,
   AdminAccountList,
   AdminAuditPage,
@@ -69,6 +91,24 @@ import type {
 const csrfCookieName = '__Host-velora_platform_admin_csrf';
 const csrfHeaderName = 'x-velora-csrf';
 const idempotencyHeaderName = 'x-velora-idempotency-key';
+
+/**
+ * Drops the query values a caller did not supply.
+ *
+ * `exactOptionalPropertyTypes` is on, so an explicit `undefined` is not the
+ * same as an absent key, and the generated client turns a present-but-undefined
+ * value into `?cursor=undefined`. One helper rather than a conditional spread
+ * per field, because the spreads were where the mistakes were.
+ */
+function prune<T extends Record<string, string | undefined>>(
+  query: T,
+): { [K in keyof T]?: string } {
+  const pruned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) pruned[key] = value;
+  }
+  return pruned;
+}
 
 export function readAdminCsrfToken(cookieSource: string): string | undefined {
   for (const part of cookieSource.split(';')) {
@@ -180,6 +220,81 @@ export interface AdminApi {
   scheduleLiveWindow(
     body: ScheduleLiveWindowBody,
   ): Promise<ApiResult<LiveWindowList>>;
+  /* --- Control plane -------------------------------------------------- */
+  /**
+   * What this operator may do.
+   *
+   * Read once at the top of the console and used to decide what to draw. It is
+   * never an authorization: every route below refuses on the server whatever
+   * this said, and a capability revoked between a page loading and a press is
+   * refused at the press.
+   */
+  operatorStanding(): Promise<ApiResult<OperatorStanding>>;
+  /** Who holds which role, with the catalogue of what each role can do. */
+  operatorGrants(query?: {
+    readonly cursor?: string | undefined;
+  }): Promise<ApiResult<OperatorGrantList>>;
+  /** Grants a role, or revokes whatever the operator held. */
+  setOperatorRole(
+    body: OperatorRoleBody,
+  ): Promise<ApiResult<OperatorRoleResult>>;
+  /** Every operational control, with the version a write has to present. */
+  controls(): Promise<ApiResult<ControlList>>;
+  /** Sets one control from the version the operator was looking at. */
+  setControl(body: ControlBody): Promise<ApiResult<ControlResult>>;
+  /** What operators did, including what they tried and were refused. */
+  operatorActions(query?: {
+    readonly action?: OperatorAction['action'] | undefined;
+    readonly cursor?: string | undefined;
+    readonly hours?: string | undefined;
+    readonly outcome?: OperatorAction['outcome'] | undefined;
+    readonly subjectId?: string | undefined;
+  }): Promise<ApiResult<OperatorActionList>>;
+
+  /* --- Insight -------------------------------------------------------- */
+  /** What happened across the platform, newest first, in a bounded window. */
+  activity(query?: {
+    readonly cursor?: string | undefined;
+    readonly domain?: ActivityDomainName | undefined;
+    readonly hours?: string | undefined;
+    readonly type?: ActivityEntry['type'] | undefined;
+  }): Promise<ApiResult<ActivityPage>>;
+  /** Resolves one exact identifier an operator already holds. Never suggests. */
+  findSubject(term: string): Promise<ApiResult<SubjectSearch>>;
+  /** One account in operational terms. Never a name, a photograph, or a message. */
+  accountDetail(accountId: string): Promise<ApiResult<AccountDetail>>;
+  /** One person's history across every domain that recorded something. */
+  accountTimeline(query: {
+    readonly accountId: string;
+    readonly cursor?: string | undefined;
+    readonly hours?: string | undefined;
+  }): Promise<ApiResult<ActivityPage>>;
+  /** Signs one account out of every device. */
+  revokeAccountSessions(
+    body: SessionRevocationBody,
+  ): Promise<ApiResult<SessionRevocationResult>>;
+
+  /* --- Platform ------------------------------------------------------- */
+  /** What is stuck and what is failing, plus queue and dependency readiness. */
+  operationsState(query?: {
+    readonly hours?: string | undefined;
+  }): Promise<ApiResult<OperationsState>>;
+  /** The matching pool in operational terms, and whether it is admitting. */
+  liveState(query?: {
+    readonly hours?: string | undefined;
+  }): Promise<ApiResult<LiveOperationsState>>;
+  /** One encounter: state, health, and what followed. Never media. */
+  liveEncounter(encounterId: string): Promise<ApiResult<LiveEncounterDetail>>;
+  /** One account's coin position and the journal behind it. */
+  wallet(query: {
+    readonly accountId: string;
+    readonly cursor?: string | undefined;
+  }): Promise<ApiResult<WalletDetail>>;
+  /** Every money invariant this platform can check, checked. */
+  reconciliation(): Promise<ApiResult<ReconciliationState>>;
+  /** Whether VELORA has a way in, and what is behind it. */
+  publicEntry(): Promise<ApiResult<PublicEntryState>>;
+
   /** Withdraws one live window. Already cancelled and never existing are one answer. */
   cancelLiveWindow(slug: string): Promise<ApiResult<LiveWindowList>>;
   mediaState(): Promise<ApiResult<MediaState>>;
@@ -522,6 +637,160 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
       return result.kind === 'ok'
         ? { kind: 'ok' as const, value: result.value.refund }
         : result;
+    },
+
+    async operatorStanding() {
+      return attempt(async () => api.GET('/v1/admin/operator', read()));
+    },
+
+    async operatorGrants(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/operators', {
+          ...read(),
+          params: { query: prune({ cursor: query?.cursor }) },
+        }),
+      );
+    },
+
+    async setOperatorRole(body) {
+      return attempt(async () =>
+        api.POST('/v1/admin/operators/role', { ...write(), body }),
+      );
+    },
+
+    async controls() {
+      return attempt(async () => api.GET('/v1/admin/controls', read()));
+    },
+
+    async setControl(body) {
+      return attempt(async () =>
+        api.POST('/v1/admin/controls', { ...write(), body }),
+      );
+    },
+
+    async operatorActions(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/operator-actions', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.action === undefined ? {} : { action: query.action }),
+              ...(query?.outcome === undefined
+                ? {}
+                : { outcome: query.outcome }),
+              ...prune({
+                cursor: query?.cursor,
+                hours: query?.hours,
+                subjectId: query?.subjectId,
+              }),
+            },
+          },
+        }),
+      );
+    },
+
+    async activity(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/activity', {
+          ...read(),
+          params: {
+            query: {
+              ...(query?.domain === undefined ? {} : { domain: query.domain }),
+              ...(query?.type === undefined ? {} : { type: query.type }),
+              ...prune({ cursor: query?.cursor, hours: query?.hours }),
+            },
+          },
+        }),
+      );
+    },
+
+    async findSubject(term) {
+      return attempt(async () =>
+        api.GET('/v1/admin/search', { ...read(), params: { query: { term } } }),
+      );
+    },
+
+    async accountDetail(accountId) {
+      return attempt(async () =>
+        api.GET('/v1/admin/accounts/detail', {
+          ...read(),
+          params: { query: { accountId } },
+        }),
+      );
+    },
+
+    async accountTimeline(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/accounts/timeline', {
+          ...read(),
+          params: {
+            query: {
+              accountId: query.accountId,
+              ...prune({ cursor: query.cursor, hours: query.hours }),
+            },
+          },
+        }),
+      );
+    },
+
+    async revokeAccountSessions(body) {
+      return attempt(async () =>
+        api.POST('/v1/admin/accounts/session-revocation', {
+          ...write(),
+          body,
+        }),
+      );
+    },
+
+    async operationsState(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/operations/state', {
+          ...read(),
+          params: { query: prune({ hours: query?.hours }) },
+        }),
+      );
+    },
+
+    async liveState(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/live/state', {
+          ...read(),
+          params: { query: prune({ hours: query?.hours }) },
+        }),
+      );
+    },
+
+    async liveEncounter(encounterId) {
+      return attempt(async () =>
+        api.GET('/v1/admin/live/encounter', {
+          ...read(),
+          params: { query: { encounterId } },
+        }),
+      );
+    },
+
+    async wallet(query) {
+      return attempt(async () =>
+        api.GET('/v1/admin/wallet', {
+          ...read(),
+          params: {
+            query: {
+              accountId: query.accountId,
+              ...prune({ cursor: query.cursor }),
+            },
+          },
+        }),
+      );
+    },
+
+    async reconciliation() {
+      return attempt(async () =>
+        api.GET('/v1/admin/commerce/reconciliation', read()),
+      );
+    },
+
+    async publicEntry() {
+      return attempt(async () => api.GET('/v1/admin/public-entry', read()));
     },
 
     async acquisitionSummary() {

@@ -1763,6 +1763,279 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/operator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The one operator route that requires no capability, because it is how the console learns what to render. Answering it discloses nothing an operator could not discover by pressing every button: what they themselves may do. The reported source says whether capabilities came from a grant or from the local-test bootstrap, which staging and production refuse at startup — an operator must never mistake a development machine for production permissions. */
+        get: operations["getAdminOperator"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/operators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Requires operators.manage, which is the only capability whose holder is unbounded: an operator who can grant capabilities can grant themselves every other one. It is kept its own capability, held by one role, rather than folded into a general administrative idea. */
+        get: operations["listAdminOperators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/operators/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Granting and revoking are one route because they are the same decision about the same person, and splitting them would let a console revoke without a reason. A grant replaces whatever the operator held, in one transaction, so there is no instant in which they hold two roles or none. Every outcome writes an audit row. */
+        post: operations["setAdminOperatorRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** There is no activity table behind this. Every entry is read from the domain that owns the record — AUTH’s security event, LIVE’s encounter, WALLET’s transaction — so a retried action produces one entry or none, retention follows each domain’s own, and the stream can never disagree with the record. The cost is that a fact nobody persists cannot be shown, which is stated rather than papered over. */
+        get: operations["listAdminActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** It resolves; it does not suggest. There is no prefix matching and no autocomplete, because a suggestion list over identifiers is an enumeration tool — type three characters, learn what exists. A value’s shape decides which tables are asked, so a handle never probes the payment table, and a wrong guess reveals only that it was wrong. */
+        get: operations["findAdminSubject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What is absent is the design: no display name, no biography, no photograph, no language, no availability, no message, no report narrative, no ticket text, no push token, and no payment instrument. Every field present was chosen by asking what an operator would do differently if they knew it. Sensitive material is reached through the case, ticket, or moderation record that justifies it — a different route, a different capability, its own audit. */
+        get: operations["getAdminAccountDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The same composed read as the platform stream, narrowed to one person by both identifiers they are known by — AUTH keeps its own account identifier and USERS keeps another, and asking with only one would silently omit half the timeline. Sensitive contents stay hidden exactly as they do in the stream. */
+        get: operations["getAdminAccountTimeline"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/session-revocation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signs every device of one account out. It goes through AUTH’s own revocation service, so it writes AUTH’s security event beside the revocation in the same transaction, and it records an administrative reason rather than pretending the person logged themselves out. Repeating it is safe and ends nothing further. */
+        post: operations["revokeAdminAccountSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every control listed here is read by server code on the path it governs. There is no control that only a client consults, because a hidden button is not a disabled feature. A control nobody has ever set reports version zero and the default the platform shipped with, so this migration changed no behaviour when it ran. */
+        get: operations["getAdminControls"];
+        put?: never;
+        /** A compare-and-set with a required reason. The version the operator read is matched on the update, so the second of two people looking at the same screen is refused rather than silently overwriting a change they never saw. Every outcome, including a refusal, writes an audit row. */
+        post: operations["setAdminControl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/operator-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Append-only: there is no route, service method, or repository method anywhere in this API that updates or deletes one of these rows. A refusal is recorded as a row rather than as an absence, because an operator who tried something and was told no is a thing an incident review needs to see. */
+        get: operations["listAdminOperatorActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/operations/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every figure comes from a durable row a domain wrote because something went wrong, so a count is a set of records an operator can go and open. A queue nobody could reach reports unreachable with absent counts rather than zeroes, and a provider seam nobody has approved reports unconfigured rather than unhealthy — the two are different problems with different answers. */
+        get: operations["getAdminOperationsState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/live/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** There is deliberately no "users online". A count of people the platform believes are connected is the one number nothing can know truthfully — a closed browser, a sleeping phone and a dropped tunnel look identical from here — and inventing it would make every honest number beside it worth less. What is published is what the platform wrote down. */
+        get: operations["getAdminLiveState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/live/encounter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** State and health, never people. There is no video, no audio, no transcript, and no live chat here, and no route in this API that would reach any of them for an operator. Watching somebody’s call is not a feature this product has. */
+        get: operations["getAdminLiveEncounter"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/wallet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The stored balance and the journal total are both published, because the useful operator question is not "what is the balance" but "does the balance follow from what happened". Every amount is a decimal string the whole way to the browser: a coin balance is an exact integer that outgrows what a JSON number carries safely. */
+        get: operations["getAdminWallet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/commerce/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Findings, not alarms. Each one is a query with a published definition rather than a threshold somebody guessed, and each identifies specific rows — there is no health percentage and no severity score anywhere in it. Nothing here writes, corrects, or adjusts: finding a discrepancy and deciding what to do about it are different jobs with different consequences. */
+        get: operations["getAdminReconciliation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/public-entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The two conditions that decide indexability are configured rather than stored, and both are reported rather than inferred from a page — an operator who cannot see them has no way to tell "we are not indexed" from "we are indexed and nobody is coming". There is no rank, impression, click, or traffic figure: this platform has no search console and no analytics provider, and a number invented to fill the space would be the one thing here nobody could check. */
+        get: operations["getAdminPublicEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/billing/state": {
         parameters: {
             query?: never;
@@ -3611,6 +3884,116 @@ export interface components {
             /** Format: uuid */
             priceId: string;
         };
+        AdminAccountDetailResponse: {
+            account: {
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                deletionRequestedAt?: string;
+                /** Format: uuid */
+                id: string;
+                region?: string;
+                status: string;
+                /** Format: date-time */
+                statusChangedAt: string;
+                statusReason?: string;
+            };
+            acquisition?: {
+                /** Format: date-time */
+                attributedAt: string;
+                campaign?: string;
+                source: string;
+                viaInvitation: boolean;
+            };
+            commerce: {
+                payments: {
+                    label: string;
+                    total: number;
+                }[];
+                subscriptions: {
+                    label: string;
+                    total: number;
+                }[];
+            };
+            connections: {
+                conversations: number;
+                introductions: {
+                    label: string;
+                    total: number;
+                }[];
+            };
+            creator?: {
+                handle?: string;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                publishedAt?: string;
+                status: string;
+            };
+            devices: {
+                disableReason?: string;
+                /** Format: date-time */
+                disabledAt?: string;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                lastSeenAt: string;
+                platform: string;
+                /** Format: date-time */
+                registeredAt: string;
+            }[];
+            live: {
+                encounters: {
+                    endReason?: string;
+                    /** Format: date-time */
+                    endedAt?: string;
+                    /** Format: uuid */
+                    id: string;
+                    medium: string;
+                    /** Format: date-time */
+                    startedAt: string;
+                    state: string;
+                }[];
+                participation?: {
+                    medium: string;
+                    /** Format: date-time */
+                    since: string;
+                    state: string;
+                };
+            };
+            profileComplete: boolean;
+            safety: {
+                appeals: number;
+                blocksMade: number;
+                blocksReceived: number;
+                enforcements: {
+                    label: string;
+                    total: number;
+                }[];
+                reportsAbout: number;
+                reportsMade: number;
+            };
+            sessions: {
+                audience: string;
+                /** Format: date-time */
+                authenticatedAt: string;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                lastActiveAt: string;
+                revocationReason?: string;
+                /** Format: date-time */
+                revokedAt?: string;
+            }[];
+            support: {
+                label: string;
+                total: number;
+            }[];
+            wallet?: {
+                available: string;
+                reserved: string;
+            };
+        };
         AdminAccountListResponse: {
             accounts: {
                 /** Format: date-time */
@@ -3631,6 +4014,298 @@ export interface components {
                 count: number;
                 state: string;
             }[];
+        };
+        AdminActivityResponse: {
+            entries: {
+                /** Format: uuid */
+                actorId?: string;
+                correlationId?: string;
+                detail?: string;
+                /** @enum {string} */
+                domain: "auth" | "users" | "live" | "discovery" | "messaging" | "safety" | "support" | "wallet" | "billing" | "notifications" | "growth";
+                id: string;
+                /** Format: date-time */
+                occurredAt: string;
+                resourceId?: string;
+                /** @enum {string} */
+                resourceType?: "account" | "acquisition" | "appeal" | "block" | "case" | "conversation" | "encounter" | "enforcement" | "introduction" | "invite" | "notification" | "participation" | "payment" | "report" | "session" | "ticket" | "transaction";
+                /** Format: uuid */
+                subjectId?: string;
+                /** @enum {string} */
+                type: "auth.security_event" | "users.account_created" | "users.account_status_changed" | "live.search_entered" | "live.search_ended" | "live.encounter_started" | "live.encounter_ended" | "discovery.introduction_created" | "discovery.introduction_settled" | "messaging.conversation_created" | "safety.block_created" | "safety.report_submitted" | "safety.enforcement_applied" | "safety.appeal_submitted" | "support.ticket_opened" | "support.ticket_event" | "wallet.transaction_posted" | "wallet.acquisition_settled" | "billing.payment_settled" | "notifications.delivery_attempted" | "growth.acquisition_event";
+            }[];
+            nextCursor?: string;
+            /** Format: date-time */
+            since: string;
+            /** Format: date-time */
+            until: string;
+        };
+        AdminControlListResponse: {
+            controls: {
+                changedBy?: string;
+                enabled: boolean;
+                /** @enum {string} */
+                key: "live.search" | "growth.invitations" | "growth.scheduled_windows";
+                reason?: string;
+                summary: string;
+                /** Format: date-time */
+                updatedAt?: string;
+                version: number;
+            }[];
+            propagationMilliseconds: number;
+        };
+        AdminControlRequest: {
+            enabled: boolean;
+            expectedVersion: number;
+            /** @enum {string} */
+            key: "live.search" | "growth.invitations" | "growth.scheduled_windows";
+            reason: string;
+        };
+        AdminControlResponse: {
+            control: {
+                changedBy?: string;
+                enabled: boolean;
+                /** @enum {string} */
+                key: "live.search" | "growth.invitations" | "growth.scheduled_windows";
+                reason?: string;
+                summary: string;
+                /** Format: date-time */
+                updatedAt?: string;
+                version: number;
+            };
+            /** @enum {string} */
+            outcome: "applied" | "conflict";
+            propagationMilliseconds: number;
+        };
+        AdminLiveEncounterResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            endReason?: string;
+            /** Format: date-time */
+            endedAt?: string;
+            /** Format: uuid */
+            id: string;
+            introduction?: {
+                /** Format: date-time */
+                createdAt: string;
+                state: string;
+            };
+            medium: string;
+            participants: string[];
+            premiumWindows: number;
+            /** Format: uuid */
+            realtimeSessionId?: string;
+            safety: {
+                blocks: number;
+                reports: number;
+            };
+            state: string;
+        };
+        AdminLiveStateResponse: {
+            encounterStarts: {
+                label: string;
+                total: number;
+            }[];
+            endReasons: {
+                label: string;
+                total: number;
+            }[];
+            liveEncounters: number;
+            /** Format: date-time */
+            observedAt: string;
+            /** Format: date-time */
+            oldestSearchSince?: string;
+            participations: {
+                label: string;
+                total: number;
+            }[];
+            premiumWindows: {
+                label: string;
+                total: number;
+            }[];
+            searchAdmitted: boolean;
+            /** Format: date-time */
+            since: string;
+        };
+        AdminOperationsStateResponse: {
+            dependencies: {
+                adapter?: string;
+                name: string;
+                /** @enum {string} */
+                state: "healthy" | "unavailable" | "unconfigured" | "unknown";
+            }[];
+            failures: {
+                category: string;
+                domain: string;
+                /** Format: date-time */
+                latestAt: string;
+                total: number;
+            }[];
+            /** Format: date-time */
+            observedAt: string;
+            outboxes: {
+                deadLettered: number;
+                domain: string;
+                /** Format: date-time */
+                oldestPendingAt?: string;
+                pending: number;
+            }[];
+            queues: {
+                active?: number;
+                completed?: number;
+                delayed?: number;
+                failed?: number;
+                name: string;
+                reachable: boolean;
+                waiting?: number;
+            }[];
+            /** Format: date-time */
+            since: string;
+        };
+        AdminOperatorActionListResponse: {
+            actions: {
+                /** @enum {string} */
+                action: "control.set" | "operator.role.granted" | "operator.role.revoked" | "sessions.revoked";
+                actorReference: string;
+                /** @enum {string} */
+                capability: "audit.read" | "billing.read" | "billing.refund" | "config.read" | "config.write" | "creators.enforce" | "creators.read" | "growth.manage" | "growth.read" | "live.control" | "live.read" | "operations.read" | "operators.manage" | "safety.enforce" | "safety.read" | "safety.resolve" | "sessions.revoke" | "support.read" | "support.update" | "users.read" | "users.restrict" | "wallet.read";
+                correlationId?: string;
+                failureCode?: string;
+                /** Format: uuid */
+                id: string;
+                /** Format: date-time */
+                occurredAt: string;
+                /** @enum {string} */
+                outcome: "applied" | "refused" | "failed";
+                previousState?: string;
+                reason: string;
+                requestedState?: string;
+                subjectId?: string;
+                /** @enum {string} */
+                subjectType: "account" | "control" | "encounter" | "operator" | "platform";
+            }[];
+            nextCursor?: string;
+            /** Format: date-time */
+            since: string;
+        };
+        AdminOperatorListResponse: {
+            catalogue: {
+                capabilities: ("audit.read" | "billing.read" | "billing.refund" | "config.read" | "config.write" | "creators.enforce" | "creators.read" | "growth.manage" | "growth.read" | "live.control" | "live.read" | "operations.read" | "operators.manage" | "safety.enforce" | "safety.read" | "safety.resolve" | "sessions.revoke" | "support.read" | "support.update" | "users.read" | "users.restrict" | "wallet.read")[];
+                /** @enum {string} */
+                role: "super_admin" | "operations" | "safety" | "support" | "finance" | "growth" | "readonly";
+            }[];
+            grants: {
+                /** Format: date-time */
+                grantedAt: string;
+                grantedBy?: string;
+                /** Format: uuid */
+                id: string;
+                reason: string;
+                /** Format: date-time */
+                revokedAt?: string;
+                /** @enum {string} */
+                role: "super_admin" | "operations" | "safety" | "support" | "finance" | "growth" | "readonly";
+                /** Format: uuid */
+                subjectReference: string;
+            }[];
+            nextCursor?: string;
+        };
+        AdminOperatorResponse: {
+            capabilities: ("audit.read" | "billing.read" | "billing.refund" | "config.read" | "config.write" | "creators.enforce" | "creators.read" | "growth.manage" | "growth.read" | "live.control" | "live.read" | "operations.read" | "operators.manage" | "safety.enforce" | "safety.read" | "safety.resolve" | "sessions.revoke" | "support.read" | "support.update" | "users.read" | "users.restrict" | "wallet.read")[];
+            /** @enum {string} */
+            environment: "local" | "test" | "staging" | "production";
+            /** @enum {string} */
+            role?: "super_admin" | "operations" | "safety" | "support" | "finance" | "growth" | "readonly";
+            /** @enum {string} */
+            source: "grant" | "bootstrap" | "none";
+        };
+        AdminOperatorRoleRequest: {
+            reason: string;
+            /** @enum {string} */
+            role?: "super_admin" | "operations" | "safety" | "support" | "finance" | "growth" | "readonly";
+            /** Format: uuid */
+            subjectReference: string;
+        };
+        AdminOperatorRoleResponse: {
+            grant?: {
+                /** Format: date-time */
+                grantedAt: string;
+                grantedBy?: string;
+                /** Format: uuid */
+                id: string;
+                reason: string;
+                /** Format: date-time */
+                revokedAt?: string;
+                /** @enum {string} */
+                role: "super_admin" | "operations" | "safety" | "support" | "finance" | "growth" | "readonly";
+                /** Format: uuid */
+                subjectReference: string;
+            };
+            /** @enum {string} */
+            outcome: "granted" | "revoked" | "unchanged";
+        };
+        AdminPublicEntryResponse: {
+            /** Format: uri */
+            canonicalOrigin?: string;
+            /** @enum {string} */
+            environment: "local" | "test" | "staging" | "production";
+            indexable: boolean;
+            liveWindows: {
+                active: number;
+                cancelled: number;
+                upcoming: number;
+            };
+            /** Format: date-time */
+            observedAt: string;
+            publishedClubs: number;
+            publishedCreators: number;
+        };
+        AdminReconciliationResponse: {
+            findings: {
+                definition: string;
+                examples: string[];
+                key: string;
+                total: number;
+            }[];
+            /** Format: date-time */
+            observedAt: string;
+        };
+        AdminSearchResponse: {
+            matches: {
+                context?: string;
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "account" | "case" | "conversation" | "creator" | "encounter" | "invite" | "payment" | "report" | "ticket";
+            }[];
+        };
+        AdminSessionRevocationRequest: {
+            /** Format: uuid */
+            accountId: string;
+            reason: string;
+        };
+        AdminSessionRevocationResponse: {
+            families: number;
+            sessions: number;
+        };
+        AdminWalletResponse: {
+            available: string;
+            entries: {
+                amount: string;
+                businessType: string;
+                /** @enum {string} */
+                direction: "credit" | "debit";
+                /** Format: date-time */
+                occurredAt: string;
+                reason: string;
+                /** Format: uuid */
+                transactionId: string;
+            }[];
+            entriesTotal: string;
+            nextCursor?: string;
+            reserved: string;
+            /** Format: uuid */
+            userId: string;
         };
         AdminAuditResponse: {
             entries: {
@@ -18320,6 +18995,1808 @@ export interface operations {
             };
         };
     };
+    getAdminOperator: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What this operator may do, the role it came from, and whether it came from a granted role at all. Never anybody else’s capabilities. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOperatorResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAdminOperators: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this list */
+                cursor?: string;
+                /** @description Maximum grants to return */
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Who holds which role, newest first, including revoked grants — a revoked grant is the evidence somebody held a capability during a window an incident happened in. Published with the catalogue of what each role can do. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOperatorListResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    setAdminOperatorRole: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+                /** @description Contract header x-velora-csrf */
+                "x-velora-csrf"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminOperatorRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description What actually happened: granted, revoked, or unchanged, with the grant that now stands. Never an optimistic acknowledgement. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOperatorRoleResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAdminActivity: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this stream */
+                cursor?: string;
+                /** @description Maximum entries to return */
+                pageSize?: number;
+                /** @description Restrict to one domain of the governed taxonomy */
+                domain?: "auth" | "users" | "live" | "discovery" | "messaging" | "safety" | "support" | "wallet" | "billing" | "notifications" | "growth";
+                /** @description Restrict to one activity type of the governed taxonomy */
+                type?: "auth.security_event" | "users.account_created" | "users.account_status_changed" | "live.search_entered" | "live.search_ended" | "live.encounter_started" | "live.encounter_ended" | "discovery.introduction_created" | "discovery.introduction_settled" | "messaging.conversation_created" | "safety.block_created" | "safety.report_submitted" | "safety.enforcement_applied" | "safety.appeal_submitted" | "support.ticket_opened" | "support.ticket_event" | "wallet.transaction_posted" | "wallet.acquisition_settled" | "billing.payment_settled" | "notifications.delivery_attempted" | "growth.acquisition_event";
+                /** @description How many hours back to read. Bounded by the platform; the answered window is always reported */
+                hours?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What happened across the platform in a bounded window, newest first, composed from the domain-owned rows that already record each fact. Each entry carries a type, a domain, the identifiers involved, and one short enumerated word of detail — a state, a reason code, a failure class. There is no payload field. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminActivityResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    findAdminSubject: {
+        parameters: {
+            query: {
+                /** @description The exact identifier, handle, invitation code, or support reference an operator already holds */
+                term: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every record this exact value could be, as pointers: a kind, an identifier, and a word of context. Following one opens the screen that owns that record, where that screen’s own capability check applies. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSearchResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminAccountDetail: {
+        parameters: {
+            query: {
+                /** @description The account to describe */
+                accountId: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One account in operational terms: lifecycle, sessions, devices, live state and recent encounters, safety counts, connection counts, wallet position, commerce counts, support counts, acquisition origin, and creator capability where there is one. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAccountDetailResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminAccountTimeline: {
+        parameters: {
+            query: {
+                /** @description The account whose timeline to read */
+                accountId: string;
+                /** @description Opaque forward-only position in this timeline */
+                cursor?: string;
+                /** @description Maximum entries to return */
+                pageSize?: number;
+                /** @description How many hours back to read, bounded by the platform */
+                hours?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One person’s coherent history across every domain that recorded something about them, newest first: account created, profile completed, invitation attributed, searches, encounters, connections, conversations, reports, enforcement, tickets, and coin movements. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminActivityResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    revokeAdminAccountSessions: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+                /** @description Contract header x-velora-csrf */
+                "x-velora-csrf"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSessionRevocationRequest"];
+            };
+        };
+        responses: {
+            /** @description How many browser sessions and refresh families were ended. Both figures are what the database actually changed, not what was requested. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSessionRevocationResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminControls: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every operational control, its current value, who last changed it and why, the version a write must present, and how long a change takes to reach every process. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminControlListResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    setAdminControl: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+                /** @description Contract header x-velora-csrf */
+                "x-velora-csrf"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminControlRequest"];
+            };
+        };
+        responses: {
+            /** @description Applied, or a conflict — and in both cases the control that now stands, so a console can show the operator what they were racing rather than an error with no state in it. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminControlResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listAdminOperatorActions: {
+        parameters: {
+            query?: {
+                /** @description Opaque forward-only position in this record */
+                cursor?: string;
+                /** @description Maximum actions to return */
+                pageSize?: number;
+                /** @description Restrict to one action name */
+                action?: "control.set" | "operator.role.granted" | "operator.role.revoked" | "sessions.revoked";
+                /** @description Restrict to one operator session reference */
+                actor?: string;
+                /** @description Restrict to applied, refused, or failed */
+                outcome?: "applied" | "refused" | "failed";
+                /** @description Restrict to one subject identifier */
+                subjectId?: string;
+                /** @description How many hours back to read, bounded by the platform */
+                hours?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What operators did, newest first: who, which capability authorised it, what it was about, what it was changing from and to, why, and whether it applied, was refused, or failed. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOperatorActionListResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminOperationsState: {
+        parameters: {
+            query?: {
+                /** @description How many hours back to count failures, bounded */
+                hours?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What is stuck and what is failing: every domain outbox by state with the age of its oldest undelivered fact, failures grouped by domain and class, job queue counters, and each dependency’s readiness. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOperationsStateResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminLiveState: {
+        parameters: {
+            query?: {
+                /** @description How many hours back to count, bounded by the platform */
+                hours?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The matching pool in operational terms: participations by state over the whole table, encounters currently running, starts and end reasons inside the window, open paid narrowings by kind, the oldest still-waiting search, and whether new searches are currently admitted. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLiveStateResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminLiveEncounter: {
+        parameters: {
+            query: {
+                /** @description The encounter to describe */
+                encounterId: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One encounter: its two participants as opaque identifiers, when it started and stopped and why, the RTC session that carried it, whether either person asked to keep talking, whether either reported or blocked the other, and whether a paid narrowing was involved. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLiveEncounterResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminWallet: {
+        parameters: {
+            query: {
+                /** @description The account whose coin position to read */
+                accountId: string;
+                /** @description Opaque forward-only position in this ledger */
+                cursor?: string;
+            };
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One account’s coin position and the journal behind it: the stored available and reserved balances, the sum the entries themselves imply, and a page of those entries newest first. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminWalletResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body failed contract validation. The body is an ApiError with code VALIDATION_FAILED. */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminReconciliation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every money invariant this platform can check, checked: unbalanced ledger transactions, balances that disagree with their entries, payments stuck in a non-terminal state, expired coin holds still reserved, and provider events nothing has processed. Each finding carries its own definition and identifiers an operator can open. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminReconciliationResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminPublicEntry: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Caller-provided correlation identifier */
+                "x-correlation-id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether VELORA has a way in: the canonical public origin if one is configured, the environment, whether anything is indexable at all, and how many creator pages, clubs, and scheduled live windows are actually reachable. */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPublicEntryResponse"];
+                };
+            };
+            /** @description No valid session accompanied the request. The body is an ApiError with code AUTH_REQUIRED. */
+            401: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The browser origin or CSRF evidence was rejected, the caller is not a Platform Admin audience, or the operation requires a fresh phishing-resistant assurance the caller does not hold. The body is an ApiError, with code ACTION_NOT_PERMITTED in the audience and step-up cases. */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No operation matches the requested path and method, or the addressed resource does not exist or is not visible to this caller. The two are deliberately indistinguishable. The body is an ApiError. */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request body exceeds the maximum accepted size. The body is an ApiError with code PAYLOAD_TOO_LARGE. */
+            413: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server failure. The body is an ApiError with code INTERNAL_ERROR. */
+            500: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier */
+                    "x-correlation-id"?: string;
+                    /** @description Seconds to wait before retrying. Present on a capacity refusal. */
+                    "retry-after"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getAdminFinancialState: {
         parameters: {
             query?: never;
@@ -19308,7 +21785,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            /** @description Live discovery is not admitting anybody to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. Two conditions produce it and they are deliberately indistinguishable to a caller: live discovery is not switched on in this environment at all — no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided — or an operator has paused new searches, which admits nobody new and lets every encounter already running finish. Both are truthful statements about the platform rather than about the caller, and which one applies is an operator's business. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -19520,7 +21997,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            /** @description Live discovery is not admitting anybody to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. Two conditions produce it and they are deliberately indistinguishable to a caller: live discovery is not switched on in this environment at all — no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided — or an operator has paused new searches, which admits nobody new and lets every encounter already running finish. Both are truthful statements about the platform rather than about the caller, and which one applies is an operator's business. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -19639,7 +22116,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            /** @description Live discovery is not admitting anybody to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. Two conditions produce it and they are deliberately indistinguishable to a caller: live discovery is not switched on in this environment at all — no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided — or an operator has paused new searches, which admits nobody new and lets every encounter already running finish. Both are truthful statements about the platform rather than about the caller, and which one applies is an operator's business. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -21035,7 +23512,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            /** @description Live discovery is not admitting anybody to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. Two conditions produce it and they are deliberately indistinguishable to a caller: live discovery is not switched on in this environment at all — no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided — or an operator has paused new searches, which admits nobody new and lets every encounter already running finish. Both are truthful statements about the platform rather than about the caller, and which one applies is an operator's business. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -21154,7 +23631,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
+            /** @description Live discovery is not admitting anybody to the matching pool. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. Two conditions produce it and they are deliberately indistinguishable to a caller: live discovery is not switched on in this environment at all — no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided — or an operator has paused new searches, which admits nobody new and lets every encounter already running finish. Both are truthful statements about the platform rather than about the caller, and which one applies is an operator's business. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */
@@ -25898,7 +28375,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The instance has no capacity to begin this request and declined to hold it. The body is an ApiError with code SERVICE_UNAVAILABLE, and Retry-After says when to try again. The requested action has not started, so retrying is as safe as the operation itself is. The two health probes are exempt: an instance at its limit must still be able to report whether it is alive and what it thinks of its dependencies. */
+            /** @description An operator has paused invitation minting. The body is an ApiError with code DEPENDENCY_UNAVAILABLE. It says nothing about the caller: every link already shared keeps working, including one this account already holds, and the read route still answers it. This status is also the shared capacity refusal, with code SERVICE_UNAVAILABLE; the code tells the two apart. */
             503: {
                 headers: {
                     /** @description Request correlation identifier */

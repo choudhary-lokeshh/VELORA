@@ -41,7 +41,10 @@ export class AdminGrowthRoutes {
   constructor(private readonly dependencies: AdminGrowthRoutesDependencies) {}
 
   async scheduleWindow(input: RouteRequest): Promise<RouteResult> {
-    const operator = await this.dependencies.adminContext.resolve(input);
+    const operator = await this.dependencies.adminContext.resolve(
+      input,
+      'growth.manage',
+    );
     if ('failure' in operator) return operator.failure;
     const parsed = parseRouteBody(scheduleLiveWindowRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -59,7 +62,10 @@ export class AdminGrowthRoutes {
   }
 
   async cancelWindow(input: RouteRequest): Promise<RouteResult> {
-    const operator = await this.dependencies.adminContext.resolve(input);
+    const operator = await this.dependencies.adminContext.resolve(
+      input,
+      'growth.manage',
+    );
     if ('failure' in operator) return operator.failure;
     const parsed = parseRouteBody(
       liveWindowCancellationRequestSchema,
@@ -74,7 +80,10 @@ export class AdminGrowthRoutes {
   }
 
   async getAcquisitionSummary(input: RouteRequest): Promise<RouteResult> {
-    const operator = await this.dependencies.adminContext.resolve(input);
+    const operator = await this.dependencies.adminContext.resolve(
+      input,
+      'growth.read',
+    );
     if ('failure' in operator) return operator.failure;
     const summary = await this.dependencies.growth.acquisitionSummary();
     return {

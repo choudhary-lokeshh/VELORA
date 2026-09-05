@@ -11,6 +11,7 @@ import { ClubSafetyDirectory } from '../../src/clubs/safety-directory.js';
 import { CreatorDirectory } from '../../src/creators/directory.js';
 import { createDiscoveryRuntime } from '../../src/discovery/composition.js';
 import { createLiveRuntime } from '../../src/live/composition.js';
+import { createOperationsRuntime } from '../../src/operations/composition.js';
 import { LiveEncounterDirectory } from '../../src/live/directory.js';
 import { LiveEncounterEnforcement } from '../../src/live/enforcement.js';
 import { createMessagingRuntime } from '../../src/messaging/composition.js';
@@ -1416,6 +1417,122 @@ describe('closing an account while on camera', () => {
     // were talking to.
     expect(left.encounter?.endReason).toBe('ended_by_platform');
     expect(JSON.stringify(left)).not.toContain('deletion');
+  });
+});
+
+describe('when an operator pauses live matchmaking', () => {
+  /**
+   * The kill switch, proved through the real chain rather than a stand-in.
+   *
+   * A live runtime is composed with OPERATIONS' own control reader, and the
+   * control is flipped through OPERATIONS' own service. What is asserted is
+   * therefore the whole path an operator actually presses: a row is written,
+   * the reader stops believing what it believed, and LIVE refuses to admit
+   * anybody — in this process, without waiting out the cache.
+   */
+  function pausableLive(
+    operations: ReturnType<typeof createOperationsRuntime>,
+  ) {
+    return createLiveRuntime({
+      accounts: users.service,
+      admission: users.onboarding,
+      config,
+      connections: discovery.connections,
+      consumerContext: users.consumerContext,
+      controls: {
+        searchAdmitted: () => operations.controls.isEnabled('live.search'),
+      },
+      conversations: messaging.service,
+      database: database.drizzle,
+      directory: users.directory,
+      enforcement: safety.eligibility,
+      introducibility: {
+        mayBeIntroducedTo: async (viewer, candidateId, at) =>
+          discovery.service.mayBeIntroducedTo(viewer, candidateId, at),
+      },
+      introductions: {
+        signal: async (actor, counterpartId) =>
+          discovery.service.signalIntroduction(actor, counterpartId),
+      },
+      logger,
+      now,
+      realtime: realtime.liveSessions,
+      safety: safety.directory,
+      standing: users.standing,
+    });
+  }
+
+  it('admits nobody new, and leaves an encounter already running alone', async () => {
+    const operations = createOperationsRuntime({
+      bootstrapOperators: true,
+      database: database.drizzle,
+      logger,
+      now,
+    });
+    const pausable = pausableLive(operations);
+
+    // Two strangers are already talking when the operator reaches for the
+    // switch. That is the semantic the control's own summary promises, and the
+    // one somebody mid-conversation deserves.
+    const alex = await consumer('alex@live.test');
+    const remi = await consumer('remi@live.test');
+    await meet(alex, remi);
+
+    const outcome = await operations.service.setControl({
+      actorReference: 'session:test',
+      enabled: false,
+      expectedVersion: 0,
+      key: 'live.search',
+      reason: 'abuse spike from one region',
+    });
+    expect(outcome.kind).toBe('applied');
+
+    const sam = await consumer('sam@live.test');
+    const account = await users.service.findAccountById(sam.id);
+    expect(account).toBeDefined();
+    if (account === undefined) return;
+    const refused = await pausable.service.search(account, 'video');
+    expect(refused.kind).toBe('unavailable');
+
+    // Nothing already running was touched. A pause that ended live encounters
+    // would cut off two people who did nothing, for a reason neither of them
+    // caused.
+    const running = await rowsOf<{ count: string }>(
+      database.sql`select count(*)::text as count from live_encounters where state = 'live'`,
+    );
+    expect(running[0]?.count).toBe('1');
+  });
+
+  it('admits people again when the operator resumes it', async () => {
+    const operations = createOperationsRuntime({
+      bootstrapOperators: true,
+      database: database.drizzle,
+      logger,
+      now,
+    });
+    const pausable = pausableLive(operations);
+
+    await operations.service.setControl({
+      actorReference: 'session:test',
+      enabled: false,
+      expectedVersion: 0,
+      key: 'live.search',
+      reason: 'pausing while we look at this',
+    });
+    await operations.service.setControl({
+      actorReference: 'session:test',
+      enabled: true,
+      expectedVersion: 1,
+      key: 'live.search',
+      reason: 'the spike has stopped',
+    });
+
+    const alex = await consumer('alex@live.test');
+    const account = await users.service.findAccountById(alex.id);
+    expect(account).toBeDefined();
+    if (account === undefined) return;
+    const admitted = await pausable.service.search(account, 'video');
+    expect(admitted.kind).toBe('state');
   });
 });
 

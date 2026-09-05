@@ -11,6 +11,11 @@ import {
   type AdminRuntime,
 } from '../../src/admin/composition.js';
 import type { CallerResolver } from '../../src/auth/caller.js';
+import type { SessionRevocationPort } from '../../src/admin/insight-routes.js';
+import {
+  createOperationsRuntime,
+  type OperationsRuntime,
+} from '../../src/operations/composition.js';
 import type { PrivilegedAccessService } from '../../src/auth/privileged.js';
 import {
   createBillingRuntime,
@@ -399,6 +404,14 @@ export function testAdminRuntime(input: {
    */
   readonly realtime?: RealtimeRuntime;
   readonly safety: SafetyRuntime;
+  /**
+   * The control plane. A direct Admin test may omit it, and then every operator
+   * route refuses for want of a capability — which is the fail-closed behaviour
+   * a composition with no grant store must have, and is itself worth asserting.
+   */
+  readonly operations?: OperationsRuntime;
+  /** AUTH's own revocation, for the one operator command that ends sessions. */
+  readonly sessions?: SessionRevocationPort;
 }): AdminRuntime {
   const database: UsersDatabase = input.database ?? drizzle.mock();
   // ADMIN receives the public IDENTITY operations projection, never a
@@ -408,6 +421,15 @@ export function testAdminRuntime(input: {
     input.identity ?? testIdentityRuntime({ config: input.config, database });
   return createAdminRuntime({
     caller: input.caller,
+    environment: input.config.APP_ENV,
+    ...(input.operations === undefined
+      ? {}
+      : {
+          controls: input.operations.controls,
+          operations: input.operations.service,
+          standing: input.operations.service,
+        }),
+    ...(input.sessions === undefined ? {} : { sessions: input.sessions }),
     // NOTIFICATIONS' own operational read. A direct Admin test may exercise no
     // notification route, and composing it here costs nothing: it is a query
     // object over the same database, with no adapter and no side effect.
@@ -626,6 +648,14 @@ export function testIdentityRuntime(input: {
 }
 
 export function testProductRuntimes(input: {
+  /**
+   * AUTH's own revocation, for the one operator command that ends sessions.
+   *
+   * Optional so a suite exercising no session revocation composes nothing
+   * extra, and absent it the route is simply not published — which the
+   * application does too when no control plane exists.
+   */
+  readonly authSessions?: SessionRevocationPort;
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
   readonly database?: UsersDatabase;
@@ -646,6 +676,7 @@ export function testProductRuntimes(input: {
   readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
   readonly notifications: NotificationsApiRuntime;
+  readonly operations: OperationsRuntime;
   readonly payouts: PayoutsRuntime;
   readonly safety: SafetyRuntime;
   readonly support: SupportRuntime;
@@ -710,6 +741,17 @@ export function testProductRuntimes(input: {
   // receives the service rather than a database of its own.
   const billing = testBillingRuntime({ ...input, clubs, creators, safety });
   const identity = testIdentityRuntime(input);
+  // OPERATIONS before ADMIN, exactly as the application composes it: ADMIN's
+  // context resolver asks it what an operator may do on every request. The
+  // bootstrap is on, because the harness runs under a test environment where
+  // configuration permits it and because a suite whose operator held nothing
+  // would be unable to reach any route at all.
+  const operations = createOperationsRuntime({
+    bootstrapOperators: true,
+    database: mediaDatabase,
+    logger: input.logger ?? silentLogger(),
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
   const admin = testAdminRuntime({
     ...input,
     billing,
@@ -717,6 +759,10 @@ export function testProductRuntimes(input: {
     creators,
     media,
     identity,
+    operations,
+    ...(input.authSessions === undefined
+      ? {}
+      : { sessions: input.authSessions }),
     ...(input.privilegedAccess === undefined
       ? {}
       : { privilegedAccess: input.privilegedAccess }),
@@ -724,6 +770,7 @@ export function testProductRuntimes(input: {
   });
   return {
     admin,
+    operations,
     // SUPPORT after ADMIN, exactly as the application composes it: it needs the
     // operator context ADMIN builds and the consumer context USERS builds, and
     // hands nothing back to either.
@@ -739,6 +786,15 @@ export function testProductRuntimes(input: {
     // hands anything back.
     growth: createGrowthRuntime({
       adminContext: admin.adminContext,
+      // The two controls GROWTH obeys, wired exactly as the application wires
+      // them. A harness that composed this domain without them would let a
+      // suite prove an enforcement the product does not actually have.
+      controls: {
+        invitationsAdmitted: () =>
+          operations.controls.isEnabled('growth.invitations'),
+        windowsPublished: () =>
+          operations.controls.isEnabled('growth.scheduled_windows'),
+      },
       consumerContext: input.users.consumerContext,
       database: mediaDatabase,
       logger: input.logger ?? silentLogger(),

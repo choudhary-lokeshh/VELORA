@@ -36,7 +36,25 @@ export interface GrowthLiveWindowView {
   readonly title: string;
 }
 
+/**
+ * The two operational switches GROWTH obeys.
+ *
+ * Minting is governed because a link is the thing abuse mints, and publishing
+ * is governed because a scheduled window is the thing an operator withdraws.
+ * Redeeming an existing link is deliberately not governed: the code is already
+ * in somebody's message, and breaking it would punish the person who shared it
+ * rather than the abuse.
+ *
+ * Absent means both are on, which is the product as it shipped.
+ */
+export interface GrowthOperationalControls {
+  invitationsAdmitted(): Promise<boolean>;
+  windowsPublished(): Promise<boolean>;
+}
+
 export interface GrowthServiceDependencies {
+  /** Absent where no control plane is composed. Then nothing is paused. */
+  readonly controls?: GrowthOperationalControls;
   readonly logger: SafeLogger;
   readonly now: () => Date;
   readonly randomBytes: (size: number) => Uint8Array;
@@ -79,8 +97,19 @@ export class GrowthService {
    */
   async createInvite(
     inviterUserId: string,
-  ): Promise<{ readonly code: string; readonly createdAt: Date }> {
-    const { logger, now, randomBytes, repository } = this.dependencies;
+  ): Promise<
+    | { readonly code: string; readonly createdAt: Date }
+    | { readonly paused: true }
+  > {
+    const { controls, logger, now, randomBytes, repository } =
+      this.dependencies;
+    // The switch, checked before anything is minted. An operator pausing this
+    // during an abuse incident stops new links appearing; every link already
+    // shared keeps working, which is the semantic the control's own summary
+    // promises and the one somebody who shared theirs yesterday deserves.
+    if ((await controls?.invitationsAdmitted()) === false) {
+      return { paused: true };
+    }
     const at = now();
     const inserted = await repository.insertInvite(repository.transactionless, {
       code: mintInviteCode(randomBytes),
@@ -247,7 +276,12 @@ export class GrowthService {
   async publishableWindows(
     limit: number,
   ): Promise<readonly GrowthLiveWindowView[]> {
-    const { now, repository } = this.dependencies;
+    const { controls, now, repository } = this.dependencies;
+    // Withdrawing the whole feature, without cancelling anybody's window. A
+    // paused platform publishes nothing, and switching it back on republishes
+    // exactly what was scheduled — which is why this is a read-time check
+    // rather than a sweep that would have had to undo itself.
+    if ((await controls?.windowsPublished()) === false) return [];
     const at = now();
     const until = new Date(
       at.getTime() + liveWindowHorizonDays * 24 * 60 * 60 * 1_000,

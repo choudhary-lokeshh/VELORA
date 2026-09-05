@@ -243,6 +243,19 @@ export async function startAuthEnvironment(): Promise<void> {
      */
     AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER: 'local-test-privileged',
     /*
+     * An operator with no grant is a super administrator here, on exactly the
+     * same terms as every other local-test value above.
+     *
+     * Without it the console's operator screens have no browser coverage: the
+     * suite can issue a Platform Admin session and would then be refused every
+     * capability, which proves the fail-closed default and nothing about the
+     * screens behind it. `packages/config/src/server.ts` refuses this value in
+     * staging and production at schema parse time, where an operator with no
+     * grant may do nothing at all — and who holds the first grant there is an
+     * open decision rather than something this file quietly answers.
+     */
+    ADMIN_OPERATOR_BOOTSTRAP: 'local-test',
+    /*
      * The deterministic commerce adapters, on the same terms as the media, RTC,
      * notification, and AI ones above.
      *

@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { useCallback, useState } from 'react';
 
 import type { AdminAccount, AdminAccountList } from '../api/contract';
@@ -14,7 +16,6 @@ import {
   PanelBody,
   PanelFoot,
   PanelHead,
-  Reference,
   RowSkeleton,
   Scroller,
   Segmented,
@@ -282,11 +283,19 @@ function AccountRow({ account }: { readonly account: AdminAccount }) {
   return (
     <tr data-testid={`account-${account.id}`}>
       <td>
-        <Reference
-          short={shortId(account.id)}
-          testId={`account-${account.id}-reference`}
-          value={account.id}
-        />
+        {/*
+          The identifier is a link as well as a copyable reference. Copying is
+          what an operator does when they are taking it somewhere else; opening
+          is what they do when the somewhere else is this console, and making
+          them paste it into a search box to get there was the friction the
+          account record exists to remove.
+        */}
+        <Link
+          data-testid={`account-${account.id}-reference`}
+          href={`/accounts/${account.id}`}
+        >
+          {shortId(account.id)}
+        </Link>
       </td>
       <td>
         <Badge

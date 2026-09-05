@@ -44,7 +44,10 @@ export class AdminSupportRoutes {
   constructor(private readonly dependencies: AdminSupportRoutesDependencies) {}
 
   async listTickets(input: RouteRequest): Promise<RouteResult> {
-    const operator = await this.dependencies.adminContext.resolve(input);
+    const operator = await this.dependencies.adminContext.resolve(
+      input,
+      'support.read',
+    );
     if ('failure' in operator) return operator.failure;
     const paging = supportPaginationOf(input);
     if (paging === undefined) return this.invalid(input);
@@ -71,7 +74,10 @@ export class AdminSupportRoutes {
   }
 
   async getTicket(input: RouteRequest): Promise<RouteResult> {
-    const operator = await this.dependencies.adminContext.resolve(input);
+    const operator = await this.dependencies.adminContext.resolve(
+      input,
+      'support.read',
+    );
     if ('failure' in operator) return operator.failure;
     const raw = new URL(input.request.url).searchParams.get('ticketId');
     const ticketId =
@@ -94,7 +100,10 @@ export class AdminSupportRoutes {
   }
 
   async updateTicket(input: RouteRequest): Promise<RouteResult> {
-    const operator = await this.dependencies.adminContext.resolve(input);
+    const operator = await this.dependencies.adminContext.resolve(
+      input,
+      'support.update',
+    );
     if ('failure' in operator) return operator.failure;
     const parsed = parseRouteBody(
       adminUpdateSupportTicketRequestSchema,

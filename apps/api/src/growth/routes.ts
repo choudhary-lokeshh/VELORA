@@ -73,6 +73,17 @@ export class GrowthRoutes {
     const invite = await this.dependencies.growth.createInvite(
       resolved.context.userId,
     );
+    if ('paused' in invite) {
+      // An operator has paused minting. `503` rather than `403`, because this
+      // says nothing about the caller: the feature is not available right now,
+      // and every existing link — including one this person already has — keeps
+      // working. The read route above still answers it.
+      return routeFailure(
+        503,
+        productErrorCodes.dependencyUnavailable,
+        input.correlationId,
+      );
+    }
     return {
       body: inviteLinkResponseSchema.parse({
         invite: {

@@ -60,7 +60,10 @@ export class AdminMediaRoutes {
    * and whether the platform can accept media at all.
    */
   async getMediaState(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'operations.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const state = await this.dependencies.operations.operationalState();
@@ -88,7 +91,10 @@ export class AdminMediaRoutes {
 
   /** One asset, for an operator who already has its identifier. */
   async getMediaAsset(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const assetId = new URL(input.request.url).searchParams.get('assetId');
@@ -116,7 +122,10 @@ export class AdminMediaRoutes {
    * looking at the objects rather than by interpreting a number.
    */
   async purgeMediaAsset(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.enforce',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(adminMediaPurgeRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);

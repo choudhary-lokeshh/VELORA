@@ -14,7 +14,9 @@ import {
   Scroller,
   Table,
 } from '../design/primitives';
-import { useApi } from '../app/providers';
+import { useApi, useOperator } from '../app/providers';
+import { OperationsAlerts } from './alerts';
+import { SubjectSearchPanel } from './search';
 import { formatAge, formatDateTime, humanState, queueLabels } from './format';
 import { useResource } from './resource';
 
@@ -113,6 +115,7 @@ function tilesFor(value: AdminOverview): readonly Tile[] {
 
 export function Overview() {
   const api = useApi();
+  const operator = useOperator();
   const load = useCallback(async () => api.overview(), [api]);
   const state = useResource<AdminOverview>(load);
   const value = state.value;
@@ -123,6 +126,26 @@ export function Overview() {
         lede="What is waiting for somebody, counted by the platform over every record rather than over a page. Nothing here names anybody."
         title="Overview"
       />
+
+      {/*
+        The two things an operator does first, in the order they do them: check
+        whether anything is broken, then look up whatever they were sent. Both
+        are gated on the capability that reads them, so an operator who cannot
+        see operations state is not shown an empty panel where it would be.
+      */}
+      {operator.may('operations.read') ? (
+        <>
+          {/*
+            The alerts read waits for the overview's own read to answer. Two
+            operator reads from one page load is two screens' worth of database
+            work at once, and the platform's admission bound counts requests
+            rather than queries — so overlapping them costs the product rather
+            than this panel.
+          */}
+          <OperationsAlerts enabled={!state.loading} />
+          <SubjectSearchPanel />
+        </>
+      ) : null}
 
       {state.error !== undefined && value === undefined ? (
         <Panel>

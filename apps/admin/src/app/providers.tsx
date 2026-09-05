@@ -12,7 +12,11 @@ import {
 } from 'react';
 
 import { createAdminApi, type AdminApi } from '../api/client';
-import type { AdminSession } from '../api/contract';
+import type {
+  AdminSession,
+  OperatorCapability,
+  OperatorStanding,
+} from '../api/contract';
 import {
   useResource,
   useRevalidateOnFocus,
@@ -82,6 +86,49 @@ export interface SessionValue {
   readonly signOut: () => void;
 }
 
+/**
+ * What this operator may do, read once for the whole console.
+ *
+ * It decides what is worth rendering and it decides nothing else. A control
+ * this says the operator holds is still authorized by the server on the press,
+ * and a capability revoked between the page loading and that press is refused
+ * there — which is the only place a refusal can be trustworthy. Hiding a button
+ * has never been what stops a request, and `docs/decisions/ADR-0048-…` says so
+ * in as many words.
+ *
+ * Deliberately fail-closed while unknown. Until the standing answer arrives,
+ * `may` reports false for everything, so a console mid-load draws no command it
+ * has not yet been told the operator holds.
+ */
+export interface OperatorValue {
+  /** Which environment this console is operating. Rendered as a banner. */
+  readonly environment: string | undefined;
+  readonly known: boolean;
+  readonly may: (capability: OperatorCapability) => boolean;
+  readonly refresh: () => void;
+  readonly role: string | undefined;
+  readonly standing: Resource<OperatorStanding | undefined>;
+  /**
+   * Where the capabilities came from.
+   *
+   * `bootstrap` means this machine treats an ungranted operator as a super
+   * administrator, which is true only in local and test. It is shown on the
+   * screen, because an operator who believes they are exercising production
+   * permissions on a development database is one deploy from a real surprise.
+   */
+  readonly source: string | undefined;
+}
+
+const OperatorContext = createContext<OperatorValue | undefined>(undefined);
+
+export function useOperator(): OperatorValue {
+  const value = useContext(OperatorContext);
+  if (value === undefined) {
+    throw new Error('useOperator used outside AdminProviders');
+  }
+  return value;
+}
+
 const SessionContext = createContext<SessionValue | undefined>(undefined);
 
 export function useSession(): SessionValue {
@@ -118,7 +165,7 @@ export function AdminProviders({
   return (
     <ApiContext.Provider value={api}>
       <SessionProvider api={api} appEnvironment={appEnvironment}>
-        {children}
+        <OperatorProvider api={api}>{children}</OperatorProvider>
       </SessionProvider>
     </ApiContext.Provider>
   );
@@ -177,6 +224,52 @@ function SessionProvider({
 
   return (
     <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+  );
+}
+
+/**
+ * The operator's standing, read once the session says there is one worth asking
+ * about.
+ *
+ * Gated on the privileged session rather than fired unconditionally, so a
+ * browser holding no session or a consumer session does not spend a request
+ * learning what it already knows it may not do — and so the sign-in screen does
+ * not flash a refusal it was never going to act on.
+ */
+function OperatorProvider({
+  api,
+  children,
+}: {
+  readonly api: AdminApi;
+  readonly children: ReactNode;
+}) {
+  const session = useSession();
+  const load = useCallback(async () => api.operatorStanding(), [api]);
+  const standing = useResource<OperatorStanding | undefined>(load, {
+    enabled: session.privileged,
+  });
+
+  const value = useMemo<OperatorValue>(() => {
+    const current = standing.value;
+    const held = new Set<string>(current?.capabilities ?? []);
+    return {
+      environment: current?.environment,
+      known: session.privileged && !standing.loading,
+      // Fail closed while unknown. A console that drew every control until the
+      // answer arrived would show an operator commands they cannot run, and
+      // then remove them under their cursor.
+      may: (capability) => held.has(capability),
+      refresh: standing.reload,
+      role: current?.role,
+      source: current?.source,
+      standing,
+    };
+  }, [session.privileged, standing]);
+
+  return (
+    <OperatorContext.Provider value={value}>
+      {children}
+    </OperatorContext.Provider>
   );
 }
 

@@ -134,7 +134,10 @@ export class AdminBillingRoutes {
    * eventually screenshots.
    */
   async getFinancialState(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'billing.read',
+    );
     if ('failure' in resolved) return resolved.failure;
     const state = await this.dependencies.financial.operationalState();
     return {
@@ -162,7 +165,10 @@ export class AdminBillingRoutes {
    * and did nothing with it would be worse than its absence.
    */
   async listDisputes(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'billing.read',
+    );
     if ('failure' in resolved) return resolved.failure;
     const query = new URL(input.request.url).searchParams;
     const rawPageSize = query.get('pageSize');
@@ -217,7 +223,10 @@ export class AdminBillingRoutes {
   }
 
   async issueRefund(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'billing.refund',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(issueRefundRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);

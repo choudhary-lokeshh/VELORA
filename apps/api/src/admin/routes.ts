@@ -64,7 +64,10 @@ export class AdminRoutes {
   constructor(private readonly dependencies: AdminRoutesDependencies) {}
 
   async listCreators(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'creators.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;
@@ -96,7 +99,10 @@ export class AdminRoutes {
   }
 
   async suspendCreator(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'creators.enforce',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(adminSuspendCreatorRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -113,7 +119,10 @@ export class AdminRoutes {
   }
 
   async reinstateCreator(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'creators.enforce',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(
       adminReinstateCreatorRequestSchema,
@@ -133,7 +142,10 @@ export class AdminRoutes {
   }
 
   async removeObject(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'creators.enforce',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(adminRemoveObjectRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -152,7 +164,10 @@ export class AdminRoutes {
   }
 
   async revokeMembership(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'creators.enforce',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(
       adminRevokeMembershipRequestSchema,

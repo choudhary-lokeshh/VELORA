@@ -32,6 +32,8 @@ const served: readonly string[] = [
   '/',
   '/access',
   '/accounts',
+  '/accounts/[accountId]',
+  '/activity',
   '/creators',
   '/creators/clubs',
   '/creators/clubs/[clubId]',
@@ -40,11 +42,18 @@ const served: readonly string[] = [
   '/money/payments',
   '/money/payments/[paymentId]',
   '/money/payouts',
+  '/money/reconciliation',
   '/overview',
   '/platform',
+  '/platform/controls',
   '/platform/growth',
   '/platform/identity',
+  '/platform/live',
+  '/platform/live/[encounterId]',
   '/platform/notifications',
+  '/platform/operations',
+  '/platform/operators',
+  '/platform/public-entry',
   '/platform/rtc',
   '/platform/security',
   '/queues',
@@ -58,8 +67,10 @@ const literalRoutes = served.filter((route) => !route.includes('['));
 
 const concreteRoutes = served.map((route) =>
   route
+    .replace('[accountId]', 'account-1')
     .replace('[caseId]', 'case-1')
     .replace('[clubId]', 'club-1')
+    .replace('[encounterId]', 'encounter-1')
     .replace('[paymentId]', 'payment-1'),
 );
 

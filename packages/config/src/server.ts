@@ -37,6 +37,28 @@ export const unavailablePrivilegedVerifier = 'unavailable';
  */
 export const localTestPrivilegedVerifier = 'local-test-privileged';
 
+/**
+ * How an operator comes to hold operator capabilities at all.
+ *
+ * `grants` is the only value a deployed environment may have: an operator has
+ * exactly the capabilities somebody granted them in OPERATIONS, and an operator
+ * with no grant may look at nothing and do nothing. That is the fail-closed
+ * posture `docs/domains/operations.md` requires, and it is a second lock rather
+ * than the first — every operator route already needs a Platform Admin audience
+ * and a fresh phishing-resistant assurance before this is consulted.
+ *
+ * `local-test` treats an operator with no grant as a super administrator, which
+ * is how a developer reaches the console on a freshly seeded database. It is
+ * refused in staging and production by the environment guard below, so there is
+ * no environment string, header, or request field that reaches it in a deployed
+ * environment.
+ *
+ * Who holds the first grant in a real deployment is an open decision, recorded
+ * in `docs/decisions/DECISIONS_REQUIRED.md`. Nothing here invents an answer.
+ */
+export const grantedOperatorBootstrap = 'grants';
+export const localTestOperatorBootstrap = 'local-test';
+
 /** AI stays fail-closed unless local/test explicitly selects both seams. */
 export const unavailableAiProvider = 'unavailable';
 export const localTestAiProvider = 'local-test';
@@ -573,6 +595,9 @@ export const serverConfigSchema = z
     AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER: z
       .enum([unavailablePrivilegedVerifier, localTestPrivilegedVerifier])
       .default(unavailablePrivilegedVerifier),
+    ADMIN_OPERATOR_BOOTSTRAP: z
+      .enum([grantedOperatorBootstrap, localTestOperatorBootstrap])
+      .default(grantedOperatorBootstrap),
     AUTH_RECOVERY_DELIVERY: z
       .enum([localRecoveryDelivery])
       .default(localRecoveryDelivery),
@@ -613,6 +638,20 @@ export const serverConfigSchema = z
     WALLET_COIN_LEDGER: z
       .enum([unavailableCoinLedger, enabledCoinLedger])
       .default(unavailableCoinLedger),
+    /**
+     * The address Consumer Web is reached at from outside, when it has one.
+     *
+     * The API does not serve that surface and never links to it. It is here so
+     * an operator can be told, from the platform rather than from a deploy
+     * pipeline, whether a public identity is configured at all — which is one
+     * of the two conditions that decide whether anything is indexable, and the
+     * one nobody can check by looking at a page.
+     *
+     * Optional everywhere, including production. Absent is the honest state of
+     * a preview deployment or a developer's machine, and inventing an address
+     * for one would publish a canonical link to a host that does not exist.
+     */
+    WEB_PUBLIC_ORIGIN: z.url().optional(),
     WALLET_ANDROID_ACQUISITION: z
       .enum([unavailableCoinAcquisition, localTestCoinAcquisition])
       .default(unavailableCoinAcquisition),
@@ -720,6 +759,13 @@ export const serverConfigSchema = z
         code: 'custom',
         message: `AI_PROVIDER is not usable in ${config.APP_ENV}: no live model/provider route is approved or evaluated`,
         path: ['AI_PROVIDER'],
+      });
+    }
+    if (config.ADMIN_OPERATOR_BOOTSTRAP !== grantedOperatorBootstrap) {
+      context.addIssue({
+        code: 'custom',
+        message: `ADMIN_OPERATOR_BOOTSTRAP is not usable in ${config.APP_ENV}: an operator's capabilities must come from a granted role, never from the absence of one`,
+        path: ['ADMIN_OPERATOR_BOOTSTRAP'],
       });
     }
     if (config.AI_KILL_SWITCH !== enabledAiKillSwitch) {
@@ -1079,6 +1125,7 @@ export function loadMigrationConfig(
 
 export function redactServerConfig(config: ServerConfig) {
   return {
+    adminOperatorBootstrap: config.ADMIN_OPERATOR_BOOTSTRAP,
     aiKillSwitch: config.AI_KILL_SWITCH,
     aiProvider: config.AI_PROVIDER,
     accessTokenSigner: config.AUTH_ACCESS_TOKEN_SIGNER,
@@ -1128,6 +1175,7 @@ export function redactServerConfig(config: ServerConfig) {
       config.REALTIME_LIVEKIT_API_KEY !== undefined &&
       config.REALTIME_LIVEKIT_API_SECRET !== undefined,
     rtcSignalTransport: config.REALTIME_SIGNAL_TRANSPORT,
+    publicWebOriginConfigured: config.WEB_PUBLIC_ORIGIN !== undefined,
     walletAndroidAcquisition: config.WALLET_ANDROID_ACQUISITION,
     walletCoinLedger: config.WALLET_COIN_LEDGER,
     walletWebAcquisition: config.WALLET_WEB_ACQUISITION,

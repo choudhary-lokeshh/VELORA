@@ -56,7 +56,10 @@ export class AdminNotificationRoutes {
    * or a destination's, and whether this environment can send at all.
    */
   async getNotificationState(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'operations.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const state = await this.dependencies.operations.operationalState();
@@ -68,7 +71,10 @@ export class AdminNotificationRoutes {
 
   /** One delivery, for an operator who already has its identifier. */
   async getNotificationDelivery(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'operations.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const deliveryId = new URL(input.request.url).searchParams.get(

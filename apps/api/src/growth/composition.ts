@@ -6,7 +6,7 @@ import type { ConsumerContextResolver } from '../users/context.js';
 import { AdminGrowthRoutes } from './admin-routes.js';
 import { GrowthRepository } from './repository.js';
 import { GrowthRoutes } from './routes.js';
-import { GrowthService } from './service.js';
+import { GrowthService, type GrowthOperationalControls } from './service.js';
 
 export interface GrowthRuntime {
   readonly adminRoutes: AdminGrowthRoutes;
@@ -31,6 +31,11 @@ export interface GrowthRuntime {
  */
 export function createGrowthRuntime(dependencies: {
   readonly adminContext: AdminContextResolver;
+  /**
+   * OPERATIONS' two answers to this domain. Absent where no control plane is
+   * composed, and then nothing is paused.
+   */
+  readonly controls?: GrowthOperationalControls;
   readonly consumerContext: ConsumerContextResolver;
   readonly database: DatabaseHandle;
   readonly logger: SafeLogger;
@@ -39,6 +44,9 @@ export function createGrowthRuntime(dependencies: {
 }): GrowthRuntime {
   const repository = new GrowthRepository(dependencies.database);
   const service = new GrowthService({
+    ...(dependencies.controls === undefined
+      ? {}
+      : { controls: dependencies.controls }),
     logger: dependencies.logger,
     now: dependencies.now ?? (() => new Date()),
     randomBytes:

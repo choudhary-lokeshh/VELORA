@@ -77,4 +77,6 @@ Nothing here has been submitted, and no submission has been claimed.
 
 ## Local and test behaviour
 
+An operator can read both of the conditions above from the platform rather than from a deploy pipeline: Platform · Public entry reports the environment, the canonical origin if one is configured, whether anything is indexable at all, and how many creator pages, clubs, and scheduled windows are actually reachable. That is what separates "we are not indexed" from "we are indexed and nobody is coming", which need completely different responses. The API reads the same address from `WEB_PUBLIC_ORIGIN`; it serves nothing on that origin and links to nothing there.
+
 `.env.example` sets `VELORA_WEB_PUBLIC_ORIGIN=http://127.0.0.1:3000`, so a local run writes real absolute addresses and a copied invitation link works between two browsers on the machine. `bun run dev:domains` overrides it with the hostname it serves each surface at. The Playwright configuration sets it to whichever port that run adopted, so `e2e/seo.spec.ts` asserts canonicals against the address the browser actually fetched. None of those is indexable, because none of them is production.

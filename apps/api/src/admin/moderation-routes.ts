@@ -67,7 +67,10 @@ export class AdminModerationRoutes {
   ) {}
 
   async listCases(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = new URL(input.request.url).searchParams;
@@ -100,7 +103,10 @@ export class AdminModerationRoutes {
   }
 
   async getCase(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const caseId = new URL(input.request.url).searchParams.get('caseId');
@@ -124,7 +130,10 @@ export class AdminModerationRoutes {
   }
 
   async claimCase(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.resolve',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(moderationCaseRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -139,7 +148,10 @@ export class AdminModerationRoutes {
   }
 
   async triageCase(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.resolve',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(moderationTriageRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -163,7 +175,10 @@ export class AdminModerationRoutes {
    * nothing logs it.
    */
   async addNote(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.resolve',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(moderationNoteRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -191,7 +206,10 @@ export class AdminModerationRoutes {
   }
 
   async decideCase(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.enforce',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(moderationDecisionRequestSchema, input.body);
     if (!parsed.ok) return this.invalid(input);
@@ -254,7 +272,10 @@ export class AdminModerationRoutes {
   }
 
   async listAppeals(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const rawSize = new URL(input.request.url).searchParams.get('pageSize');
@@ -274,7 +295,10 @@ export class AdminModerationRoutes {
   }
 
   async answerAppeal(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'safety.resolve',
+    );
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(
       moderationAppealOutcomeRequestSchema,

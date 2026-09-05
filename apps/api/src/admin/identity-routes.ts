@@ -56,7 +56,10 @@ export class AdminIdentityRoutes {
   constructor(private readonly dependencies: AdminIdentityRoutesDependencies) {}
 
   async getIdentityState(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'operations.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const state = await this.dependencies.identity.operationalState();
@@ -67,7 +70,10 @@ export class AdminIdentityRoutes {
   }
 
   async getIdentitySubject(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'users.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const query = subjectQuery(input.request);

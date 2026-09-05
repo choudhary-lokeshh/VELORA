@@ -46,6 +46,7 @@ const destinations = [
   { heading: 'Creators', path: '/creators', tab: 'creators' },
   { heading: 'Accounts', path: '/accounts', tab: 'accounts' },
   { heading: 'Money', path: '/money', tab: 'money' },
+  { heading: 'Activity', path: '/activity', tab: 'activity' },
   { heading: 'Platform', path: '/platform', tab: 'platform' },
 ] as const;
 
@@ -61,6 +62,12 @@ const areas = [
   '/platform/identity',
   '/platform/security',
   '/platform/growth',
+  '/money/reconciliation',
+  '/platform/operations',
+  '/platform/live',
+  '/platform/public-entry',
+  '/platform/controls',
+  '/platform/operators',
 ] as const;
 
 /**

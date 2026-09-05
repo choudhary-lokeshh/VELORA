@@ -1017,3 +1017,48 @@
   line-height: var(--text-small-line);
   padding-top: var(--space-1);
 }
+
+/* ============================ Environment bar ========================= */
+
+/**
+ * Which environment this console is operating, said permanently.
+ *
+ * An operator with three tabs open is one wrong tab away from pausing live
+ * matchmaking in production while they meant to test it locally, and no
+ * confirmation dialog fixes that — the dialog says what will happen, not where.
+ * So the environment is stated on every screen rather than on a settings page,
+ * it is read from the server rather than from the browser's own build, and
+ * production is the one that carries a colour.
+ *
+ * Local and test are deliberately quiet. A banner that shouts on the
+ * environment somebody works in all day is a banner they stop seeing on the one
+ * that matters.
+ */
+.a-envbar {
+  align-items: center;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  display: flex;
+  font-size: var(--text-caption-size);
+  gap: var(--space-2);
+  letter-spacing: var(--tracking-label);
+  padding: var(--space-1) var(--space-4);
+  text-transform: uppercase;
+}
+
+.a-envbar--production {
+  background: var(--status-critical-wash);
+  color: var(--status-critical);
+}
+
+.a-envbar--staging {
+  background: var(--status-caution-wash);
+  color: var(--status-caution);
+}
+
+.a-envbar__role {
+  color: var(--text-tertiary);
+  margin-inline-start: auto;
+  text-transform: none;
+}

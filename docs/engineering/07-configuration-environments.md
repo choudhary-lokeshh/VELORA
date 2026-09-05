@@ -106,6 +106,7 @@ queue Redis is durable BullMQ infrastructure and may not.
 | `AUTH_BROWSER_ORIGINS_CONSUMER_WEB` | No | Required for that audience | `http://127.0.0.1:3000` | That audience cannot start a browser session at all |
 | `AUTH_BROWSER_ORIGINS_CREATOR_STUDIO` | No | Required for that audience | `http://127.0.0.1:3001` | As above |
 | `AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN` | No | Required for that audience | blank | Platform Admin cannot start a browser session. Blank is the deliberate default: Admin has no approved origin |
+| `ADMIN_OPERATOR_BOOTSTRAP` | No | Fixed `grants`; blocked in production | `grants` | An operator holds exactly the capabilities somebody granted them in OPERATIONS, and one with no grant may do nothing at all. `local-test` treats an ungranted operator as a super administrator so a developer can reach the console on a freshly seeded database; staging and production refuse it and fail to start. Who holds the first grant in a deployed environment is `DECISION REQUIRED` |
 
 Origin lists are comma-separated exact `scheme://host[:port]` values. A path, a
 query, credentials, or a wildcard-looking entry is refused rather than silently
@@ -333,6 +334,7 @@ Platform Admin.
 | `VELORA_BIND_HOST` | No | Safe default | blank | Container/host interface if not `0.0.0.0` (start) or `127.0.0.1` (dev) | The `start` scripts default `0.0.0.0` and `dev` scripts default `127.0.0.1`. Read by `package.json` only, never by application code |
 | `VELORA_MEDIA_DELIVERY_ORIGIN` | No | Optional everywhere | blank | The origin serving media bytes, when it is not the API's own | The API origin is assumed to serve the bytes, which is true of every environment with no approved storage or delivery provider. A loopback value is refused outside local and test, exactly as the API base URL is |
 | `VELORA_REALTIME_ENDPOINT` | No | Optional everywhere | blank, or the same value as `REALTIME_LIVEKIT_URL` | The realtime project's `wss://` address, when one is configured | `connect-src` names no media project, so a live encounter cannot connect. It is blank in every environment with no approved provider, and the resulting policy is exactly what it was before the field existed |
+| `WEB_PUBLIC_ORIGIN` | No | Optional everywhere, including production | blank | The API reports no canonical public origin to an operator, and Platform Admin's public-entry screen says so. It is the same address as `VELORA_WEB_PUBLIC_ORIGIN` and is held by the API for one reason: so an operator can be told by the platform, rather than by a deploy pipeline, whether a public identity is configured at all. The API neither serves Consumer Web nor links to it |
 | `VELORA_WEB_PUBLIC_ORIGIN` | No | Optional everywhere; required before Consumer Web can be indexed | blank | The public origin Consumer Web is served at | Consumer Web has no public identity: `robots.txt` disallows everything, every page carries `noindex`, the sitemap is empty, and shareable links are written as paths rather than absolute addresses. A loopback value is refused outside local and test |
 
 `VELORA_API_BASE_URL` is also a server field, and the only thing that reads it

@@ -296,6 +296,127 @@ export interface AdminApiDoubleState {
     providerObligations: { count: number; state: string }[];
   };
   /**
+   * The operator's own standing, and everything the control plane holds.
+   *
+   * Kept as state rather than as a fixed answer so a suite can drive the two
+   * cases that matter: an operator who holds a capability and one who does not.
+   * The console renders from this and the server refuses from it, which is what
+   * makes "hiding a button is not authorization" testable rather than asserted.
+   */
+  operator: {
+    capabilities: string[];
+    environment: 'local' | 'test' | 'staging' | 'production';
+    role?: string;
+    source: 'grant' | 'bootstrap' | 'none';
+  };
+  controls: {
+    changedBy?: string;
+    enabled: boolean;
+    key: string;
+    reason?: string;
+    summary: string;
+    updatedAt?: string;
+    version: number;
+  }[];
+  operatorActions: {
+    action: string;
+    actorReference: string;
+    capability: string;
+    failureCode?: string;
+    id: string;
+    occurredAt: string;
+    outcome: string;
+    previousState?: string;
+    reason: string;
+    requestedState?: string;
+    subjectId?: string;
+    subjectType: string;
+  }[];
+  operatorGrants: {
+    grantedAt: string;
+    grantedBy?: string;
+    id: string;
+    reason: string;
+    revokedAt?: string;
+    role: string;
+    subjectReference: string;
+  }[];
+  activity: {
+    actorId?: string;
+    detail?: string;
+    domain: string;
+    id: string;
+    occurredAt: string;
+    resourceId?: string;
+    resourceType?: string;
+    subjectId?: string;
+    type: string;
+  }[];
+  accountDetail: Record<string, unknown> | undefined;
+  operations: {
+    dependencies: { adapter?: string; name: string; state: string }[];
+    failures: {
+      category: string;
+      domain: string;
+      latestAt: string;
+      total: number;
+    }[];
+    outboxes: {
+      deadLettered: number;
+      domain: string;
+      oldestPendingAt?: string;
+      pending: number;
+    }[];
+    queues: {
+      active?: number;
+      completed?: number;
+      delayed?: number;
+      failed?: number;
+      name: string;
+      reachable: boolean;
+      waiting?: number;
+    }[];
+  };
+  live: {
+    encounterStarts: { label: string; total: number }[];
+    endReasons: { label: string; total: number }[];
+    liveEncounters: number;
+    oldestSearchSince?: string;
+    participations: { label: string; total: number }[];
+    premiumWindows: { label: string; total: number }[];
+    searchAdmitted: boolean;
+  };
+  publicEntry: {
+    canonicalOrigin?: string;
+    environment: 'local' | 'test' | 'staging' | 'production';
+    indexable: boolean;
+    liveWindows: { active: number; cancelled: number; upcoming: number };
+    publishedClubs: number;
+    publishedCreators: number;
+  };
+  reconciliation: {
+    definition: string;
+    examples: string[];
+    key: string;
+    total: number;
+  }[];
+  wallet:
+    | {
+        available: string;
+        entries: {
+          amount: string;
+          businessType: string;
+          direction: string;
+          occurredAt: string;
+          reason: string;
+          transactionId: string;
+        }[];
+        entriesTotal: string;
+        reserved: string;
+        userId: string;
+      }
+    | undefined;
+  /**
    * What the session endpoint answers.
    *
    * `null` is a browser holding nothing. A session whose audience is not
@@ -424,6 +545,66 @@ export function anonymousState(): AdminApiDoubleState {
       providerObligations: [],
     },
     session: null,
+    // Everything an ungranted operator holds: nothing. A suite that wants
+    // capabilities grants them explicitly, which is what makes a test about a
+    // refusal impossible to write by accident.
+    operator: { capabilities: [], environment: 'test', source: 'none' },
+    controls: [
+      {
+        enabled: true,
+        key: 'live.search',
+        summary:
+          'Admits new live searches. Encounters already running continue.',
+        version: 0,
+      },
+      {
+        enabled: true,
+        key: 'growth.invitations',
+        summary:
+          'Mints new invitation links. Links already shared keep working.',
+        version: 0,
+      },
+      {
+        enabled: true,
+        key: 'growth.scheduled_windows',
+        summary: 'Publishes scheduled live windows on public surfaces.',
+        version: 0,
+      },
+    ],
+    operatorActions: [],
+    operatorGrants: [],
+    activity: [],
+    accountDetail: undefined,
+    operations: {
+      dependencies: [
+        { name: 'database', state: 'healthy' },
+        {
+          adapter: 'unavailable',
+          name: 'payment provider',
+          state: 'unconfigured',
+        },
+      ],
+      failures: [],
+      outboxes: [{ deadLettered: 0, domain: 'billing', pending: 0 }],
+      queues: [],
+    },
+    live: {
+      encounterStarts: [],
+      endReasons: [],
+      liveEncounters: 0,
+      participations: [],
+      premiumWindows: [],
+      searchAdmitted: true,
+    },
+    publicEntry: {
+      environment: 'test',
+      indexable: false,
+      liveWindows: { active: 0, cancelled: 0, upcoming: 0 },
+      publishedClubs: 0,
+      publishedCreators: 0,
+    },
+    reconciliation: [],
+    wallet: undefined,
   };
 }
 
@@ -585,6 +766,277 @@ export function createAdminApiDouble(
     }
 
     if (!path.startsWith('/v1/admin/')) return error(404, 'HTTP_404');
+
+    if (path === '/v1/admin/operator') {
+      // The one operator route that needs no capability, because it is how the
+      // console learns what to draw. It reports only the caller's own standing.
+      return json(200, {
+        capabilities: state.operator.capabilities,
+        environment: state.operator.environment,
+        ...(state.operator.role === undefined
+          ? {}
+          : { role: state.operator.role }),
+        source: state.operator.source,
+      });
+    }
+
+    /**
+     * Every route below this line authorizes against a capability, exactly as
+     * the server does — and answers the same `403` for a missing capability as
+     * for a wrong audience, because which condition failed is not a caller's
+     * business.
+     *
+     * This is what makes "hiding a button is not authorization" testable: a
+     * suite can render a console whose operator holds nothing, press whatever
+     * it can reach, and watch the platform refuse.
+     */
+    const holds = (capability: string) =>
+      state.operator.capabilities.includes(capability);
+
+    if (path === '/v1/admin/controls') {
+      if (method === 'GET') {
+        if (!holds('config.read')) return error(403, 'ACTION_NOT_PERMITTED');
+        return json(200, {
+          controls: state.controls,
+          propagationMilliseconds: 5000,
+        });
+      }
+      if (!holds('config.write')) return error(403, 'ACTION_NOT_PERMITTED');
+      const requested = body as {
+        enabled: boolean;
+        expectedVersion: number;
+        key: string;
+        reason: string;
+      };
+      const current = state.controls.find(
+        (control) => control.key === requested.key,
+      );
+      if (current === undefined) return error(422, 'VALIDATION_FAILED');
+      if (current.version !== requested.expectedVersion) {
+        // A conflict is answered with the value that actually stands, so the
+        // console can show the operator what they were racing.
+        state.operatorActions = [
+          {
+            action: 'control.set',
+            actorReference: 'session:test',
+            capability: 'config.write',
+            failureCode: 'STATE_CONFLICT',
+            id: `action-${String(state.operatorActions.length + 1)}`,
+            occurredAt: iso(),
+            outcome: 'refused',
+            previousState: current.enabled ? 'enabled' : 'disabled',
+            reason: requested.reason,
+            requestedState: requested.enabled ? 'enabled' : 'disabled',
+            subjectId: requested.key,
+            subjectType: 'control',
+          },
+          ...state.operatorActions,
+        ];
+        return json(200, {
+          control: current,
+          outcome: 'conflict',
+          propagationMilliseconds: 5000,
+        });
+      }
+      const updated = {
+        ...current,
+        changedBy: 'session:test',
+        enabled: requested.enabled,
+        reason: requested.reason,
+        updatedAt: iso(),
+        version: current.version + 1,
+      };
+      state.controls = state.controls.map((control) =>
+        control.key === updated.key ? updated : control,
+      );
+      state.operatorActions = [
+        {
+          action: 'control.set',
+          actorReference: 'session:test',
+          capability: 'config.write',
+          id: `action-${String(state.operatorActions.length + 1)}`,
+          occurredAt: iso(),
+          outcome: 'applied',
+          previousState: current.enabled ? 'enabled' : 'disabled',
+          reason: requested.reason,
+          requestedState: requested.enabled ? 'enabled' : 'disabled',
+          subjectId: requested.key,
+          subjectType: 'control',
+        },
+        ...state.operatorActions,
+      ];
+      return json(200, {
+        control: updated,
+        outcome: 'applied',
+        propagationMilliseconds: 5000,
+      });
+    }
+
+    if (path === '/v1/admin/operator-actions') {
+      if (!holds('audit.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      const outcome = url.searchParams.get('outcome');
+      const action = url.searchParams.get('action');
+      return json(200, {
+        actions: state.operatorActions.filter(
+          (entry) =>
+            (outcome === null || entry.outcome === outcome) &&
+            (action === null || entry.action === action),
+        ),
+        since: iso(-604_800_000),
+      });
+    }
+
+    if (path === '/v1/admin/operators') {
+      if (!holds('operators.manage')) return error(403, 'ACTION_NOT_PERMITTED');
+      return json(200, {
+        catalogue: [
+          { capabilities: ['users.read'], role: 'readonly' },
+          {
+            capabilities: ['users.read', 'config.write'],
+            role: 'operations',
+          },
+        ],
+        grants: state.operatorGrants,
+      });
+    }
+
+    if (path === '/v1/admin/operators/role' && method === 'POST') {
+      if (!holds('operators.manage')) return error(403, 'ACTION_NOT_PERMITTED');
+      const requested = body as {
+        reason: string;
+        role?: string;
+        subjectReference: string;
+      };
+      state.operatorGrants = state.operatorGrants.map((grant) =>
+        grant.subjectReference === requested.subjectReference &&
+        grant.revokedAt === undefined
+          ? { ...grant, revokedAt: iso() }
+          : grant,
+      );
+      if (requested.role === undefined) {
+        return json(200, { outcome: 'revoked' });
+      }
+      const grant = {
+        grantedAt: iso(),
+        grantedBy: 'session:test',
+        id: `grant-${String(state.operatorGrants.length + 1)}`,
+        reason: requested.reason,
+        role: requested.role,
+        subjectReference: requested.subjectReference,
+      };
+      state.operatorGrants = [grant, ...state.operatorGrants];
+      return json(200, { grant, outcome: 'granted' });
+    }
+
+    if (path === '/v1/admin/activity') {
+      if (!holds('operations.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      const domain = url.searchParams.get('domain');
+      return json(200, {
+        entries: state.activity.filter(
+          (entry) => domain === null || entry.domain === domain,
+        ),
+        since: iso(-86_400_000),
+        until: iso(),
+      });
+    }
+
+    if (path === '/v1/admin/search') {
+      if (!holds('operations.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      const term = url.searchParams.get('term') ?? '';
+      const account = state.accounts.find((entry) => entry.id === term);
+      return json(200, {
+        matches:
+          account === undefined
+            ? []
+            : [{ context: account.status, id: account.id, kind: 'account' }],
+      });
+    }
+
+    if (path === '/v1/admin/accounts/detail') {
+      if (!holds('users.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      if (state.accountDetail === undefined) {
+        return error(404, 'RESOURCE_NOT_FOUND');
+      }
+      return json(200, state.accountDetail);
+    }
+
+    if (path === '/v1/admin/accounts/timeline') {
+      if (!holds('users.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      return json(200, {
+        entries: state.activity,
+        since: iso(-86_400_000),
+        until: iso(),
+      });
+    }
+
+    if (path === '/v1/admin/accounts/session-revocation' && method === 'POST') {
+      if (!holds('sessions.revoke')) return error(403, 'ACTION_NOT_PERMITTED');
+      const requested = body as { accountId: string; reason: string };
+      state.operatorActions = [
+        {
+          action: 'sessions.revoked',
+          actorReference: 'session:test',
+          capability: 'sessions.revoke',
+          id: `action-${String(state.operatorActions.length + 1)}`,
+          occurredAt: iso(),
+          outcome: 'applied',
+          reason: requested.reason,
+          requestedState: 'sessions:2',
+          subjectId: requested.accountId,
+          subjectType: 'account',
+        },
+        ...state.operatorActions,
+      ];
+      return json(200, { families: 1, sessions: 2 });
+    }
+
+    if (path === '/v1/admin/operations/state') {
+      if (!holds('operations.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      return json(200, {
+        dependencies: state.operations.dependencies,
+        failures: state.operations.failures,
+        observedAt: iso(),
+        outboxes: state.operations.outboxes,
+        queues: state.operations.queues,
+        since: iso(-86_400_000),
+      });
+    }
+
+    if (path === '/v1/admin/live/state') {
+      if (!holds('live.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      return json(200, {
+        encounterStarts: state.live.encounterStarts,
+        endReasons: state.live.endReasons,
+        liveEncounters: state.live.liveEncounters,
+        observedAt: iso(),
+        ...(state.live.oldestSearchSince === undefined
+          ? {}
+          : { oldestSearchSince: state.live.oldestSearchSince }),
+        participations: state.live.participations,
+        premiumWindows: state.live.premiumWindows,
+        searchAdmitted: state.live.searchAdmitted,
+        since: iso(-86_400_000),
+      });
+    }
+
+    if (path === '/v1/admin/public-entry') {
+      if (!holds('growth.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      return json(200, { ...state.publicEntry, observedAt: iso() });
+    }
+
+    if (path === '/v1/admin/commerce/reconciliation') {
+      if (!holds('billing.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      return json(200, {
+        findings: state.reconciliation,
+        observedAt: iso(),
+      });
+    }
+
+    if (path === '/v1/admin/wallet') {
+      if (!holds('wallet.read')) return error(403, 'ACTION_NOT_PERMITTED');
+      if (state.wallet === undefined) return error(404, 'RESOURCE_NOT_FOUND');
+      return json(200, state.wallet);
+    }
 
     if (path === '/v1/admin/overview') {
       return json(200, state.overview);

@@ -12,7 +12,7 @@ import {
   isCurrent,
   parentOf,
 } from './navigation';
-import { useSession, useToast } from './providers';
+import { useOperator, useSession, useToast } from './providers';
 
 /**
  * The console shell.
@@ -43,7 +43,14 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const session = useSession();
+  const operator = useOperator();
   const parent = parentOf(pathname);
+  // The server's word for which environment this console is operating, falling
+  // back to the surface's own configuration before the operator read answers.
+  // Stated on every screen rather than on a settings page: an operator with
+  // three tabs open is one wrong tab away from pausing production, and no
+  // confirmation dialog fixes that — a dialog says what will happen, not where.
+  const environment = operator.environment ?? session.appEnvironment;
 
   return (
     <div className="a-shell">
@@ -124,6 +131,21 @@ export function AdminShell({
             <Icon name="shield" size="md" />
           </Link>
         </header>
+
+        <p
+          className={`a-envbar a-envbar--${environment}`}
+          data-testid="environment"
+        >
+          {environment}
+          {operator.role === undefined ? null : (
+            <span className="a-envbar__role">
+              {operator.role}
+              {operator.source === 'bootstrap'
+                ? ' · ungranted operators are super administrators here'
+                : ''}
+            </span>
+          )}
+        </p>
 
         <main className={`a-view${narrow ? ' a-view--narrow' : ''}`} id="main">
           <div className="a-view__inner">{children}</div>

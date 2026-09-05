@@ -265,3 +265,102 @@ export type LocalAdminSessionBody = RequestBody<
 /** AI may summarize a case; the operator still reviews and decides. */
 export type AiSuggestionBody = RequestBody<'/v1/ai/suggestions', 'post'>;
 export type AiSuggestion = JsonBody<'/v1/ai/suggestions', 'post', 200>;
+
+/* ============================ Control plane ========================== */
+
+/**
+ * The operator's own standing, which is how this console decides what to draw.
+ *
+ * Rendering from server truth rather than from a local guess is the whole
+ * point: a control the server would refuse is not shown, and — far more
+ * importantly — a control that *is* shown is still refused by the server if the
+ * capability was revoked between the page loading and the press. Hiding a
+ * button has never been the thing that stops a request.
+ */
+export type OperatorStanding = JsonBody<'/v1/admin/operator', 'get', 200>;
+export type OperatorCapability = OperatorStanding['capabilities'][number];
+
+export type OperatorGrantList = JsonBody<'/v1/admin/operators', 'get', 200>;
+export type OperatorGrant = OperatorGrantList['grants'][number];
+export type OperatorRoleBody = RequestBody<'/v1/admin/operators/role', 'post'>;
+export type OperatorRoleResult = JsonBody<
+  '/v1/admin/operators/role',
+  'post',
+  200
+>;
+
+export type ControlList = JsonBody<'/v1/admin/controls', 'get', 200>;
+export type OperationalControl = ControlList['controls'][number];
+export type ControlBody = RequestBody<'/v1/admin/controls', 'post'>;
+export type ControlResult = JsonBody<'/v1/admin/controls', 'post', 200>;
+
+export type OperatorActionList = JsonBody<
+  '/v1/admin/operator-actions',
+  'get',
+  200
+>;
+export type OperatorAction = OperatorActionList['actions'][number];
+
+/* =============================== Activity ============================ */
+
+/**
+ * What happened, composed from the domains that own each record.
+ *
+ * There is no payload field in this shape, so a screen that rendered a message
+ * body, a report narrative, or a push token could not be written against it.
+ * `detail` is one short enumerated word and the contract bounds it at 64
+ * characters.
+ */
+export type ActivityPage = JsonBody<'/v1/admin/activity', 'get', 200>;
+export type ActivityEntry = ActivityPage['entries'][number];
+export type ActivityDomainName = ActivityEntry['domain'];
+
+export type SubjectSearch = JsonBody<'/v1/admin/search', 'get', 200>;
+export type SubjectMatch = SubjectSearch['matches'][number];
+
+/* ============================ Account detail ========================= */
+
+export type AccountDetail = JsonBody<'/v1/admin/accounts/detail', 'get', 200>;
+export type AccountSession = AccountDetail['sessions'][number];
+export type AccountDevice = AccountDetail['devices'][number];
+export type AccountEncounter = AccountDetail['live']['encounters'][number];
+export type SessionRevocationBody = RequestBody<
+  '/v1/admin/accounts/session-revocation',
+  'post'
+>;
+export type SessionRevocationResult = JsonBody<
+  '/v1/admin/accounts/session-revocation',
+  'post',
+  200
+>;
+
+/* ============================== Platform ============================= */
+
+export type OperationsState = JsonBody<
+  '/v1/admin/operations/state',
+  'get',
+  200
+>;
+export type JobQueueState = OperationsState['queues'][number];
+export type DependencyState = OperationsState['dependencies'][number];
+export type OutboxState = OperationsState['outboxes'][number];
+export type FailureFingerprint = OperationsState['failures'][number];
+
+export type LiveOperationsState = JsonBody<'/v1/admin/live/state', 'get', 200>;
+export type LiveEncounterDetail = JsonBody<
+  '/v1/admin/live/encounter',
+  'get',
+  200
+>;
+
+export type WalletDetail = JsonBody<'/v1/admin/wallet', 'get', 200>;
+export type WalletLedgerEntry = WalletDetail['entries'][number];
+
+export type ReconciliationState = JsonBody<
+  '/v1/admin/commerce/reconciliation',
+  'get',
+  200
+>;
+export type ReconciliationFinding = ReconciliationState['findings'][number];
+
+export type PublicEntryState = JsonBody<'/v1/admin/public-entry', 'get', 200>;

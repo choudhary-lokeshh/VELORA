@@ -472,8 +472,26 @@ export interface LivePremiumPreferencePort {
   ): Promise<boolean>;
 }
 
+/**
+ * The operational switch that decides whether anybody may enter the pool.
+ *
+ * One question, asked of OPERATIONS, and LIVE learns nothing else from it — not
+ * that a control store exists, not what else is switchable, and not who
+ * switched this. A wider client here would be a domain that could be pointed at
+ * somebody else's control.
+ *
+ * Absent means admitted, which is what a composition with no control plane must
+ * behave like: the product as it shipped, rather than a live feature silently
+ * off because nobody wired an optional dependency.
+ */
+export interface LiveSearchAdmissionControl {
+  searchAdmitted(): Promise<boolean>;
+}
+
 export interface LiveServiceDependencies {
   readonly admission: LiveAdmissionPort;
+  /** Absent where no control plane is composed. Then every search is admitted. */
+  readonly controls?: LiveSearchAdmissionControl;
   readonly connections: ConnectionDirectoryPort;
   readonly conversations: LiveConversationPort;
   readonly directory: LiveDirectoryPort;
@@ -607,6 +625,18 @@ export class LiveService {
     if (this.dependencies.mode === 'unavailable') {
       return { kind: 'unavailable' };
     }
+    // The kill switch, checked before anything is read on this person's behalf
+    // and before any lock is taken. `docs/domains/operations.md` fixes the
+    // semantics an operator is promised: pausing admits nobody new and ends
+    // nothing already running, so two strangers mid-conversation are not cut
+    // off by an operator reacting to something neither of them did.
+    //
+    // It answers the same way an unconfigured environment does, because from
+    // the caller's side it is the same fact: live discovery is not available
+    // right now. The reason it is not is an operator's business, and the
+    // console reads it from the control itself.
+    const admitted = await this.dependencies.controls?.searchAdmitted();
+    if (admitted === false) return { kind: 'unavailable' };
     if (!(await this.mayUseLive(actor))) return { kind: 'not_eligible' };
 
     const now = this.dependencies.now();

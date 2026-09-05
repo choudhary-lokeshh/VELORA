@@ -22,6 +22,14 @@ Provide accessible policy/consent records and user controls appropriate to juris
 
 Authorize every private-data read and log privileged/sensitive reads. Retention jobs are durable/idempotent; hold/status races use effective dates and owner versions. Failed deletion/export job retries and alerts; no silent data loss or unbounded retention. Do not reveal reporter, counterpart, moderation, or verification material in user export without policy/legal review.
 
+## What the operator surface does not collect
+
+[ADR-0048](../decisions/ADR-0048-operator-control-plane-and-composed-activity.md) makes Platform Admin an operating console and collects nothing new to do it. There is no activity, telemetry, or interaction-analytics table anywhere in this repository: the operator activity stream is composed at read time from the rows domains already write for product reasons, so nothing was captured that was not already captured, and no retention question was created that did not already exist.
+
+Specifically absent by construction rather than by policy, because no contract field or schema column exists to hold one: session replay, screen recording, keystrokes, mouse movement, scroll position, clipboard contents, device fingerprints, message bodies in any operator read, report narratives outside the case they belong to, ticket text outside the ticket, push tokens, provider credentials, payment instruments, and any path from the console to live camera or microphone media. The account record an operator opens publishes counts, states, and instants; it publishes no display name, biography, photograph, language, availability, or matching declaration.
+
+Operator actions are the one new personal-data class: who did what to the platform, with the reason they typed. It is audit, it is append-only, it grows at the rate a human presses a button, and its retention is `DECISION REQUIRED / LEGAL REVIEW REQUIRED` alongside AUTH's own record retention.
+
 ## Phase/cross-references
 
-V1 classification and deletion baseline. See [account deletion](../flows/account-deletion.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [identity provider eligibility](../compliance/09-identity-verification-provider-eligibility.md), [data ownership](../architecture/05-data-ownership.md), [data residency/retention](../compliance/05-data-residency-retention.md), [AI context/memory/RAG](../ai/03-ai-context-memory-rag.md), [analytics](../domains/analytics.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).
+V1 classification and deletion baseline. See [OPERATIONS](../domains/operations.md), [account deletion](../flows/account-deletion.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [identity provider eligibility](../compliance/09-identity-verification-provider-eligibility.md), [data ownership](../architecture/05-data-ownership.md), [data residency/retention](../compliance/05-data-residency-retention.md), [AI context/memory/RAG](../ai/03-ai-context-memory-rag.md), [analytics](../domains/analytics.md), [open decisions](../decisions/DECISIONS_REQUIRED.md).

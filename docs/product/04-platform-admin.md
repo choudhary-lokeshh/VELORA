@@ -18,13 +18,17 @@ Separate privileged operations client controlling ecosystem workflows: users/cre
 
 Exact grants use RBAC plus operation/object scope, least privilege, step-up authentication for sensitive actions, and separation of duties where risk warrants. Role is never a reason to expose plaintext passwords, raw payment/card credentials, encryption keys, private secrets, or unnecessary identity documents.
 
+**As built** ([ADR-0048](../decisions/ADR-0048-operator-control-plane-and-composed-activity.md)): twenty-two capabilities and seven roles — `super_admin`, `operations`, `safety`, `support`, `finance`, `growth`, `readonly`. Routes check capabilities, never roles, so adding a role can never widen what a route admits. Read is separated from write everywhere: an operator given only reads cannot turn a mistake into an incident. `operators.manage` is its own capability held by one role, because whoever holds it can grant themselves every other one.
+
+One live grant per operator, replaced in a single transaction rather than added to. A revoked grant keeps its row, because it is the evidence somebody held a capability during the window an incident happened in. In staging and production an operator with no grant may do nothing at all; who holds the first grant there is `DECISION REQUIRED`.
+
 ## Main and failure flow
 
 Operator authenticates, receives scoped role, searches privacy-minimized record, requests domain action with reason/evidence, satisfies approval/step-up if required, domain re-authorizes and applies state transition, then ADMIN records immutable audit outcome. Failed/duplicate requests show current safe state; no direct storage edits. Emergency access is time-bound, dual-controlled where possible, and reviewed.
 
 ## Security/data/events
 
-ADMIN owns operation request/approval/audit views, not core facts. Sensitive reads are logged. Export is scoped, redacted, rate-limited, watermarked where appropriate, and expiry-controlled. Actions emit audit events with actor, delegated role, target, reason, before/after references, correlation ID, approval and outcome. Admin analytics uses authorized aggregate data.
+ADMIN owns operation request/approval/audit views, not core facts. Every operator command writes an audit row whatever its outcome — `applied`, `refused`, or `failed` — with the capability that authorised it, what it was changing from and to, and the operator's own reason. A refusal is recorded as a row rather than as an absence: an operator who tried something and was told no is what an incident review most needs. Sensitive reads are logged. Export is scoped, redacted, rate-limited, watermarked where appropriate, and expiry-controlled. Actions emit audit events with actor, delegated role, target, reason, before/after references, correlation ID, approval and outcome. Admin analytics uses authorized aggregate data.
 
 ## Admin AI boundary
 

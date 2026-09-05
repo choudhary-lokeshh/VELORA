@@ -21,6 +21,7 @@ export default defineConfig({
     './src/media/schema.ts',
     './src/messaging/schema.ts',
     './src/notifications/schema.ts',
+    './src/operations/schema.ts',
     './src/payouts/schema.ts',
     './src/realtime/schema.ts',
     './src/safety/schema.ts',

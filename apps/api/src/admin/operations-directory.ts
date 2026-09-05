@@ -11,6 +11,7 @@ import {
 import { clubMemberships, clubs } from '../clubs/schema.js';
 import { decodeCatalogCursor, encodeCatalogCursor } from '../clubs/cursor.js';
 import { creatorAccounts, creatorProfiles } from '../creators/schema.js';
+import { bounded } from '../database/fan-out.js';
 import type { DatabaseHandle } from '../database/executor.js';
 import type { PayoutInstructionState } from '../payouts/policy.js';
 import { payoutsInstructions } from '../payouts/schema.js';
@@ -283,9 +284,16 @@ export class AdminOperationsDirectory {
   /**
    * What is waiting for somebody, over whole tables.
    *
-   * Ten reads issued together rather than in sequence, because an overview that
-   * takes ten round trips is an overview an operator stops opening. Each is a
-   * count or a grouped count; none of them reads a row of content.
+   * Eleven reads, a few at a time rather than one at a time or all at once.
+   * Each is a count or a grouped count; none of them reads a row of content.
+   *
+   * All eleven used to be issued together, which is more connections than
+   * ADR-0019 sizes the whole pool at — and it held while this was the only
+   * screen doing it. It stopped holding the moment a second operator read ran
+   * beside it: what surfaced was not a slow screen but a driver returning one
+   * query's rows for another, which the response schema caught as a `Date`
+   * where a state belonged. `bounded` is the fix and is applied to every
+   * operator read on this surface. See `../database/fan-out.ts`.
    */
   async overview(): Promise<AdminOverview> {
     const [
@@ -300,63 +308,71 @@ export class AdminOperationsDirectory {
       casesByQueue,
       casesByPriority,
       oldest,
-    ] = await Promise.all([
-      this.countOf(
-        this.database
-          .select({ total: count() })
-          .from(safetyCases)
-          .where(inArray(safetyCases.state, [...openCaseStates])),
-      ),
-      this.countOf(
-        this.database
-          .select({ total: count() })
-          .from(safetyCases)
-          .where(
-            and(
-              inArray(safetyCases.state, [...openCaseStates]),
-              isNull(safetyCases.assignedActorReference),
+    ] = await bounded([
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(safetyCases)
+            .where(inArray(safetyCases.state, [...openCaseStates])),
+        ),
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(safetyCases)
+            .where(
+              and(
+                inArray(safetyCases.state, [...openCaseStates]),
+                isNull(safetyCases.assignedActorReference),
+              ),
             ),
-          ),
-      ),
-      this.countOf(
+        ),
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(safetyAppeals)
+            .where(inArray(safetyAppeals.state, [...openAppealStates])),
+        ),
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(creatorAccounts)
+            .where(eq(creatorAccounts.status, 'suspended')),
+        ),
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(userAccounts)
+            .where(eq(userAccounts.status, 'restricted')),
+        ),
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(billingDisputes)
+            .where(inArray(billingDisputes.state, ['opened', 'under_review'])),
+        ),
+      async () =>
+        this.countOf(
+          this.database
+            .select({ total: count() })
+            .from(payoutsInstructions)
+            .where(eq(payoutsInstructions.state, 'submitted')),
+        ),
+      async () => this.reconciliationCount(),
+      async () => this.groupedCount(safetyCases.queue),
+      async () => this.groupedCount(safetyCases.priority),
+      async () =>
         this.database
-          .select({ total: count() })
-          .from(safetyAppeals)
-          .where(inArray(safetyAppeals.state, [...openAppealStates])),
-      ),
-      this.countOf(
-        this.database
-          .select({ total: count() })
-          .from(creatorAccounts)
-          .where(eq(creatorAccounts.status, 'suspended')),
-      ),
-      this.countOf(
-        this.database
-          .select({ total: count() })
-          .from(userAccounts)
-          .where(eq(userAccounts.status, 'restricted')),
-      ),
-      this.countOf(
-        this.database
-          .select({ total: count() })
-          .from(billingDisputes)
-          .where(inArray(billingDisputes.state, ['opened', 'under_review'])),
-      ),
-      this.countOf(
-        this.database
-          .select({ total: count() })
-          .from(payoutsInstructions)
-          .where(eq(payoutsInstructions.state, 'submitted')),
-      ),
-      this.reconciliationCount(),
-      this.groupedCount(safetyCases.queue),
-      this.groupedCount(safetyCases.priority),
-      this.database
-        .select({ openedAt: safetyCases.openedAt })
-        .from(safetyCases)
-        .where(inArray(safetyCases.state, [...openCaseStates]))
-        .orderBy(safetyCases.openedAt)
-        .limit(1),
+          .select({ openedAt: safetyCases.openedAt })
+          .from(safetyCases)
+          .where(inArray(safetyCases.state, [...openCaseStates]))
+          .orderBy(safetyCases.openedAt)
+          .limit(1),
     ]);
 
     return {

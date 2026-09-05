@@ -59,7 +59,10 @@ export class AdminRtcRoutes {
    * at all.
    */
   async getRtcState(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'operations.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const state = await this.dependencies.operations.operationalState();
@@ -83,7 +86,10 @@ export class AdminRtcRoutes {
 
   /** One call, for an operator who already has its identifier. */
   async getRtcCall(input: RouteRequest): Promise<RouteResult> {
-    const resolved = await this.dependencies.adminContext.resolve(input);
+    const resolved = await this.dependencies.adminContext.resolve(
+      input,
+      'live.read',
+    );
     if ('failure' in resolved) return resolved.failure;
 
     const callId = new URL(input.request.url).searchParams.get('callId');

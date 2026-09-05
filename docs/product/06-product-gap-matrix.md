@@ -120,7 +120,20 @@ visual work depends on it.
 | Capability | Class | Evidence |
 |---|---|---|
 | Cases, appeals, decisions, creators, money, platform readouts | A | `apps/admin/src/product/*` |
-| Reaching the console in any environment | F | `UnavailablePrivilegedAuthenticatorVerifier` refuses every assertion, and `/v1/auth/local/web-sessions` admits no `platform_admin` audience. Both conditions are stated on screen |
+| Finding a record from an identifier without a database shell | A | `GET /v1/admin/search`; exact resolution only, never a prefix, so it cannot be used to enumerate |
+| One account's operational record and its cross-domain timeline | A | `GET /v1/admin/accounts/detail`, `GET /v1/admin/accounts/timeline`; counts and states, no name, photograph, message, narrative, ticket text, or push token |
+| What the platform has been doing | A | `GET /v1/admin/activity`, composed from the rows each domain already writes; there is no event table |
+| Pausing a feature without a deploy | A | `GET`/`POST /v1/admin/controls`; three controls the server obeys on the paths they govern, written as compare-and-set with a published propagation bound |
+| Signing an account out everywhere | A | `POST /v1/admin/accounts/session-revocation` through AUTH's own service; the security event commits with the revocation |
+| Capability-scoped operator access | A | Twenty-two capabilities, seven roles, checked on every operator route; `apps/api/src/operations/*` |
+| An audit of what operators did | A | `GET /v1/admin/operator-actions`; append-only, records refusals as well as changes |
+| Stuck work, recorded failures, queue and dependency readiness | A | `GET /v1/admin/operations/state`; unconfigured, unavailable, and unknown are three different answers |
+| Money invariants checked against themselves | A | `GET /v1/admin/commerce/reconciliation`; each finding publishes its own definition |
+| Ending one person's live encounter from the console | E | Deliberate. Ending somebody's call is a safety decision and goes through TRUST & SAFETY, where it acquires a record, a reason, and an appeal path; an operator has a global pause that touches nobody in particular |
+| Operator wallet adjustment | E | No adjustment reason vocabulary, no approval rule, and no double-entry correction semantics are decided; a balance edit without those is an unaudited change to somebody's money |
+| Administrative broadcasts to consumers | E | No approved notification provider, and no decision about what a platform may send unprompted or which preference would govern it |
+| CSV export of operator lists | E | Every operator list is paginated and readable in place; an export is a copy of personal data leaving the platform and needs a retention and handling answer first |
+| Reaching the console in any environment | F | `UnavailablePrivilegedAuthenticatorVerifier` refuses every assertion, and `/v1/auth/local/web-sessions` admits no `platform_admin` audience. Both conditions are stated on screen. Since ADR-0048 a third applies in a deployed environment: an operator with no capability grant may do nothing, and who holds the first grant is an open decision |
 
 ## Monetisation
 

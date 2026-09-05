@@ -19,9 +19,34 @@ import type { EnforcementAuthority } from '../safety/enforcement.js';
 import type { ModerationService } from '../safety/moderation.js';
 import type { DisputeRepository } from '../billing/dispute-repository.js';
 import type { MonetisationReadiness } from '../billing/offer-service.js';
+import type { JobQueueInspectionPort } from '../jobs/inspection.js';
+import { UnobservedJobQueues } from '../jobs/inspection.js';
+import type { OperationalControlReader } from '../operations/controls.js';
+import { DefaultControlReader } from '../operations/controls.js';
+import type { OperationsService } from '../operations/service.js';
+import { AdminAccountDirectory } from './account-directory.js';
+import { AdminActivityDirectory } from './activity-directory.js';
 import { AdminBillingRoutes } from './billing-routes.js';
+import {
+  AdminInsightRoutes,
+  type SessionRevocationPort,
+} from './insight-routes.js';
+import { AdminLiveDirectory } from './live-directory.js';
+import { AdminOperationsHealthDirectory } from './operations-health-directory.js';
+import { AdminOperatorRoutes } from './operator-routes.js';
+import {
+  AdminPlatformRoutes,
+  type DependencyReadinessPort,
+} from './platform-routes.js';
+import { AdminPublicEntryDirectory } from './public-entry-directory.js';
+import { AdminReconciliationDirectory } from './reconciliation-directory.js';
+import { AdminSearchDirectory } from './search-directory.js';
 import { AdminFinancialDirectory } from './financial-directory.js';
-import { AdminContextResolver } from './context.js';
+import {
+  AdminContextResolver,
+  UngrantedOperatorStanding,
+  type OperatorStandingPort,
+} from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
 import { AdminMediaRoutes } from './media-routes.js';
 import { AdminOperationsDirectory } from './operations-directory.js';
@@ -50,6 +75,16 @@ export interface AdminRuntime {
    * records. Every one is a GET, and the module has no service to write with.
    */
   readonly operationsRoutes: AdminOperationsRoutes;
+  /**
+   * The reads an operator uses to find something and understand who it happened
+   * to: the composed activity stream, one person's timeline, the identifier
+   * resolver, the account record, and the one command that follows from them.
+   */
+  readonly insightRoutes: AdminInsightRoutes | undefined;
+  /** The control plane: standing, grants, controls, and the operator audit. */
+  readonly operatorRoutes: AdminOperatorRoutes | undefined;
+  /** Platform health, live operations, money reconciliation, public entry. */
+  readonly platformRoutes: AdminPlatformRoutes;
   readonly routes: AdminRoutes;
   readonly service: AdminCreatorService;
 }
@@ -119,6 +154,40 @@ export function createAdminRuntime(input: {
   readonly moderation: ModerationService;
   /** TRUST & SAFETY's one writer of enforcement records. */
   readonly safety: EnforcementAuthority;
+  /**
+   * OPERATIONS' answer to "what may this operator do".
+   *
+   * Optional so a composition can be assembled without a control plane, and
+   * fail-closed when it is absent: no grant store means no capabilities, which
+   * refuses every privileged route rather than admitting every operator to all
+   * of them.
+   */
+  readonly standing?: OperatorStandingPort;
+  /**
+   * OPERATIONS' service, where a control plane is composed.
+   *
+   * Absent leaves the control-plane routes off the runtime entirely rather than
+   * present and broken — the application answers `503` for a route whose runtime
+   * is missing, after refusing the audience, which is the order every operator
+   * route in this codebase follows.
+   */
+  readonly operations?: OperationsService;
+  /** The reader LIVE also consults, so a screen and the code cannot disagree. */
+  readonly controls?: OperationalControlReader;
+  /** AUTH's own revocation, so a security event commits with the revocation. */
+  readonly sessions?: SessionRevocationPort;
+  /** BullMQ counters, where this process holds a queue client. */
+  readonly jobs?: JobQueueInspectionPort;
+  /**
+   * Every dependency's readiness, resolved where configuration actually is.
+   *
+   * Optional, and an absent one reports nothing rather than reporting health.
+   * A composition that never wired this must not answer "everything is fine"
+   * for eight subsystems it was never given a way to ask about.
+   */
+  readonly dependencyReadiness?: DependencyReadinessPort;
+  readonly environment: 'local' | 'test' | 'staging' | 'production';
+  readonly publicWebOrigin?: string | undefined;
 }): AdminRuntime {
   const now = input.now ?? (() => new Date());
   const directory = new AdminCreatorDirectory(input.database, input.profiles);
@@ -132,7 +201,18 @@ export function createAdminRuntime(input: {
     now,
     profiles: input.profiles,
   });
-  const adminContext = new AdminContextResolver({ caller: input.caller, now });
+  // No standing port means no control plane in this composition, and an
+  // operator with no capabilities. Fail closed: a runtime assembled without
+  // OPERATIONS must refuse every privileged route rather than admit everybody
+  // to it, which is what an "admin = true" default would have done.
+  const adminContext = new AdminContextResolver({
+    caller: input.caller,
+    now,
+    standing: input.standing ?? new UngrantedOperatorStanding(),
+  });
+  const controls = input.controls ?? new DefaultControlReader();
+  const operations = input.operations;
+  const sessions = input.sessions;
   return {
     adminContext,
     billingRoutes: new AdminBillingRoutes({
@@ -172,6 +252,48 @@ export function createAdminRuntime(input: {
     operationsRoutes: new AdminOperationsRoutes({
       adminContext,
       operations: new AdminOperationsDirectory({
+        database: input.database,
+        now,
+      }),
+    }),
+    insightRoutes:
+      operations === undefined || sessions === undefined
+        ? undefined
+        : new AdminInsightRoutes({
+            accounts: new AdminAccountDirectory(input.database),
+            activity: new AdminActivityDirectory(input.database),
+            adminContext,
+            now,
+            operations,
+            search: new AdminSearchDirectory(input.database),
+            sessions,
+          }),
+    operatorRoutes:
+      operations === undefined
+        ? undefined
+        : new AdminOperatorRoutes({
+            adminContext,
+            environment: input.environment,
+            now,
+            operations,
+          }),
+    platformRoutes: new AdminPlatformRoutes({
+      adminContext,
+      controls,
+      environment: input.environment,
+      health: new AdminOperationsHealthDirectory(input.database),
+      jobs: input.jobs ?? new UnobservedJobQueues(),
+      live: new AdminLiveDirectory({ database: input.database, now }),
+      now,
+      publicEntry: new AdminPublicEntryDirectory({
+        database: input.database,
+        now,
+      }),
+      ...(input.publicWebOrigin === undefined
+        ? {}
+        : { publicWebOrigin: input.publicWebOrigin }),
+      readiness: input.dependencyReadiness ?? (() => Promise.resolve([])),
+      reconciliation: new AdminReconciliationDirectory({
         database: input.database,
         now,
       }),

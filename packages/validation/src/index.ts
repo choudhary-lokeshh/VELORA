@@ -106,6 +106,31 @@ import {
   moderationTriageRequestSchema,
 } from './admin.js';
 import {
+  activityDomainSchema,
+  activityTypeSchema,
+  operatorActionNameSchema,
+  operatorActionOutcomeSchema,
+  adminAccountDetailResponseSchema,
+  adminActivityResponseSchema,
+  adminControlListResponseSchema,
+  adminControlRequestSchema,
+  adminControlResponseSchema,
+  adminLiveEncounterResponseSchema,
+  adminLiveStateResponseSchema,
+  adminOperationsStateResponseSchema,
+  adminOperatorActionListResponseSchema,
+  adminOperatorListResponseSchema,
+  adminOperatorResponseSchema,
+  adminOperatorRoleRequestSchema,
+  adminOperatorRoleResponseSchema,
+  adminPublicEntryResponseSchema,
+  adminReconciliationResponseSchema,
+  adminSearchResponseSchema,
+  adminSessionRevocationRequestSchema,
+  adminSessionRevocationResponseSchema,
+  adminWalletResponseSchema,
+} from './operations.js';
+import {
   clubAccessListResponseSchema,
   clubDetailResponseSchema,
   clubIdSchema,
@@ -261,6 +286,7 @@ import {
 } from './auth.js';
 
 export * from './admin.js';
+export * from './operations.js';
 export * from './ai.js';
 export * from './auth.js';
 export * from './billing.js';
@@ -358,8 +384,24 @@ export const apiRoutePaths = {
   adminMediaPurge: '/v1/admin/media/purge',
   adminMediaState: '/v1/admin/media/state',
   adminMembershipRevocation: '/v1/admin/creators/membership-revocation',
+  adminAccountDetail: '/v1/admin/accounts/detail',
+  adminAccountSessionRevocation: '/v1/admin/accounts/session-revocation',
+  adminAccountTimeline: '/v1/admin/accounts/timeline',
+  adminActivity: '/v1/admin/activity',
+  adminControls: '/v1/admin/controls',
+  adminLiveEncounter: '/v1/admin/live/encounter',
+  adminLiveState: '/v1/admin/live/state',
   adminNotificationDelivery: '/v1/admin/notifications/delivery',
+  adminOperationsState: '/v1/admin/operations/state',
+  adminOperator: '/v1/admin/operator',
+  adminOperatorActions: '/v1/admin/operator-actions',
+  adminOperatorRole: '/v1/admin/operators/role',
+  adminOperators: '/v1/admin/operators',
   adminOverview: '/v1/admin/overview',
+  adminPublicEntry: '/v1/admin/public-entry',
+  adminReconciliation: '/v1/admin/commerce/reconciliation',
+  adminSearch: '/v1/admin/search',
+  adminWallet: '/v1/admin/wallet',
   adminPayouts: '/v1/admin/payouts',
   adminNotificationState: '/v1/admin/notifications/state',
   adminRtcCall: '/v1/admin/rtc/call',
@@ -581,7 +623,26 @@ export const apiSchemas = {
   CreateCommercialOfferRequest: createCommercialOfferRequestSchema,
   PublishCommercialPriceRequest: publishCommercialPriceRequestSchema,
   RetireCommercialPriceRequest: retireCommercialPriceRequestSchema,
+  AdminAccountDetailResponse: adminAccountDetailResponseSchema,
   AdminAccountListResponse: adminAccountListResponseSchema,
+  AdminActivityResponse: adminActivityResponseSchema,
+  AdminControlListResponse: adminControlListResponseSchema,
+  AdminControlRequest: adminControlRequestSchema,
+  AdminControlResponse: adminControlResponseSchema,
+  AdminLiveEncounterResponse: adminLiveEncounterResponseSchema,
+  AdminLiveStateResponse: adminLiveStateResponseSchema,
+  AdminOperationsStateResponse: adminOperationsStateResponseSchema,
+  AdminOperatorActionListResponse: adminOperatorActionListResponseSchema,
+  AdminOperatorListResponse: adminOperatorListResponseSchema,
+  AdminOperatorResponse: adminOperatorResponseSchema,
+  AdminOperatorRoleRequest: adminOperatorRoleRequestSchema,
+  AdminOperatorRoleResponse: adminOperatorRoleResponseSchema,
+  AdminPublicEntryResponse: adminPublicEntryResponseSchema,
+  AdminReconciliationResponse: adminReconciliationResponseSchema,
+  AdminSearchResponse: adminSearchResponseSchema,
+  AdminSessionRevocationRequest: adminSessionRevocationRequestSchema,
+  AdminSessionRevocationResponse: adminSessionRevocationResponseSchema,
+  AdminWalletResponse: adminWalletResponseSchema,
   AdminAuditResponse: adminAuditResponseSchema,
   AdminClubListResponse: adminClubListResponseSchema,
   AdminCreatorListResponse: adminCreatorListResponseSchema,
@@ -779,6 +840,28 @@ export const apiQueryParameters = {
   stream: adminAuditStreamSchema,
   /** One support ticket by identifier. */
   ticketId: z.uuid(),
+  /** One operator action name, from the governed vocabulary. */
+  action: operatorActionNameSchema,
+  /** One operator session reference, for narrowing the audit to one person. */
+  actor: z.string().min(1).max(128),
+  /** One domain of the governed activity taxonomy. */
+  domain: activityDomainSchema,
+  /**
+   * How far back to read, in hours.
+   *
+   * A string because it arrives from a query, bounded because an unbounded
+   * window over eleven domains is a full scan, and checked again in the handler
+   * against the platform's own maximum.
+   */
+  hours: z.string().regex(/^[1-9][0-9]{0,3}$/u),
+  /** Whether an operator action applied, was refused, or failed. */
+  outcome: operatorActionOutcomeSchema,
+  /** One record an operator action was about. */
+  subjectId: z.string().min(1).max(128),
+  /** The exact identifier, handle, code, or reference an operator holds. */
+  term: z.string().min(1).max(128),
+  /** One activity type of the governed taxonomy. */
+  type: activityTypeSchema,
 } as const;
 export type ApiQueryParameterName = keyof typeof apiQueryParameters;
 
@@ -972,7 +1055,7 @@ const mediaDeliveryUnavailableResponse = {
 } as const;
 
 const liveDiscoveryUnavailableResponse = {
-  description: `Live discovery is not switched on in this environment, so nobody is admitted to the matching pool. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. It is a truthful statement about the platform rather than about the caller: no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
+  description: `Live discovery is not admitting anybody to the matching pool. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. Two conditions produce it and they are deliberately indistinguishable to a caller: live discovery is not switched on in this environment at all — no RTC provider is approved to carry a call between two strangers, and call retention, regional availability, and recording posture are undecided — or an operator has paused new searches, which admits nobody new and lets every encounter already running finish. Both are truthful statements about the platform rather than about the caller, and which one applies is an operator's business. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
   headers: { [retryAfterResponseHeader]: retryAfterHeader },
   schemaName: 'ApiError',
 } as const;
@@ -3374,6 +3457,423 @@ export const apiOperations = [
   },
   {
     method: 'get',
+    operationId: 'getAdminOperator',
+    path: apiRoutePaths.adminOperator,
+    responses: {
+      '200': {
+        description:
+          'What this operator may do, the role it came from, and whether it came from a granted role at all. Never anybody else’s capabilities.',
+        schemaName: 'AdminOperatorResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The one operator route that requires no capability, because it is how the console learns what to render. Answering it discloses nothing an operator could not discover by pressing every button: what they themselves may do. The reported source says whether capabilities came from a grant or from the local-test bootstrap, which staging and production refuse at startup — an operator must never mistake a development machine for production permissions.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminOperators',
+    path: apiRoutePaths.adminOperators,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this list',
+        name: 'cursor',
+      },
+      { description: 'Maximum grants to return', name: 'pageSize' },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Who holds which role, newest first, including revoked grants — a revoked grant is the evidence somebody held a capability during a window an incident happened in. Published with the catalogue of what each role can do.',
+        schemaName: 'AdminOperatorListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Requires operators.manage, which is the only capability whose holder is unbounded: an operator who can grant capabilities can grant themselves every other one. It is kept its own capability, held by one role, rather than folded into a general administrative idea.',
+  },
+  {
+    method: 'post',
+    operationId: 'setAdminOperatorRole',
+    path: apiRoutePaths.adminOperatorRole,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'AdminOperatorRoleRequest',
+    responses: {
+      '200': {
+        description:
+          'What actually happened: granted, revoked, or unchanged, with the grant that now stands. Never an optimistic acknowledgement.',
+        schemaName: 'AdminOperatorRoleResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Granting and revoking are one route because they are the same decision about the same person, and splitting them would let a console revoke without a reason. A grant replaces whatever the operator held, in one transaction, so there is no instant in which they hold two roles or none. Every outcome writes an audit row.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminActivity',
+    path: apiRoutePaths.adminActivity,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this stream',
+        name: 'cursor',
+      },
+      { description: 'Maximum entries to return', name: 'pageSize' },
+      {
+        description: 'Restrict to one domain of the governed taxonomy',
+        name: 'domain',
+      },
+      {
+        description: 'Restrict to one activity type of the governed taxonomy',
+        name: 'type',
+      },
+      {
+        description:
+          'How many hours back to read. Bounded by the platform; the answered window is always reported',
+        name: 'hours',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'What happened across the platform in a bounded window, newest first, composed from the domain-owned rows that already record each fact. Each entry carries a type, a domain, the identifiers involved, and one short enumerated word of detail — a state, a reason code, a failure class. There is no payload field.',
+        schemaName: 'AdminActivityResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'There is no activity table behind this. Every entry is read from the domain that owns the record — AUTH’s security event, LIVE’s encounter, WALLET’s transaction — so a retried action produces one entry or none, retention follows each domain’s own, and the stream can never disagree with the record. The cost is that a fact nobody persists cannot be shown, which is stated rather than papered over.',
+  },
+  {
+    method: 'get',
+    operationId: 'findAdminSubject',
+    path: apiRoutePaths.adminSearch,
+    requestQuery: [
+      {
+        description:
+          'The exact identifier, handle, invitation code, or support reference an operator already holds',
+        name: 'term',
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'Every record this exact value could be, as pointers: a kind, an identifier, and a word of context. Following one opens the screen that owns that record, where that screen’s own capability check applies.',
+        schemaName: 'AdminSearchResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'It resolves; it does not suggest. There is no prefix matching and no autocomplete, because a suggestion list over identifiers is an enumeration tool — type three characters, learn what exists. A value’s shape decides which tables are asked, so a handle never probes the payment table, and a wrong guess reveals only that it was wrong.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminAccountDetail',
+    path: apiRoutePaths.adminAccountDetail,
+    requestQuery: [
+      {
+        description: 'The account to describe',
+        name: 'accountId',
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One account in operational terms: lifecycle, sessions, devices, live state and recent encounters, safety counts, connection counts, wallet position, commerce counts, support counts, acquisition origin, and creator capability where there is one.',
+        schemaName: 'AdminAccountDetailResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'What is absent is the design: no display name, no biography, no photograph, no language, no availability, no message, no report narrative, no ticket text, no push token, and no payment instrument. Every field present was chosen by asking what an operator would do differently if they knew it. Sensitive material is reached through the case, ticket, or moderation record that justifies it — a different route, a different capability, its own audit.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminAccountTimeline',
+    path: apiRoutePaths.adminAccountTimeline,
+    requestQuery: [
+      {
+        description: 'The account whose timeline to read',
+        name: 'accountId',
+        required: true,
+      },
+      {
+        description: 'Opaque forward-only position in this timeline',
+        name: 'cursor',
+      },
+      { description: 'Maximum entries to return', name: 'pageSize' },
+      {
+        description: 'How many hours back to read, bounded by the platform',
+        name: 'hours',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One person’s coherent history across every domain that recorded something about them, newest first: account created, profile completed, invitation attributed, searches, encounters, connections, conversations, reports, enforcement, tickets, and coin movements.',
+        schemaName: 'AdminActivityResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The same composed read as the platform stream, narrowed to one person by both identifiers they are known by — AUTH keeps its own account identifier and USERS keeps another, and asking with only one would silently omit half the timeline. Sensitive contents stay hidden exactly as they do in the stream.',
+  },
+  {
+    method: 'post',
+    operationId: 'revokeAdminAccountSessions',
+    path: apiRoutePaths.adminAccountSessionRevocation,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'AdminSessionRevocationRequest',
+    responses: {
+      '200': {
+        description:
+          'How many browser sessions and refresh families were ended. Both figures are what the database actually changed, not what was requested.',
+        schemaName: 'AdminSessionRevocationResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Signs every device of one account out. It goes through AUTH’s own revocation service, so it writes AUTH’s security event beside the revocation in the same transaction, and it records an administrative reason rather than pretending the person logged themselves out. Repeating it is safe and ends nothing further.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminControls',
+    path: apiRoutePaths.adminControls,
+    responses: {
+      '200': {
+        description:
+          'Every operational control, its current value, who last changed it and why, the version a write must present, and how long a change takes to reach every process.',
+        schemaName: 'AdminControlListResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Every control listed here is read by server code on the path it governs. There is no control that only a client consults, because a hidden button is not a disabled feature. A control nobody has ever set reports version zero and the default the platform shipped with, so this migration changed no behaviour when it ran.',
+  },
+  {
+    method: 'post',
+    operationId: 'setAdminControl',
+    path: apiRoutePaths.adminControls,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'AdminControlRequest',
+    responses: {
+      '200': {
+        description:
+          'Applied, or a conflict — and in both cases the control that now stands, so a console can show the operator what they were racing rather than an error with no state in it.',
+        schemaName: 'AdminControlResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'A compare-and-set with a required reason. The version the operator read is matched on the update, so the second of two people looking at the same screen is refused rather than silently overwriting a change they never saw. Every outcome, including a refusal, writes an audit row.',
+  },
+  {
+    method: 'get',
+    operationId: 'listAdminOperatorActions',
+    path: apiRoutePaths.adminOperatorActions,
+    requestQuery: [
+      {
+        description: 'Opaque forward-only position in this record',
+        name: 'cursor',
+      },
+      { description: 'Maximum actions to return', name: 'pageSize' },
+      { description: 'Restrict to one action name', name: 'action' },
+      {
+        description: 'Restrict to one operator session reference',
+        name: 'actor',
+      },
+      {
+        description: 'Restrict to applied, refused, or failed',
+        name: 'outcome',
+      },
+      { description: 'Restrict to one subject identifier', name: 'subjectId' },
+      {
+        description: 'How many hours back to read, bounded by the platform',
+        name: 'hours',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'What operators did, newest first: who, which capability authorised it, what it was about, what it was changing from and to, why, and whether it applied, was refused, or failed.',
+        schemaName: 'AdminOperatorActionListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Append-only: there is no route, service method, or repository method anywhere in this API that updates or deletes one of these rows. A refusal is recorded as a row rather than as an absence, because an operator who tried something and was told no is a thing an incident review needs to see.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminOperationsState',
+    path: apiRoutePaths.adminOperationsState,
+    requestQuery: [
+      {
+        description: 'How many hours back to count failures, bounded',
+        name: 'hours',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'What is stuck and what is failing: every domain outbox by state with the age of its oldest undelivered fact, failures grouped by domain and class, job queue counters, and each dependency’s readiness.',
+        schemaName: 'AdminOperationsStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Every figure comes from a durable row a domain wrote because something went wrong, so a count is a set of records an operator can go and open. A queue nobody could reach reports unreachable with absent counts rather than zeroes, and a provider seam nobody has approved reports unconfigured rather than unhealthy — the two are different problems with different answers.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminLiveState',
+    path: apiRoutePaths.adminLiveState,
+    requestQuery: [
+      {
+        description: 'How many hours back to count, bounded by the platform',
+        name: 'hours',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'The matching pool in operational terms: participations by state over the whole table, encounters currently running, starts and end reasons inside the window, open paid narrowings by kind, the oldest still-waiting search, and whether new searches are currently admitted.',
+        schemaName: 'AdminLiveStateResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'There is deliberately no "users online". A count of people the platform believes are connected is the one number nothing can know truthfully — a closed browser, a sleeping phone and a dropped tunnel look identical from here — and inventing it would make every honest number beside it worth less. What is published is what the platform wrote down.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminLiveEncounter',
+    path: apiRoutePaths.adminLiveEncounter,
+    requestQuery: [
+      {
+        description: 'The encounter to describe',
+        name: 'encounterId',
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One encounter: its two participants as opaque identifiers, when it started and stopped and why, the RTC session that carried it, whether either person asked to keep talking, whether either reported or blocked the other, and whether a paid narrowing was involved.',
+        schemaName: 'AdminLiveEncounterResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'State and health, never people. There is no video, no audio, no transcript, and no live chat here, and no route in this API that would reach any of them for an operator. Watching somebody’s call is not a feature this product has.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminWallet',
+    path: apiRoutePaths.adminWallet,
+    requestQuery: [
+      {
+        description: 'The account whose coin position to read',
+        name: 'accountId',
+        required: true,
+      },
+      {
+        description: 'Opaque forward-only position in this ledger',
+        name: 'cursor',
+      },
+    ],
+    responses: {
+      '200': {
+        description:
+          'One account’s coin position and the journal behind it: the stored available and reserved balances, the sum the entries themselves imply, and a page of those entries newest first.',
+        schemaName: 'AdminWalletResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The stored balance and the journal total are both published, because the useful operator question is not "what is the balance" but "does the balance follow from what happened". Every amount is a decimal string the whole way to the browser: a coin balance is an exact integer that outgrows what a JSON number carries safely.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminReconciliation',
+    path: apiRoutePaths.adminReconciliation,
+    responses: {
+      '200': {
+        description:
+          'Every money invariant this platform can check, checked: unbalanced ledger transactions, balances that disagree with their entries, payments stuck in a non-terminal state, expired coin holds still reserved, and provider events nothing has processed. Each finding carries its own definition and identifiers an operator can open.',
+        schemaName: 'AdminReconciliationResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Findings, not alarms. Each one is a query with a published definition rather than a threshold somebody guessed, and each identifies specific rows — there is no health percentage and no severity score anywhere in it. Nothing here writes, corrects, or adjusts: finding a discrepancy and deciding what to do about it are different jobs with different consequences.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAdminPublicEntry',
+    path: apiRoutePaths.adminPublicEntry,
+    responses: {
+      '200': {
+        description:
+          'Whether VELORA has a way in: the canonical public origin if one is configured, the environment, whether anything is indexable at all, and how many creator pages, clubs, and scheduled live windows are actually reachable.',
+        schemaName: 'AdminPublicEntryResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'The two conditions that decide indexability are configured rather than stored, and both are reported rather than inferred from a page — an operator who cannot see them has no way to tell "we are not indexed" from "we are indexed and nobody is coming". There is no rank, impression, click, or traffic figure: this platform has no search console and no analytics provider, and a number invented to fill the space would be the one thing here nobody could check.',
+  },
+  {
+    method: 'get',
     operationId: 'getAdminFinancialState',
     path: apiRoutePaths.adminBillingState,
     responses: {
@@ -4979,6 +5479,11 @@ export const apiOperations = [
       },
       ...consumerAuthenticationResponses,
       ...sharedErrorResponses,
+      '503': {
+        description: `An operator has paused invitation minting. The body is an ApiError with code ${productErrorCodes.dependencyUnavailable}. It says nothing about the caller: every link already shared keeps working, including one this account already holds, and the read route still answers it. This status is also the shared capacity refusal, with code ${apiErrorCodes.serviceUnavailable}; the code tells the two apart.`,
+        headers: { [retryAfterResponseHeader]: retryAfterHeader },
+        schemaName: 'ApiError',
+      },
     },
     security: apiSecurityRequirements.cookieOrBearer,
     summary:

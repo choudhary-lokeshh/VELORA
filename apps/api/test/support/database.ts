@@ -109,6 +109,12 @@ const truncationRoots = [
   'growth_signup_attributions',
   'growth_invites',
   'growth_live_windows',
+  // OPERATIONS references an operator by opaque AUTH reference and a subject by
+  // whatever kind the action named, in both cases with no foreign key. Nothing
+  // cascades into any of the three, so all three are their own roots.
+  'operations_controls',
+  'operations_operator_actions',
+  'operations_operator_grants',
   // PAYOUTS' book and its records. Entries cascade from neither journal table
   // — the composite currency keys carry `no action` — so all three are listed,
   // entries first, and the domain's own records follow.

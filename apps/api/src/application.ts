@@ -2,6 +2,7 @@ import { Elysia } from 'elysia';
 import {
   loadServerConfig,
   localTestMediaStorage,
+  localTestOperatorBootstrap,
   localTestWebCoinAcquisition,
   matureContentEnabled,
   type ServerConfig,
@@ -28,6 +29,17 @@ import {
 import { createAuthRuntime, type AuthRuntime } from './auth/composition.js';
 import { createAiRuntime, type AiRuntime } from './ai/composition.js';
 import { createAdminRuntime, type AdminRuntime } from './admin/composition.js';
+import {
+  createOperationsRuntime,
+  type OperationsRuntime,
+} from './operations/composition.js';
+import {
+  BullMqJobQueueInspector,
+  UnobservedJobQueues,
+  type JobQueueInspectionPort,
+} from './jobs/inspection.js';
+import { notificationsQueueName } from './notifications/jobs.js';
+import { resolveDependencyReadiness } from './admin/readiness.js';
 import { NotificationOperations } from './notifications/operations.js';
 import {
   createBillingRuntime,
@@ -206,6 +218,16 @@ export interface ApplicationDependencies {
    */
   readonly growth?: GrowthRuntime;
   /**
+   * OPERATIONS: the operator control plane.
+   *
+   * Present on the same terms as `growth`: every composition that owns its
+   * database. Absent, an operator holds no capabilities at all and every
+   * privileged route refuses — which is the correct fail-closed reading of "no
+   * grant store was supplied", and the opposite of what an "admin = true"
+   * default would have done.
+   */
+  readonly operations?: OperationsRuntime;
+  /**
    * Present on the same terms as `support`: every composition that owns its
    * database. A test that injects its own runtimes may omit it, and then
    * answers `503` on the closure routes rather than publishing ones wired to a
@@ -286,8 +308,28 @@ export function createApplication(
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
   const injectedGrowth = options.dependencies?.growth;
+  const injectedOperations = options.dependencies?.operations;
   const injectedSupport = options.dependencies?.support;
   const injectedAccountClosure = options.dependencies?.accountClosure;
+
+  /**
+   * A queue client, only where this process owns its Redis dependencies.
+   *
+   * Every integration harness in this repository injects those rather than
+   * opening them, and a default that connected anyway would make a suite depend
+   * on a broker it never asked for. Such a composition reports no queues at all
+   * rather than reporting healthy ones nothing reached.
+   */
+  const jobQueues: JobQueueInspectionPort =
+    options.dependencies?.queueRedis === undefined
+      ? new BullMqJobQueueInspector(config, [notificationsQueueName])
+      : new UnobservedJobQueues();
+  if (jobQueues instanceof BullMqJobQueueInspector) {
+    // Owned, therefore closed. These clients hold Redis connections, and a
+    // connection nobody closes keeps the process alive after `SIGTERM` — a
+    // shutdown that hangs rather than a leak somebody notices later.
+    ownedDependencies.push(jobQueues);
+  }
 
   let database: HealthDependency;
   let ownedDatabaseService: DatabaseService | undefined;
@@ -309,6 +351,7 @@ export function createApplication(
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
   let growth: GrowthRuntime | undefined;
+  let operations: OperationsRuntime | undefined;
   let support: SupportRuntime | undefined;
   let accountClosure: AccountClosureRuntime | undefined;
   if (injectedDatabase === undefined) {
@@ -323,6 +366,23 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
+    // OPERATIONS immediately after AUTH and before everything else, because
+    // three domains consult it on their own paths and one of them is the
+    // resolver every operator request goes through. It depends on nothing but
+    // the database and one configuration value.
+    // Bound to a `const` as well as to the outer `let`, so the closures below
+    // capture a value the compiler knows is present. A reassignable binding read
+    // inside a callback is only ever "possibly undefined" to a checker, and
+    // widening the closures to cope would have hidden a real absence.
+    const operationsRuntime =
+      injectedOperations ??
+      createOperationsRuntime({
+        bootstrapOperators:
+          config.ADMIN_OPERATOR_BOOTSTRAP === localTestOperatorBootstrap,
+        database: ownedDatabase.database,
+        logger,
+      });
+    operations = operationsRuntime;
     identity =
       injectedIdentity ??
       createIdentityRuntime({
@@ -640,6 +700,13 @@ export function createApplication(
             discovery.service.signalIntroduction(actor, counterpartId),
         },
         logger,
+        // The kill switch, adapted to the one question LIVE asks. An adapter
+        // rather than the reader itself, so this domain never learns that a
+        // control store exists or what else is switchable.
+        controls: {
+          searchAdmitted: () =>
+            operationsRuntime.controls.isEnabled('live.search'),
+        },
         // Supplied only where a ledger actually exists. Its absence means no
         // search is ever narrowed by a paid preference and nothing is ever
         // charged, which is the whole product in every deployed environment.
@@ -713,6 +780,29 @@ export function createApplication(
         appeals: safety.appeals,
         moderation: safety.moderation,
         safety: safety.authority,
+        // The control plane, handed over as four narrow things rather than as a
+        // runtime: what an operator may do, what the platform has been told to
+        // do, the audit those two write, and AUTH's own revocation. ADMIN never
+        // learns that OPERATIONS owns tables.
+        controls: operationsRuntime.controls,
+        operations: operationsRuntime.service,
+        standing: operationsRuntime.service,
+        environment: config.APP_ENV,
+        // The readiness projection is built here because this is the only place
+        // that holds both the health handles and the configuration that decides
+        // whether a seam is unconfigured rather than unhealthy.
+        dependencyReadiness: () =>
+          resolveDependencyReadiness({
+            config,
+            database,
+            ephemeralRedis,
+            queueRedis,
+          }),
+        jobs: jobQueues,
+        ...(config.WEB_PUBLIC_ORIGIN === undefined
+          ? {}
+          : { publicWebOrigin: config.WEB_PUBLIC_ORIGIN }),
+        sessions: auth.service,
       });
     // SUPPORT after ADMIN, because it needs the operator context ADMIN builds
     // and the consumer context USERS builds, and it hands nothing back to
@@ -731,6 +821,18 @@ export function createApplication(
       createGrowthRuntime({
         adminContext: admin.adminContext,
         consumerContext: users.consumerContext,
+        // Two controls, each adapted to one question. Minting is governed
+        // because a link is the thing abuse mints; publishing is governed
+        // because a window is the thing an operator withdraws. Redeeming an
+        // existing link is deliberately not governed: the code is already in
+        // somebody's message, and breaking it would punish the person who
+        // shared it rather than the abuse.
+        controls: {
+          invitationsAdmitted: () =>
+            operationsRuntime.controls.isEnabled('growth.invitations'),
+          windowsPublished: () =>
+            operationsRuntime.controls.isEnabled('growth.scheduled_windows'),
+        },
         database: ownedDatabase.database,
         logger,
       });
@@ -813,6 +915,7 @@ export function createApplication(
     payouts = injectedPayouts;
     safety = injectedSafety;
     growth = injectedGrowth;
+    operations = injectedOperations;
     support = injectedSupport;
     accountClosure = injectedAccountClosure;
   }
@@ -863,6 +966,7 @@ export function createApplication(
     safety,
     ...(accountClosure === undefined ? {} : { accountClosure }),
     ...(growth === undefined ? {} : { growth }),
+    ...(operations === undefined ? {} : { operations }),
     ...(support === undefined ? {} : { support }),
     users,
   };
@@ -1017,7 +1121,7 @@ export function createApplication(
     run: (runtime: GrowthRuntime, input: RouteRequest) => Promise<RouteResult>,
   ): (input: RouteRequest) => Promise<RouteResult> {
     return async (input) => {
-      const operator = await admin.adminContext.resolve(input);
+      const operator = await admin.adminContext.resolveStanding(input);
       if ('failure' in operator) return operator.failure;
       if (growth === undefined) {
         return routeFailure(
@@ -1045,11 +1149,64 @@ export function createApplication(
    * refuses a wrong audience and a stale assurance before any lookup happens.
    * Availability is answered after that, to a caller who was allowed to ask.
    */
+  /**
+   * Wraps one control-plane handler, refusing the audience first.
+   *
+   * The same order every other operator route follows: resolve the operator,
+   * then answer availability. A composition with no OPERATIONS runtime has no
+   * grant store, so `resolveStanding` refuses everybody who is not an operator
+   * before this ever reports that the control plane is missing — availability
+   * is a fact about the platform, and a caller with no business on the route
+   * does not get told it.
+   */
+  function operatorRoute(
+    run: (
+      routes: NonNullable<AdminRuntime['operatorRoutes']>,
+      input: RouteRequest,
+    ) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      const operator = await admin.adminContext.resolveStanding(input);
+      if ('failure' in operator) return operator.failure;
+      const routes = admin.operatorRoutes;
+      if (routes === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(routes, input);
+    };
+  }
+
+  /** The insight reads, on exactly the same terms. */
+  function insightRoute(
+    run: (
+      routes: NonNullable<AdminRuntime['insightRoutes']>,
+      input: RouteRequest,
+    ) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      const operator = await admin.adminContext.resolveStanding(input);
+      if ('failure' in operator) return operator.failure;
+      const routes = admin.insightRoutes;
+      if (routes === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(routes, input);
+    };
+  }
+
   function adminSupportRoute(
     run: (runtime: SupportRuntime, input: RouteRequest) => Promise<RouteResult>,
   ): (input: RouteRequest) => Promise<RouteResult> {
     return async (input) => {
-      const operator = await admin.adminContext.resolve(input);
+      const operator = await admin.adminContext.resolveStanding(input);
       if ('failure' in operator) return operator.failure;
       if (support === undefined) {
         return routeFailure(
@@ -1836,6 +1993,96 @@ export function createApplication(
     .get(
       apiRoutePaths.adminAudit,
       admitted(async (input) => admin.operationsRoutes.listAudit(input)),
+    )
+    .get(
+      apiRoutePaths.adminOperator,
+      admitted(
+        operatorRoute(async (routes, input) => routes.getOperator(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminOperators,
+      admitted(
+        operatorRoute(async (routes, input) => routes.listOperators(input)),
+      ),
+    )
+    .post(
+      apiRoutePaths.adminOperatorRole,
+      admitted(
+        operatorRoute(async (routes, input) => routes.setOperatorRole(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminControls,
+      admitted(
+        operatorRoute(async (routes, input) => routes.listControls(input)),
+      ),
+    )
+    .post(
+      apiRoutePaths.adminControls,
+      admitted(
+        operatorRoute(async (routes, input) => routes.setControl(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminOperatorActions,
+      admitted(
+        operatorRoute(async (routes, input) => routes.listActions(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminActivity,
+      admitted(
+        insightRoute(async (routes, input) => routes.listActivity(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminSearch,
+      admitted(
+        insightRoute(async (routes, input) => routes.findSubject(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminAccountDetail,
+      admitted(
+        insightRoute(async (routes, input) => routes.getAccountDetail(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminAccountTimeline,
+      admitted(
+        insightRoute(async (routes, input) => routes.getAccountTimeline(input)),
+      ),
+    )
+    .post(
+      apiRoutePaths.adminAccountSessionRevocation,
+      admitted(
+        insightRoute(async (routes, input) => routes.revokeSessions(input)),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminOperationsState,
+      admitted(async (input) => admin.platformRoutes.getOperationsState(input)),
+    )
+    .get(
+      apiRoutePaths.adminLiveState,
+      admitted(async (input) => admin.platformRoutes.getLiveState(input)),
+    )
+    .get(
+      apiRoutePaths.adminLiveEncounter,
+      admitted(async (input) => admin.platformRoutes.getLiveEncounter(input)),
+    )
+    .get(
+      apiRoutePaths.adminWallet,
+      admitted(async (input) => admin.platformRoutes.getWallet(input)),
+    )
+    .get(
+      apiRoutePaths.adminReconciliation,
+      admitted(async (input) => admin.platformRoutes.getReconciliation(input)),
+    )
+    .get(
+      apiRoutePaths.adminPublicEntry,
+      admitted(async (input) => admin.platformRoutes.getPublicEntry(input)),
     )
     .get(
       apiRoutePaths.discoveryCandidates,

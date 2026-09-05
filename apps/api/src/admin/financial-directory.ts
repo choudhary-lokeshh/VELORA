@@ -8,6 +8,7 @@ import {
   billingRefunds,
   billingSubscriptions,
 } from '../billing/schema.js';
+import { bounded } from '../database/fan-out.js';
 import type { DatabaseHandle } from '../database/executor.js';
 import { payoutsInstructions } from '../payouts/schema.js';
 
@@ -70,14 +71,18 @@ export class AdminFinancialDirectory {
       payouts,
       openDisputeTotals,
       payableTotals,
-    ] = await Promise.all([
-      this.paymentStates(),
-      this.refundStates(),
-      this.disputeStates(),
-      this.subscriptionStates(),
-      this.payoutStates(),
-      this.openDisputes(),
-      this.payable(),
+      // Seven reads, three at a time. ADR-0019 sizes the pool at ten and its
+      // admission bound counts requests rather than queries, so a screen taking
+      // seven connections is invisible to it — and this one runs beside other
+      // operator reads. See `../database/fan-out.ts`.
+    ] = await bounded([
+      async () => this.paymentStates(),
+      async () => this.refundStates(),
+      async () => this.disputeStates(),
+      async () => this.subscriptionStates(),
+      async () => this.payoutStates(),
+      async () => this.openDisputes(),
+      async () => this.payable(),
     ]);
     return {
       disputes,

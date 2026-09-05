@@ -14,13 +14,19 @@ Admin does not expose plaintext passwords, raw card data, encryption keys, secre
 
 Expected areas are work queues, global scoped search, users, creators/clubs/content, moderation/reports/appeals, support, billing/refunds/disputes, payouts/holds, country/features/configuration, analytics, audit review, incidents, and platform health. Navigation is role- and scope-filtered; hidden navigation does not replace server authorization.
 
-**As built** ([ADR-0036](../decisions/ADR-0036-platform-admin-operations-console.md)): six destinations — Overview, Queues, Creators, Accounts, Money, Platform — each with areas that are peers of one another and addresses in their own right. A record returns to the area it was found in rather than to the destination root, because that is where the operator's filter and position still are. Nothing in the navigation is a permission: the server refuses at every route regardless of what is on the screen.
+**As built** ([ADR-0036](../decisions/ADR-0036-platform-admin-operations-console.md), extended by [ADR-0048](../decisions/ADR-0048-operator-control-plane-and-composed-activity.md)): seven destinations — Overview, Queues, Creators, Accounts, Money, Activity, Platform — each with areas that are peers of one another and addresses in their own right. A record returns to the area it was found in rather than to the destination root, because that is where the operator's filter and position still are.
+
+Activity is a destination rather than a panel because an operator working an incident lives in it. Accounts gains an account record, reached from the list, from a search, from an encounter, and from almost every activity row. Money gains Reconciliation. Platform gains Operations, Live, Public entry, Controls, and Operators.
+
+**Nothing in the navigation is a permission, and neither is a rendered control.** The console reads what the operator may do from `GET /v1/admin/operator` and draws accordingly — and fails closed while that answer is unknown — but the server checks the capability again at every route, including on a press made after the capability was revoked. Hiding a button has never been what stops a request.
+
+The environment is printed on every screen, from the server's own word for it rather than the browser's build. Production carries a colour; local and test are deliberately quiet, because a banner that shouts on the environment somebody works in all day is one they stop seeing on the one that matters.
 
 Screen/workflow authority comes from owning domain and operations documents. Exact information architecture, dense table patterns, dashboards, keyboard workflows, and visual design are `DESIGN REQUIRED`.
 
 ## Domains and cross-domain dependencies
 
-ADMIN owns role grants, privileged operation requests, approvals, and audit views. AUTH supplies authentication assurance; IDENTITY ASSURANCE owns verification evidence and exposes only privacy-minimized aggregates plus exact-reference reads in V1. Every target domain owns its data and transition. MODERATION owns case workflow; TRUST & SAFETY owns enforcement; BILLING/PAYOUTS own financial state; CREATORS/PRIVATE CLUBS own creator/club state; ANALYTICS owns metrics; observability owns operational telemetry. AI may assist in Phase 3 but cannot approve or execute.
+ADMIN owns privileged operation requests, approvals, and audit views, and composes the operator read models. OPERATIONS owns the capability grants those routes check, the operational controls the server obeys, and the append-only operator action log; see [OPERATIONS](../domains/operations.md). AUTH supplies authentication assurance; IDENTITY ASSURANCE owns verification evidence and exposes only privacy-minimized aggregates plus exact-reference reads in V1. Every target domain owns its data and transition. MODERATION owns case workflow; TRUST & SAFETY owns enforcement; BILLING/PAYOUTS own financial state; CREATORS/PRIVATE CLUBS own creator/club state; ANALYTICS owns metrics; observability owns operational telemetry. AI may assist in Phase 3 but cannot approve or execute.
 
 ## Authentication, permissions, and approvals
 

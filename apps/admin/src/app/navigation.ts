@@ -3,8 +3,8 @@ import type { IconName } from '../design/icons';
 /**
  * The operator's map of the platform.
  *
- * Six destinations, named for the work rather than for the domain that answers
- * it. `AGENTS.md` keeps backend architecture out of client responsibility, and
+ * Seven destinations, named for the work rather than for the domain that
+ * answers it. `AGENTS.md` keeps backend architecture out of client responsibility, and
  * a console with an item per backend module would be exactly that leak — which
  * is why "Billing", "Moderation", "Notifications", and "RTC" are not here.
  *
@@ -15,11 +15,16 @@ import type { IconName } from '../design/icons';
  * enforcement that acts on both. Accounts is the same for consumers, bounded to
  * the accounts the platform has itself decided are not in good standing.
  * Money is what the platform holds and every commercial record behind it.
+ * Activity is what has been happening, composed from the domains that own each
+ * record — it is a destination rather than a panel on Overview because an
+ * operator working an incident lives in it, filtering and paging, for as long
+ * as the incident lasts.
  * Platform is every subsystem's health in one place, because an operator asking
  * "is anything stuck" should ask once.
  *
  * The session sits under Access, reached from the foot of the navigation, so
- * the six destinations stay about the platform rather than about the operator.
+ * the seven destinations stay about the platform rather than about the
+ * operator.
  *
  * **Nothing here is a permission.** Which operator may do what is an open
  * decision; the server refuses at every route regardless, and a destination
@@ -39,6 +44,7 @@ export const destinations: readonly Destination[] = [
   { icon: 'users', id: 'creators', label: 'Creators', path: '/creators' },
   { icon: 'person', id: 'accounts', label: 'Accounts', path: '/accounts' },
   { icon: 'ledger', id: 'money', label: 'Money', path: '/money' },
+  { icon: 'clock', id: 'activity', label: 'Activity', path: '/activity' },
   { icon: 'gauge', id: 'platform', label: 'Platform', path: '/platform' },
 ];
 
@@ -88,6 +94,14 @@ export const moneyAreas: readonly Area[] = [
   { label: 'Payments', path: '/money/payments', title: 'Payments' },
   { label: 'Payouts', path: '/money/payouts', title: 'Payouts' },
   { label: 'Disputes', path: '/money/disputes', title: 'Disputes' },
+  // Reconciliation sits with Money rather than with Platform because every
+  // finding on it is about a payment, a hold, or a ledger — and the operator
+  // who acts on one is already here.
+  {
+    label: 'Reconciliation',
+    path: '/money/reconciliation',
+    title: 'Reconciliation',
+  },
 ];
 
 /**
@@ -101,6 +115,8 @@ export const moneyAreas: readonly Area[] = [
  */
 export const platformAreas: readonly Area[] = [
   { label: 'Media', path: '/platform', title: 'Media' },
+  { label: 'Operations', path: '/platform/operations', title: 'Operations' },
+  { label: 'Live', path: '/platform/live', title: 'Live' },
   {
     label: 'Notifications',
     path: '/platform/notifications',
@@ -108,7 +124,18 @@ export const platformAreas: readonly Area[] = [
   },
   { label: 'Calling', path: '/platform/rtc', title: 'Calling' },
   { label: 'Growth', path: '/platform/growth', title: 'Growth' },
+  {
+    label: 'Public entry',
+    path: '/platform/public-entry',
+    title: 'Public entry',
+  },
   { label: 'Identity', path: '/platform/identity', title: 'Identity' },
+  // Controls, operators, and the operator audit are the console operating
+  // itself. They sit under Platform with every other subsystem's health rather
+  // than in a destination of their own, because an operator reaching for a kill
+  // switch is already asking "what is wrong with the platform".
+  { label: 'Controls', path: '/platform/controls', title: 'Controls' },
+  { label: 'Operators', path: '/platform/operators', title: 'Operators' },
   { label: 'Security', path: '/platform/security', title: 'Security' },
 ];
 
@@ -126,7 +153,7 @@ export function isCurrent(pathname: string, path: string): boolean {
 /**
  * The destination one level up, when there is one.
  *
- * Only the six roots, the areas of each, and the access page are places
+ * Only the seven roots, the areas of each, and the access page are places
  * somebody arrives at. Everything under one of them is a record an operator
  * opened and has to be able to leave.
  *
@@ -140,6 +167,8 @@ const ancestry: readonly {
   readonly parent: string;
 }[] = [
   { of: /^\/queues\/[^/]+$/u, parent: '/queues' },
+  { of: /^\/accounts\/[^/]+$/u, parent: '/accounts' },
+  { of: /^\/platform\/live\/[^/]+$/u, parent: '/platform/live' },
   { of: /^\/money\/payments\/[^/]+$/u, parent: '/money/payments' },
   { of: /^\/creators\/clubs\/[^/]+$/u, parent: '/creators/clubs' },
 ];

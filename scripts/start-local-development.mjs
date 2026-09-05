@@ -141,6 +141,14 @@ function domainEnvironmentFor(label) {
         ]),
       ),
       VELORA_API_BASE_URL: mediaDeliveryOrigin,
+      // Where Consumer Web is actually answering in this run, told to the API
+      // so an operator's public-entry screen reports the address a developer is
+      // using rather than the loopback port in `.env`. It makes nothing
+      // indexable: that needs a production environment, and this is not one.
+      WEB_PUBLIC_ORIGIN: originFor(
+        localDomainSurfaces.find((each) => each.label === 'web') ??
+          localDomainSurfaces[0],
+      ),
     };
   }
   const surface = localDomainSurfaces.find((each) => each.label === label);
