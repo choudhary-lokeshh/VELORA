@@ -185,6 +185,7 @@ These are architecture/product gates, not legal advice:
 | [Platform health](operations/05-platform-health.md) | Health signals, degraded behavior, SLO/capacity direction |
 | [Media operations](operations/06-media-operations.md) | What each media backlog class means, what an operator may do about it, and what is deliberately not offered |
 | [Identity verification operations](operations/07-identity-verification-operations.md) | Privacy-minimized monitoring, callback backlog, bounded reconciliation recovery, expiry, incidents, and prohibited manual overrides |
+| [Closed-beta launch](operations/08-closed-beta-launch.md) | Launch-readiness matrix, what a beta session needs, stop conditions, feedback, severity, external blockers, and the ₹0 plan for the first hundred people |
 
 ## Engineering and decision authority
 

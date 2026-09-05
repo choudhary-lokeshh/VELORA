@@ -168,10 +168,24 @@ export function Landing({
         </ul>
       </nav>
 
+      {/*
+        What is still true about a product in development, and only what is.
+
+        This sentence used to end "calls carry no audio or video yet". That was
+        written before a live conversation carried anything and stopped being
+        true when the transport shipped: two people in a live encounter now see
+        and hear each other. Leaving it up told every first visitor that the one
+        thing the heading above promises does not work. What survives is the
+        claim that is still exactly true and that somebody deciding whether to
+        type something private deserves before they do.
+
+        The one-to-one call placed from a conversation is still signalling
+        only, and says so on its own panel, where the person is about to place
+        one rather than three screens earlier.
+      */}
       <footer className="v-landing__foot">
         <p className="v-caption">
-          VELORA is in development. Messages are not end-to-end encrypted, and
-          calls carry no audio or video yet.
+          VELORA is in development, and messages are not end-to-end encrypted.
         </p>
       </footer>
     </div>

@@ -94,6 +94,18 @@ export interface ClosureCallPort {
   }): Promise<number>;
 }
 
+/**
+ * What GROWTH is asked to do: stop the person's link working.
+ *
+ * Separate from everything else because it is the one obligation that is not
+ * about reachability. Nobody can reach a closed account through its invitation
+ * — an invitation names nobody — but the link would keep bringing people in on
+ * behalf of somebody who left, and attributing them to an account that is gone.
+ */
+export interface ClosureInvitationPort {
+  withdrawInvitesFor(userId: string): Promise<number>;
+}
+
 /** What USERS' own availability service is asked to do. */
 export interface ClosureAvailabilityPort {
   close(input: {
@@ -157,6 +169,7 @@ export class AccountClosureService {
       readonly availability: ClosureAvailabilityPort;
       readonly calls?: ClosureCallPort;
       readonly destinations: ClosureDestinationPort;
+      readonly invitations?: ClosureInvitationPort;
       readonly live?: ClosureLivePort;
       readonly logger: SafeLogger;
       readonly now: () => Date;
@@ -275,12 +288,17 @@ export class AccountClosureService {
     const retired = await this.dependencies.destinations.retireDevices(
       account.id,
     );
+    // GROWTH's own rows, on the same terms: outside the transaction, through a
+    // published contract, and not a rule the account state depends on.
+    const withdrawn =
+      (await this.dependencies.invitations?.withdrawInvitesFor(account.id)) ??
+      0;
 
     // An operational signal and deliberately not an identifier: how many
     // closures happen and how many devices they retire is worth watching, and
     // who closed is not something a log line needs to carry.
     this.dependencies.logger.info(
-      { devicesRetired: retired },
+      { devicesRetired: retired, invitationsWithdrawn: withdrawn },
       'users.account.closed',
     );
 

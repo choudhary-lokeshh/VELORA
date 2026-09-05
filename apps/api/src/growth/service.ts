@@ -7,8 +7,10 @@ import {
   invitationAcquisitionSource,
   liveWindowHorizonDays,
   maximumLiveWindowHours,
+  maximumRecordedOpeningsPerWindow,
   mintInviteCode,
   normalizeAcquisitionParameter,
+  openingRecordWindowMilliseconds,
 } from './policy.js';
 
 /**
@@ -145,6 +147,34 @@ export class GrowthService {
   }
 
   /**
+   * Withdraws the caller's link because they have left.
+   *
+   * A person who closed their account should not keep recruiting for a product
+   * they walked away from, and closure is the strongest statement anybody makes
+   * about wanting nothing more to do with it. The link stops working from that
+   * moment; the row and every attribution it already produced stay exactly
+   * where they are, because those are facts about how other people arrived.
+   *
+   * Somebody who opens a withdrawn link is not stranded. They are told it does
+   * not work, and they can still make an account — it is attributed to `direct`
+   * rather than to a person who is gone.
+   */
+  async withdrawInvitesFor(inviterUserId: string): Promise<number> {
+    const { logger, now, repository } = this.dependencies;
+    const withdrawn = await repository.revokeInvitesByOwner(
+      repository.transactionless,
+      { now: now(), ownerId: inviterUserId },
+    );
+    if (withdrawn > 0) {
+      logger.info(
+        { event: 'growth.invite.withdrawn', withdrawn },
+        'invitations withdrawn with the account that held them',
+      );
+    }
+    return withdrawn;
+  }
+
+  /**
    * Records that an invitation address was opened, and says whether it works.
    *
    * The opening is recorded whichever answer it gets, because "how many people
@@ -160,16 +190,41 @@ export class GrowthService {
     readonly code: string;
     readonly openingKey: string;
   }): Promise<{ readonly usable: boolean }> {
-    const { now, repository } = this.dependencies;
+    const { logger, now, repository } = this.dependencies;
     const at = now();
     const invite = await repository.findUsableInviteByCode(
       repository.transactionless,
       input.code,
     );
+    const name = invite === undefined ? 'invite_refused' : 'invite_opened';
+    // The bound, checked before the row and never before the answer. This is
+    // the one write in the product a caller with no account can reach, and the
+    // deduplication below it is on a key that caller mints, so a script gets a
+    // new row per request unless something counts. Past the bound the visitor
+    // is still told truthfully whether their link works — that is what the page
+    // asked — and only the recording stops.
+    const recorded = await repository.countEventsSince(
+      repository.transactionless,
+      {
+        name,
+        since: new Date(at.getTime() - openingRecordWindowMilliseconds),
+      },
+    );
+    if (recorded >= maximumRecordedOpeningsPerWindow) {
+      logger.warn(
+        {
+          bound: maximumRecordedOpeningsPerWindow,
+          event: 'growth.opening.bounded',
+          name,
+        },
+        'invitation openings are at the recording bound for this window',
+      );
+      return { usable: invite !== undefined };
+    }
     await repository.insertEvent(repository.transactionless, {
       dedupeKey: input.openingKey,
       id: crypto.randomUUID(),
-      name: invite === undefined ? 'invite_refused' : 'invite_opened',
+      name,
       now: at,
       source: invitationAcquisitionSource,
       ...(invite === undefined ? {} : { inviteId: invite.id }),

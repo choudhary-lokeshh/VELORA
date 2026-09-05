@@ -836,6 +836,9 @@ export function createApplication(
         database: ownedDatabase.database,
         logger,
       });
+    // Captured once the assignment above has happened, so the closure below
+    // holds the runtime rather than the mutable binding it was written into.
+    const composedGrowth = growth;
     support =
       injectedSupport ??
       createSupportRuntime({
@@ -865,6 +868,13 @@ export function createApplication(
         consumerContext: users.consumerContext,
         database: ownedDatabase.database,
         devices: notifications.repository,
+        // GROWTH's own contract. A person who has left should not keep
+        // recruiting, and their link is the one thing about them that would
+        // otherwise go on working after the account behind it is gone.
+        invitations: {
+          withdrawInvitesFor: (userId) =>
+            composedGrowth.service.withdrawInvitesFor(userId),
+        },
         live: live.enforcement,
         logger,
         repository: users.repository,

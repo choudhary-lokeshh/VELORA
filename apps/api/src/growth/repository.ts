@@ -182,6 +182,33 @@ export class GrowthRepository {
       .onConflictDoNothing();
   }
 
+  /**
+   * Withdraws every link one account holds, and says how many that was.
+   *
+   * Called when somebody closes their account. The row stays — the
+   * attributions it already produced point at it, and deleting it would orphan
+   * them — and stops being usable, which is exactly what `revokedAt` is for.
+   *
+   * Already-revoked links are left alone rather than re-stamped, so the instant
+   * recorded is the one the link actually stopped working at.
+   */
+  async revokeInvitesByOwner(
+    executor: Executor,
+    input: { readonly now: Date; readonly ownerId: string },
+  ): Promise<number> {
+    const rows = await executor
+      .update(growthInvites)
+      .set({ revokedAt: input.now })
+      .where(
+        and(
+          eq(growthInvites.inviterUserId, input.ownerId),
+          isNull(growthInvites.revokedAt),
+        ),
+      )
+      .returning({ id: growthInvites.id });
+    return rows.length;
+  }
+
   async countEventsSince(
     executor: Executor,
     input: { readonly name: AcquisitionEventName; readonly since: Date },

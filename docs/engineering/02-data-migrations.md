@@ -82,6 +82,58 @@ Migration files use the sequential index prefix, matching the committed `0000_bo
 - Execute migrations only through the explicit Bun migration command using the committed journal/SQL path. API and worker startup never invoke migrations or schema push.
 - Enforce database constraints for critical uniqueness/references alongside service validation: identity linkage, idempotency, provider event, pair state, entitlement/payment/payout references as appropriate.
 
+## The journal is load-bearing, and it fails silently
+
+`apps/api/drizzle/meta/_journal.json` is not documentation. Drizzle's migrator
+reads exactly one row from `drizzle.__drizzle_migrations` — the highest
+`created_at` — and applies a migration only when that migration's journal `when`
+is strictly greater:
+
+```js
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis)
+```
+
+So one migration stamped with a `when` later than the ones after it stops every
+later migration from ever being applied to any database that has already run it.
+There is no error. `pnpm db:migrate` prints nothing and exits `0`, the tables
+are simply absent, and the first symptom is a route answering `500` in an
+environment somebody upgraded.
+
+No test can catch it. Every suite in this repository provisions an empty
+database, and against an empty database drizzle applies the whole folder in
+order whatever the timestamps say. Only a long-lived database is affected —
+a developer's, and one day a deployed one.
+
+`pnpm db:journal:check` runs in `pnpm ci:verify` and asserts the three
+properties the migrator depends on: one journal entry per SQL file, indexes
+matching file order, and `when` values that strictly increase.
+
+**This has already happened once.** Migrations `0072` through `0075` were
+stamped with hand-rounded timestamps a week ahead of the ones that followed
+them, so on any database that had reached `0075`, migrations `0076` through
+`0080` — consumer support, account closure, growth acquisition, and the whole
+operations control plane — were skipped in silence. It was found by a local API
+answering `500` for a table that should have existed. The journal was corrected
+in place; no SQL changed, because a `when` is bookkeeping rather than history.
+
+### Repairing a database that recorded a wrong timestamp
+
+Correcting the journal does not repair a database that already stored the wrong
+value: the migrator compares against what is stored. Rewrite the stored value to
+the corrected one, then run the migration command again.
+
+```sql
+-- One statement per corrected migration. The old value on the left is the one
+-- the journal used to carry; the new value on the right is what it carries now.
+update drizzle.__drizzle_migrations set created_at = <corrected> where created_at = <old>;
+```
+
+Then `pnpm db:migrate`, and check that `select count(*) from
+drizzle.__drizzle_migrations` equals the number of `.sql` files in
+`apps/api/drizzle`. A local database that is easier to discard than to repair
+should be discarded: `pnpm infra:down`, remove the volume, `pnpm infra:up`,
+`pnpm db:migrate`.
+
 ## Migration flow and failure
 
 Review ownership/privacy/performance, apply compatible schema, deploy code, run durable resumable backfill with rate limits/checkpoints, validate counts/invariants, remove old path only after compatible clients/jobs drain. Backfills are idempotent and observable. Failure pauses safely, alerts, and resumes/compensates; never use production ad-hoc direct edits without an audited emergency procedure.

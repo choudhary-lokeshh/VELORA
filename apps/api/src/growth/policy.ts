@@ -105,6 +105,31 @@ export const invitationAcquisitionSource = 'invite';
 export const acquisitionSummaryDays = 30;
 
 /**
+ * How many openings of one kind GROWTH will write down in a window.
+ *
+ * `POST /v1/growth/invitations/{code}/openings` is the only route in the
+ * product that writes a row without a session behind it, and it has to be: the
+ * person opening an invitation does not have an account yet. Deduplication is
+ * on a key the visitor's own browser mints, which is right for a refresh and
+ * worth nothing against a script — a caller sending a fresh key each time gets
+ * a fresh row each time, and a public link is exactly what a beta hands to
+ * strangers.
+ *
+ * So the write is bounded and the answer is not. Past the bound the route still
+ * tells the visitor truthfully whether the code works, because that is what the
+ * page they are looking at needs; what stops is the row. Nothing a person
+ * experiences changes, and nothing already counted is removed.
+ *
+ * The bound is deliberately far above real use. A hundred people opening a
+ * hundred links in a day is ten thousand openings, and reaching this would mean
+ * either a launch far larger than any plan on file or somebody generating them
+ * — and in both cases the number an operator reads is the same one this cap
+ * makes it: at the ceiling, which is itself the signal.
+ */
+export const maximumRecordedOpeningsPerWindow = 50_000;
+export const openingRecordWindowMilliseconds = 24 * 60 * 60 * 1000;
+
+/**
  * The longest a scheduled live window may run.
  *
  * A window is a time people agree to be here at once, and something that runs

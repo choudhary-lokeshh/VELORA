@@ -8,6 +8,7 @@ import {
   type ClosureAuthorityPort,
   type ClosureCallPort,
   type ClosureDestinationPort,
+  type ClosureInvitationPort,
   type ClosureLivePort,
 } from './closure.js';
 import { AvailabilityRepository } from './availability.js';
@@ -48,6 +49,7 @@ export function createAccountClosureRuntime(dependencies: {
   readonly calls?: ClosureCallPort;
   readonly database: UsersDatabase;
   readonly devices: NotificationRepository;
+  readonly invitations?: ClosureInvitationPort;
   readonly live?: ClosureLivePort;
   readonly logger: SafeLogger;
   readonly now?: () => Date;
@@ -94,6 +96,9 @@ export function createAccountClosureRuntime(dependencies: {
     },
     ...(dependencies.calls === undefined ? {} : { calls: dependencies.calls }),
     destinations,
+    ...(dependencies.invitations === undefined
+      ? {}
+      : { invitations: dependencies.invitations }),
     ...(dependencies.live === undefined ? {} : { live: dependencies.live }),
     logger: dependencies.logger,
     now,

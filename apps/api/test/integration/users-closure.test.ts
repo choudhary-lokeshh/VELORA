@@ -108,6 +108,12 @@ const accountClosure = createAccountClosureRuntime({
   consumerContext: users.consumerContext,
   database: database.drizzle,
   devices: runtimes.notifications.repository,
+  // GROWTH's own contract, wired exactly as the application wires it, because
+  // the thing being proved below is that leaving takes the link with it.
+  invitations: {
+    withdrawInvitesFor: (userId) =>
+      runtimes.growth.service.withdrawInvitesFor(userId),
+  },
   logger,
   now,
   repository: users.repository,
@@ -126,6 +132,10 @@ const application = createApplication({
     databaseAdmission: testDatabaseAdmission(),
     discovery: runtimes.discovery,
     ephemeralRedis: healthy,
+    // Composed here because the closure below has to take a real invitation
+    // away. Without it the route answers 503, which is the honest answer for a
+    // composition GROWTH is absent from and no proof of anything.
+    growth: runtimes.growth,
     identity: runtimes.identity,
     logger,
     media: runtimes.media,
@@ -165,6 +175,15 @@ function post(path: string, credentials: Credentials, body?: unknown): Request {
       origin: testConsumerOrigin,
       'x-velora-csrf': credentials.csrf,
     },
+    method: 'POST',
+  });
+}
+
+/** Opening an invitation: no session, because whoever opens one has no account. */
+function opening(code: string, openingKey: string): Request {
+  return new Request('http://api.test/v1/growth/invitations/openings', {
+    body: JSON.stringify({ code, openingKey }),
+    headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
 }
@@ -263,6 +282,36 @@ describe('somebody can actually leave', () => {
     // which would say somebody else did this to them.
     expect(rows[0]?.status_reason).toBe('user_requested');
     expect(rows[0]?.deletion_requested_at).not.toBeNull();
+  });
+
+  it('takes the invitation link with it, and strands nobody', async () => {
+    const caller = await consumer('closure-invite@velora.test');
+
+    // The link, minted the way a person mints one.
+    const minted = await handle(post('/v1/growth/invite', caller));
+    expect(minted.status).toBe(200);
+    const code = ((await minted.json()) as { invite: { code: string } }).invite
+      .code;
+
+    // It works, before they leave.
+    const before = await handle(opening(code, 'a'.repeat(22)));
+    expect(await before.json()).toEqual({ usable: true });
+
+    expect((await close(caller)).status).toBe(200);
+
+    // And it does not, after. A person who left should not keep recruiting for
+    // a product they walked away from.
+    const after = await handle(opening(code, 'b'.repeat(22)));
+    expect(after.status).toBe(200);
+    expect(await after.json()).toEqual({ usable: false });
+
+    // The row is still there, because the attributions it already produced
+    // point at it. What changed is that it stopped working.
+    const rows = await rowsOf<{ revoked_at: Date | null }>(
+      database.sql`select revoked_at from growth_invites where code = ${code}`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.revoked_at).not.toBeNull();
   });
 
   it('takes every session away, including the one that asked', async () => {
