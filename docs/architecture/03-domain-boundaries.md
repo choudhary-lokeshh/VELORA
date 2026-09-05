@@ -22,6 +22,7 @@ This document assigns durable domain ownership. Owning module validates state, w
 | MODERATION | review cases, evidence handling, decisions workflow | enforcement policy truth |
 | NOTIFICATIONS | delivery orchestration, preferences, delivery attempts | source-domain state |
 | ADMIN | privileged workflows, approvals, operation UI/API | core domain source-of-truth data |
+| GROWTH | invitation links, signup attribution, acquisition counts, scheduled live windows | entitlement, balance, standing, reward, profile, session, live encounters, anybody's identity behind an opaque reference |
 | ANALYTICS | event definitions, derived metrics | transactional product state |
 | AI PLATFORM | AI capability/prompt/tool registry metadata, provider/model routing, orchestration runs, ephemeral context, non-authoritative memory/RAG projections, AI budgets/evaluations | any other domain's truth, authorization, approval, private persistence, or analytics metric definitions |
 

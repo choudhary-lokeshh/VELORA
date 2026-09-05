@@ -154,6 +154,12 @@ function domainEnvironmentFor(label) {
     ...(surface.rendersMedia && origin !== mediaDeliveryOrigin
       ? { VELORA_MEDIA_DELIVERY_ORIGIN: mediaDeliveryOrigin }
       : {}),
+    // Where this surface is actually answering, so a canonical address, a
+    // share link, and an invitation copied out of a local run point at the
+    // hostname the developer is using rather than at the loopback port in
+    // `.env`. Indexing is still refused: that needs a production environment,
+    // and this is not one.
+    VELORA_WEB_PUBLIC_ORIGIN: origin,
   };
 }
 

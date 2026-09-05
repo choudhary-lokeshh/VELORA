@@ -71,7 +71,7 @@ test('Consumer Web carries the consumer product and nothing privileged', async (
   await page.goto(consumerWebOrigin);
   // The public entry, which is what somebody with no session reaches.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-    'Meet people who said yes too.',
+    'Meet new people, one live conversation at a time.',
   );
   await expect(page.getByTestId('landing-start')).toBeVisible();
   for (const forbidden of ['Creator Studio', 'Platform Admin', 'Moderation']) {

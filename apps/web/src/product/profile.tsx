@@ -32,6 +32,7 @@ import {
 } from '../design/primitives';
 import { AvailabilityCard } from './availability';
 import { ConsumerAiAssist } from './ai-assist';
+import { InviteFriends } from './invite-friends';
 import { LanguagePicker } from './language-picker';
 import { languageName, regionName } from './locale';
 import { ProfilePhotos } from './media';
@@ -61,7 +62,7 @@ const requirementLabels: Readonly<Record<string, string>> = {
   region: 'the country you are in',
 };
 
-export function You() {
+export function You({ origin = '' }: { readonly origin?: string }) {
   const account = useAccount();
   const profile = account.profile.value;
   const current = account.account.value;
@@ -207,6 +208,13 @@ export function You() {
         <Section raised testId="photos-card" title="Photos">
           <ProfilePhotos />
         </Section>
+
+        {/*
+          Inviting somebody lives here, on the screen that belongs to the person
+          doing it, and nowhere else. A growth prompt over a conversation is the
+          thing every review of every product like this complains about.
+        */}
+        <InviteFriends origin={origin} />
 
         <Card flush>
           <ul className="v-list v-list--divided">

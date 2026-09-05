@@ -96,6 +96,10 @@ import {
 } from '../../src/safety/composition.js';
 import type { SafetyEligibilityPort } from '../../src/messaging/safety.js';
 import {
+  createGrowthRuntime,
+  type GrowthRuntime,
+} from '../../src/growth/composition.js';
+import {
   createSupportRuntime,
   type SupportRuntime,
 } from '../../src/support/composition.js';
@@ -628,6 +632,8 @@ export function testProductRuntimes(input: {
   readonly logger?: SafeLogger;
   readonly now?: () => Date;
   readonly privilegedAccess?: PrivilegedAccessService;
+  /** Injected so a suite can name the invitation code it is about to assert on. */
+  readonly randomBytes?: (size: number) => Uint8Array;
   readonly users: UsersRuntime;
 }): {
   readonly admin: AdminRuntime;
@@ -635,6 +641,7 @@ export function testProductRuntimes(input: {
   readonly clubs: ClubsRuntime;
   readonly creators: CreatorsRuntime;
   readonly discovery: DiscoveryRuntime;
+  readonly growth: GrowthRuntime;
   readonly identity: IdentityRuntime;
   readonly media: MediaRuntime;
   readonly messaging: MessagingRuntime;
@@ -726,6 +733,19 @@ export function testProductRuntimes(input: {
       database: mediaDatabase,
       logger: input.logger ?? silentLogger(),
       ...(input.now === undefined ? {} : { now: input.now }),
+    }),
+    // GROWTH beside SUPPORT and on the same terms: both need the operator
+    // context ADMIN builds and the consumer context USERS builds, and neither
+    // hands anything back.
+    growth: createGrowthRuntime({
+      adminContext: admin.adminContext,
+      consumerContext: input.users.consumerContext,
+      database: mediaDatabase,
+      logger: input.logger ?? silentLogger(),
+      ...(input.now === undefined ? {} : { now: input.now }),
+      ...(input.randomBytes === undefined
+        ? {}
+        : { randomBytes: input.randomBytes }),
     }),
     billing,
     clubs,

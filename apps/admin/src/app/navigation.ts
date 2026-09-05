@@ -107,6 +107,7 @@ export const platformAreas: readonly Area[] = [
     title: 'Notifications',
   },
   { label: 'Calling', path: '/platform/rtc', title: 'Calling' },
+  { label: 'Growth', path: '/platform/growth', title: 'Growth' },
   { label: 'Identity', path: '/platform/identity', title: 'Identity' },
   { label: 'Security', path: '/platform/security', title: 'Security' },
 ];

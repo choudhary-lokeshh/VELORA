@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { acquisitionSchema } from './growth.js';
+
 /**
  * USERS wire vocabulary.
  *
@@ -167,6 +169,18 @@ export type CloseAccountRequest = z.infer<typeof closeAccountRequestSchema>;
  */
 export const createConsumerAccountRequestSchema = z
   .object({
+    /**
+     * Where this person came from, offered once and only here.
+     *
+     * It rides on account creation rather than arriving as a second call for
+     * one reason: this is the only request in the product that can be the
+     * moment an account came into existence, and attribution that could be
+     * posted afterwards could be posted by an account that has existed for a
+     * year. USERS does not read it, store it, or decide anything with it — it
+     * is handed to GROWTH, which owns acquisition, and only on the request that
+     * actually created the account.
+     */
+    acquisition: acquisitionSchema.optional(),
     locale: localeSchema.optional(),
   })
   .strict();

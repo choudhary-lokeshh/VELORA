@@ -554,6 +554,13 @@
       "when": 1788457832174,
       "tag": "0078_account-closure",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1788586612838,
+      "tag": "0079_growth-acquisition",
+      "breakpoints": true
     }
   ]
 }

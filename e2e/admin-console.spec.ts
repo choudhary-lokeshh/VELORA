@@ -60,6 +60,7 @@ const areas = [
   '/platform/rtc',
   '/platform/identity',
   '/platform/security',
+  '/platform/growth',
 ] as const;
 
 /**

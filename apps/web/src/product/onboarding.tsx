@@ -26,6 +26,7 @@ import {
   TextArea,
   TextInput,
 } from '../design/primitives';
+import { clearAcquisition, storedAcquisition } from './acquisition';
 import { LanguagePicker } from './language-picker';
 import { ProfilePhotos } from './media';
 import { regionName } from './locale';
@@ -144,7 +145,25 @@ export function Welcome() {
           <CreateAccountStep
             busy={busy}
             onCreate={() => {
-              submit(async () => api.createAccount());
+              submit(async () => {
+                /*
+                 * Where this person came from, offered exactly once.
+                 *
+                 * This is the only request in the product that can be the one
+                 * that creates an account, which is why it is the only one that
+                 * may carry an origin — an attribution accepted anywhere else
+                 * could be sent by an account that has existed for a year. The
+                 * server reads it only when it actually creates the account and
+                 * ignores it otherwise, so a repeat of this call attributes
+                 * nothing.
+                 */
+                const result = await api.createAccount(storedAcquisition());
+                // Cleared whatever the answer was. A refusal is not something
+                // to retry with the same code later, and a browser holding
+                // somebody else's invitation indefinitely serves nobody.
+                clearAcquisition();
+                return result;
+              });
             }}
           />
         ) : null}

@@ -49,6 +49,32 @@ export type Availability = JsonBody<'/v1/users/me/availability', 'get', 200>;
  */
 export type AccountClosure = JsonBody<'/v1/users/me/closure', 'get', 200>;
 export type CloseAccountBody = RequestBody<'/v1/users/me/closure', 'post'>;
+/**
+ * GROWTH, as a consumer surface sees it.
+ *
+ * Four types and none of them names a person. An invitation is a code and the
+ * instant it was made; an opening answers a boolean; a window is two instants
+ * and a name. Nothing here can tell a surface who invited somebody, how many
+ * people used a link, or how many people are coming to a window — because none
+ * of those is in the contract, so no screen can be written that shows one.
+ */
+export type Acquisition = NonNullable<
+  RequestBody<'/v1/users', 'post'>
+>['acquisition'];
+export type InviteLinkAnswer = JsonBody<'/v1/growth/invite', 'get', 200>;
+export type InviteLink = NonNullable<InviteLinkAnswer['invite']>;
+export type InvitationOpeningBody = RequestBody<
+  '/v1/growth/invitations/openings',
+  'post'
+>;
+export type InvitationOpeningAnswer = JsonBody<
+  '/v1/growth/invitations/openings',
+  'post',
+  200
+>;
+export type LiveWindowList = JsonBody<'/v1/growth/live-windows', 'get', 200>;
+export type LiveWindow = LiveWindowList['windows'][number];
+
 export type DiscoveryFeed = JsonBody<'/v1/discovery/candidates', 'get', 200>;
 export type DiscoveryCandidate = DiscoveryFeed['candidates'][number];
 export type DiscoveryPerson = JsonBody<'/v1/discovery/people', 'get', 200>;

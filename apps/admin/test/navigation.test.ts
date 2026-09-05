@@ -42,6 +42,7 @@ const served: readonly string[] = [
   '/money/payouts',
   '/overview',
   '/platform',
+  '/platform/growth',
   '/platform/identity',
   '/platform/notifications',
   '/platform/rtc',

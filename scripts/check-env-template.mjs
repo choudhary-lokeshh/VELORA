@@ -29,10 +29,12 @@ const documentPath = 'docs/engineering/07-configuration-environments.md';
 const templatedNonSchemaKeys = new Map([
   ['EXPO_PUBLIC_API_BASE_URL', 'Consumer Mobile bundle'],
   ['EXPO_PUBLIC_APP_ENV', 'Consumer Mobile bundle'],
+  ['EXPO_PUBLIC_WEB_ORIGIN', 'Consumer Mobile bundle'],
   ['VELORA_APP_ENV', 'Next.js surfaces at request time'],
   ['VELORA_BIND_HOST', 'Next.js dev and standalone start scripts'],
   ['VELORA_MEDIA_DELIVERY_ORIGIN', 'Next.js surfaces at request time'],
   ['VELORA_REALTIME_ENDPOINT', 'Next.js surfaces at request time'],
+  ['VELORA_WEB_PUBLIC_ORIGIN', 'Next.js surfaces at request time'],
   ['VELORA_POSTGRES_PORT', 'local Docker Compose host port'],
   ['VELORA_REDIS_PORT', 'local Docker Compose host port'],
 ]);
@@ -81,6 +83,9 @@ const publicPrefixes = ['EXPO_PUBLIC_', 'NEXT_PUBLIC_'];
 const allowedPublicKeys = new Set([
   'EXPO_PUBLIC_API_BASE_URL',
   'EXPO_PUBLIC_APP_ENV',
+  // The web address an invitation is written against. Public by nature: it is
+  // the address the app tells other people to open.
+  'EXPO_PUBLIC_WEB_ORIGIN',
 ]);
 
 const sourceRoots = ['apps', 'packages', 'scripts', 'e2e'];

@@ -2,8 +2,11 @@
 
 import Link from 'next/link';
 
+import type { LiveWindow } from '@velora/consumer-client';
+
 import { Icon, type IconName } from '../design/icons';
 import { ButtonLink } from '../design/primitives';
+import { LiveWindows } from './live-windows';
 
 /**
  * The public entry.
@@ -36,13 +39,31 @@ const points: readonly Point[] = [
     title: 'Both, or neither',
   },
   {
-    body: 'Blocking and reporting are always one press away, and neither tells the other person anything. Nothing on VELORA can be bought, so nobody can pay their way to your attention.',
+    /*
+     * This sentence used to end "nothing on VELORA can be bought". That was
+     * true when it was written and stopped being true when coins shipped: a
+     * bounded narrowing of your own search, a gift, and a membership are all
+     * purchases. What survived the change is the claim that actually matters to
+     * somebody standing at the door, and it is still exactly true — no amount
+     * of money puts a person in a conversation you have not agreed to.
+     */
+    body: 'Blocking and reporting are always one press away, and neither tells the other person anything. Nobody can buy their way into a conversation you have not agreed to.',
     icon: 'shield',
     title: 'Safety without a negotiation',
   },
 ];
 
-export function Landing() {
+export function Landing({
+  liveWindows = [],
+}: {
+  /**
+   * The scheduled times, read on the server so they are in the first response.
+   *
+   * Empty is the ordinary state and renders nothing at all. A heading with no
+   * times under it would be an announcement that there is nothing to announce.
+   */
+  readonly liveWindows?: readonly LiveWindow[];
+}) {
   return (
     <div className="v-landing">
       {/*
@@ -68,11 +89,20 @@ export function Landing() {
       <main className="v-landing__hero" id="main">
         <div className="v-landing__copy">
           <p className="v-label v-accent">Adults only</p>
-          <h1 className="v-display">Meet people who said yes too.</h1>
+          {/*
+            The one heading on the page, and it names what somebody came to do
+            rather than what the product is proud of. "Meet people who said yes
+            too" was true and said nothing to a person who had never heard of
+            VELORA; the mutual half of it moved down one line, where it reads as
+            a promise instead of as a riddle.
+          */}
+          <h1 className="v-display v-wrap">
+            Meet new people, one live conversation at a time.
+          </h1>
           <p className="v-landing__lede">
-            VELORA introduces two adults only when both of them want it. You
-            choose when you are visible, you are never told who passed, and
-            nothing here can be bought.
+            VELORA puts two adults in a conversation only when both of them want
+            it. You choose when you are visible, you are never told who passed,
+            and nobody can buy their way to you.
           </p>
           <div className="v-landing__actions">
             <ButtonLink
@@ -91,6 +121,12 @@ export function Landing() {
         </div>
       </main>
 
+      {liveWindows.length === 0 ? null : (
+        <div className="v-landing__windows">
+          <LiveWindows windows={liveWindows} />
+        </div>
+      )}
+
       <section aria-label="How VELORA works" className="v-landing__points">
         {points.map((point) => (
           <article className="v-landing__point" key={point.title}>
@@ -102,6 +138,35 @@ export function Landing() {
           </article>
         ))}
       </section>
+
+      {/*
+        The way to the rest of what is readable without an account.
+
+        Real links with the destination's own name as their text, because that
+        is what a person scanning needs and what tells a crawler what is on the
+        other side. Five of them, not a wall: a footer carrying every phrase
+        somebody hoped to rank for is a footer nobody reads, and this product
+        has exactly five things worth explaining before somebody joins.
+      */}
+      <nav aria-label="More about VELORA" className="v-public__nav">
+        <ul>
+          <li>
+            <Link href="/about">What VELORA is</Link>
+          </li>
+          <li>
+            <Link href="/about/live">How live conversations work</Link>
+          </li>
+          <li>
+            <Link href="/about/creators">Creators and communities</Link>
+          </li>
+          <li>
+            <Link href="/about/safety">Safety and control</Link>
+          </li>
+          <li>
+            <Link href="/about/questions">Questions people ask</Link>
+          </li>
+        </ul>
+      </nav>
 
       <footer className="v-landing__foot">
         <p className="v-caption">

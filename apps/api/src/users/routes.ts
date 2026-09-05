@@ -7,6 +7,7 @@ import {
   productErrorCodes,
 } from '@velora/validation';
 
+import type { SignupAttributionPort } from '../growth/attribution.js';
 import {
   parseRouteBody,
   routeFailure,
@@ -24,6 +25,16 @@ import type { UserAccountRow } from './repository.js';
 import type { UsersService } from './service.js';
 
 export interface UsersRoutesDependencies {
+  /**
+   * GROWTH's published attribution contract, resolved at call time.
+   *
+   * A function rather than the port itself because GROWTH composes after USERS
+   * — it needs the operator context ADMIN builds — and USERS needs nothing from
+   * it until somebody actually creates an account. Absent is a valid answer and
+   * the only consequence is that no origin is recorded, which is what a
+   * composition without GROWTH should do.
+   */
+  readonly attribution?: () => SignupAttributionPort | undefined;
   readonly consumerContext: ConsumerContextResolver;
   readonly onboarding: OnboardingService;
   readonly service: UsersService;
@@ -85,6 +96,28 @@ export class UsersRoutes {
       authAccountId,
       locale: parsed.value.locale,
     });
+    /*
+     * Where this person came from, offered to GROWTH once and only on the
+     * request that actually created the account.
+     *
+     * `outcome.created` is the whole anti-abuse property. An account that
+     * already existed calls this route on every sign-in — the client provisions
+     * idempotently — and an attribution accepted there would let a year-old
+     * account claim somebody's invitation by opening a link. Here it cannot:
+     * the only request that can carry an origin is the one that brought the
+     * account into existence.
+     *
+     * USERS reads none of it, stores none of it, and decides nothing with it.
+     * A failure to record an origin never fails a signup: somebody's account
+     * must not depend on a marketing fact being writable, so the refusal is
+     * logged by GROWTH and this route answers exactly as it would have.
+     */
+    if (outcome.created) {
+      await this.dependencies.attribution?.()?.attributeSignup({
+        acquisition: parsed.value.acquisition,
+        userId: outcome.account.id,
+      });
+    }
     return {
       body: consumerAccountBody(outcome.account),
       status: outcome.created ? 201 : 200,

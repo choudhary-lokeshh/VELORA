@@ -19,12 +19,28 @@ const clientOriginSchema = clientHttpUrlSchema.refine(
   'Media delivery origin must be an exact scheme://host[:port] value',
 );
 
+/**
+ * The origin a public address is written against, when one has been declared.
+ *
+ * Same shape rule as the delivery origin and for a related reason: a canonical
+ * URL, a sitemap entry, and a social preview are all absolute addresses built
+ * by joining a path onto this, and an origin carrying a path or a trailing
+ * slash produces a different address than the one a person would type. It is
+ * refused here rather than repaired, because a canonical that disagrees with
+ * the address it canonicalises is worse than no canonical at all.
+ */
+const publicOriginSchema = clientHttpUrlSchema.refine(
+  (value) => new URL(value).origin === value,
+  'Public web origin must be an exact scheme://host[:port] value',
+);
+
 const clientConfigInputSchema = z
   .object({
     apiBaseUrl: z.string().optional(),
     appEnvironment: appEnvironmentSchema,
     localDefaultApiBaseUrl: clientHttpUrlSchema.optional(),
     mediaDeliveryOrigin: clientOriginSchema.optional(),
+    publicWebOrigin: publicOriginSchema.optional(),
     realtimeEndpoint: z.string().optional(),
   })
   .strict();
@@ -34,6 +50,17 @@ const clientConfigSchema = z
     apiBaseUrl: clientHttpUrlSchema,
     appEnvironment: appEnvironmentSchema,
     mediaDeliveryOrigin: clientOriginSchema.optional(),
+    /**
+     * The origin Consumer Web is reached at from outside, when it is known.
+     *
+     * Absent is the honest state almost everywhere: a preview deployment, a
+     * developer's machine, and a browser suite all serve the same product at an
+     * address nobody else can resolve, and writing that address into a canonical
+     * tag would publish a link to a host that does not exist. Everything that
+     * needs an absolute public address treats absence as "this environment has
+     * no public identity", which is also what decides indexability.
+     */
+    publicWebOrigin: publicOriginSchema.optional(),
     /**
      * The realtime media address a surface's policy must permit.
      *
@@ -55,6 +82,7 @@ export interface ClientConfigInput {
   readonly appEnvironment: string;
   readonly localDefaultApiBaseUrl?: string | undefined;
   readonly mediaDeliveryOrigin?: string | undefined;
+  readonly publicWebOrigin?: string | undefined;
   readonly realtimeEndpoint?: string | undefined;
 }
 
@@ -116,10 +144,22 @@ export function loadClientConfig(input: ClientConfigInput): ClientConfig {
     );
   }
 
+  const { publicWebOrigin } = parsed;
+  if (
+    publicWebOrigin !== undefined &&
+    !mayUseLocalDefault &&
+    isLoopbackHostname(new URL(publicWebOrigin).hostname)
+  ) {
+    throw new Error(
+      'Staging/production public web origin cannot use localhost',
+    );
+  }
+
   return clientConfigSchema.parse({
     apiBaseUrl: url.toString().replace(/\/$/, ''),
     appEnvironment: parsed.appEnvironment,
     ...(mediaDeliveryOrigin === undefined ? {} : { mediaDeliveryOrigin }),
+    ...(publicWebOrigin === undefined ? {} : { publicWebOrigin }),
     ...(parsed.realtimeEndpoint === undefined ||
     parsed.realtimeEndpoint.length === 0
       ? {}
@@ -146,6 +186,7 @@ export interface SurfaceEnvironment {
   readonly VELORA_APP_ENV?: string | undefined;
   readonly VELORA_MEDIA_DELIVERY_ORIGIN?: string | undefined;
   readonly VELORA_REALTIME_ENDPOINT?: string | undefined;
+  readonly VELORA_WEB_PUBLIC_ORIGIN?: string | undefined;
 }
 
 /**
@@ -165,6 +206,7 @@ export function resolveSurfaceConfig(
   // rather than failing an origin parse on the empty string.
   const mediaDeliveryOrigin = environment.VELORA_MEDIA_DELIVERY_ORIGIN;
   const realtimeEndpoint = environment.VELORA_REALTIME_ENDPOINT;
+  const publicWebOrigin = environment.VELORA_WEB_PUBLIC_ORIGIN;
   return loadClientConfig({
     apiBaseUrl: environment.VELORA_API_BASE_URL,
     appEnvironment:
@@ -174,6 +216,9 @@ export function resolveSurfaceConfig(
     ...(mediaDeliveryOrigin === undefined || mediaDeliveryOrigin.length === 0
       ? {}
       : { mediaDeliveryOrigin }),
+    ...(publicWebOrigin === undefined || publicWebOrigin.length === 0
+      ? {}
+      : { publicWebOrigin }),
     ...(realtimeEndpoint === undefined || realtimeEndpoint.length === 0
       ? {}
       : { realtimeEndpoint }),
@@ -460,6 +505,31 @@ export function browserSecurityHeaders(
     'x-frame-options': 'DENY',
     ...(options.robots === undefined ? {} : { 'x-robots-tag': options.robots }),
   };
+}
+
+/**
+ * Whether a surface's public pages may be indexed by a search engine at all.
+ *
+ * Two conditions, both required, and neither of them a preference. An
+ * environment that is not production is serving fixtures, seeded people, and
+ * local-test providers, and every one of those would be indexed as though it
+ * were the product. An environment with no declared public origin cannot write
+ * a canonical URL, and a page indexed without one competes with itself under
+ * every address it happens to be reachable at.
+ *
+ * The default is therefore "no", and it is the safe direction: a page that is
+ * crawlable and should not be cannot be un-indexed by changing this later,
+ * while a page that is not crawlable and should be becomes so the moment the
+ * origin is configured.
+ */
+export function publicIndexingAllowed(config: {
+  readonly appEnvironment: string;
+  readonly publicWebOrigin?: string | undefined;
+}): boolean {
+  return (
+    config.appEnvironment === 'production' &&
+    config.publicWebOrigin !== undefined
+  );
 }
 
 export { appEnvironmentSchema } from './shared.js';

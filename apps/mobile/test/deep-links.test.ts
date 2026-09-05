@@ -321,3 +321,44 @@ describe('the notification channels', () => {
     );
   });
 });
+
+describe('an invitation link', () => {
+  it('is remembered rather than navigated, and lands where a launch lands', () => {
+    // There is no invitation screen on this platform and there should not be:
+    // the gate replaces every route with the welcome screen while there is no
+    // session, so a route component for this address would never mount for
+    // exactly the person the link is for. The code is what the link is for.
+    expect(resolveDeepLink('velora://invite/abcdefghijklmnopqrstuv')).toEqual({
+      code: 'abcdefghijklmnopqrstuv',
+      kind: 'invitation',
+      path: '/live',
+    });
+  });
+
+  it('refuses a code that is not the shape this platform issues', () => {
+    for (const url of [
+      'velora://invite',
+      'velora://invite/short',
+      'velora://invite/ABCDEFGHIJKLMNOPQRSTUV',
+      'velora://invite/abcdefghijklmnopqrstuv/extra',
+      'velora://invite/../../etc',
+    ]) {
+      expect({ kind: resolveDeepLink(url).kind, url }).toEqual({
+        kind: 'refused',
+        url,
+      });
+    }
+  });
+
+  it('drops a query, so nothing can ride in beside the code', () => {
+    expect(
+      resolveDeepLink(
+        'velora://invite/abcdefghijklmnopqrstuv?ref=someone-else',
+      ),
+    ).toEqual({
+      code: 'abcdefghijklmnopqrstuv',
+      kind: 'invitation',
+      path: '/live',
+    });
+  });
+});

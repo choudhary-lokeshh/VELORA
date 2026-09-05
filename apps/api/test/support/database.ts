@@ -102,6 +102,13 @@ const truncationRoots = [
   // key, so nothing cascades into its catalog either.
   'clubs_clubs',
   'clubs_content',
+  // GROWTH references accounts by opaque identifier with no foreign key, so
+  // nothing cascades into it from USERS. Events and attributions both point at
+  // an invitation, so they are listed ahead of it.
+  'growth_acquisition_events',
+  'growth_signup_attributions',
+  'growth_invites',
+  'growth_live_windows',
   // PAYOUTS' book and its records. Entries cascade from neither journal table
   // — the composite currency keys carry `no action` — so all three are listed,
   // entries first, and the domain's own records follow.

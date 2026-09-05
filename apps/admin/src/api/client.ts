@@ -5,6 +5,7 @@ import {
 } from '@velora/api-client';
 
 import type {
+  AcquisitionSummary,
   AdminAccountList,
   AdminAuditPage,
   AdminAuditStream,
@@ -33,8 +34,10 @@ import type {
   IdentityState,
   IssueRefundBody,
   IssuedRefund,
+  LiveWindowList,
   LocalAdminSessionBody,
   MediaState,
+  ScheduleLiveWindowBody,
   ModerationQueue,
   NotificationState,
   ObjectRemovalBody,
@@ -162,6 +165,23 @@ export interface AdminApi {
   }): Promise<ApiResult<IssuedRefund>>;
 
   /* --- Platform health ----------------------------------------------- */
+  /** Acquisition counts over a fixed recent window. Names nobody. */
+  acquisitionSummary(): Promise<ApiResult<AcquisitionSummary>>;
+  /**
+   * The windows currently published.
+   *
+   * The same public answer every surface reads, because there is no operator
+   * view of a window that differs from what everybody else sees — a window is
+   * an announcement, and an operator console showing a private version of one
+   * would be showing something that does not exist.
+   */
+  liveWindows(): Promise<ApiResult<LiveWindowList>>;
+  /** Schedules one live window, or moves the one already at that address. */
+  scheduleLiveWindow(
+    body: ScheduleLiveWindowBody,
+  ): Promise<ApiResult<LiveWindowList>>;
+  /** Withdraws one live window. Already cancelled and never existing are one answer. */
+  cancelLiveWindow(slug: string): Promise<ApiResult<LiveWindowList>>;
   mediaState(): Promise<ApiResult<MediaState>>;
   notificationState(): Promise<ApiResult<NotificationState>>;
   rtcState(): Promise<ApiResult<RtcState>>;
@@ -502,6 +522,31 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
       return result.kind === 'ok'
         ? { kind: 'ok' as const, value: result.value.refund }
         : result;
+    },
+
+    async acquisitionSummary() {
+      return attempt(async () =>
+        api.GET('/v1/admin/growth/acquisition', read()),
+      );
+    },
+
+    async liveWindows() {
+      return attempt(async () => api.GET('/v1/growth/live-windows', read()));
+    },
+
+    async scheduleLiveWindow(body) {
+      return attempt(async () =>
+        api.POST('/v1/admin/growth/live-windows', { ...write(), body }),
+      );
+    },
+
+    async cancelLiveWindow(slug) {
+      return attempt(async () =>
+        api.POST('/v1/admin/growth/live-windows/cancellation', {
+          ...write(),
+          body: { slug },
+        }),
+      );
     },
 
     async mediaState() {

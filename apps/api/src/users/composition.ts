@@ -2,6 +2,7 @@ import type { ServerConfig } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { CallerResolver } from '../auth/caller.js';
+import type { SignupAttributionPort } from '../growth/attribution.js';
 
 import {
   EmptyIdentityAdultAssuranceReader,
@@ -61,6 +62,14 @@ export interface UsersRuntime {
  * resolution in the application.
  */
 export function createUsersRuntime(input: {
+  /**
+   * GROWTH's attribution contract, resolved at call time rather than now.
+   *
+   * GROWTH composes after this domain, so there is nothing to pass yet. What is
+   * passed is a way to ask later, and asking is optional: a composition without
+   * GROWTH records no origin for anybody, which is exactly right.
+   */
+  readonly attribution?: () => SignupAttributionPort | undefined;
   readonly caller: CallerResolver;
   readonly config: ServerConfig;
   readonly database: UsersDatabase;
@@ -143,7 +152,14 @@ export function createUsersRuntime(input: {
     profileRoutes: new ProfileRoutes({ consumerContext, profiles }),
     profiles,
     repository,
-    routes: new UsersRoutes({ consumerContext, onboarding, service }),
+    routes: new UsersRoutes({
+      consumerContext,
+      onboarding,
+      service,
+      ...(input.attribution === undefined
+        ? {}
+        : { attribution: input.attribution }),
+    }),
     service,
     standing: new ConsumerStanding(repository),
   };

@@ -39,7 +39,22 @@ export interface Resource<T> {
   readonly value: T | undefined;
 }
 
-export interface ResourceOptions {
+export interface ResourceOptions<T = never> {
+  /**
+   * An answer the server already gave, before this component mounted.
+   *
+   * Only ever supplied by a page that read the same public route on the server
+   * so its content is in the first response rather than after hydration. It
+   * makes the resource start `settled` with a value, and the read still happens
+   * — the value is a head start, not a cache, and a page left open revalidates
+   * exactly as it always did.
+   *
+   * It is deliberately not a general-purpose seed. Every route it is used with
+   * answers identically for everybody, which is what makes rendering it before
+   * a session exists correct; handing viewer-specific state in here would
+   * publish one person's answer in a document another person can be served.
+   */
+  readonly initial?: T | undefined;
   /**
    * Called when the server says the session is gone. The surface hands this to
    * the session layer rather than deciding for itself: a 401 is the one answer
@@ -60,15 +75,17 @@ export interface ResourceOptions {
  */
 export function useResource<T>(
   load: (signal: AbortSignal) => Promise<ApiResult<T>>,
-  options: ResourceOptions = {},
+  options: ResourceOptions<T> = {},
 ): Resource<T> {
   const enabled = options.enabled ?? true;
-  const { onUnauthenticated } = options;
-  const [value, setValue] = useState<T | undefined>(undefined);
+  const { initial, onUnauthenticated } = options;
+  const [value, setValue] = useState<T | undefined>(initial);
   const [error, setError] = useState<string | undefined>(undefined);
   const [retryable, setRetryable] = useState(false);
   const [loading, setLoading] = useState(enabled);
-  const [settled, setSettled] = useState(false);
+  // A server answer is an answer. Starting unsettled with a value in hand would
+  // make a gate treat "read on the server a moment ago" as "nobody has asked".
+  const [settled, setSettled] = useState(initial !== undefined);
   const inFlight = useRef<AbortController | undefined>(undefined);
   // Held in a ref so a caller that passes an inline callback does not restart
   // every read on every render.

@@ -174,6 +174,37 @@ export function PublicGate({
 }
 
 /**
+ * Moves somebody with a live session off a public page, without hiding it.
+ *
+ * The difference between this and {@link PublicGate} is what happens before the
+ * session answer arrives, and it is the whole reason both exist. A sign-in form
+ * shown in that window can be pressed while nothing is listening, so the gate
+ * withholds it. A page of prose cannot: its controls are links, and following
+ * one is correct whoever is reading. Withholding it costs the one thing that
+ * page is for — being readable by somebody, or something, that arrived from
+ * outside with no session at all and does not wait for one.
+ *
+ * So the page renders on the server and this rides along, redirecting once the
+ * answer exists. It draws nothing.
+ */
+export function RedirectWhenSignedIn({
+  redirectTo = '/live',
+}: {
+  readonly redirectTo?: string;
+}) {
+  const router = useRouter();
+  const session = useSession();
+  const parameters = useSearchParams();
+  const requested = safeReturnPath(parameters.get(returnParameter));
+
+  useEffect(() => {
+    if (session.signedIn) router.replace(requested ?? redirectTo);
+  }, [redirectTo, requested, router, session.signedIn]);
+
+  return null;
+}
+
+/**
  * The admission ladder itself.
  *
  * Reachable only with a session, and left as soon as the server says the

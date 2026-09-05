@@ -73,7 +73,18 @@ function draftLink(link?: CreatorProfileLink): DraftLink {
   };
 }
 
-export function ProfileScreen() {
+export function ProfileScreen({
+  publicOrigin = '',
+}: {
+  /**
+   * The origin a creator's page is actually reached at, when one is declared.
+   *
+   * Empty on a machine with no public identity, and the panel then shows the
+   * path alone — which is what it always showed. It never guesses: an address
+   * a creator copies and sends to somebody has to be one that opens.
+   */
+  readonly publicOrigin?: string;
+} = {}) {
   const creator = useCreator();
   const profile = creator.profile.value;
 
@@ -116,13 +127,21 @@ export function ProfileScreen() {
     );
   }
 
-  return <ProfileEditor key={profile?.version ?? 0} profile={profile} />;
+  return (
+    <ProfileEditor
+      key={profile?.version ?? 0}
+      profile={profile}
+      publicOrigin={publicOrigin}
+    />
+  );
 }
 
 function ProfileEditor({
   profile,
+  publicOrigin,
 }: {
   readonly profile: CreatorProfile | undefined;
+  readonly publicOrigin: string;
 }) {
   const api = useApi();
   const creator = useCreator();
@@ -259,7 +278,9 @@ function ProfileEditor({
         title="Public page"
       />
 
-      {profile === undefined ? null : <PublicationCard profile={profile} />}
+      {profile === undefined ? null : (
+        <PublicationCard profile={profile} publicOrigin={publicOrigin} />
+      )}
 
       <Card>
         <CardHead
@@ -504,7 +525,48 @@ function ProfileImages({
  * field will be set to. A creator pressing this is deciding whether strangers
  * can read their work.
  */
-function PublicationCard({ profile }: { readonly profile: CreatorProfile }) {
+/**
+ * The address a creator sends somebody, on a control rather than in a sentence.
+ *
+ * A creator's link is the cheapest acquisition VELORA has and the one thing on
+ * this console a creator does outside it. Selecting an address out of a chip by
+ * hand is where that fails, so the whole address goes to the clipboard in one
+ * press — and where the clipboard is unavailable, the address is already on the
+ * screen beside this, which is the fallback rather than an error.
+ */
+function CopyAddress({ address }: { readonly address: string }) {
+  const toast = useToast();
+  return (
+    <Button
+      data-testid="creator-copy-public-address"
+      icon="link"
+      onClick={() => {
+        void navigator.clipboard
+          .writeText(address)
+          .then(() => {
+            toast.show('Your public address is copied.', 'positive');
+          })
+          .catch(() => {
+            // Unavailable outside a secure context, and refusable by policy.
+            // Neither is worth an error: the address is on the screen already.
+            toast.show('Copy it from the address beside this.', 'neutral');
+          });
+      }}
+      size="sm"
+      tone="secondary"
+    >
+      Copy
+    </Button>
+  );
+}
+
+function PublicationCard({
+  profile,
+  publicOrigin,
+}: {
+  readonly profile: CreatorProfile;
+  readonly publicOrigin: string;
+}) {
   const api = useApi();
   const creator = useCreator();
   const toast = useToast();
@@ -530,8 +592,13 @@ function PublicationCard({ profile }: { readonly profile: CreatorProfile }) {
               </Badge>
             )}
             <span className="s-chip s-wrap" data-testid="creator-public-path">
-              {profile.publicPath}
+              {publicOrigin === ''
+                ? profile.publicPath
+                : `${publicOrigin}${profile.publicPath}`}
             </span>
+            {publicOrigin === '' || !published ? null : (
+              <CopyAddress address={`${publicOrigin}${profile.publicPath}`} />
+            )}
           </div>
           <p className="s-small s-muted s-measure">
             {published

@@ -15,6 +15,7 @@ export default defineConfig({
     './src/clubs/schema.ts',
     './src/creators/schema.ts',
     './src/discovery/schema.ts',
+    './src/growth/schema.ts',
     './src/identity/schema.ts',
     './src/live/schema.ts',
     './src/media/schema.ts',

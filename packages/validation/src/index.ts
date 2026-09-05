@@ -22,6 +22,15 @@ import {
   saveCreatorProfileRequestSchema,
 } from './creator.js';
 import {
+  acquisitionSummaryResponseSchema,
+  inviteLinkResponseSchema,
+  invitationOpeningRequestSchema,
+  invitationOpeningResponseSchema,
+  liveWindowCancellationRequestSchema,
+  liveWindowListResponseSchema,
+  scheduleLiveWindowRequestSchema,
+} from './growth.js';
+import {
   adminDisputeListResponseSchema,
   cancelSubscriptionRequestSchema,
   checkoutResponseSchema,
@@ -258,6 +267,7 @@ export * from './billing.js';
 export * from './clubs.js';
 export * from './creator.js';
 export * from './discovery.js';
+export * from './growth.js';
 export * from './live.js';
 export * from './media.js';
 export * from './messaging.js';
@@ -412,6 +422,13 @@ export const apiRoutePaths = {
   consumerProfileMedia: '/v1/users/me/profile/media',
   consumerProfileMediaCompletion: '/v1/users/me/profile/media/completion',
   consumerProfileMediaRemoval: '/v1/users/me/profile/media/removal',
+  growthInvite: '/v1/growth/invite',
+  growthInvitationOpenings: '/v1/growth/invitations/openings',
+  growthLiveWindows: '/v1/growth/live-windows',
+  adminGrowthAcquisition: '/v1/admin/growth/acquisition',
+  adminGrowthLiveWindowCancellation:
+    '/v1/admin/growth/live-windows/cancellation',
+  adminGrowthLiveWindows: '/v1/admin/growth/live-windows',
   liveness: '/v1/health/live',
   mediaDeliveries: '/v1/media/deliveries',
   localAdminSession: '/v1/auth/local/admin-sessions',
@@ -530,6 +547,13 @@ export const apiSchemas = {
   CheckoutResponse: checkoutResponseSchema,
   ConsumerGiftListResponse: consumerGiftListResponseSchema,
   CreatorReceivedGiftListResponse: creatorReceivedGiftListResponseSchema,
+  GrowthAcquisitionSummaryResponse: acquisitionSummaryResponseSchema,
+  GrowthInvitationOpeningRequest: invitationOpeningRequestSchema,
+  GrowthInvitationOpeningResponse: invitationOpeningResponseSchema,
+  GrowthInviteLinkResponse: inviteLinkResponseSchema,
+  GrowthLiveWindowCancellationRequest: liveWindowCancellationRequestSchema,
+  GrowthLiveWindowListResponse: liveWindowListResponseSchema,
+  GrowthScheduleLiveWindowRequest: scheduleLiveWindowRequestSchema,
   GiftCatalogResponse: giftCatalogResponseSchema,
   GiftCatalogProvisionResponse: giftCatalogProvisionResponseSchema,
   SendGiftRequest: sendGiftRequestSchema,
@@ -4942,5 +4966,128 @@ export const apiOperations = [
     security: apiSecurityRequirements.cookieSession,
     summary:
       'A one-time, ADR-0017 exact-action-authorized read. The header binds only this owner domain/reference and the read is consumed once. There is no counterpart for identity search, list, export, raw evidence/provider payload, grant, refusal, override, revocation, deletion, or retry.',
+  },
+  {
+    method: 'post',
+    operationId: 'createInviteLink',
+    path: apiRoutePaths.growthInvite,
+    responses: {
+      '200': {
+        description:
+          'The caller\u2019s invitation link. One account has one link forever: calling this again returns the same code rather than minting a second, because a new code would silently break every link the person has already sent.',
+        schemaName: 'GrowthInviteLinkResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Creates the caller\u2019s invitation link, or returns the one they already have. The code authorises nothing: it opens a public page and attributes one signup, and a holder of it can do nothing a stranger typing the same address cannot.',
+  },
+  {
+    method: 'get',
+    operationId: 'getInviteLink',
+    path: apiRoutePaths.growthInvite,
+    responses: {
+      '200': {
+        description:
+          'The caller\u2019s invitation link, or an empty object if they have never made one. An absent link is not an error \u2014 most accounts have never pressed the control.',
+        schemaName: 'GrowthInviteLinkResponse',
+      },
+      ...consumerAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieOrBearer,
+    summary:
+      'Reads the caller\u2019s own invitation link without creating one, so a screen can show what exists before anybody presses anything.',
+  },
+  {
+    method: 'post',
+    operationId: 'recordInvitationOpening',
+    path: apiRoutePaths.growthInvitationOpenings,
+    requestSchemaName: 'GrowthInvitationOpeningRequest',
+    responses: {
+      '200': {
+        description:
+          'Whether this code will attribute a signup. It never says who invited the caller, and an unusable code is answered the same way an unknown one is: an invitation address can be forwarded to anybody, so anything this disclosed would be disclosed to everybody who ever saw the link.',
+        schemaName: 'GrowthInvitationOpeningResponse',
+      },
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'Records that an invitation address was opened and says whether the code is usable. The opening key makes a person refreshing the page one opening rather than ten; it identifies nobody and is stored against no account.',
+  },
+  {
+    method: 'get',
+    operationId: 'listLiveWindows',
+    path: apiRoutePaths.growthLiveWindows,
+    responses: {
+      '200': {
+        description:
+          'The windows that are active now or starting soon, earliest first. Each carries a start, an end, and a name, and carries no attendee count, no capacity, and no estimate \u2014 nothing knows how many people will come, and a number nobody can verify would be a claim the platform cannot support.',
+        schemaName: 'GrowthLiveWindowListResponse',
+      },
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The scheduled times VELORA asks people to be looking at once. Ordinary Live is unaffected before, during, and after: a window concentrates people rather than gating anybody.',
+  },
+  {
+    method: 'post',
+    operationId: 'scheduleLiveWindow',
+    path: apiRoutePaths.adminGrowthLiveWindows,
+    requestSchemaName: 'GrowthScheduleLiveWindowRequest',
+    responses: {
+      '200': {
+        description:
+          'The windows an operator now sees, earliest first. Re-scheduling an existing slug moves it rather than creating a second window at the same address.',
+        schemaName: 'GrowthLiveWindowListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Schedules one live window. Start and end are the operator\u2019s, stored in UTC and rendered in each reader\u2019s own zone; a window that ends before it starts, or that is longer than a day, is refused rather than stored.',
+  },
+  {
+    method: 'post',
+    operationId: 'cancelLiveWindow',
+    path: apiRoutePaths.adminGrowthLiveWindowCancellation,
+    requestSchemaName: 'GrowthLiveWindowCancellationRequest',
+    responses: {
+      '200': {
+        description:
+          'The windows that remain. Cancelling one that is already cancelled, or that never existed, answers the same way, so this cannot be used to test whether a slug is in use.',
+        schemaName: 'GrowthLiveWindowListResponse',
+      },
+      ...adminAuthenticationResponses,
+      '422': invalidProductInputResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Withdraws a scheduled window. The record stays and stops being published; nothing about ordinary Live changes either way.',
+  },
+  {
+    method: 'get',
+    operationId: 'getAcquisitionSummary',
+    path: apiRoutePaths.adminGrowthAcquisition,
+    responses: {
+      '200': {
+        description:
+          'Counts of what GROWTH itself owns over a fixed recent window: invitations created, invitation openings, signups attributed, and signups by source. There is no per-inviter breakdown and no conversion rate \u2014 the first would publish one person\u2019s social graph to an operator with no decision to make about it, and the second is not this domain\u2019s fact to compute.',
+        schemaName: 'GrowthAcquisitionSummaryResponse',
+      },
+      ...adminAuthenticationResponses,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'What acquisition looks like, in counts an operator can act on. Nothing here identifies a person, and nothing here is a percentage.',
   },
 ] as const;

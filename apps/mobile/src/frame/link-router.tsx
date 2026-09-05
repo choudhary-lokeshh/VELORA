@@ -6,6 +6,7 @@ import { Linking } from 'react-native';
 import { resolvePushDestination } from '../push/routing';
 import { resolveDeepLink } from './deep-links';
 import { useToast } from './providers';
+import { rememberInvitation } from '../product/acquisition';
 
 /**
  * The two ways somebody arrives somewhere without touching the application.
@@ -80,6 +81,20 @@ export function LinkRouter() {
 
     const refuse = (url: string) => {
       const resolved = resolveDeepLink(url);
+      /*
+       * An invitation is remembered here rather than by a screen, and that is
+       * the only place it can be: the gate replaces every route with the
+       * welcome screen while there is no session, so a route component for
+       * this address would never mount for exactly the person the link is for.
+       * This runs above the gate.
+       *
+       * Nothing is navigated. The address it resolves to is the launch
+       * address, which is where the application was already going.
+       */
+      if (resolved.kind === 'invitation') {
+        void rememberInvitation(resolved.code);
+        return;
+      }
       // A link the router can serve is left to the router; acting on it here
       // as well would navigate twice for one tap. An address belonging to
       // something else on this scheme — the development client's, on every

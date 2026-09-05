@@ -224,6 +224,31 @@ export type NotificationState = JsonBody<
 
 export type RtcState = JsonBody<'/v1/admin/rtc/state', 'get', 200>;
 
+/**
+ * Acquisition, as an operator may see it.
+ *
+ * Counts and windows, and nothing that names anybody. There is no per-inviter
+ * figure in this shape and no conversion rate, so a screen that showed one
+ * could not be written: the first would publish one person's social graph to an
+ * operator with no decision to make about it, and the second is not GROWTH's
+ * fact to compute.
+ */
+export type AcquisitionSummary = JsonBody<
+  '/v1/admin/growth/acquisition',
+  'get',
+  200
+>;
+export type LiveWindowList = JsonBody<
+  '/v1/admin/growth/live-windows',
+  'post',
+  200
+>;
+export type LiveWindow = LiveWindowList['windows'][number];
+export type ScheduleLiveWindowBody = RequestBody<
+  '/v1/admin/growth/live-windows',
+  'post'
+>;
+
 /* =============================== Identity ============================ */
 
 export type IdentityState = JsonBody<'/v1/admin/identity/state', 'get', 200>;

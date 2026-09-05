@@ -47,7 +47,7 @@ test.describe('Consumer Web product journey', () => {
 
     await page.goto(consumerWebOrigin);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Meet people who said yes too.',
+      'Meet new people, one live conversation at a time.',
     );
     await page.getByTestId('landing-start').click();
     await page.waitForURL(/\/sign-in$/u);

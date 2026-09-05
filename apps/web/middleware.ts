@@ -2,7 +2,10 @@ import {
   browserSecurityHeaders,
   resolveSurfaceConfig,
 } from '@velora/config/client';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { pathIsIndexable } from './src/seo/routes';
+import { resolvePublicSite } from './src/seo/site';
 
 /**
  * Resolved, not read raw. The origin named in `connect-src` has to be the
@@ -47,11 +50,34 @@ const headers = () => {
   });
 };
 
-export function middleware(): NextResponse {
+/**
+ * Whether this address may be kept by a search engine, decided before routing.
+ *
+ * A header rather than only a meta tag, and set here rather than in each page,
+ * because the two places a page can say this are read at different moments and
+ * only one of them survives everything. A crawler that fetches an address and
+ * abandons the response before scripts run never sees a document; a route that
+ * answers something other than HTML — an image, a sitemap, a redirect — has no
+ * document to put a tag in at all. The header covers every one of those, and
+ * the pages that can also carry the tag carry it too.
+ *
+ * The default is refusal in both directions. An address the route policy does
+ * not name is `noindex`, so a page added tomorrow is private until somebody
+ * says otherwise, and an environment with no public identity is `noindex`
+ * everywhere however many public pages it serves.
+ */
+function indexingDirective(pathname: string): string | undefined {
+  if (!resolvePublicSite().indexable) return 'noindex, nofollow';
+  return pathIsIndexable(pathname) ? undefined : 'noindex, nofollow';
+}
+
+export function middleware(request: NextRequest): NextResponse {
   const response = NextResponse.next();
   for (const [name, value] of Object.entries(headers())) {
     response.headers.set(name, value);
   }
+  const directive = indexingDirective(request.nextUrl.pathname);
+  if (directive !== undefined) response.headers.set('X-Robots-Tag', directive);
   return response;
 }
 

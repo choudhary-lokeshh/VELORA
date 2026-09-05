@@ -1,6 +1,7 @@
 import { createVeloraApiClient } from '@velora/api-client';
 
 import type {
+  Acquisition,
   Appeal,
   AiSuggestion,
   AiSuggestionBody,
@@ -24,6 +25,10 @@ import type {
   CheckoutResponse,
   ClubAccessList,
   ClubDetail,
+  InvitationOpeningAnswer,
+  InvitationOpeningBody,
+  InviteLinkAnswer,
+  LiveWindowList,
   ConsumerAccount,
   ConsumerProfile,
   ConsumerPaymentList,
@@ -489,7 +494,31 @@ export interface ConsumerApi {
     query: PageQuery,
     signal?: AbortSignal,
   ): Promise<ApiResult<ConversationList>>;
-  createAccount(): Promise<ApiResult<ConsumerAccount>>;
+  /**
+   * Provisions the caller's account, offering where they came from.
+   *
+   * The acquisition object is sent on every call and read by the server only on
+   * the one that actually creates the account. That is deliberate on both
+   * sides: the client cannot tell whether this call will be the first, and the
+   * server will not let an account that already exists claim an origin.
+   */
+  createAccount(acquisition?: Acquisition): Promise<ApiResult<ConsumerAccount>>;
+  /** The caller's own invitation link, or nothing if they have never made one. */
+  inviteLink(signal?: AbortSignal): Promise<ApiResult<InviteLinkAnswer>>;
+  /** Mints the caller's invitation link, or returns the one they already hold. */
+  createInviteLink(): Promise<ApiResult<InviteLinkAnswer>>;
+  /**
+   * Records that an invitation address was opened, and asks whether it works.
+   *
+   * Carries no credential: an invitation is opened by somebody who has no
+   * account, which is the entire point of one.
+   */
+  openInvitation(
+    input: InvitationOpeningBody,
+    signal?: AbortSignal,
+  ): Promise<ApiResult<InvitationOpeningAnswer>>;
+  /** The scheduled times VELORA is asking people to be looking at once. */
+  liveWindows(signal?: AbortSignal): Promise<ApiResult<LiveWindowList>>;
   createProfileMediaUpload(): Promise<ApiResult<ProfileMediaUpload>>;
   declareAdult(region: string): Promise<ApiResult<OnboardingState>>;
   declineIntroduction(introductionId: string): Promise<ApiResult<Introduction>>;
@@ -1078,9 +1107,31 @@ export function createConsumerApi(options: ConsumerApiOptions): ConsumerApi {
         }),
       ),
 
-    createAccount: async () =>
+    createAccount: async (acquisition) =>
       attempt(async () =>
-        api.POST('/v1/users', { ...(await writing()), body: {} }),
+        api.POST('/v1/users', {
+          ...(await writing()),
+          body: acquisition === undefined ? {} : { acquisition },
+        }),
+      ),
+
+    inviteLink: async (signal) =>
+      attempt(async () => api.GET('/v1/growth/invite', await reading(signal))),
+
+    createInviteLink: async () =>
+      attempt(async () => api.POST('/v1/growth/invite', await writing())),
+
+    openInvitation: async (body, signal) =>
+      attempt(async () =>
+        api.POST('/v1/growth/invitations/openings', {
+          ...(await writing(signal)),
+          body,
+        }),
+      ),
+
+    liveWindows: async (signal) =>
+      attempt(async () =>
+        api.GET('/v1/growth/live-windows', await reading(signal)),
       ),
 
     // The capability is asked for, not described: the request carries no body

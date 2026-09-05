@@ -24,8 +24,9 @@ opinion.
   placeholders only, `.env` is never committed, and `pnpm secrets:check` fails
   on a tracked environment file at any path.
 - A value with a `NEXT_PUBLIC_` or `EXPO_PUBLIC_` prefix is compiled into a
-  shipped client bundle and is public forever. Only `EXPO_PUBLIC_APP_ENV` and
-  `EXPO_PUBLIC_API_BASE_URL` may carry one; `pnpm env:check` fails on any other.
+  shipped client bundle and is public forever. Only `EXPO_PUBLIC_APP_ENV`,
+  `EXPO_PUBLIC_API_BASE_URL`, and `EXPO_PUBLIC_WEB_ORIGIN` may carry one;
+  `pnpm env:check` fails on any other.
 
 ## What staging and production do today
 
@@ -332,6 +333,7 @@ Platform Admin.
 | `VELORA_BIND_HOST` | No | Safe default | blank | Container/host interface if not `0.0.0.0` (start) or `127.0.0.1` (dev) | The `start` scripts default `0.0.0.0` and `dev` scripts default `127.0.0.1`. Read by `package.json` only, never by application code |
 | `VELORA_MEDIA_DELIVERY_ORIGIN` | No | Optional everywhere | blank | The origin serving media bytes, when it is not the API's own | The API origin is assumed to serve the bytes, which is true of every environment with no approved storage or delivery provider. A loopback value is refused outside local and test, exactly as the API base URL is |
 | `VELORA_REALTIME_ENDPOINT` | No | Optional everywhere | blank, or the same value as `REALTIME_LIVEKIT_URL` | The realtime project's `wss://` address, when one is configured | `connect-src` names no media project, so a live encounter cannot connect. It is blank in every environment with no approved provider, and the resulting policy is exactly what it was before the field existed |
+| `VELORA_WEB_PUBLIC_ORIGIN` | No | Optional everywhere; required before Consumer Web can be indexed | blank | The public origin Consumer Web is served at | Consumer Web has no public identity: `robots.txt` disallows everything, every page carries `noindex`, the sitemap is empty, and shareable links are written as paths rather than absolute addresses. A loopback value is refused outside local and test |
 
 `VELORA_API_BASE_URL` is also a server field, and the only thing that reads it
 there is the `local-test` storage adapter, which has no provider origin of its
@@ -381,8 +383,9 @@ Owner: `packages/config/src/client.ts`, read by `apps/mobile/src/api.ts`.
 |---|---|---|---|---|
 | `EXPO_PUBLIC_APP_ENV` | Public, embedded in the bundle | Required for local development | `local` | The build is treated as `production`, which refuses a loopback endpoint |
 | `EXPO_PUBLIC_API_BASE_URL` | Public, embedded in the bundle | Required for any non-loopback target | `http://127.0.0.1:4000` | Local and test fall back to the loopback API; a production build fails to resolve an endpoint |
+| `EXPO_PUBLIC_WEB_ORIGIN` | Public, embedded in the bundle | Optional everywhere | `http://127.0.0.1:3000` | The app offers no invitation share control at all, which is the honest answer: a `velora://` address is worth nothing to the person being invited |
 
-These two are the only variables permitted to carry a client-public prefix.
+These three are the only variables permitted to carry a client-public prefix.
 Anything with that prefix is readable by anyone holding the app, so a secret
 with one is a published secret. Expo reads `apps/mobile/.env` rather than the
 repository-root file, so the mobile `dev` script supplies these values to the

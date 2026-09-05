@@ -48,6 +48,14 @@ The lockfile delta was confined to the Expo SDK 57 train and its own closure. `e
 
 The sixteen exclusions DAB-2026-001 authorized were removed on 2026-08-17, and that entry was deleted rather than archived — the register's rules are the durable part, and a cleared entry whose exclusions are gone has nothing left to govern. DAB-2026-002 is deleted on the same principle.
 
+## What happened on 2026-09-05
+
+The Expo SDK 57 patch train `pnpm mobile:doctor` began demanding at 08:05Z was taken: `expo` to 57.0.20, `expo-build-properties` to 57.0.17, `expo-image-picker` to 57.0.16, `expo-notifications` to 57.0.17, and `expo-router` to 57.0.19. Every one of those versions was published on 2026-09-04 and had aged past the 1440-minute window by the time the upgrade was attempted, so this is not a blocker and gets no entry above.
+
+It is recorded because of *when* it surfaced rather than what it was. The same gate passed earlier the same day and reported the instant it would begin blocking; it then blocked mid-phase on a commit whose changes touch no manifest. That is the bounded currency check from the [ADR-0018 amendment](../decisions/ADR-0018-toolchain-provisioning-verification-ci.md#amendment-2026-08-20-bounding-the-mobile-dependency-currency-check) working exactly as designed — deferring only while the demanded versions are too young to install, and blocking the moment they are not — and the correct response was the upgrade rather than an exception.
+
+`pnpm install` resolved the train against the unchanged policy with `minimumReleaseAgeExclude` still empty, and no version was refused. `pnpm install:check`, `pnpm workspace:check`, `pnpm mobile:doctor` (20/20), `pnpm android:verify`, the mobile typecheck, lint, 219 unit tests, and the Android bundle export all pass on the result, and `pnpm audit:dependencies` is unchanged.
+
 ## What happened on 2026-08-28
 
 The Expo SDK 57 patch train `pnpm mobile:doctor` had been reporting since 2026-08-26 was taken: twelve pins raised to the versions the check named, plus `expo-template-bare-minimum` to 57.0.19. Every one of those versions was published on 2026-08-26 and had aged past the 1440-minute window before the upgrade was attempted, so this is not a blocker and gets no entry above. `pnpm install` resolved the whole train against the unchanged policy with the exclusion list already empty, and no version was refused.

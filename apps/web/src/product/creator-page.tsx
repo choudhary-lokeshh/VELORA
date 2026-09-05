@@ -11,6 +11,7 @@ import type {
   GiftCatalogItem,
   MembershipOffer,
   PublicClub,
+  PublicClubList,
 } from '@velora/consumer-client';
 import { createConsumerApi, failureMessage } from '@velora/consumer-client';
 import { formatMinorUnits } from '@velora/validation';
@@ -46,6 +47,7 @@ import {
   subscriptionStateMeaning,
 } from './commerce';
 import { GiftArt } from './gift-art';
+import { ShareControl } from './share';
 import { useAddressesFrom } from './imagery';
 import { useResource } from './resource';
 
@@ -70,6 +72,9 @@ export function CreatorPublicPage({
   fetchImplementation,
   handle,
   consumerApi,
+  initialClubs,
+  initialCreator,
+  shareOrigin = '',
   signedIn = false,
   showToast,
 }: {
@@ -78,6 +83,35 @@ export function CreatorPublicPage({
   readonly fetchImplementation?: typeof globalThis.fetch;
   readonly handle: string;
   readonly consumerApi?: ConsumerApi;
+  /**
+   * The same public projection, already read on the server for this request.
+   *
+   * It is what turns this address into a page rather than a skeleton for
+   * anything that does not run scripts — a crawler, a link preview, a person on
+   * a slow connection. The client still asks again on mount, so nothing here
+   * depends on the server answer staying fresh.
+   */
+  readonly initialCreator?: PublicCreator | undefined;
+  /**
+   * The creator's published clubs, read on the server when nobody was signed in.
+   *
+   * Seeded on the same condition as the club page's own answer, and for the
+   * same reason: this projection carries the reader's own standing in each
+   * club, so the anonymous version of it is right for a visitor and wrong for a
+   * member. What it buys is that the links to those clubs are in the first
+   * response — without them a club address is reachable only by somebody who
+   * already knows it exists.
+   */
+  readonly initialClubs?: PublicClubList | undefined;
+  /**
+   * The address this page is reached at from outside, when one is declared.
+   *
+   * Only used to build the address a share control hands to somebody else. It
+   * is empty on a machine with no public identity, and the control then falls
+   * back to the address the browser is actually on — which is the same thing
+   * everywhere it matters and the only honest answer where it is not.
+   */
+  readonly shareOrigin?: string;
   readonly signedIn?: boolean;
   readonly showToast?: (message: string, tone: 'critical' | 'positive') => void;
 }) {
@@ -99,7 +133,9 @@ export function CreatorPublicPage({
     async () => api.publicCreator(handle),
     [api, handle],
   );
-  const creator = useResource<PublicCreator>(load);
+  const creator = useResource<PublicCreator>(load, {
+    ...(initialCreator === undefined ? {} : { initial: initialCreator }),
+  });
   // This page has no provider above it — it is the one surface somebody with no
   // account reaches — so it holds its own book. The exchange is the same one
   // every other surface makes, and it is sent without a credential because the
@@ -203,7 +239,11 @@ export function CreatorPublicPage({
 
         {creator.value === undefined ? null : (
           <div className="v-stack v-stack--8">
-            <CreatorProfileView creator={creator.value} media={media} />
+            <CreatorProfileView
+              creator={creator.value}
+              media={media}
+              shareOrigin={shareOrigin}
+            />
             <GiftPicker
               api={consumerApi}
               handle={handle}
@@ -215,7 +255,9 @@ export function CreatorPublicPage({
               api={consumerApi ?? visitorApi}
               handle={handle}
               signedIn={signedIn}
+              {...(initialClubs === undefined ? {} : { initialClubs })}
             />
+            {signedIn ? null : <NewHere />}
           </div>
         )}
       </main>
@@ -223,10 +265,44 @@ export function CreatorPublicPage({
   );
 }
 
+/**
+ * What VELORA is, for somebody who arrived here and nowhere else.
+ *
+ * A creator's link is shared far more often than the entry page is, so for a
+ * large share of visitors this page *is* the product's front door — and until
+ * now the only thing on it that said what VELORA was, was the word VELORA.
+ * Shown only to somebody with no session, because everybody else already knows.
+ */
+function NewHere() {
+  return (
+    <section
+      aria-labelledby="creator-new-here"
+      className="v-stack v-stack--3"
+      data-testid="creator-new-here"
+    >
+      <h2 className="v-subheading" id="creator-new-here">
+        New to VELORA?
+      </h2>
+      <p className="v-small v-muted">
+        VELORA is an adults-only place to meet new people through live
+        conversations, one person at a time. Creators publish pages like this
+        one and run the communities on them.
+      </p>
+      <p className="v-small">
+        <Link href="/about">What VELORA is</Link> ·{' '}
+        <Link href="/about/live">How live conversations work</Link>
+      </p>
+    </section>
+  );
+}
+
 /** Binds the public projection to the optional signed-in gift experience. */
 export function ConnectedCreatorPublicPage(props: {
   readonly apiBaseUrl: string;
   readonly handle: string;
+  readonly initialClubs?: PublicClubList | undefined;
+  readonly initialCreator?: PublicCreator | undefined;
+  readonly shareOrigin?: string;
 }) {
   const api = useApi();
   const session = useSession();
@@ -462,9 +538,11 @@ function formatGiftPrice(item: GiftCatalogItem): string {
 function CreatorProfileView({
   creator,
   media,
+  shareOrigin,
 }: {
   readonly creator: PublicCreator;
   readonly media: MediaAddressBook<MediaVariant>;
+  readonly shareOrigin: string;
 }) {
   const avatarRef = creator.avatar?.id;
   const coverRef = creator.cover?.id;
@@ -540,6 +618,21 @@ function CreatorProfileView({
               </ul>
             </nav>
           )}
+
+          {/*
+            The one control on this page that costs nothing and reaches
+            somebody who is not here. It shares the canonical address rather
+            than whatever the person is looking at, so a link that arrived with
+            a campaign parameter is passed on without it.
+          */}
+          <ShareControl
+            label="Share this page"
+            origin={shareOrigin}
+            path={`/c/${creator.handle}`}
+            testId="creator-share"
+            text={`${creator.displayName} on VELORA`}
+            title={creator.displayName}
+          />
         </div>
       </div>
     </article>
@@ -652,10 +745,12 @@ function CreatorCatalogView({
 function CreatorMembershipsView({
   api,
   handle,
+  initialClubs,
   signedIn,
 }: {
   readonly api: ConsumerApi;
   readonly handle: string;
+  readonly initialClubs?: PublicClubList | undefined;
   readonly signedIn: boolean;
 }) {
   const loadClubs = useCallback(
@@ -666,7 +761,9 @@ function CreatorMembershipsView({
     async (signal: AbortSignal) => api.membershipOffers(handle, signal),
     [api, handle],
   );
-  const clubs = useResource(loadClubs);
+  const clubs = useResource(loadClubs, {
+    ...(initialClubs === undefined ? {} : { initial: initialClubs }),
+  });
   const offers = useResource(loadOffers);
 
   const offerByResource = useMemo(() => {

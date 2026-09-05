@@ -58,6 +58,20 @@ import {
 
 export type ResolvedLink =
   | { readonly kind: 'route'; readonly path: string }
+  /**
+   * An invitation somebody sent. It is remembered and then it is a launch.
+   *
+   * There is no invitation screen on this platform and there should not be: a
+   * phone that has the application installed does not need to be told what
+   * VELORA is, and a person with no session lands on the welcome screen either
+   * way. What the link is actually for is the code, which is held until an
+   * account is created and handed over on the request that creates it.
+   */
+  | {
+      readonly code: string;
+      readonly kind: 'invitation';
+      readonly path: string;
+    }
   | {
       readonly kind: 'refused';
       readonly path: string;
@@ -74,6 +88,16 @@ export const linkScheme = 'velora';
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+/**
+ * The shape of an invitation code, matched before anything is stored.
+ *
+ * Validation rather than authorization, on the same terms as every other
+ * identifier here: the code grants nothing, and checking it stops a malformed
+ * address becoming a stored value the server will refuse anyway. A code that
+ * does not match is not repaired into one that does.
+ */
+const invitePattern = /^[a-z0-9]{22}$/u;
 
 /**
  * Addresses on the `velora://` scheme that belong to something other than the
@@ -256,6 +280,24 @@ export function resolveDeepLink(url: string): ResolvedLink {
         return refused('That link does not lead anywhere here.');
       }
       return { kind: 'route', path: clubPath(second, slug) };
+    }
+
+    /*
+     * An invitation. The address a person is most likely to be *sent* rather
+     * than to arrive at by tapping.
+     *
+     * It resolves to the launch address rather than to a screen of its own,
+     * because on a phone there is nothing an invitation screen could say that
+     * the welcome screen does not: somebody opening this already has the
+     * application. A code that is not the shape this platform issues is refused
+     * with the ordinary sentence, so a mistyped link lands somewhere real
+     * rather than silently pretending to have worked.
+     */
+    case 'invite': {
+      if (second === undefined || !invitePattern.test(second)) {
+        return refused('That invitation link is not readable.');
+      }
+      return { code: second, kind: 'invitation', path: livePath };
     }
 
     case 'you': {

@@ -35,6 +35,7 @@ import type { YouSection } from '../frame/links';
 import { color, space } from '../design/tokens';
 import { profileMediaLabels, profileMediaState } from '@velora/consumer-client';
 import { useResource, useSingleFlight } from './resource';
+import { InviteCard } from './invite';
 
 /**
  * You: the account, and everywhere that acts on it.
@@ -306,6 +307,13 @@ export function AccountScreen({ onBack }: { readonly onBack: () => void }) {
             )}
           </Stack>
         </Card>
+
+        {/*
+          Inviting somebody lives here, beside the person's own account, and
+          nowhere else. A growth prompt over a live conversation is the thing
+          every review of every product like this complains about.
+        */}
+        <InviteCard />
 
         <Stack gap={3}>
           <Button

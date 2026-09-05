@@ -81,6 +81,20 @@ test.describe('Creator Studio journey', () => {
       await expect(anonymous.getByRole('heading', { level: 1 })).toHaveText(
         'Ember Vale',
       );
+      /*
+       * The address the creator is told to share is the address that works.
+       *
+       * A creator's link is the cheapest acquisition this platform has, and the
+       * console used to show a bare path — something a person cannot send to
+       * anybody. It shows the whole address now, and this asserts that the
+       * address on the console is the one the visitor beside it is reading.
+       */
+      await expect(page.getByTestId('creator-public-path')).toHaveText(
+        `${consumerWebOrigin}/c/${handle}`,
+      );
+      await expect(
+        page.getByTestId('creator-copy-public-address'),
+      ).toBeVisible();
       await expect(anonymous.getByTestId('creator-page-handle')).toHaveText(
         `@${handle}`,
       );

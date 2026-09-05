@@ -33,6 +33,7 @@ import { color, radius, space } from '../design/tokens';
 import { languageName, regionName } from './locale';
 import { ProfilePhotos } from './photos';
 import { useSingleFlight } from './resource';
+import { forgetInvitation, heldAcquisition } from './acquisition';
 
 /**
  * Everything between signing in and being able to use VELORA.
@@ -146,7 +147,24 @@ export function OnboardingScreen() {
             <Button
               busy={busy}
               onPress={() => {
-                submit(async () => api.createAccount());
+                submit(async () => {
+                  /*
+                   * The invitation this device arrived with, offered exactly
+                   * once.
+                   *
+                   * This is the only request that can be the one that creates
+                   * an account, which is why it is the only one that may carry
+                   * an origin — the server reads it only when it actually
+                   * creates the account and ignores it otherwise. It is
+                   * forgotten whatever the answer was: a refusal is not
+                   * something to retry with the same code later.
+                   */
+                  const result = await api.createAccount(
+                    await heldAcquisition(),
+                  );
+                  await forgetInvitation();
+                  return result;
+                });
               }}
               size="large"
               testID="create-account"

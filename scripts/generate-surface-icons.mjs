@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import sharp from 'sharp';
@@ -238,11 +238,89 @@ async function drawSurface(surface) {
   process.stdout.write(`  ${icoFile}\n`);
 }
 
+/**
+ * The picture a shared VELORA link shows, drawn from the same mark.
+ *
+ * Consumer Web only, because it is the only surface anybody shares a link to.
+ * It carries no text, and that is a decision rather than an omission: text in
+ * an SVG is rendered by whatever fonts the machine running this script happens
+ * to have, so a card with words on it would come out differently depending on
+ * who regenerated it — and the words are already there. Every platform that
+ * fetches this image renders the page's own title and description beside it, so
+ * putting them in the picture would say everything twice and say it worse at
+ * the size a preview is actually shown.
+ *
+ * The ground, the tone, and the wash are the entry page's own: `--canvas`,
+ * `--ember`, and the two radial gradients `.v-landing__glow` draws. Somebody
+ * who follows the link should recognise the page they land on.
+ */
+const shareImage = { height: 630, width: 1200 };
+
+async function drawShareImage() {
+  const surface = surfaces[0];
+  const iconsFile = join(surface.directory, 'src/design/icons.tsx');
+  const tokensFile = join(surface.directory, 'app/styles/tokens.css');
+
+  const paths = readSparklePaths(iconsFile);
+  const ground = readToken(tokensFile, 'canvas', '#[0-9a-fA-F]{6}');
+  const tone = readToken(tokensFile, 'ember', '#[0-9a-fA-F]{6}');
+  const stroke = Number(readToken(tokensFile, 'icon-stroke', '[0-9.]+'));
+
+  const bounds = inkBounds(iconsFile, paths);
+  const bleed = stroke / 2;
+  const inkWidth = bounds.maximumX - bounds.minimumX + stroke;
+  const inkHeight = bounds.maximumY - bounds.minimumY + stroke;
+  // A third of the shorter edge. Large enough to read as the product's mark in
+  // a preview the size of a thumbnail, small enough that the ground is still
+  // the thing somebody sees first.
+  const markExtent = shareImage.height / 3;
+  const scale = markExtent / Math.max(inkWidth, inkHeight);
+  const offsetX =
+    (shareImage.width - inkWidth * scale) / 2 -
+    (bounds.minimumX - bleed) * scale;
+  const offsetY =
+    (shareImage.height - inkHeight * scale) / 2 -
+    (bounds.minimumY - bleed) * scale;
+  const marks = paths.map((path) => `<path d="${path}"/>`).join('');
+
+  const vector =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${String(shareImage.width)}" height="${String(shareImage.height)}" viewBox="0 0 ${String(shareImage.width)} ${String(shareImage.height)}">` +
+    '<defs>' +
+    '<radialGradient id="ember" cx="22%" cy="18%" r="60%">' +
+    `<stop offset="0%" stop-color="${tone}" stop-opacity="0.22"/>` +
+    `<stop offset="100%" stop-color="${tone}" stop-opacity="0"/>` +
+    '</radialGradient>' +
+    '<radialGradient id="cool" cx="82%" cy="8%" r="55%">' +
+    '<stop offset="0%" stop-color="#82a9de" stop-opacity="0.10"/>' +
+    '<stop offset="100%" stop-color="#82a9de" stop-opacity="0"/>' +
+    '</radialGradient>' +
+    '</defs>' +
+    `<rect width="${String(shareImage.width)}" height="${String(shareImage.height)}" fill="${ground}"/>` +
+    `<rect width="${String(shareImage.width)}" height="${String(shareImage.height)}" fill="url(#ember)"/>` +
+    `<rect width="${String(shareImage.width)}" height="${String(shareImage.height)}" fill="url(#cool)"/>` +
+    `<g transform="translate(${offsetX.toFixed(4)} ${offsetY.toFixed(4)}) scale(${scale.toFixed(6)})" ` +
+    `fill="none" stroke="${tone}" stroke-width="${String(stroke)}" ` +
+    `stroke-linecap="round" stroke-linejoin="round">${marks}</g></svg>`;
+
+  const outputDirectory = join(surface.directory, 'public/share');
+  mkdirSync(outputDirectory, { recursive: true });
+  const file = join(outputDirectory, 'velora.png');
+  writeFileSync(
+    file,
+    await sharp(Buffer.from(vector), { density: 72 })
+      .png({ compressionLevel: 9 })
+      .toBuffer(),
+  );
+  process.stdout.write(`  ${file}\n`);
+}
+
 async function main() {
   for (const surface of surfaces) {
     process.stdout.write(`Drawing ${surface.name} icons from its own mark:\n`);
     await drawSurface(surface);
   }
+  process.stdout.write('Drawing the Consumer Web share image:\n');
+  await drawShareImage();
 }
 
 await main();

@@ -34,6 +34,7 @@ import {
 } from './commerce';
 import { useAddressesFrom } from './imagery';
 import { formatDay } from './locale';
+import { ShareControl } from './share';
 import { useResource } from './resource';
 
 /**
@@ -57,6 +58,8 @@ export function ClubDestination({
   consumerApi,
   fetchImplementation,
   handle,
+  initialDetail,
+  shareOrigin = '',
   signedIn = false,
   slug,
 }: {
@@ -65,6 +68,24 @@ export function ClubDestination({
   /** Injected by tests so the page renders without a network. */
   readonly fetchImplementation?: typeof globalThis.fetch;
   readonly handle: string;
+  /**
+   * The anonymous answer, already read on the server for this request.
+   *
+   * Supplied only when the request carried no session, and that condition is
+   * the whole design. The anonymous answer is the right thing to show somebody
+   * who has no session and the wrong thing to show a member for the moment
+   * before their own read lands, so the page seeds one and waits for the other.
+   */
+  readonly initialDetail?: ClubDetail | undefined;
+  /**
+   * The address this surface is reached at from outside, when one is declared.
+   *
+   * Only used to build what a share control hands to somebody else. A club's
+   * public facts — its name, what it offers, and who runs it — are readable by
+   * anybody, which is what makes the address worth passing on; what is inside
+   * is not in this projection at all.
+   */
+  readonly shareOrigin?: string;
   readonly signedIn?: boolean;
   readonly slug: string;
 }) {
@@ -88,7 +109,9 @@ export function ClubDestination({
     async (signal: AbortSignal) => api.club({ handle, slug }, signal),
     [api, handle, slug],
   );
-  const detail = useResource<ClubDetail>(load);
+  const detail = useResource<ClubDetail>(load, {
+    ...(initialDetail === undefined ? {} : { initial: initialDetail }),
+  });
 
   const loadOffers = useCallback(
     async (signal: AbortSignal) => api.membershipOffers(handle, signal),
@@ -208,6 +231,19 @@ export function ClubDestination({
                   {formatDay(club.membership.grantedAt)}
                 </p>
               )}
+              {/*
+                The canonical address, not the one in the reader's bar. What it
+                passes on is what anybody can already read here — a name, a
+                description, and what belonging offers — and never a post.
+              */}
+              <ShareControl
+                label="Share this community"
+                origin={shareOrigin}
+                path={`/c/${detail.value.creatorHandle}/club/${club.slug}`}
+                testId="club-share"
+                text={`${club.name} on VELORA`}
+                title={club.name}
+              />
             </section>
 
             {club.membership === undefined ? (
@@ -383,6 +419,8 @@ function LockedClub({
 export function ConnectedClubPage(props: {
   readonly apiBaseUrl: string;
   readonly handle: string;
+  readonly initialDetail?: ClubDetail | undefined;
+  readonly shareOrigin?: string;
   readonly slug: string;
 }) {
   const api = useApi();

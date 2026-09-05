@@ -93,6 +93,16 @@ Authentication state distinguishes bootstrap, authenticated, signed out on this 
 
 Users may access only their account and authorized shared objects. Public pages expose only published, policy-approved fields. Web must never expose Admin routes, creator-only mutation, provider secrets, raw payment data, private identity evidence, or another user's restriction reason.
 
+### The public half of the surface
+
+[ADR-0047](../decisions/ADR-0047-public-entry-and-organic-acquisition.md) adds the addresses a person reaches before they have an account: the entry page, five explanations under `/about`, a public creator listing at `/creators`, and the invitation landing at `/invite/<code>`. They sit outside the shell and outside the session gate, and they are **rendered on the server** — a page whose content arrives after hydration is an empty document to a crawler, a link preview, and a dropped connection alike, and those are exactly the readers a public address has.
+
+The creator page and the club page are server-rendered on the same terms, with one condition: the projections that carry the reader's own standing are seeded only where the request arrived with no session cookie, because the anonymous answer is right for a visitor and wrong for a member. A withdrawn creator page and a closed club answer 404 rather than a 200 with an apology on it.
+
+Which addresses may be indexed is a decision rather than an accident of routing, and it lives in one policy that the sitemap, `robots.txt`, and the middleware all read. `docs/engineering/08-public-entry-and-seo.md` holds the matrix and the two conditions indexing requires. Every page carries a real title and an explicit index directive, including the private ones — a browser tab and a history entry are read by the person using the product, and `VELORA` seven times over is a worse answer for them than it is for anybody else.
+
+Inviting somebody lives under You and nowhere else. There is no growth prompt over a conversation, no count of who joined, and no reward.
+
 ## Platform, responsive, and deep-link rules
 
 Web supports keyboard and pointer input from mobile viewport through wide desktop. Responsive behavior follows [responsive rules](../design/04-responsive-platform-rules.md); it need not copy Mobile navigation or interactions. Browser back/forward, refresh, multiple tabs, session expiry, and resumable pending operations need explicit states.

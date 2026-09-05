@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 import {
   authApiBaseUrl,
+  consumerWebOrigin,
   consumerWebPort,
   creatorStudioPort,
   platformAdminPort,
@@ -19,6 +20,12 @@ const surfaceEnvironment = {
   // policy exactly what it was. When one is, the socket has to be named here or
   // the browser refuses it after the person has already granted a camera.
   VELORA_REALTIME_ENDPOINT: surfaceRealtimeEndpoint,
+  // The origin Consumer Web is actually answering at in this run, so a
+  // canonical address and a social preview can be asserted against the address
+  // the browser fetched rather than against whatever port `.env` names. It
+  // makes nothing indexable: that needs a production environment, and
+  // `VELORA_APP_ENV` above says this is not one.
+  VELORA_WEB_PUBLIC_ORIGIN: consumerWebOrigin,
 };
 
 export default defineConfig({

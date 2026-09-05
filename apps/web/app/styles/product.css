@@ -174,6 +174,239 @@
   width: 100%;
 }
 
+/*
+ * The scheduled times, wherever they appear.
+ *
+ * A row per window rather than a card each: they are a short list of moments,
+ * and a grid of panels would make three times look like a programme of events.
+ */
+.v-live-windows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  list-style: none;
+}
+
+.v-live-windows__row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+}
+
+.v-live-windows__mark {
+  align-items: center;
+  background: var(--ember-wash);
+  border: 1px solid var(--ember-line);
+  border-radius: var(--radius-md);
+  color: var(--ember);
+  display: flex;
+  flex: none;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.v-live-windows__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.v-live-windows__name {
+  color: var(--text-primary);
+  font-size: var(--text-subheading-size);
+  font-weight: 600;
+  line-height: var(--text-subheading-line);
+}
+
+.v-live-windows__name:hover {
+  color: var(--ember);
+}
+
+/* The entry page's own band for them, on the same measure as its other bands. */
+.v-landing__windows {
+  border-top: 1px solid var(--border-hairline);
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-8) var(--space-4);
+  width: 100%;
+}
+
+@media (width >= 768px) {
+  .v-landing__windows {
+    padding: var(--space-10) var(--space-6);
+  }
+}
+
+/*
+ * The share control, and the address it falls back to showing.
+ *
+ * `word-break` rather than an ellipsis: somebody who cannot copy needs to be
+ * able to read and retype the whole thing, and a truncated address is one
+ * nobody can use. It wraps anywhere because an invitation code has no spaces in
+ * it and a container narrower than the code is a real width on a phone.
+ */
+.v-share {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.v-share__address {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* ===================== Public explanation pages ======================== */
+
+/*
+ * A reading column, not a screen layout.
+ *
+ * These pages are prose somebody arrived at from outside, so the measure is the
+ * constraint rather than the viewport: a line of text wider than roughly this
+ * loses the reader on the way back to the left edge. It stays a single column
+ * at every width for the same reason — there is no second thing to put beside
+ * it, and a two-column explanation is read as two explanations.
+ */
+.v-public {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: 0 auto;
+  max-width: var(--measure-max);
+  padding: var(--space-8) var(--space-4) var(--space-12);
+  position: relative;
+  width: 100%;
+}
+
+/*
+ * A heading somebody has scaled their text up on.
+ *
+ * The display size has a 1.875rem floor, so at 200% text on a 320 px phone it
+ * renders around 60 px — and one long word in it is wider than the viewport.
+ * Breaking mid-word is not pretty and it is the accessible answer: a page that
+ * scrolls sideways under a thumb is unusable, and a hyphenated word is not.
+ */
+.v-public__title {
+  max-width: 22ch;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.v-public__section {
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-6);
+}
+
+.v-public__section p {
+  color: var(--text-secondary);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.v-public__section ul {
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-body-size);
+  gap: var(--space-2);
+  line-height: var(--text-body-line);
+  list-style: disc;
+  padding-left: var(--space-5);
+}
+
+.v-public__cta {
+  padding-top: var(--space-2);
+}
+
+/*
+ * The public creator listing.
+ *
+ * Rows of text rather than a grid of portraits, and that is a decision about
+ * cost rather than about taste: a portrait here is a signed delivery address
+ * that has to be fetched before the page can be sent, it expires, and it buys
+ * nothing for the person deciding whose page to open — the name and their own
+ * words already do that.
+ */
+.v-creator-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  list-style: none;
+}
+
+.v-creator-list__row {
+  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-5);
+}
+
+.v-creator-list__row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.v-creator-list__link {
+  color: var(--text-primary);
+  font-size: var(--text-heading-size);
+  font-weight: 600;
+  line-height: var(--text-heading-line);
+}
+
+.v-creator-list__link:hover {
+  color: var(--ember);
+}
+
+/*
+ * The way on to the rest of what can be read without an account.
+ *
+ * Every entry is a real link with the page's own title as its text, because
+ * that is both what a person needs to choose one and what tells a crawler what
+ * is on the other side. It is a short list on purpose: a footer carrying every
+ * phrase somebody hoped to rank for is a footer nobody reads.
+ */
+.v-public__nav {
+  border-top: 1px solid var(--border-hairline);
+  margin: 0 auto;
+  max-width: var(--content-max);
+  padding: var(--space-6) var(--space-4);
+  width: 100%;
+}
+
+.v-public__nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  list-style: none;
+}
+
+.v-public__nav a {
+  color: var(--text-secondary);
+  font-size: var(--text-small-size);
+}
+
+.v-public__nav a:hover {
+  color: var(--text-primary);
+}
+
+@media (width >= 768px) {
+  .v-public {
+    padding: var(--space-12) var(--space-6) var(--space-16);
+  }
+
+  .v-public__nav {
+    padding: var(--space-6);
+  }
+}
+
 /* A single centred panel: sign-in, and any other one-decision page. */
 .v-focus-page {
   align-items: center;

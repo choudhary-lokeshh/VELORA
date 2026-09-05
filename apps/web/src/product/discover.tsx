@@ -1,10 +1,13 @@
 'use client';
 
+import type { LiveWindow } from '@velora/consumer-client';
+
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { PageHeader, Segmented } from '../design/primitives';
 import { CreatorDirectory } from './creators';
 import { Discovery } from './discovery';
+import { LiveWindows } from './live-windows';
 
 /**
  * The Discover destination, and the two things somebody can browse from it.
@@ -49,10 +52,22 @@ const ledeFor: Readonly<Record<Section, string>> = {
 export function Discover({
   apiBaseUrl,
   fetchImplementation,
+  liveWindows = [],
 }: {
   readonly apiBaseUrl: string;
   /** Injected by tests so the creator section renders without a network. */
   readonly fetchImplementation?: typeof globalThis.fetch;
+  /**
+   * The times VELORA is asking people to be looking at once.
+   *
+   * Here rather than on Live, and the placement is the whole argument. Live is
+   * a camera and a person's face; a band of announcements over it would be a
+   * notice board in front of the thing somebody opened the product for. This is
+   * the screen one press away, it is where somebody goes when a search found
+   * nobody, and it is a page of things to read — which is what a scheduled time
+   * is. Ordinary Live is unaffected either way.
+   */
+  readonly liveWindows?: readonly LiveWindow[];
 }) {
   const parameters = useSearchParams();
   const pathname = usePathname();
@@ -63,6 +78,12 @@ export function Discover({
   return (
     <>
       <PageHeader lede={ledeFor[section]} title="Discover" />
+
+      {liveWindows.length === 0 ? null : (
+        <div className="v-lede-gap">
+          <LiveWindows className="v-stack v-stack--3" windows={liveWindows} />
+        </div>
+      )}
 
       <div className="v-lede-gap">
         <Segmented

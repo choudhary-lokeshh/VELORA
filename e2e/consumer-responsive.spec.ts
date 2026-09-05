@@ -83,7 +83,24 @@ test.describe('Consumer Web responsive behaviour', () => {
       // Public pages first, while there is no session. Visiting the entry page
       // with one sends the browser into the product, and a measurement taken
       // during that redirect is a measurement of whichever page won the race.
-      for (const route of ['/', '/sign-in', '/c/nobody-here']) {
+      for (const route of [
+        '/',
+        '/sign-in',
+        '/c/nobody-here',
+        // The public half of the surface, which is where most people arrive
+        // and the half nobody has a session for. The explanation pages are a
+        // reading column with a heading that has to wrap at 320px, and the
+        // invitation landing carries a list and a large control on the same
+        // narrow screen.
+        '/about',
+        '/about/live',
+        '/about/creators',
+        '/about/safety',
+        '/about/questions',
+        '/creators',
+        '/invite/abcdefghijklmnopqrstuv',
+        '/live-window/nothing-scheduled',
+      ]) {
         await page.goto(`${consumerWebOrigin}${route}`);
         await expect(page.getByRole('main')).toBeVisible();
         expect(
@@ -198,6 +215,33 @@ test.describe('Consumer Web responsive behaviour', () => {
     // font metrics and failed on another's by two pixels; at 320 px the margin
     // is wide enough that the assertion answers the same on both.
     await page.setViewportSize({ height: 740, width: 320 });
+
+    /*
+     * The public pages first, while there is still no session.
+     *
+     * They are the half of the surface somebody arrives at from a search result
+     * or a friend's message, which means they are read on whatever phone that
+     * person has with whatever text size they need — and they carry the longest
+     * headings on the whole product.
+     */
+    for (const route of [
+      '/',
+      '/about',
+      '/about/live',
+      '/about/creators',
+      '/about/safety',
+      '/about/questions',
+      '/creators',
+      '/invite/abcdefghijklmnopqrstuv',
+    ]) {
+      await page.goto(`${consumerWebOrigin}${route}`);
+      await page.addStyleTag({ content: 'html { font-size: 200% }' });
+      await expect(page.getByRole('main')).toBeVisible();
+      expect(await overflowingElements(page), `${route} at 200% text`).toEqual(
+        [],
+      );
+    }
+
     await signInAdmitted(page, person.subject);
     // Text scaling rather than page zoom: it is the case that breaks fixed
     // heights, and it is what somebody with low vision actually turns on.

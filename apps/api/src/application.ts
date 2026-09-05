@@ -107,6 +107,10 @@ import {
   type NotificationsApiRuntime,
 } from './notifications/composition.js';
 import {
+  createGrowthRuntime,
+  type GrowthRuntime,
+} from './growth/composition.js';
+import {
   createPayoutsRuntime,
   type PayoutsRuntime,
 } from './payouts/composition.js';
@@ -196,6 +200,13 @@ export interface ApplicationDependencies {
   readonly support?: SupportRuntime;
   /**
    * Present on the same terms as `support`: every composition that owns its
+   * database. Absent, the acquisition routes answer `503` and no account
+   * records where it came from — which is the correct behaviour for a
+   * composition that did not supply a database to record it in.
+   */
+  readonly growth?: GrowthRuntime;
+  /**
+   * Present on the same terms as `support`: every composition that owns its
    * database. A test that injects its own runtimes may omit it, and then
    * answers `503` on the closure routes rather than publishing ones wired to a
    * database it did not supply.
@@ -274,6 +285,7 @@ export function createApplication(
   const injectedNotifications = options.dependencies?.notifications;
   const injectedPayouts = options.dependencies?.payouts;
   const injectedSafety = options.dependencies?.safety;
+  const injectedGrowth = options.dependencies?.growth;
   const injectedSupport = options.dependencies?.support;
   const injectedAccountClosure = options.dependencies?.accountClosure;
 
@@ -296,6 +308,7 @@ export function createApplication(
   let notifications: NotificationsApiRuntime;
   let payouts: PayoutsRuntime;
   let safety: SafetyRuntime;
+  let growth: GrowthRuntime | undefined;
   let support: SupportRuntime | undefined;
   let accountClosure: AccountClosureRuntime | undefined;
   if (injectedDatabase === undefined) {
@@ -399,6 +412,9 @@ export function createApplication(
     users =
       injectedUsers ??
       createUsersRuntime({
+        // Resolved when an account is actually created, not now: GROWTH is
+        // composed after this call because it needs ADMIN's operator context.
+        attribution: () => growth?.service,
         caller: auth.caller,
         config,
         database: ownedDatabase.database,
@@ -704,6 +720,20 @@ export function createApplication(
     // unavailable and no configuration value to refuse, which is the whole
     // reason a ticket is a row in this database rather than a call to a help
     // desk somebody would have to pay for.
+    // GROWTH after ADMIN, on the same terms as SUPPORT and for the same reason:
+    // it needs the operator context ADMIN builds and the consumer context USERS
+    // builds, and it hands nothing back to either. It composes unconditionally
+    // — there is no provider to be unavailable and nothing here costs anything
+    // to run, which is the whole reason acquisition is a row in this database
+    // rather than a line in an advertising account.
+    growth =
+      injectedGrowth ??
+      createGrowthRuntime({
+        adminContext: admin.adminContext,
+        consumerContext: users.consumerContext,
+        database: ownedDatabase.database,
+        logger,
+      });
     support =
       injectedSupport ??
       createSupportRuntime({
@@ -782,6 +812,7 @@ export function createApplication(
     notifications = injectedNotifications;
     payouts = injectedPayouts;
     safety = injectedSafety;
+    growth = injectedGrowth;
     support = injectedSupport;
     accountClosure = injectedAccountClosure;
   }
@@ -831,6 +862,7 @@ export function createApplication(
     queueRedis,
     safety,
     ...(accountClosure === undefined ? {} : { accountClosure }),
+    ...(growth === undefined ? {} : { growth }),
     ...(support === undefined ? {} : { support }),
     users,
   };
@@ -946,6 +978,55 @@ export function createApplication(
         );
       }
       return run(support, input);
+    };
+  }
+
+  /**
+   * Wraps one acquisition handler on the same terms as `supportRoute`.
+   *
+   * Two of the paths behind this need no session at all — an invitation is
+   * opened by somebody who has no account yet, and a scheduled time is read by
+   * a public page — so the wrapper answers availability and nothing else. Who
+   * may call each one is the route's own business, and the two consumer ones
+   * resolve a session for themselves.
+   */
+  function growthRoute(
+    run: (runtime: GrowthRuntime, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      if (growth === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(growth, input);
+    };
+  }
+
+  /**
+   * Wraps one operator acquisition handler, refusing the audience first.
+   *
+   * The same order every other admin route follows, and for the same reason
+   * `adminSupportRoute` states: availability is a fact about the platform, and
+   * answering it before the audience would disclose it to a caller with no
+   * business on the route.
+   */
+  function adminGrowthRoute(
+    run: (runtime: GrowthRuntime, input: RouteRequest) => Promise<RouteResult>,
+  ): (input: RouteRequest) => Promise<RouteResult> {
+    return async (input) => {
+      const operator = await admin.adminContext.resolve(input);
+      if ('failure' in operator) return operator.failure;
+      if (growth === undefined) {
+        return routeFailure(
+          503,
+          productErrorCodes.dependencyUnavailable,
+          input.correlationId,
+        );
+      }
+      return run(growth, input);
     };
   }
 
@@ -1973,6 +2054,56 @@ export function createApplication(
       admitted(
         closureRoute(async (runtime, input) =>
           runtime.routes.getClosure(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.growthInvite,
+      admitted(
+        growthRoute(async (runtime, input) =>
+          runtime.routes.createInvite(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.growthInvite,
+      admitted(
+        growthRoute(async (runtime, input) => runtime.routes.getInvite(input)),
+      ),
+    )
+    .post(
+      apiRoutePaths.growthInvitationOpenings,
+      admitted(
+        growthRoute(async (runtime, input) =>
+          runtime.routes.recordOpening(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.growthLiveWindows,
+      admitted(growthRoute(async (runtime) => runtime.routes.listWindows())),
+    )
+    .post(
+      apiRoutePaths.adminGrowthLiveWindows,
+      admitted(
+        adminGrowthRoute(async (runtime, input) =>
+          runtime.adminRoutes.scheduleWindow(input),
+        ),
+      ),
+    )
+    .post(
+      apiRoutePaths.adminGrowthLiveWindowCancellation,
+      admitted(
+        adminGrowthRoute(async (runtime, input) =>
+          runtime.adminRoutes.cancelWindow(input),
+        ),
+      ),
+    )
+    .get(
+      apiRoutePaths.adminGrowthAcquisition,
+      admitted(
+        adminGrowthRoute(async (runtime, input) =>
+          runtime.adminRoutes.getAcquisitionSummary(input),
         ),
       ),
     )

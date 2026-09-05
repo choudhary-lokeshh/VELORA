@@ -92,7 +92,23 @@ test('Platform Admin is never weaker than Consumer Web', async ({
   expect(admin.headers()['strict-transport-security']).toBe(
     consumer.headers()['strict-transport-security'],
   );
-  // Admin additionally refuses indexing; consumer surfaces do not.
+  /*
+   * Admin refuses indexing unconditionally and permanently; Consumer Web
+   * refuses it in this environment.
+   *
+   * Both carry a directive now, and the assertion is the one the test is named
+   * for: whatever Consumer Web says, Admin says at least as much. Admin adds
+   * `noarchive` on top, which is the difference that matters — an operations
+   * console must not be kept in a cache even by something that ignored the
+   * rest.
+   *
+   * Consumer Web's directive is a property of *this* environment rather than of
+   * the surface: `VELORA_APP_ENV` is `local` here, and nothing outside
+   * production with a declared public origin may be indexed. The production
+   * shape — where the public pages carry `index, follow` and every private one
+   * still carries `noindex` — is asserted in `e2e/seo.spec.ts` and in
+   * `apps/web/test/seo.test.ts`, which can set an environment this suite cannot.
+   */
   expect(admin.headers()['x-robots-tag']).toBe('noindex, nofollow, noarchive');
-  expect(consumer.headers()['x-robots-tag']).toBeUndefined();
+  expect(consumer.headers()['x-robots-tag']).toBe('noindex, nofollow');
 });
