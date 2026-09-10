@@ -107,7 +107,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Opens a federated sign-in. The audience named here is checked against the origin the request came from, so naming one is a request rather than a selection. */
+        /** Opens a federated sign-in. The audience named here is checked against the origin the request came from, so naming one is a request rather than a selection. Sets a short-lived host-only cookie binding the attempt to this browser. */
         post: operations["createFederatedAuthorization"];
         delete?: never;
         options?: never;
@@ -122,7 +122,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The address an OpenID provider returns a browser to. One address for every surface: the attempt records which one started it. */
+        /** The address an OpenID provider returns a browser to. One address for every surface: the attempt records which one started it, and a host-only cookie set when it was opened binds it to the browser that opened it. */
         get: operations["completeFederatedAuthorization"];
         put?: never;
         post?: never;
@@ -7529,7 +7529,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The state names no open attempt, so there is no surface to return the browser to. The body is an ApiError. */
+            /** @description The state names no open attempt, or this browser is not the one that opened it, so there is no surface to return anybody to. The body is an ApiError. */
             400: {
                 headers: {
                     /** @description Request correlation identifier */

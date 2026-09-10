@@ -50,11 +50,10 @@ test.describe('Platform Admin', () => {
     const blocked = page.getByTestId('access-blocked');
     await expect(blocked).toContainText('audience must be');
     await expect(blocked).toContainText('phishing-resistant');
-    // Deliberately not asserted here any more: the card used to say "no route
-    // can issue one", and since ADR-0034 one route can — in local and test
-    // only. The refusal this page states is the production one, and the panel
-    // below it is what says the rest.
-    await expect(blocked).toContainText('production');
+    // The third sentence is the one ADR-0048 added and ADR-0049 kept: holding
+    // both conditions is still not permission, because every route names the
+    // capability that authorises it and an operator with no grant holds none.
+    await expect(blocked).toContainText('capability');
 
     // The browser holds nothing, and the console says exactly that rather than
     // reporting a failure — the origin is admitted, so the question was asked

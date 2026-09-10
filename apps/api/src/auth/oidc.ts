@@ -150,7 +150,10 @@ function readClaims(value: unknown): IdTokenClaims | undefined {
  * provider considers distinct — the one failure in this file that would be
  * silent, permanent, and impossible to unpick afterwards.
  */
-const subjectPattern = /^[\x21-\x7e]{1,255}$/u;
+// Bounded at 200 because that is what `auth_identities.provider_subject`
+// admits. A subject this platform could authenticate and then fail to store
+// would be a sign-in that succeeds and produces nothing.
+const subjectPattern = /^[\x21-\x7e]{1,200}$/u;
 
 export class OidcIdentityProvider implements FederatedIdentityProvider {
   readonly name = 'oidc';

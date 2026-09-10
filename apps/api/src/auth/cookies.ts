@@ -38,6 +38,45 @@ export function issuedSessionCookie(input: {
   ].join('; ');
 }
 
+/**
+ * The browser that started a federated sign-in, named so the browser that
+ * finishes one has to be the same.
+ *
+ * Without it the callback would accept any `code` and `state` pair presented by
+ * any browser, which is login CSRF: an attacker completes an attempt on their
+ * own machine, then walks a victim onto the callback address and the victim's
+ * browser is handed a session for the attacker's account. Binding the attempt
+ * to a cookie the attacker cannot set on this origin closes it.
+ *
+ * `__Host-` and `SameSite=Lax`, on the same terms as the session cookie: a
+ * top-level navigation from the identity provider still carries it, and a
+ * cross-site subresource request does not.
+ */
+const federatedStateCookieName = '__Host-velora_federated_state';
+
+export function issuedFederatedStateCookie(
+  state: string,
+  maxAgeSeconds: number,
+): string {
+  return [
+    `${federatedStateCookieName}=${state}`,
+    ...fixedAttributes,
+    `Max-Age=${String(maxAgeSeconds)}`,
+  ].join('; ');
+}
+
+export function clearedFederatedStateCookie(): string {
+  return [`${federatedStateCookieName}=`, ...fixedAttributes, 'Max-Age=0'].join(
+    '; ',
+  );
+}
+
+export function presentedFederatedState(
+  header: string | null,
+): string | undefined {
+  return readCookie(header, federatedStateCookieName);
+}
+
 export function clearedSessionCookie(audience: BrowserAuthAudience): string {
   return [
     `${browserSessionCookieName(audience)}=`,

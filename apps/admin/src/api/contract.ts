@@ -262,6 +262,49 @@ export type LocalAdminSessionBody = RequestBody<
   'post'
 >;
 
+/* --- Federated sign-in and privileged ceremonies -------------------- */
+
+export type FederatedAuthorizationBody = RequestBody<
+  '/v1/auth/federated/authorizations',
+  'post'
+>;
+export type FederatedAuthorization = JsonBody<
+  '/v1/auth/federated/authorizations',
+  'post',
+  201
+>;
+export type PrivilegedChallengeBody = RequestBody<
+  '/v1/auth/privileged/challenges',
+  'post'
+>;
+export type PrivilegedChallenge = JsonBody<
+  '/v1/auth/privileged/challenges',
+  'post',
+  201
+>;
+export type PrivilegedEnrolmentBody = RequestBody<
+  '/v1/auth/privileged/authenticators',
+  'post'
+>;
+export type PrivilegedEnrolment = JsonBody<
+  '/v1/auth/privileged/authenticators',
+  'post',
+  201
+>;
+export type PrivilegedStepUpBody = RequestBody<
+  '/v1/auth/privileged/step-up',
+  'post'
+>;
+export type OperatorBootstrapBody = RequestBody<
+  '/v1/admin/operators/bootstrap',
+  'post'
+>;
+export type OperatorBootstrap = JsonBody<
+  '/v1/admin/operators/bootstrap',
+  'post',
+  201
+>;
+
 /** AI may summarize a case; the operator still reviews and decides. */
 export type AiSuggestionBody = RequestBody<'/v1/ai/suggestions', 'post'>;
 export type AiSuggestion = JsonBody<'/v1/ai/suggestions', 'post', 200>;

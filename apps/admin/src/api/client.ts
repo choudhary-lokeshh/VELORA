@@ -57,7 +57,16 @@ import type {
   IssueRefundBody,
   IssuedRefund,
   LiveWindowList,
+  FederatedAuthorization,
+  FederatedAuthorizationBody,
   LocalAdminSessionBody,
+  OperatorBootstrap,
+  OperatorBootstrapBody,
+  PrivilegedChallenge,
+  PrivilegedChallengeBody,
+  PrivilegedEnrolment,
+  PrivilegedEnrolmentBody,
+  PrivilegedStepUpBody,
   MediaState,
   ScheduleLiveWindowBody,
   ModerationQueue,
@@ -126,6 +135,24 @@ export interface AdminApi {
   createLocalAdminSession(
     body: LocalAdminSessionBody,
   ): Promise<ApiResult<AdminSession>>;
+  /** Opens a federated sign-in and returns where to send the browser. */
+  createFederatedAuthorization(
+    body: FederatedAuthorizationBody,
+  ): Promise<ApiResult<FederatedAuthorization>>;
+  /** A single-use challenge for one privileged ceremony. */
+  createPrivilegedChallenge(
+    body: PrivilegedChallengeBody,
+  ): Promise<ApiResult<PrivilegedChallenge>>;
+  enrolPrivilegedAuthenticator(
+    body: PrivilegedEnrolmentBody,
+  ): Promise<ApiResult<PrivilegedEnrolment>>;
+  stepUpPrivilegedSession(
+    body: PrivilegedStepUpBody,
+  ): Promise<ApiResult<AdminSession>>;
+  /** The first operator grant. Succeeds once for the life of a deployment. */
+  bootstrapFirstOperator(
+    body: OperatorBootstrapBody,
+  ): Promise<ApiResult<OperatorBootstrap>>;
   session(): Promise<ApiResult<AdminSession>>;
   signOut(): Promise<ApiResult<unknown>>;
   /** Creates a review-only draft. It cannot decide or execute a case action. */
@@ -899,6 +926,39 @@ export function createAdminApi(options: AdminApiOptions): AdminApi {
           credentials: 'include',
           body,
         }),
+      );
+    },
+
+    async createFederatedAuthorization(body) {
+      return attempt(async () =>
+        api.POST('/v1/auth/federated/authorizations', {
+          credentials: 'include',
+          body,
+        }),
+      );
+    },
+
+    async createPrivilegedChallenge(body) {
+      return attempt(async () =>
+        api.POST('/v1/auth/privileged/challenges', { ...write(), body }),
+      );
+    },
+
+    async enrolPrivilegedAuthenticator(body) {
+      return attempt(async () =>
+        api.POST('/v1/auth/privileged/authenticators', { ...write(), body }),
+      );
+    },
+
+    async stepUpPrivilegedSession(body) {
+      return attempt(async () =>
+        api.POST('/v1/auth/privileged/step-up', { ...write(), body }),
+      );
+    },
+
+    async bootstrapFirstOperator(body) {
+      return attempt(async () =>
+        api.POST('/v1/admin/operators/bootstrap', { ...write(), body }),
       );
     },
 

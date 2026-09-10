@@ -14,27 +14,43 @@ believed.
 
 ## The one thing that decides everything else
 
-**No deployed VELORA environment can start.** `packages/config/src/server.ts`
-refuses `staging` and `production` on four AUTH selections, unconditionally —
-the enums admit only development values, so there is no value that satisfies
-them:
+**A deployed VELORA environment starts when an owner supplies real
+infrastructure, and refuses until then.** That is a change of state rather than
+a change of tone: until [ADR-0049](../decisions/ADR-0049-deployment-enablement-and-production-auth.md),
+`packages/config/src/server.ts` refused four AUTH selections in `staging` and
+`production` unconditionally, and the enums behind them admitted only
+development values — so no environment file, secret manager, or owner decision
+would ever have started one.
 
-| Refused in staging and production | Why | Unblocked by |
+Each of the four now has one production-capable selection, and each names an
+open standard rather than a vendor, so the vendor questions stay open:
+
+| Seam | Deployable selection | What an owner must supply |
 |---|---|---|
-| `AUTH_IDENTITY_PROVIDER` | no production identity provider is approved | Authentication identity/social/factor platform decision |
-| `AUTH_ACCESS_TOKEN_SIGNER` | no production signing authority is approved | AUTH signing authority decision |
-| `AUTH_RECOVERY_DELIVERY` | no production recovery delivery channel is approved | Email delivery provider decision |
-| `AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER` | no phishing-resistant authenticator verifier is approved | Privileged authenticator provider decision |
+| `AUTH_IDENTITY_PROVIDER` | `oidc` | an OpenID provider, a client, and a registered redirect address |
+| `AUTH_ACCESS_TOKEN_SIGNER` | `managed-ed25519` | Ed25519 key material from a secret manager |
+| `AUTH_RECOVERY_DELIVERY` | `smtp` | a submission endpoint and a verified sending domain |
+| `AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER` | `webauthn` | a registrable domain and the console origin |
 
-Every one is in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md) and
-every one is an owner decision followed by an implementation, not a
-configuration value somebody has forgotten to set. Until all four land, a closed
-beta can only be run on a machine running `APP_ENV=local`, with the developer
-adapters that configuration admits there and refuses everywhere else.
+The development adapters are still refused in staging and production, now by
+name, and each refusal says which value to select instead. An environment with
+nothing configured fails on `AUTH_OIDC_ISSUER is required when
+AUTH_IDENTITY_PROVIDER is oidc` — something an owner can go and get — rather
+than on a value that does not exist.
 
-That is not a reason to postpone the rehearsal, and this document is the result
-of running it. It is the reason the beta plans below are written as *sessions on
-a host somebody operates*, rather than as a public sign-up.
+`pnpm deployment:doctor` is how an environment is asked what it is. It reports
+provider selections, origins, whether the database is at the schema the build
+ships, whether anybody can operate it, and whether anything is indexable; it
+prints no secret and exits non-zero only for something that would stop the
+environment serving.
+
+**What has not changed is everything else.** Selecting an AUTH provider enables
+authentication and nothing more. Media storage, payments, payouts, notification
+delivery, identity verification, RTC, and AI are each still refused in a
+deployed environment for their own recorded reason, so a hosted closed beta is
+a beta of the free product: accounts, profiles, discovery, messaging, clubs
+read-only, support, and the operator console. The blocker table at the end of
+this document is the current list.
 
 ## Readiness matrix
 
@@ -262,12 +278,12 @@ writing software.
 
 | Blocker | Owner action |
 |---|---|
-| Production identity provider | Select and approve one; implement the adapter |
-| AUTH signing authority | Decide key custody and rotation; implement it |
-| Recovery delivery channel | Select an email provider and verify a sending domain |
-| Phishing-resistant authenticator verifier | Select one, so an operator can reach the console at all |
-| First operator grant in a deployed environment | Decide who holds it and how it is established |
-| Hosting, DNS, TLS, and a domain | Select a platform; the provider ADR queue is open |
+| An OpenID provider | Register a confidential client and one redirect address. The adapter is written and proved against a conforming provider; what is missing is the account |
+| A signing key and somewhere to keep it | Generate Ed25519 key material and inject it from a secret manager. The signer takes it and has no fallback |
+| A sending domain and a submission endpoint | Verify a domain and point `AUTH_RECOVERY_SMTP_URL` at a relay. Recovery is still blocked a second time by the email-address-ownership decision, which no provider answers |
+| A domain for the relying party | WebAuthn needs a registrable domain and the console origin under it. No vendor, no account, no cost |
+| Hosting, DNS, and TLS | Select a platform; the provider ADR queue is open |
+| The first operator's identity | Decide who takes the first grant. The mechanism exists and works once; who uses it is a person, not a configuration value |
 
 ### Before public production
 

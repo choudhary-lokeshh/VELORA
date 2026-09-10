@@ -78,6 +78,9 @@ const truncationRoots = [
   // exercise the same local/test gate the migration installed.
   'ai_usage_daily',
   'auth_accounts',
+  // Federated sign-in attempts reference no account by foreign key — the
+  // attempt exists before anybody is identified — so nothing cascades into it.
+  'auth_federated_authorizations',
   'auth_recovery_rate_events',
   // BILLING's journal. Entries cascade from neither table — the composite
   // currency foreign keys carry `no action` so nothing can delete a posted

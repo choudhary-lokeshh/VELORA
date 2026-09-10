@@ -130,9 +130,11 @@ export const authIdentities = pgTable(
     id: uuid('id').primaryKey(),
     lastAuthenticatedAt: timestamptz('last_authenticated_at'),
     /**
-     * Only the development/test adapter exists. Adding a real provider is a
-     * reviewed migration, not a runtime string, which is exactly the gate
-     * ADR-0009 wants around identity providers.
+     * The adapter that asserted this subject. Adding one is a reviewed
+     * migration rather than a runtime string, which is exactly the gate
+     * ADR-0009 wants around identity providers: `local` performs no credential
+     * check and is refused outside local and test, and `oidc` is the deployable
+     * relying party added by ADR-0049.
      */
     provider: text('provider').notNull(),
     providerSubject: text('provider_subject').notNull(),
@@ -144,7 +146,10 @@ export const authIdentities = pgTable(
       table.providerSubject,
     ),
     index('auth_identities_account_idx').on(table.accountId),
-    check('auth_identities_provider_check', inList(table.provider, ['local'])),
+    check(
+      'auth_identities_provider_check',
+      inList(table.provider, ['local', 'oidc']),
+    ),
     check(
       'auth_identities_subject_length_check',
       sql`char_length(${table.providerSubject}) between 1 and 200`,

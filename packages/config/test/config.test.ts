@@ -1,7 +1,10 @@
+import { generateKeyPairSync } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   browserSecurityHeaders,
+  publicIndexingAllowed,
   loadClientConfig,
   loopbackApiBaseUrl,
   resolveSurfaceConfig,
@@ -61,6 +64,205 @@ describe('server configuration', () => {
       expect(failure).toContain('AUTH_RECOVERY_DELIVERY');
       expect(failure).toContain('AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER');
     }
+  });
+
+  /**
+   * A deployment as an owner would actually supply one.
+   *
+   * The key is generated per run rather than checked in, because a fixture
+   * private key in a repository is a private key in a repository however it is
+   * labelled.
+   */
+  const deployedEnvironment = {
+    ...validEnvironment,
+    APP_ENV: 'production',
+    AUTH_ACCESS_TOKEN_SIGNER: 'managed-ed25519',
+    AUTH_ACCESS_TOKEN_SIGNING_KEY: generateKeyPairSync('ed25519')
+      .privateKey.export({ format: 'der', type: 'pkcs8' })
+      .toString('base64'),
+    AUTH_BROWSER_ORIGINS_CONSUMER_WEB: 'https://app.velora.example',
+    AUTH_BROWSER_ORIGINS_CREATOR_STUDIO: 'https://studio.velora.example',
+    AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN: 'https://admin.velora.example',
+    AUTH_IDENTITY_PROVIDER: 'oidc',
+    AUTH_OIDC_CLIENT_ID: 'velora',
+    AUTH_OIDC_CLIENT_SECRET: 'not-a-real-secret',
+    AUTH_OIDC_ISSUER: 'https://id.velora.example',
+    AUTH_OIDC_REDIRECT_URI:
+      'https://api.velora.example/v1/auth/federated/callback',
+    AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER: 'webauthn',
+    AUTH_RECOVERY_DELIVERY: 'smtp',
+    AUTH_RECOVERY_SENDER_ADDRESS: 'no-reply@velora.example',
+    AUTH_RECOVERY_SMTP_URL: 'smtps://relay.velora.example:465',
+    AUTH_TOKEN_ISSUER: 'https://auth.velora.example',
+    AUTH_WEBAUTHN_ORIGINS: 'https://admin.velora.example',
+    AUTH_WEBAUTHN_RELYING_PARTY_ID: 'velora.example',
+  } as const;
+
+  it.each(['staging', 'production'] as const)(
+    'accepts production-capable AUTH providers in %s',
+    (appEnvironment) => {
+      // The property this whole phase exists for. A deployed environment used
+      // to refuse every value these four fields admitted, which is not
+      // fail-closed but unreachable.
+      const config = loadServerConfig({
+        ...deployedEnvironment,
+        APP_ENV: appEnvironment,
+      });
+      expect(config.AUTH_IDENTITY_PROVIDER).toBe('oidc');
+      expect(config.AUTH_ACCESS_TOKEN_SIGNER).toBe('managed-ed25519');
+      expect(config.AUTH_RECOVERY_DELIVERY).toBe('smtp');
+      expect(config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER).toBe('webauthn');
+    },
+  );
+
+  it.each([
+    ['AUTH_IDENTITY_PROVIDER', 'local'],
+    ['AUTH_ACCESS_TOKEN_SIGNER', 'local-development-ed25519'],
+    ['AUTH_RECOVERY_DELIVERY', 'local-test'],
+    ['AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER', 'local-test-privileged'],
+    ['AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER', 'unavailable'],
+  ])('refuses %s=%s in a deployed environment', (field, value) => {
+    const failure = loadServerConfigResult({
+      ...deployedEnvironment,
+      [field]: value,
+    });
+    expect(failure).toContain(field);
+  });
+
+  it.each([
+    'AUTH_OIDC_ISSUER',
+    'AUTH_OIDC_CLIENT_ID',
+    'AUTH_OIDC_CLIENT_SECRET',
+    'AUTH_OIDC_REDIRECT_URI',
+  ])('refuses an OpenID selection with %s missing', (field) => {
+    const failure = loadServerConfigResult({
+      ...deployedEnvironment,
+      [field]: '',
+    });
+    expect(failure).toContain(`${field} is required`);
+  });
+
+  it('refuses a managed signer with no key material, in every environment', () => {
+    // Checked outside deployed environments too, on the rule the LiveKit
+    // selection follows: an adapter selected without what it needs is a startup
+    // failure rather than a silent downgrade.
+    const failure = loadServerConfigResult({
+      ...validEnvironment,
+      AUTH_ACCESS_TOKEN_SIGNER: 'managed-ed25519',
+    });
+    expect(failure).toContain('AUTH_ACCESS_TOKEN_SIGNING_KEY is required');
+  });
+
+  it.each([
+    ['a trailing slash', 'https://id.velora.example/'],
+    ['a query', 'https://id.velora.example?tenant=one'],
+    ['no scheme at all', 'id.velora.example'],
+  ])('refuses an OpenID issuer with %s', (_name, issuer) => {
+    // Compared to an ID token claim character by character, so a formatting
+    // difference is a value that will never match.
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_OIDC_ISSUER: issuer,
+      }),
+    ).toContain('AUTH_OIDC_ISSUER');
+  });
+
+  it('refuses a submission endpoint that is not SMTP', () => {
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_RECOVERY_SMTP_URL: 'https://mail.velora.example/send',
+      }),
+    ).toContain('AUTH_RECOVERY_SMTP_URL');
+  });
+
+  it('refuses a sender address that could split a header', () => {
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_RECOVERY_SENDER_ADDRESS: 'no-reply@velora.example\nBcc: a@b.c',
+      }),
+    ).toContain('AUTH_RECOVERY_SENDER_ADDRESS');
+  });
+
+  it('refuses a relying party that is not a registrable domain', () => {
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_WEBAUTHN_RELYING_PARTY_ID: 'https://velora.example/admin',
+      }),
+    ).toContain('AUTH_WEBAUTHN_RELYING_PARTY_ID');
+  });
+
+  it('refuses a privileged origin outside its relying party', () => {
+    // The authenticator's own scoping would have refused to produce the
+    // assertion, so this would be a configuration that never verifies rather
+    // than one that verifies too much.
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_WEBAUTHN_ORIGINS: 'https://admin.velora-operators.example',
+      }),
+    ).toContain('AUTH_WEBAUTHN_ORIGINS');
+  });
+
+  it.each([
+    ['plain HTTP', 'http://app.velora.example'],
+    ['a loopback host', 'https://127.0.0.1:3000'],
+    ['the IPv6 loopback', 'https://[::1]:3000'],
+  ])(
+    'refuses a browser origin on %s in a deployed environment',
+    (_name, origin) => {
+      expect(
+        loadServerConfigResult({
+          ...deployedEnvironment,
+          AUTH_BROWSER_ORIGINS_CONSUMER_WEB: origin,
+        }),
+      ).toContain('AUTH_BROWSER_ORIGINS_CONSUMER_WEB');
+    },
+  );
+
+  it('refuses an audience with no allowed origin in a deployed environment', () => {
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN: '',
+      }),
+    ).toContain('AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN');
+  });
+
+  it('refuses the placeholder token issuer in a deployed environment', () => {
+    expect(
+      loadServerConfigResult({
+        ...deployedEnvironment,
+        AUTH_TOKEN_ISSUER: 'https://auth.velora.invalid',
+      }),
+    ).toContain('AUTH_TOKEN_ISSUER');
+  });
+
+  it.each([
+    ['WEB_PUBLIC_ORIGIN', 'http://app.velora.example'],
+    ['VELORA_API_BASE_URL', 'https://127.0.0.1:4000'],
+  ])('refuses %s on an address only this machine can reach', (field, value) => {
+    expect(
+      loadServerConfigResult({ ...deployedEnvironment, [field]: value }),
+    ).toContain(field);
+  });
+
+  it('never renders a secret in the redacted configuration', () => {
+    const config = loadServerConfig(deployedEnvironment);
+    const rendered = JSON.stringify(redactServerConfig(config));
+    for (const secret of [
+      deployedEnvironment.AUTH_OIDC_CLIENT_SECRET,
+      deployedEnvironment.AUTH_ACCESS_TOKEN_SIGNING_KEY,
+      deployedEnvironment.AUTH_RECOVERY_SMTP_URL,
+    ]) {
+      expect(rendered).not.toContain(secret);
+    }
+    expect(
+      redactServerConfig(config).identityProviderCredentialsConfigured,
+    ).toBe(true);
   });
 
   it('keeps Identity provider and jurisdiction policy separately fail-closed', () => {
@@ -437,6 +639,18 @@ describe('client configuration', () => {
         localDefaultApiBaseUrl: 'http://127.0.0.1:4000',
       }),
     ).toThrow('required outside explicit local/test');
+  });
+
+  it('rejects the Android emulator host alias in a shipped build', () => {
+    // `10.0.2.2` looks routable and is not: the emulator translates it to the
+    // machine that built the app. A production build carrying it reaches
+    // nothing on somebody else's phone.
+    expect(() =>
+      loadClientConfig({
+        apiBaseUrl: 'http://10.0.2.2:4000',
+        appEnvironment: 'production',
+      }),
+    ).toThrow('cannot use localhost');
   });
 
   it('rejects localhost in staging and production', () => {
@@ -996,6 +1210,65 @@ describe('browser security headers', () => {
     // Location is refused whatever a surface asks for. Nothing in this product
     // asks for one.
     expect(headers['permissions-policy']).toContain('geolocation=()');
+  });
+
+  it.each(['staging', 'production'] as const)(
+    'pins transport security in %s',
+    (appEnvironment) => {
+      expect(
+        browserSecurityHeaders({
+          appEnvironment,
+          referrerPolicy: 'same-origin',
+        })['strict-transport-security'],
+      ).toBe('max-age=63072000; includeSubDomains');
+    },
+  );
+
+  it.each(['local', 'test'] as const)(
+    'pins nothing in %s, because local development also serves TLS',
+    (appEnvironment) => {
+      // A browser ignores this header over plain HTTP, so on loopback it does
+      // nothing either way. What it would do is pin a developer's browser when
+      // the same surfaces are served behind reserved hostnames over TLS — and
+      // `includeSubDomains` there reaches every sibling name for two years,
+      // including projects that have nothing to do with this one.
+      expect(
+        browserSecurityHeaders({
+          appEnvironment,
+          referrerPolicy: 'same-origin',
+        })['strict-transport-security'],
+      ).toBeUndefined();
+    },
+  );
+
+  it.each(['local', 'test', 'staging'] as const)(
+    'refuses indexing in %s however the origin is set',
+    (appEnvironment) => {
+      // Staging is the case that matters: it is production-shaped, it has a
+      // real public origin, and it serves data that is not the product. Both
+      // conditions are required, and only one of them is satisfiable there.
+      expect(
+        publicIndexingAllowed({
+          appEnvironment,
+          publicWebOrigin: 'https://staging.velora.example',
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it('permits indexing only in production, and only with a declared origin', () => {
+    expect(
+      publicIndexingAllowed({
+        appEnvironment: 'production',
+        publicWebOrigin: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      publicIndexingAllowed({
+        appEnvironment: 'production',
+        publicWebOrigin: 'https://app.velora.example',
+      }),
+    ).toBe(true);
   });
 
   it('adds the Admin robots directive and nothing else by default', () => {

@@ -59,9 +59,12 @@ for (const surface of surfaces) {
     expect(csp).not.toContain('*');
     expect(csp).not.toContain("'unsafe-eval'");
 
-    expect(headers['strict-transport-security']).toBe(
-      'max-age=63072000; includeSubDomains',
-    );
+    // Absent here, deliberately. The harness runs `APP_ENV: test`, and local
+    // development also serves these surfaces behind reserved hostnames over
+    // TLS — where `includeSubDomains` would pin a developer's browser to HTTPS
+    // for every sibling name for two years. The deployed value is asserted in
+    // the @velora/config unit tests, which is where it is decided.
+    expect(headers['strict-transport-security']).toBeUndefined();
     expect(headers['x-content-type-options']).toBe('nosniff');
     expect(headers['x-frame-options']).toBe('DENY');
     expect(headers['referrer-policy']).toBe(surface.referrerPolicy);

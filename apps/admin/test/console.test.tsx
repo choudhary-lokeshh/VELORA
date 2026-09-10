@@ -126,7 +126,7 @@ describe('the door', () => {
   });
 
   it.each(['staging', 'production'] as const)(
-    'offers no sign-in at all in %s',
+    'offers only the federated door in %s, and collects nothing',
     async (appEnvironment) => {
       const double = createAdminApiDouble(anonymousState());
       renderConsole(<Access />, double, {
@@ -136,10 +136,12 @@ describe('the door', () => {
 
       await screen.findByTestId('access-blocked');
       // The guarantee the browser suite cannot check, because it runs against
-      // one environment and this is about the other. A form that always fails
-      // is worse than an explanation, and on this surface it would also be a
-      // control inviting somebody to try to get in.
+      // one environment and this is about the other. The development adapter
+      // is absent, and what stands in its place asks for nothing: the console
+      // never sees a credential, because the provider collects it and the
+      // platform believes only what that provider signed.
       expect(screen.queryByTestId('local-dev-signin')).toBeNull();
+      expect(screen.getByTestId('federated-signin')).toBeDefined();
       expect(document.querySelectorAll('form')).toHaveLength(0);
       expect(document.querySelectorAll('input')).toHaveLength(0);
     },

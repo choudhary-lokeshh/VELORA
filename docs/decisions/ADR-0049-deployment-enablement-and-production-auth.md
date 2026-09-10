@@ -50,6 +50,8 @@ Provider-configuration completeness is checked in **every** environment, not onl
 
 `alg: none` is not refused by a branch; it is absent from the set of algorithms that can find a verification function at all, so there is no path on which an unsigned token reaches a claim check.
 
+The attempt is bound to the browser that opened it by a host-only, `SameSite=Lax` cookie set alongside the authorization address. Without it the callback would accept any code and state pair from any browser, which is login CSRF: somebody completes an attempt on their own machine and then walks a victim onto the callback, and the victim's browser is handed a session for an account that is not theirs. The state alone stops a replay; the cookie is what makes the replay have to come from the same browser.
+
 VELORA asks for the `openid` scope and nothing else. It stores no email address and displays no provider profile, so requesting one would be collecting personal data with no purpose to justify it — and it keeps the [email address ownership](DECISIONS_REQUIRED.md) decision genuinely open rather than answering it by accident.
 
 ### WebAuthn, without a CBOR parser

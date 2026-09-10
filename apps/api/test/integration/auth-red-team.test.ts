@@ -1135,7 +1135,17 @@ describe('session fixation', () => {
 });
 
 describe('recovery delivery failure', () => {
-  it('leaves an undelivered token that expires rather than a usable one', async () => {
+  /**
+   * A provider that fails must not become an account oracle.
+   *
+   * Only a request for an account that *exists* reaches delivery, so an escaping
+   * error answers `500` for a known subject and `202` for an unknown one — which
+   * turns the one path in this platform that is careful never to disclose
+   * whether an account exists into the place it is disclosed. The failure is
+   * absorbed and logged, and the token expires undelivered.
+   */
+  it('answers a known and an unknown subject identically when delivery fails', async () => {
+    const logs: unknown[] = [];
     const failing = new (class extends LocalTestRecoveryDelivery {
       override deliver(): Promise<void> {
         return Promise.reject(new Error('provider unavailable'));
@@ -1146,7 +1156,7 @@ describe('recovery delivery failure', () => {
       delivery: failing,
       identitySubjectFor: (subject) =>
         new LocalIdentityProvider().assert(subject).providerSubject,
-      logger: silentLogger(),
+      logger: silentLogger(logs),
       now,
       repository,
     });
@@ -1157,21 +1167,28 @@ describe('recovery delivery failure', () => {
       subject: 'delivery@velora.test',
     });
 
-    let thrown: unknown;
-    try {
-      await recovery.start({
-        correlationId: 'delivery-failure',
-        deviceReference: 'device-delivery',
-        requesterReference: 'requester-delivery',
-        subject: 'delivery@velora.test',
-      });
-    } catch (error) {
-      thrown = error;
-    }
-    // The provider failure surfaces to the caller rather than being swallowed,
-    // and the committed token is simply never delivered to anyone.
-    expect(thrown).toBeInstanceOf(Error);
+    const known = await recovery.start({
+      correlationId: 'delivery-failure',
+      deviceReference: 'device-delivery',
+      requesterReference: 'requester-delivery-known',
+      subject: 'delivery@velora.test',
+    });
+    const unknown = await recovery.start({
+      correlationId: 'delivery-failure',
+      deviceReference: 'device-delivery',
+      requesterReference: 'requester-delivery-unknown',
+      subject: 'nobody@velora.test',
+    });
+    expect(known).toEqual(unknown);
+    expect(known.kind).toBe('accepted');
+
+    // Nothing was delivered, and the operator hears about it rather than
+    // nobody hearing about it.
     expect(failing.deliveries).toHaveLength(0);
+    expect(JSON.stringify(logs)).toContain('recovery delivery failed');
+
+    // Exactly one token exists, for the account that exists, and it is
+    // unconsumed — so it expires rather than becoming usable.
     const issued = await rowsOf<{ consumed_at: Date | null; total: number }>(
       database.sql`select count(*)::int as total, max(consumed_at) as consumed_at from auth_recovery_requests`,
     );

@@ -1267,7 +1267,7 @@ export const apiOperations = [
     },
     security: apiSecurityRequirements.public,
     summary:
-      'Opens a federated sign-in. The audience named here is checked against the origin the request came from, so naming one is a request rather than a selection.',
+      'Opens a federated sign-in. The audience named here is checked against the origin the request came from, so naming one is a request rather than a selection. Sets a short-lived host-only cookie binding the attempt to this browser.',
   },
   {
     method: 'get',
@@ -1298,7 +1298,7 @@ export const apiOperations = [
       },
       '400': {
         description:
-          'The state names no open attempt, so there is no surface to return the browser to. The body is an ApiError.',
+          'The state names no open attempt, or this browser is not the one that opened it, so there is no surface to return anybody to. The body is an ApiError.',
         schemaName: 'ApiError',
       },
       '501': federatedUnavailableResponse,
@@ -1306,7 +1306,7 @@ export const apiOperations = [
     },
     security: apiSecurityRequirements.public,
     summary:
-      'The address an OpenID provider returns a browser to. One address for every surface: the attempt records which one started it.',
+      'The address an OpenID provider returns a browser to. One address for every surface: the attempt records which one started it, and a host-only cookie set when it was opened binds it to the browser that opened it.',
   },
   {
     method: 'post',

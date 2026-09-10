@@ -55,6 +55,9 @@ const inProcessAdapters = new Set([
   'composed',
   'redis',
   'trust-and-safety',
+  // WebAuthn reaches no network: the assertion is verified here, against a
+  // relying party this deployment configured. There is nothing to be down.
+  'webauthn',
 ]);
 
 function adapterState(value: string): DependencyReadiness['state'] {
@@ -127,6 +130,22 @@ export async function resolveDependencyReadiness(input: {
     {
       name: 'privileged verifier',
       value: input.config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,
+    },
+    // The three AUTH seams an operator can be locked out by, reported for the
+    // same reason the others are: an operator looking at a console that will
+    // not admit anybody needs to see which adapter is answering, and every one
+    // of these values is an enumerated adapter name rather than a credential.
+    {
+      name: 'identity provider',
+      value: input.config.AUTH_IDENTITY_PROVIDER,
+    },
+    {
+      name: 'access token signer',
+      value: input.config.AUTH_ACCESS_TOKEN_SIGNER,
+    },
+    {
+      name: 'recovery delivery',
+      value: input.config.AUTH_RECOVERY_DELIVERY,
     },
     { name: 'ai provider', value: input.config.AI_PROVIDER },
   ];

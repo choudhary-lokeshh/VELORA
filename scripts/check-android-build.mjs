@@ -470,6 +470,49 @@ function checkReleaseVersion() {
   );
 }
 
+/**
+ * The environments a build may declare, and the addresses it may point at.
+ *
+ * `EXPO_PUBLIC_APP_ENV` is parsed by the shared client schema at runtime, so a
+ * value outside this set does not produce a build that degrades — it produces
+ * one whose first call to resolve an API address throws on a screen. A build
+ * profile is the last place that can be caught before somebody installs it.
+ */
+const buildEnvironments = new Set(['local', 'test', 'staging', 'production']);
+const deployedBuildEnvironments = new Set(['staging', 'production']);
+/**
+ * Addresses a shipped build must never carry. The emulator alias is the one
+ * that looks routable and is not: `10.0.2.2` is the developer's own machine.
+ */
+const unshippableHosts = new Set([
+  '10.0.2.2',
+  '127.0.0.1',
+  '::1',
+  '[::1]',
+  'localhost',
+]);
+
+function checkShippedAddress(profileName, key, value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    check(
+      false,
+      `${easFile} profile ${profileName} sets ${key} to ${value}, which is not a URL.`,
+    );
+    return;
+  }
+  check(
+    url.protocol === 'https:',
+    `${easFile} profile ${profileName} sets ${key} to a ${url.protocol} address. A shipped build carries it to somebody else's phone, where plain HTTP is somebody else's network.`,
+  );
+  check(
+    !unshippableHosts.has(url.hostname),
+    `${easFile} profile ${profileName} sets ${key} to ${url.hostname}, which resolves to the machine that built it and to nothing on a real device.`,
+  );
+}
+
 /** Build profiles: Android only, and no credential anywhere near them. */
 function checkEasProfiles() {
   const eas = JSON.parse(readFileSync(easFile, 'utf8'));
@@ -498,6 +541,25 @@ function checkEasProfiles() {
         `${easFile} profile ${name} sets ${key} to something that reads like a ` +
           'credential.',
       );
+    }
+    const environment = profile.env?.EXPO_PUBLIC_APP_ENV;
+    check(
+      environment !== undefined && buildEnvironments.has(environment),
+      `${easFile} profile ${name} declares EXPO_PUBLIC_APP_ENV ${String(environment)}. ` +
+        `It must be one of ${[...buildEnvironments].sort().join(', ')}: the shared client ` +
+        'schema parses this value, and anything else throws on the first screen that ' +
+        'resolves an address.',
+    );
+    if (
+      environment === undefined ||
+      !deployedBuildEnvironments.has(environment)
+    ) {
+      continue;
+    }
+    for (const key of ['EXPO_PUBLIC_API_BASE_URL', 'EXPO_PUBLIC_WEB_ORIGIN']) {
+      const value = profile.env?.[key];
+      if (value === undefined) continue;
+      checkShippedAddress(name, key, value);
     }
   }
   check(

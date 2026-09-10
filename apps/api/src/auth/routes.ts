@@ -34,7 +34,13 @@ import {
   type ResolvedCaller,
 } from './caller.js';
 import type { AuthContext } from './context.js';
-import { issuedSessionCookie, presentedSessionCookie } from './cookies.js';
+import {
+  clearedFederatedStateCookie,
+  issuedFederatedStateCookie,
+  issuedSessionCookie,
+  presentedFederatedState,
+  presentedSessionCookie,
+} from './cookies.js';
 import type {
   FederatedIdentityProvider,
   PrivilegedAuthenticatorVerifier,
@@ -45,7 +51,7 @@ import { authAttemptLimits, type RateLimiter } from './rate-limit.js';
 import type { RecoveryService } from './recovery.js';
 import type { AuthRepository } from './repository.js';
 import type { AuthService } from './service.js';
-import { digestToken, generateOpaqueToken } from './tokens.js';
+import { digestsEqual, digestToken, generateOpaqueToken } from './tokens.js';
 
 export interface AuthRouteRequest {
   readonly body: string;
@@ -456,6 +462,18 @@ export class AuthRoutes {
         authorizationUrl,
         expiresAt: expiresAt.toISOString(),
       }),
+      // The attempt is bound to this browser. Without it the callback would
+      // accept any code and state pair from any browser, which is how somebody
+      // hands a victim a session for an account that is not theirs.
+      cookies: [
+        issuedFederatedStateCookie(
+          state,
+          Math.floor(
+            authMechanismConstants.federatedAuthorizationLifetimeMilliseconds /
+              1000,
+          ),
+        ),
+      ],
       status: 201,
     };
   }
@@ -486,6 +504,20 @@ export class AuthRoutes {
     if (state === null || state.length === 0) {
       return failure(400, authErrorCodes.validationFailed, input.correlationId);
     }
+    // The same browser, or nobody. The cookie was set on this origin when the
+    // attempt was opened, so a browser that did not open it cannot present one.
+    const bound = presentedFederatedState(input.request.headers.get('cookie'));
+    if (
+      bound === undefined ||
+      !digestsEqual(digestToken(bound), digestToken(state))
+    ) {
+      return failure(
+        400,
+        authErrorCodes.validationFailed,
+        input.correlationId,
+        [clearedFederatedStateCookie()],
+      );
+    }
     const now = this.dependencies.now();
     const attempt =
       await this.dependencies.repository.consumeFederatedAuthorization({
@@ -493,13 +525,24 @@ export class AuthRoutes {
         stateDigest: digestToken(state),
       });
     if (attempt === undefined) {
-      return failure(400, authErrorCodes.validationFailed, input.correlationId);
+      return failure(
+        400,
+        authErrorCodes.validationFailed,
+        input.correlationId,
+        [clearedFederatedStateCookie()],
+      );
     }
     const destination = attempt.returnTo ?? '/';
+    // Consumed either way. The attempt is over the moment it is claimed, and a
+    // stale binding left in the browser is a value with nothing behind it.
+    const releaseBinding = [clearedFederatedStateCookie()];
 
     const code = query.get('authorizationCode');
     if (query.get('authorizationError') !== null || code === null) {
-      return redirect(refusedDestination(destination));
+      return {
+        ...redirect(refusedDestination(destination)),
+        cookies: releaseBinding,
+      };
     }
 
     const assertion = await provider.completeAuthorization({
@@ -508,7 +551,10 @@ export class AuthRoutes {
       nonce: attempt.nonce,
     });
     if (assertion === undefined) {
-      return redirect(refusedDestination(destination));
+      return {
+        ...redirect(refusedDestination(destination)),
+        cookies: releaseBinding,
+      };
     }
 
     const audience = attempt.audience as BrowserAuthAudience;
@@ -533,6 +579,7 @@ export class AuthRoutes {
     return {
       ...redirect(destination),
       cookies: [
+        ...releaseBinding,
         issuedSessionCookie({
           audience,
           expiresAt: issued.context.absoluteExpiresAt,

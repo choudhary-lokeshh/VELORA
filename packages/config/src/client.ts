@@ -105,10 +105,22 @@ export interface ClientConfigInput {
 const mappedIpv4LoopbackPattern = /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/u;
 const ipv4LoopbackPattern = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u;
 
+/**
+ * The address an Android emulator reaches its host machine on.
+ *
+ * Not loopback and not private-by-accident: `10.0.2.2` is a fixed alias the
+ * emulator translates to the developer's own machine, so a shipped build
+ * pointed at it is pointed at a machine that does not exist for the person
+ * holding the phone. It is refused alongside loopback because it is the same
+ * mistake wearing an address that looks routable.
+ */
+const androidEmulatorHostAlias = '10.0.2.2';
+
 function isLoopbackHostname(hostname: string): boolean {
   return (
     hostname === 'localhost' ||
     hostname === '[::1]' ||
+    hostname === androidEmulatorHostAlias ||
     ipv4LoopbackPattern.test(hostname) ||
     mappedIpv4LoopbackPattern.test(hostname)
   );
@@ -457,6 +469,26 @@ function realtimeConnectSources(
   ];
 }
 
+/**
+ * Whether this surface may pin a browser to HTTPS for two years.
+ *
+ * Everywhere but local and test, and the exception is not cosmetic. A browser
+ * ignores this header over plain HTTP, so on loopback it does nothing — but
+ * local development also serves the surfaces behind reserved hostnames over
+ * TLS, and there the header is honoured. With `includeSubDomains` on a name
+ * like `velora.localhost`, a developer's browser would refuse plain HTTP for
+ * every sibling name for two years, including projects that have nothing to do
+ * with this one and no way to know what pinned them.
+ *
+ * The deployed value is unchanged, and Platform Admin never carries less than
+ * Consumer Web, because both are decided here from the same environment.
+ */
+function pinsTransportSecurity(options: BrowserSecurityHeaderOptions): boolean {
+  return !(
+    options.appEnvironment === 'local' || options.appEnvironment === 'test'
+  );
+}
+
 function permissionsPolicy(options: BrowserSecurityHeaderOptions): string {
   const capture = options.mediaCapture === 'self' ? '(self)' : '()';
   return `camera=${capture}, geolocation=(), microphone=${capture}`;
@@ -500,7 +532,11 @@ export function browserSecurityHeaders(
     ].join('; '),
     'permissions-policy': permissionsPolicy(options),
     'referrer-policy': options.referrerPolicy,
-    'strict-transport-security': 'max-age=63072000; includeSubDomains',
+    ...(pinsTransportSecurity(options)
+      ? {
+          'strict-transport-security': 'max-age=63072000; includeSubDomains',
+        }
+      : {}),
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
     ...(options.robots === undefined ? {} : { 'x-robots-tag': options.robots }),
