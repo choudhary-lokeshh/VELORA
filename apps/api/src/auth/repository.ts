@@ -1,10 +1,12 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
 
 import {
   authAccounts,
+  authFederatedAuthorizations,
   authIdentities,
   authKnownDevices,
+  authPrivilegedChallenges,
   authRefreshFamilies,
   authRefreshTokens,
   authSecurityEvents,
@@ -18,6 +20,8 @@ export type AuthExecutor = Parameters<
 type AnyExecutor = AuthDatabase | AuthExecutor;
 
 export type AuthAccountRow = typeof authAccounts.$inferSelect;
+export type AuthFederatedAuthorizationRow =
+  typeof authFederatedAuthorizations.$inferSelect;
 export type AuthSessionRow = typeof authSessions.$inferSelect;
 export type AuthRefreshFamilyRow = typeof authRefreshFamilies.$inferSelect;
 export type AuthRefreshTokenRow = typeof authRefreshTokens.$inferSelect;
@@ -49,6 +53,106 @@ export class AuthRepository {
 
   transaction<T>(work: (executor: AuthExecutor) => Promise<T>): Promise<T> {
     return this.database.transaction(work);
+  }
+
+  /**
+   * Records a federated sign-in attempt before the browser is sent anywhere.
+   *
+   * Written first, deliberately. An attempt that exists only after the provider
+   * answers would be an attempt whose state nothing had committed to, which is
+   * the same as having no state at all.
+   */
+  async createFederatedAuthorization(input: {
+    readonly audience: string;
+    readonly codeVerifier: string;
+    readonly createdAt: Date;
+    readonly expiresAt: Date;
+    readonly nonce: string;
+    readonly returnTo: string | undefined;
+    readonly stateDigest: string;
+  }): Promise<void> {
+    await this.database.insert(authFederatedAuthorizations).values({
+      audience: input.audience,
+      codeVerifier: input.codeVerifier,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      nonce: input.nonce,
+      returnTo: input.returnTo ?? null,
+      stateDigest: input.stateDigest,
+    });
+  }
+
+  /**
+   * Claims an attempt, exactly once.
+   *
+   * The claim is the conditional update itself rather than a read followed by a
+   * write, so two callbacks arriving with one state — a replayed code, a
+   * double-submitted callback, a retry — cannot both proceed. Whichever
+   * statement updates the row wins; the other sees nothing to update and is
+   * refused.
+   */
+  async consumeFederatedAuthorization(input: {
+    readonly now: Date;
+    readonly stateDigest: string;
+  }): Promise<AuthFederatedAuthorizationRow | undefined> {
+    const claimed = await this.database
+      .update(authFederatedAuthorizations)
+      .set({ consumedAt: input.now })
+      .where(
+        and(
+          eq(authFederatedAuthorizations.stateDigest, input.stateDigest),
+          isNull(authFederatedAuthorizations.consumedAt),
+          gt(authFederatedAuthorizations.expiresAt, input.now),
+        ),
+      )
+      .returning();
+    return claimed[0];
+  }
+
+  async createPrivilegedChallenge(input: {
+    readonly accountId: string;
+    readonly challengeDigest: string;
+    readonly createdAt: Date;
+    readonly expiresAt: Date;
+    readonly purpose: 'assertion' | 'enrolment';
+  }): Promise<void> {
+    await this.database.insert(authPrivilegedChallenges).values({
+      accountId: input.accountId,
+      challengeDigest: input.challengeDigest,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      purpose: input.purpose,
+    });
+  }
+
+  /**
+   * Consumes a privileged challenge, exactly once, for the account and purpose
+   * it was issued to.
+   *
+   * The account is part of the condition rather than checked afterwards: a
+   * challenge issued to one operator must not be presentable by another, and
+   * the cheapest way to guarantee that is to make it impossible to claim.
+   */
+  async consumePrivilegedChallenge(input: {
+    readonly accountId: string;
+    readonly challengeDigest: string;
+    readonly now: Date;
+    readonly purpose: 'assertion' | 'enrolment';
+  }): Promise<boolean> {
+    const claimed = await this.database
+      .update(authPrivilegedChallenges)
+      .set({ consumedAt: input.now })
+      .where(
+        and(
+          eq(authPrivilegedChallenges.challengeDigest, input.challengeDigest),
+          eq(authPrivilegedChallenges.accountId, input.accountId),
+          eq(authPrivilegedChallenges.purpose, input.purpose),
+          isNull(authPrivilegedChallenges.consumedAt),
+          gt(authPrivilegedChallenges.expiresAt, input.now),
+        ),
+      )
+      .returning({ digest: authPrivilegedChallenges.challengeDigest });
+    return claimed[0] !== undefined;
   }
 
   async recordSecurityEvent(

@@ -138,6 +138,181 @@ export type RecoveryCompletionRequest = z.infer<
 >;
 
 /**
+ * A destination inside the surface that started a sign-in.
+ *
+ * Every rule here refuses something a browser would otherwise follow off this
+ * platform: a value that is not a path at all, a protocol-relative address that
+ * looks like a path and is not, a backslash some browsers normalise into a
+ * slash, and control characters that can split a redirect header. Nothing here
+ * makes a value safe by repairing it — an address that does not already satisfy
+ * every rule is dropped, and the person lands on the surface's own home.
+ */
+export const returnDestinationSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine((value) => value.startsWith('/'), 'must be a path on this surface')
+  .refine((value) => !value.startsWith('//'), 'must not be protocol-relative')
+  .refine((value) => !value.includes('\\'), 'must not contain a backslash')
+  .refine(hasNoControlCharacters, 'must not contain control characters');
+
+/**
+ * Refuses the characters that can split a redirect header.
+ *
+ * Written as a code-point scan rather than a regular expression because a
+ * character class covering the control range is exactly what `no-control-regex`
+ * exists to catch, and silencing that rule for the one place it is right would
+ * be worse than not needing it.
+ */
+function hasNoControlCharacters(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 0x1f || code === 0x7f) return false;
+  }
+  return true;
+}
+
+/**
+ * Opening a federated sign-in.
+ *
+ * The audience is named by the caller and then checked against the origin the
+ * request actually came from, so naming one is a request rather than a
+ * selection. `platform_admin` is admissible here, unlike on the local adapter:
+ * a real provider plus a real authenticator is exactly the combination
+ * ADR-0017 asks for, and refusing it would leave the console unreachable in the
+ * environments it exists for.
+ */
+export const federatedAuthorizationRequestSchema = z
+  .object({
+    audience: browserAuthAudienceSchema,
+    returnTo: returnDestinationSchema.optional(),
+  })
+  .strict();
+export type FederatedAuthorizationRequest = z.infer<
+  typeof federatedAuthorizationRequestSchema
+>;
+
+export const federatedAuthorizationResponseSchema = z
+  .object({
+    /** Where to send the browser. Always the configured provider's own host. */
+    authorizationUrl: z.url(),
+    expiresAt: z.iso.datetime(),
+  })
+  .strict();
+export type FederatedAuthorizationResponse = z.infer<
+  typeof federatedAuthorizationResponseSchema
+>;
+
+export const privilegedChallengePurposes = ['enrolment', 'assertion'] as const;
+export const privilegedChallengePurposeSchema = z.enum(
+  privilegedChallengePurposes,
+);
+export type PrivilegedChallengePurpose = z.infer<
+  typeof privilegedChallengePurposeSchema
+>;
+
+export const privilegedChallengeRequestSchema = z
+  .object({ purpose: privilegedChallengePurposeSchema })
+  .strict();
+export type PrivilegedChallengeRequest = z.infer<
+  typeof privilegedChallengeRequestSchema
+>;
+
+export const privilegedChallengeResponseSchema = z
+  .object({
+    challenge: z.string().min(1),
+    /** Credentials this operator may present, so a browser can scope the ask. */
+    credentialIds: z.array(z.string().min(1)),
+    expiresAt: z.iso.datetime(),
+    relyingPartyId: z.string().min(1),
+  })
+  .strict();
+export type PrivilegedChallengeResponse = z.infer<
+  typeof privilegedChallengeResponseSchema
+>;
+
+/** base64url, as every WebAuthn structure crosses the wire. */
+const base64UrlSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .regex(/^[A-Za-z0-9_-]+$/u);
+
+export const privilegedEnrolmentRequestSchema = z
+  .object({
+    /** The COSE algorithm the authenticator chose. */
+    algorithm: z.number().int(),
+    attachment: z.enum(['platform', 'cross_platform']).optional(),
+    authenticatorData: base64UrlSchema,
+    challenge: z.string().min(1).max(256),
+    clientDataJSON: base64UrlSchema,
+    credentialId: base64UrlSchema,
+    label: z.string().min(1).max(64),
+    /** The credential public key as SPKI. */
+    publicKey: base64UrlSchema,
+  })
+  .strict();
+export type PrivilegedEnrolmentRequest = z.infer<
+  typeof privilegedEnrolmentRequestSchema
+>;
+
+export const privilegedEnrolmentResponseSchema = z
+  .object({
+    authenticatorId: z.uuid(),
+    /** How many live authenticators this operator now holds. */
+    enrolled: z.number().int().nonnegative(),
+    /** Whether that count satisfies the ADR-0017 production minimum. */
+    ready: z.boolean(),
+  })
+  .strict();
+export type PrivilegedEnrolmentResponse = z.infer<
+  typeof privilegedEnrolmentResponseSchema
+>;
+
+export const privilegedStepUpRequestSchema = z
+  .object({
+    authenticatorData: base64UrlSchema,
+    challenge: z.string().min(1).max(256),
+    clientDataJSON: base64UrlSchema,
+    credentialId: base64UrlSchema,
+    signature: base64UrlSchema,
+  })
+  .strict();
+export type PrivilegedStepUpRequest = z.infer<
+  typeof privilegedStepUpRequestSchema
+>;
+
+/**
+ * The first operator grant in a deployed environment.
+ *
+ * Three independent things have to be true at once, and the request carries
+ * only one of them: the caller already holds a Platform Admin session at
+ * phishing-resistant assurance, and separately presents the deployment-time
+ * bootstrap secret. Neither is sufficient alone, which is the property that
+ * makes this safe to expose at all.
+ */
+export const operatorBootstrapRequestSchema = z
+  .object({
+    reason: z.string().min(8).max(280),
+    token: z.string().min(16).max(512),
+  })
+  .strict();
+export type OperatorBootstrapRequest = z.infer<
+  typeof operatorBootstrapRequestSchema
+>;
+
+export const operatorBootstrapResponseSchema = z
+  .object({
+    grantId: z.uuid(),
+    role: z.string().min(1),
+    subjectReference: z.string().min(1),
+  })
+  .strict();
+export type OperatorBootstrapResponse = z.infer<
+  typeof operatorBootstrapResponseSchema
+>;
+
+/**
  * The server-derived view of the caller. It deliberately carries no credential,
  * no token, and no role: authorization truth stays in the owning domain.
  */
@@ -184,10 +359,18 @@ export type AuthAcknowledgement = z.infer<typeof authAcknowledgementSchema>;
  * next and nothing about accounts, tokens, providers, or storage.
  */
 export const authErrorCodes = {
+  /** The first operator grant was refused. It never says which condition failed. */
+  bootstrapRefused: 'ADMIN_BOOTSTRAP_REFUSED',
   csrfRequired: 'AUTH_CSRF_REQUIRED',
+  /** No federated provider is configured, so there is nowhere to send anybody. */
+  federatedUnavailable: 'AUTH_FEDERATED_UNAVAILABLE',
   identityDisabled: 'AUTH_IDENTITY_DISABLED',
   invalidCredentials: 'AUTH_INVALID_CREDENTIALS',
   originRejected: 'AUTH_ORIGIN_REJECTED',
+  /** A challenge that was never issued, already used, or has expired. */
+  privilegedChallengeInvalid: 'AUTH_PRIVILEGED_CHALLENGE_INVALID',
+  /** The authenticator's answer did not verify. Nothing says why. */
+  privilegedVerificationFailed: 'AUTH_PRIVILEGED_VERIFICATION_FAILED',
   rateLimited: 'AUTH_RATE_LIMITED',
   recoveryInvalid: 'AUTH_RECOVERY_INVALID',
   recoveryReviewRequired: 'AUTH_RECOVERY_REVIEW_REQUIRED',

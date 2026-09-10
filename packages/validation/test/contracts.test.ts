@@ -114,17 +114,27 @@ describe('bootstrap API contracts', () => {
 
       const declared = operation.responses as Record<
         string,
-        { readonly description: string; readonly schemaName: string }
+        { readonly description: string; readonly schemaName?: string }
       >;
       expect(Object.keys(published?.responses ?? {}).sort()).toEqual(
         Object.keys(declared).sort(),
       );
       for (const [status, definition] of Object.entries(declared)) {
         const response = published?.responses[status];
-        expect(
-          response?.content['application/json']?.schema.$ref,
-          `${operation.path} ${status}`,
-        ).toBe(`#/components/schemas/${definition.schemaName}`);
+        if (definition.schemaName === undefined) {
+          // A bodiless response publishes no content at all. Publishing an
+          // empty schema instead would tell a generated client to parse a body
+          // that never arrives.
+          expect(
+            response?.content,
+            `${operation.path} ${status}`,
+          ).toBeUndefined();
+        } else {
+          expect(
+            response?.content['application/json']?.schema.$ref,
+            `${operation.path} ${status}`,
+          ).toBe(`#/components/schemas/${definition.schemaName}`);
+        }
         expect(response?.description).toBe(definition.description);
         expect(
           Object.keys(response?.headers ?? {}),
@@ -222,7 +232,11 @@ describe('AUTH contract publication', () => {
     const referenced = new Set<string>();
     for (const operation of apiOperations) {
       for (const response of Object.values(operation.responses)) {
-        referenced.add((response as { schemaName: string }).schemaName);
+        // A bodiless response — a redirect — names no schema and references
+        // none. Adding `undefined` to this set would fail the completeness
+        // assertion below for a body that does not exist.
+        const { schemaName } = response as { schemaName?: string };
+        if (schemaName !== undefined) referenced.add(schemaName);
       }
       if ('requestSchemaName' in operation) {
         referenced.add(operation.requestSchemaName);
@@ -278,10 +292,14 @@ describe('AUTH contract publication', () => {
 
   it('keeps AUTH error codes stable, generic, and free of internal detail', () => {
     expect(Object.values(authErrorCodes).sort()).toEqual([
+      'ADMIN_BOOTSTRAP_REFUSED',
       'AUTH_CSRF_REQUIRED',
+      'AUTH_FEDERATED_UNAVAILABLE',
       'AUTH_IDENTITY_DISABLED',
       'AUTH_INVALID_CREDENTIALS',
       'AUTH_ORIGIN_REJECTED',
+      'AUTH_PRIVILEGED_CHALLENGE_INVALID',
+      'AUTH_PRIVILEGED_VERIFICATION_FAILED',
       'AUTH_RATE_LIMITED',
       'AUTH_RECOVERY_INVALID',
       'AUTH_RECOVERY_REVIEW_REQUIRED',

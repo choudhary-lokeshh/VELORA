@@ -21,6 +21,16 @@ export interface RouteRequest {
 export interface RouteResult {
   readonly body: unknown;
   readonly cookies?: readonly string[];
+  /**
+   * Response headers beyond the cookies and the correlation identifier.
+   *
+   * One case needs it: a browser redirect, whose whole answer is a status and a
+   * `Location`. Values are written as given, so a handler that puts a
+   * caller-supplied string here has to have validated it — which is why the
+   * only handler that does builds its destination from an origin this
+   * deployment configured and a path it re-checked.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
   readonly status: number;
 }
 

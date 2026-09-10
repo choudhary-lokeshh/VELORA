@@ -124,6 +124,24 @@ export const recoveryRateLimits = {
  */
 export const authMechanismConstants = {
   /**
+   * How long a federated sign-in attempt stays open.
+   *
+   * Not an authority lifetime and not in ADR-0017: it bounds how long the
+   * single-use state, nonce, and PKCE verifier of one attempt remain usable,
+   * which is a property of the ceremony rather than of the session it may
+   * produce. Long enough for somebody to read a provider's consent screen,
+   * short enough that an abandoned attempt is not a credential lying around.
+   */
+  federatedAuthorizationLifetimeMilliseconds: 600_000,
+  /**
+   * How long a privileged authenticator challenge stays usable.
+   *
+   * Shorter than a sign-in, because the person is already in front of the
+   * console and the only thing between the challenge and the assertion is a
+   * touch.
+   */
+  privilegedChallengeLifetimeMilliseconds: 300_000,
+  /**
    * Idle expiry slides on use. Writing that on every request would make each
    * read a write, so activity is persisted at most this often. It shortens no
    * lifetime: expiry is still computed from the stored value.

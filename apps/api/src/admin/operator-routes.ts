@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   adminControlListResponseSchema,
   adminControlRequestSchema,
@@ -7,7 +9,10 @@ import {
   adminOperatorResponseSchema,
   adminOperatorRoleRequestSchema,
   adminOperatorRoleResponseSchema,
+  authErrorCodes,
   defaultPageSize,
+  operatorBootstrapRequestSchema,
+  operatorBootstrapResponseSchema,
   pageSizeSchema,
   productErrorCodes,
 } from '@velora/validation';
@@ -111,6 +116,59 @@ export interface AdminOperatorRoutesDependencies {
 
 export class AdminOperatorRoutes {
   constructor(private readonly dependencies: AdminOperatorRoutesDependencies) {}
+
+  /**
+   * The first operator grant in a deployed environment.
+   *
+   * The one command here that does not check a capability, because there is no
+   * capability to check: a deployment where nobody holds a grant has nobody who
+   * could have been granted one. What it checks instead is stronger than a
+   * capability and cannot be held by accident — a live Platform Admin session
+   * at fresh phishing-resistant assurance, which means a real identity provider
+   * admitted this person and a real authenticator answered a challenge, plus
+   * the deployment-time secret, which means whoever is asking also deployed
+   * this environment.
+   *
+   * Every refusal answers the same way. Whether the session was not privileged
+   * enough, the secret did not match, or somebody already came through is not
+   * something a caller learns here.
+   */
+  async bootstrapFirstOperator(input: RouteRequest): Promise<RouteResult> {
+    const resolved =
+      await this.dependencies.adminContext.resolveStanding(input);
+    if ('failure' in resolved) return resolved.failure;
+    const parsed = parseRouteBody(operatorBootstrapRequestSchema, input.body);
+    if (!parsed.ok) {
+      return routeFailure(
+        422,
+        authErrorCodes.validationFailed,
+        input.correlationId,
+      );
+    }
+    const outcome = await this.dependencies.operations.bootstrapFirstOperator({
+      correlationId: input.correlationId,
+      presentedTokenDigest: createHash('sha256')
+        .update(parsed.value.token, 'utf8')
+        .digest('hex'),
+      reason: parsed.value.reason,
+      subjectReference: resolved.context.subjectReference,
+    });
+    if (outcome.kind !== 'granted') {
+      return routeFailure(
+        403,
+        authErrorCodes.bootstrapRefused,
+        input.correlationId,
+      );
+    }
+    return {
+      body: operatorBootstrapResponseSchema.parse({
+        grantId: outcome.grant.id,
+        role: outcome.grant.role,
+        subjectReference: outcome.grant.subjectReference,
+      }),
+      status: 201,
+    };
+  }
 
   /**
    * What the caller may do.

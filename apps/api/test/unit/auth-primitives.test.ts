@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authAssuranceLevels } from '@velora/validation';
+import { scriptedAuthenticatorData } from '../support/authenticator.js';
 
 import {
   accessTokenKeyId,
@@ -675,9 +676,9 @@ describe('AUTH composition root', () => {
     expect(
       await verifier.verify({
         assertion: {
-          clientDataDigest: 'digest',
+          authenticatorData: scriptedAuthenticatorData(99),
+          clientDataJSON: 'e30',
           credentialId: 'credential',
-          signCount: 99,
           signature: 'signature',
         },
         challenge: 'challenge',

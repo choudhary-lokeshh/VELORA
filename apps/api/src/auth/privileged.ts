@@ -5,7 +5,10 @@ import {
   requireFreshAssurance,
   type AuthContext,
 } from './context.js';
-import type { PrivilegedAuthenticatorVerifier } from './identity-provider.js';
+import type {
+  PrivilegedAuthenticatorAssertion,
+  PrivilegedAuthenticatorVerifier,
+} from './identity-provider.js';
 import { highImpactCooldownMilliseconds } from './policy.js';
 import type { AuthExecutor, AuthRepository } from './repository.js';
 import {
@@ -168,6 +171,27 @@ export class PrivilegedAccessService {
   }
 
   /**
+   * The credentials this operator may present, so a browser can scope its ask.
+   *
+   * Not a secret and not authority: a credential identifier is a handle the
+   * authenticator already holds, and telling a signed-in operator which of
+   * their own keys are live is what lets a browser prompt for the right one
+   * instead of every key on the machine.
+   */
+  async listCredentialIds(accountId: string): Promise<readonly string[]> {
+    const rows = await this.dependencies.repository.transactionless
+      .select({ credentialId: authAdminAuthenticators.credentialId })
+      .from(authAdminAuthenticators)
+      .where(
+        and(
+          eq(authAdminAuthenticators.accountId, accountId),
+          isNull(authAdminAuthenticators.revokedAt),
+        ),
+      );
+    return rows.map((row) => row.credentialId);
+  }
+
+  /**
    * ADR-0017 requires two independently stored authenticators before production
    * privileged access. This reports the fact; it does not decide policy.
    */
@@ -194,12 +218,7 @@ export class PrivilegedAccessService {
    * authenticator the configured verifier accepts counts.
    */
   async stepUp(input: {
-    readonly assertion: {
-      readonly clientDataDigest: string;
-      readonly credentialId: string;
-      readonly signCount: number;
-      readonly signature: string;
-    };
+    readonly assertion: PrivilegedAuthenticatorAssertion;
     readonly challenge: string;
     readonly context: AuthContext;
     readonly correlationId: string;

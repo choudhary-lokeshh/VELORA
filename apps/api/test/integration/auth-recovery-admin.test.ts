@@ -23,7 +23,10 @@ import {
 } from '../../src/auth/recovery.js';
 import { AuthRepository } from '../../src/auth/repository.js';
 import { AuthService } from '../../src/auth/service.js';
-import { ScriptedAuthenticatorVerifier } from '../support/authenticator.js';
+import {
+  ScriptedAuthenticatorVerifier,
+  scriptedAuthenticatorData,
+} from '../support/authenticator.js';
 import {
   connectDatabase,
   execute,
@@ -31,6 +34,7 @@ import {
   rowsOf,
   type TestDatabase,
 } from '../support/database.js';
+import { silentLogger } from '../support/harness.js';
 
 const databaseUrl = await provisionDatabase('velora_auth_privileged');
 const database: TestDatabase = connectDatabase(databaseUrl);
@@ -56,6 +60,7 @@ function recoveryService(delivery = new LocalTestRecoveryDelivery()) {
       delivery,
       identitySubjectFor: (subject) =>
         identityProvider.assert(subject).providerSubject,
+      logger: silentLogger(),
       now,
       repository,
     }),
@@ -493,9 +498,9 @@ describe('privileged step-up assurance', () => {
 
     const outcome = await service.stepUp({
       assertion: {
-        clientDataDigest: 'digest',
+        authenticatorData: scriptedAuthenticatorData(1),
+        clientDataJSON: 'e30',
         credentialId: 'credential-unavailable',
-        signCount: 1,
         signature: 'signature',
       },
       challenge: 'challenge',
@@ -521,9 +526,9 @@ describe('privileged step-up assurance', () => {
 
     const outcome = await service.stepUp({
       assertion: {
-        clientDataDigest: 'digest',
+        authenticatorData: scriptedAuthenticatorData(1),
+        clientDataJSON: 'e30',
         credentialId: 'credential-consumer',
-        signCount: 1,
         signature: 'signature',
       },
       challenge: 'challenge',
@@ -554,9 +559,9 @@ describe('privileged step-up assurance', () => {
       expect(
         await service.stepUp({
           assertion: {
-            clientDataDigest: 'digest',
+            authenticatorData: scriptedAuthenticatorData(5),
+            clientDataJSON: 'e30',
             credentialId,
-            signCount: 5,
             signature: 'signature',
           },
           challenge: 'challenge',
@@ -579,9 +584,9 @@ describe('privileged step-up assurance', () => {
       publicKey: 'public-key',
     });
     const assertion = {
-      clientDataDigest: 'digest',
+      authenticatorData: scriptedAuthenticatorData(7),
+      clientDataJSON: 'e30',
       credentialId: 'credential-replay',
-      signCount: 7,
       signature: 'signature',
     };
 
@@ -622,9 +627,9 @@ describe('privileged step-up assurance', () => {
       publicKey: 'public-key',
     });
     const assertion = {
-      clientDataDigest: 'digest',
+      authenticatorData: scriptedAuthenticatorData(0),
+      clientDataJSON: 'e30',
       credentialId: 'credential-passkey',
-      signCount: 0,
       signature: 'signature',
     };
 
@@ -684,9 +689,9 @@ describe('exact-action authorization for high-impact operations', () => {
     });
     await service.stepUp({
       assertion: {
-        clientDataDigest: 'digest',
+        authenticatorData: scriptedAuthenticatorData(1),
+        clientDataJSON: 'e30',
         credentialId: `credential-${subject}`,
-        signCount: 1,
         signature: 'signature',
       },
       challenge: 'challenge',

@@ -5,7 +5,11 @@ import {
   localIdentityProvider,
   localRecoveryDelivery,
   localTestPrivilegedVerifier,
+  managedAccessTokenSigner,
+  oidcIdentityProvider,
+  smtpRecoveryDelivery,
   unavailablePrivilegedVerifier,
+  webauthnPrivilegedVerifier,
   type ServerConfig,
 } from '@velora/config/server';
 import type { SafeLogger } from '@velora/observability/server';
@@ -20,9 +24,17 @@ import {
   LocalIdentityProvider,
   LocalTestPrivilegedAuthenticatorVerifier,
   UnavailablePrivilegedAuthenticatorVerifier,
+  type FederatedIdentityProvider,
   type IdentityProvider,
   type PrivilegedAuthenticatorVerifier,
 } from './identity-provider.js';
+import { requesterReferenceResolver } from '../http/forwarded.js';
+import { AllowlistedOutboundHttp } from '../security/outbound-http.js';
+import type { OutboundHttpPort } from '../security/ports.js';
+import { OidcIdentityProvider } from './oidc.js';
+import { TlsRequiredSmtpSubmission } from '../security/smtp-client.js';
+import { SmtpRecoveryDelivery } from './smtp.js';
+import { WebAuthnAuthenticatorVerifier } from './webauthn.js';
 import { PrivilegedAccessService } from './privileged.js';
 import {
   LocalTestRecoveryDelivery,
@@ -46,6 +58,13 @@ export interface AuthRuntime {
    */
   readonly caller: CallerResolver;
   close(): Promise<void>;
+  /**
+   * The provider when it can actually authenticate a browser, and undefined
+   * when it cannot. The development adapter has no ceremony, so the federated
+   * routes are absent rather than present and refusing — a surface asking where
+   * to send somebody gets a clear answer either way.
+   */
+  readonly federatedIdentity: FederatedIdentityProvider | undefined;
   readonly privilegedAccess: PrivilegedAccessService;
   readonly recovery: RecoveryService;
   readonly recoveryDelivery: RecoveryDeliveryPort;
@@ -56,6 +75,8 @@ export interface AuthRuntime {
 
 export interface AuthRuntimeOptions {
   readonly now?: () => Date;
+  /** Replaces the outbound HTTP adapter. Only a contract harness supplies one. */
+  readonly outboundHttp?: OutboundHttpPort;
   /**
    * Replaces the phishing-resistant authenticator verifier. Only tests supply
    * one: no approved implementation exists, so the configured verifier refuses
@@ -65,11 +86,12 @@ export interface AuthRuntimeOptions {
   readonly rateLimiter?: RateLimiter;
   /**
    * Resolves the per-request abuse-control subject. `X-Forwarded-For` is
-   * deliberately never consulted: no reviewed edge or trusted-proxy
-   * configuration exists yet (ADR-0014), so honouring it would hand every
-   * caller a free rate-limit bypass. The device reference the client supplies
-   * is the "IP or device baseline" ADR-0017 permits, and a caller that supplies
-   * none shares one bucket rather than getting an unlimited private one.
+   * consulted only when `TRUSTED_PROXY_HOP_COUNT` says how many proxies are in
+   * front, and then only at the position that count names — see
+   * `http/forwarded.ts` for why any other reading is either a bypass or a
+   * shared bucket. With no proxies configured the header is ignored entirely
+   * and the device reference the client supplies is the "IP or device baseline"
+   * ADR-0017 permits.
    */
   readonly requesterReference?: (request: Request) => string;
 }
@@ -78,16 +100,54 @@ export interface AuthRuntimeOptions {
  * Adapter registries. A configured name with no entry is an error rather than a
  * default, so adding a provider means registering it here deliberately.
  */
-const identityProviders: Readonly<Record<string, () => IdentityProvider>> = {
+const identityProviders: Readonly<
+  Record<
+    string,
+    (config: ServerConfig, http: OutboundHttpPort) => IdentityProvider
+  >
+> = {
   [localIdentityProvider]: () => new LocalIdentityProvider(),
+  [oidcIdentityProvider]: (config, http) =>
+    new OidcIdentityProvider({
+      // Configuration guarantees all four are present when this adapter is
+      // selected, in every environment, so an absent one here is a schema bug
+      // rather than a state to degrade into.
+      clientId: required(config.AUTH_OIDC_CLIENT_ID, 'AUTH_OIDC_CLIENT_ID'),
+      clientSecret: required(
+        config.AUTH_OIDC_CLIENT_SECRET,
+        'AUTH_OIDC_CLIENT_SECRET',
+      ),
+      http,
+      issuer: required(config.AUTH_OIDC_ISSUER, 'AUTH_OIDC_ISSUER'),
+      redirectUri: required(
+        config.AUTH_OIDC_REDIRECT_URI,
+        'AUTH_OIDC_REDIRECT_URI',
+      ),
+    }),
 };
 
-function selectIdentityProvider(config: ServerConfig): IdentityProvider {
+function required(value: string | undefined, name: string): string {
+  if (value === undefined) {
+    throw new Error(`${name} is required by the selected adapter`);
+  }
+  return value;
+}
+
+function selectIdentityProvider(
+  config: ServerConfig,
+  http: OutboundHttpPort,
+): IdentityProvider {
   const build = identityProviders[config.AUTH_IDENTITY_PROVIDER];
   if (build === undefined) {
     throw new Error('No approved identity provider is configured');
   }
-  return build();
+  return build(config, http);
+}
+
+function asFederated(
+  provider: IdentityProvider,
+): FederatedIdentityProvider | undefined {
+  return provider instanceof OidcIdentityProvider ? provider : undefined;
 }
 
 const accessTokenSigners: Readonly<
@@ -98,6 +158,7 @@ const accessTokenSigners: Readonly<
 > = {
   [localAccessTokenSigner]: (config, logger) =>
     buildLocalSigner(config, logger),
+  [managedAccessTokenSigner]: (config) => buildManagedSigner(config),
 };
 
 function selectAccessTokenSigner(
@@ -109,6 +170,37 @@ function selectAccessTokenSigner(
     throw new Error('No approved access-token signing authority is configured');
   }
   return build(config, logger);
+}
+
+/**
+ * The deployable signer.
+ *
+ * Same Ed25519 authority the local one uses, with the property that made the
+ * local one undeployable removed: there is no generated key and no fallback.
+ * Configuration has already refused this selection without key material, so
+ * absence here is a schema bug rather than a state to recover from.
+ */
+function buildManagedSigner(config: ServerConfig): AccessTokenSigner {
+  const configured = required(
+    config.AUTH_ACCESS_TOKEN_SIGNING_KEY,
+    'AUTH_ACCESS_TOKEN_SIGNING_KEY',
+  );
+  return new Ed25519AccessTokenAuthority({
+    additionalVerificationKeys: config.AUTH_ACCESS_TOKEN_VERIFICATION_KEYS.map(
+      (key) =>
+        createPublicKey({
+          format: 'der',
+          key: Buffer.from(key, 'base64'),
+          type: 'spki',
+        }),
+    ),
+    issuer: config.AUTH_TOKEN_ISSUER,
+    signingKey: createPrivateKey({
+      format: 'der',
+      key: Buffer.from(configured, 'base64'),
+      type: 'pkcs8',
+    }),
+  });
 }
 
 function buildLocalSigner(
@@ -146,26 +238,48 @@ function buildLocalSigner(
   });
 }
 
-const recoveryDeliveries: Readonly<Record<string, () => RecoveryDeliveryPort>> =
-  {
-    [localRecoveryDelivery]: () => new LocalTestRecoveryDelivery(),
-  };
+const recoveryDeliveries: Readonly<
+  Record<string, (config: ServerConfig) => RecoveryDeliveryPort>
+> = {
+  [localRecoveryDelivery]: () => new LocalTestRecoveryDelivery(),
+  [smtpRecoveryDelivery]: (config) =>
+    new SmtpRecoveryDelivery({
+      senderAddress: required(
+        config.AUTH_RECOVERY_SENDER_ADDRESS,
+        'AUTH_RECOVERY_SENDER_ADDRESS',
+      ),
+      submission: new TlsRequiredSmtpSubmission({
+        submissionUrl: required(
+          config.AUTH_RECOVERY_SMTP_URL,
+          'AUTH_RECOVERY_SMTP_URL',
+        ),
+      }),
+    }),
+};
 
 function selectRecoveryDelivery(config: ServerConfig): RecoveryDeliveryPort {
   const build = recoveryDeliveries[config.AUTH_RECOVERY_DELIVERY];
   if (build === undefined) {
     throw new Error('No approved recovery delivery channel is configured');
   }
-  return build();
+  return build(config);
 }
 
 const privilegedVerifiers: Readonly<
-  Record<string, () => PrivilegedAuthenticatorVerifier>
+  Record<string, (config: ServerConfig) => PrivilegedAuthenticatorVerifier>
 > = {
   [localTestPrivilegedVerifier]: () =>
     new LocalTestPrivilegedAuthenticatorVerifier(),
   [unavailablePrivilegedVerifier]: () =>
     new UnavailablePrivilegedAuthenticatorVerifier(),
+  [webauthnPrivilegedVerifier]: (config) =>
+    new WebAuthnAuthenticatorVerifier({
+      origins: config.AUTH_WEBAUTHN_ORIGINS,
+      relyingPartyId: required(
+        config.AUTH_WEBAUTHN_RELYING_PARTY_ID,
+        'AUTH_WEBAUTHN_RELYING_PARTY_ID',
+      ),
+    }),
 };
 
 function selectPrivilegedVerifier(
@@ -176,13 +290,7 @@ function selectPrivilegedVerifier(
   if (build === undefined) {
     throw new Error('No approved authenticator verifier is configured');
   }
-  return build();
-}
-
-function defaultRequesterReference(request: Request): string {
-  const device = request.headers.get('x-velora-device');
-  if (device !== null && device.length > 0) return `device:${device}`;
-  return 'unattributed';
+  return build(config);
 }
 
 /**
@@ -198,7 +306,18 @@ export function createAuthRuntime(input: {
 }): AuthRuntime {
   const now = input.options?.now ?? (() => new Date());
   const repository = new AuthRepository(input.database);
-  const identityProvider = selectIdentityProvider(input.config);
+  const identityProvider = selectIdentityProvider(
+    input.config,
+    // Loopback destinations are permitted only where a contract harness stands
+    // a provider up in this process. A deployed environment refuses them, so a
+    // configuration naming one fails rather than reaching something local.
+    input.options?.outboundHttp ??
+      new AllowlistedOutboundHttp({
+        allowLoopback:
+          input.config.APP_ENV === 'local' || input.config.APP_ENV === 'test',
+      }),
+  );
+  const federatedIdentity = asFederated(identityProvider);
   const localIdentityEnabled =
     identityProvider instanceof LocalIdentityProvider;
   const service = new AuthService({
@@ -211,6 +330,7 @@ export function createAuthRuntime(input: {
   const recovery = new RecoveryService({
     authService: service,
     delivery: recoveryDelivery,
+    logger: input.logger,
     identitySubjectFor: (subject) =>
       identityProvider.assert(subject).providerSubject,
     now,
@@ -237,6 +357,7 @@ export function createAuthRuntime(input: {
     allowedOrigins,
     allowedOriginUnion: [...new Set(Object.values(allowedOrigins).flat())],
     caller,
+    federatedIdentity,
     async close() {
       if (input.options?.rateLimiter === undefined) {
         await ownedRateLimiter.close();
@@ -251,14 +372,25 @@ export function createAuthRuntime(input: {
       appEnvironment: input.config.APP_ENV,
       authService: service,
       caller,
+      ...(federatedIdentity === undefined ? {} : { federatedIdentity }),
       localIdentityEnabled,
       logger: input.logger,
+      privilegedAccess,
+      repository,
+      ...(input.config.AUTH_WEBAUTHN_RELYING_PARTY_ID === undefined
+        ? {}
+        : {
+            webAuthnRelyingPartyId: input.config.AUTH_WEBAUTHN_RELYING_PARTY_ID,
+          }),
       now,
       privilegedVerifier: verifier,
       rateLimiter: ownedRateLimiter,
       recoveryService: recovery,
       requesterReference:
-        input.options?.requesterReference ?? defaultRequesterReference,
+        input.options?.requesterReference ??
+        requesterReferenceResolver({
+          trustedProxyHopCount: input.config.TRUSTED_PROXY_HOP_COUNT,
+        }),
     }),
     service,
   };

@@ -307,6 +307,25 @@ function isValueReference(node) {
   return true;
 }
 
+/**
+ * The only two files permitted to own a network primitive.
+ *
+ * Outbound networking is deny-by-default across every workspace the backend
+ * runtime can import, and `docs/security/06-abuse-outbound-networking.md`
+ * allows exactly one shape of exception: an approved adapter that owns the
+ * primitive, is reviewed on its own, and is the thing every other module is
+ * handed instead. These are those adapters, named individually rather than by
+ * directory so a new file beside them inherits nothing.
+ *
+ * Each path is asserted to exist below. An exemption for a file that was
+ * renamed or deleted is an exemption nobody is checking.
+ */
+const approvedNetworkAdapters = new Set([
+  'apps/api/src/security/outbound-http.ts',
+  'apps/api/src/security/smtp-client.ts',
+]);
+const seenNetworkAdapters = new Set();
+
 function backendNetworkFailures(analysis, fileName) {
   const found = [];
   const rootAliases = new Map(runtimeRootAliases);
@@ -615,8 +634,20 @@ for (const workspace of workspaces) {
       }
     }
     if (serverCapableWorkspaces.has(workspace.name)) {
-      failures.push(...backendNetworkFailures(analysis, fileName));
+      if (approvedNetworkAdapters.has(fileName)) {
+        seenNetworkAdapters.add(fileName);
+      } else {
+        failures.push(...backendNetworkFailures(analysis, fileName));
+      }
     }
+  }
+}
+
+for (const adapter of approvedNetworkAdapters) {
+  if (!seenNetworkAdapters.has(adapter)) {
+    failures.push(
+      `${adapter} is listed as an approved network adapter and was not found; remove the exemption or restore the file`,
+    );
   }
 }
 
@@ -625,6 +656,6 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Boundary check passed for ${workspaces.length} workspaces; outbound network enforcement covers ${[...serverCapableWorkspaces].sort().join(', ')}.`,
+    `Boundary check passed for ${workspaces.length} workspaces; outbound network enforcement covers ${[...serverCapableWorkspaces].sort().join(', ')} with ${approvedNetworkAdapters.size} approved adapters.`,
   );
 }

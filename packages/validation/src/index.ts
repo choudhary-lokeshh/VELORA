@@ -273,9 +273,19 @@ import {
 } from './users.js';
 import {
   authAcknowledgementSchema,
+  authErrorCodes,
   authSessionResponseSchema,
   csrfHeader,
   deviceHeader,
+  federatedAuthorizationRequestSchema,
+  federatedAuthorizationResponseSchema,
+  operatorBootstrapRequestSchema,
+  operatorBootstrapResponseSchema,
+  privilegedChallengeRequestSchema,
+  privilegedChallengeResponseSchema,
+  privilegedEnrolmentRequestSchema,
+  privilegedEnrolmentResponseSchema,
+  privilegedStepUpRequestSchema,
   localAdminSessionRequestSchema,
   localMobileSessionRequestSchema,
   localWebSessionRequestSchema,
@@ -473,7 +483,13 @@ export const apiRoutePaths = {
   adminGrowthLiveWindows: '/v1/admin/growth/live-windows',
   liveness: '/v1/health/live',
   mediaDeliveries: '/v1/media/deliveries',
+  adminOperatorBootstrap: '/v1/admin/operators/bootstrap',
+  federatedAuthorizations: '/v1/auth/federated/authorizations',
+  federatedCallback: '/v1/auth/federated/callback',
   localAdminSession: '/v1/auth/local/admin-sessions',
+  privilegedAuthenticators: '/v1/auth/privileged/authenticators',
+  privilegedChallenges: '/v1/auth/privileged/challenges',
+  privilegedStepUp: '/v1/auth/privileged/step-up',
   localMobileSession: '/v1/auth/local/mobile-sessions',
   localWebSession: '/v1/auth/local/web-sessions',
   messagingConversationRead: '/v1/messaging/conversations/read',
@@ -787,7 +803,16 @@ export const apiSchemas = {
   AuthAcknowledgement: authAcknowledgementSchema,
   AuthSessionResponse: authSessionResponseSchema,
   LivenessResponse: livenessResponseSchema,
+  FederatedAuthorizationRequest: federatedAuthorizationRequestSchema,
+  FederatedAuthorizationResponse: federatedAuthorizationResponseSchema,
   LocalAdminSessionRequest: localAdminSessionRequestSchema,
+  OperatorBootstrapRequest: operatorBootstrapRequestSchema,
+  OperatorBootstrapResponse: operatorBootstrapResponseSchema,
+  PrivilegedChallengeRequest: privilegedChallengeRequestSchema,
+  PrivilegedChallengeResponse: privilegedChallengeResponseSchema,
+  PrivilegedEnrolmentRequest: privilegedEnrolmentRequestSchema,
+  PrivilegedEnrolmentResponse: privilegedEnrolmentResponseSchema,
+  PrivilegedStepUpRequest: privilegedStepUpRequestSchema,
   LocalMobileSessionRequest: localMobileSessionRequestSchema,
   LocalWebSessionRequest: localWebSessionRequestSchema,
   MobileRefreshRequest: mobileRefreshRequestSchema,
@@ -805,6 +830,17 @@ export const apiSchemas = {
  * filters only; a credential never appears in a URL.
  */
 export const apiQueryParameters = {
+  /**
+   * The three values an OpenID provider puts on the return address.
+   *
+   * They are the provider's vocabulary, not this platform's, and they arrive on
+   * a top-level browser navigation this platform did not compose — so they are
+   * bounded here and then verified against a stored, single-use attempt rather
+   * than trusted for anything.
+   */
+  authorizationCode: z.string().min(1).max(2048),
+  authorizationError: z.string().min(1).max(256),
+  authorizationState: z.string().min(1).max(512),
   callId: z.uuid(),
   conversationId: conversationIdSchema,
   cursor: cursorSchema,
@@ -920,6 +956,27 @@ const authBrowserOriginResponse = {
   description:
     'The browser origin, Fetch Metadata, or CSRF evidence for this state-changing request was rejected, or the requested identity adapter is not enabled. The body is an ApiError.',
   schemaName: 'ApiError',
+} as const;
+
+const federatedUnavailableResponse = {
+  description: `This deployment has no federated identity provider configured, so there is nowhere to send anybody and nothing to verify. The body is an ApiError with code ${authErrorCodes.federatedUnavailable}.`,
+  schemaName: 'ApiError',
+} as const;
+
+const privilegedVerificationResponse = {
+  description: `The challenge was not one this server issued to this operator, or the authenticator's answer did not verify. The two are deliberately indistinguishable. The body is an ApiError with code ${authErrorCodes.privilegedChallengeInvalid} or ${authErrorCodes.privilegedVerificationFailed}.`,
+  schemaName: 'ApiError',
+} as const;
+
+const operatorBootstrapRefusedResponse = {
+  description: `The first operator grant was refused. The session was not privileged enough, the secret did not match, or a grant already exists — and the answer never says which. The body is an ApiError with code ${authErrorCodes.bootstrapRefused}.`,
+  schemaName: 'ApiError',
+} as const;
+
+const locationHeader = {
+  description: 'Where the browser is being returned to',
+  required: true,
+  schema: { type: 'string' },
 } as const;
 
 const authRequiredResponse = {
@@ -1190,6 +1247,158 @@ export const apiOperations = [
     security: apiSecurityRequirements.public,
     summary:
       'Development and test only. Issues a platform_admin session with phishing_resistant assurance using the local-test-privileged authenticator adapter. Refused outside local and test environments, and refused whenever the configured verifier is not local-test-privileged. See ADR-0034.',
+  },
+  {
+    method: 'post',
+    operationId: 'createFederatedAuthorization',
+    path: apiRoutePaths.federatedAuthorizations,
+    requestSchemaName: 'FederatedAuthorizationRequest',
+    responses: {
+      '201': {
+        description:
+          'A single-use sign-in attempt was recorded and the address to send the browser to was returned',
+        schemaName: 'FederatedAuthorizationResponse',
+      },
+      '403': authBrowserOriginResponse,
+      '422': invalidAuthInputResponse,
+      '429': authRateLimitedResponse,
+      '501': federatedUnavailableResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'Opens a federated sign-in. The audience named here is checked against the origin the request came from, so naming one is a request rather than a selection.',
+  },
+  {
+    method: 'get',
+    operationId: 'completeFederatedAuthorization',
+    path: apiRoutePaths.federatedCallback,
+    requestQuery: [
+      {
+        description: 'Authorization code issued by the provider',
+        name: 'authorizationCode',
+      },
+      {
+        description:
+          'The single-use state this platform minted for the attempt',
+        name: 'authorizationState',
+        required: true,
+      },
+      {
+        description:
+          'Error code when the provider refused or the person declined',
+        name: 'authorizationError',
+      },
+    ],
+    responses: {
+      '303': {
+        description:
+          'The browser is returned to the surface that started the attempt. On success the audience-scoped session cookie is set; on refusal the destination carries a marker and no cookie is set.',
+        headers: { location: locationHeader },
+      },
+      '400': {
+        description:
+          'The state names no open attempt, so there is no surface to return the browser to. The body is an ApiError.',
+        schemaName: 'ApiError',
+      },
+      '501': federatedUnavailableResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.public,
+    summary:
+      'The address an OpenID provider returns a browser to. One address for every surface: the attempt records which one started it.',
+  },
+  {
+    method: 'post',
+    operationId: 'createPrivilegedChallenge',
+    path: apiRoutePaths.privilegedChallenges,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'PrivilegedChallengeRequest',
+    responses: {
+      '201': {
+        description:
+          'A single-use challenge was issued for this operator and this ceremony',
+        schemaName: 'PrivilegedChallengeResponse',
+      },
+      '401': authRequiredResponse,
+      '403': authBrowserOriginResponse,
+      '422': invalidAuthInputResponse,
+      '429': authRateLimitedResponse,
+      '501': federatedUnavailableResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Issues a WebAuthn challenge for enrolment or assertion. Platform Admin audience only, and consumable exactly once by the operator it was issued to.',
+  },
+  {
+    method: 'post',
+    operationId: 'enrolPrivilegedAuthenticator',
+    path: apiRoutePaths.privilegedAuthenticators,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'PrivilegedEnrolmentRequest',
+    responses: {
+      '201': {
+        description:
+          'The registration verified against its challenge and the credential was enrolled',
+        schemaName: 'PrivilegedEnrolmentResponse',
+      },
+      '401': authRequiredResponse,
+      '403': authBrowserOriginResponse,
+      '409': privilegedVerificationResponse,
+      '422': invalidAuthInputResponse,
+      '429': authRateLimitedResponse,
+      '501': federatedUnavailableResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Enrols a phishing-resistant authenticator for the calling operator, after verifying the registration against a challenge this server issued exactly once.',
+  },
+  {
+    method: 'post',
+    operationId: 'stepUpPrivilegedSession',
+    path: apiRoutePaths.privilegedStepUp,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'PrivilegedStepUpRequest',
+    responses: {
+      '200': {
+        description:
+          'The assertion verified and the session now holds phishing-resistant assurance',
+        schemaName: 'AuthSessionResponse',
+      },
+      '401': authRequiredResponse,
+      '403': authBrowserOriginResponse,
+      '409': privilegedVerificationResponse,
+      '422': invalidAuthInputResponse,
+      '429': authRateLimitedResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      're-establishes phishing-resistant assurance on a Platform Admin session. Every privileged write checks the assurance this refreshes, and its age.',
+  },
+  {
+    method: 'post',
+    operationId: 'bootstrapFirstOperator',
+    path: apiRoutePaths.adminOperatorBootstrap,
+    requestHeaders: [csrfHeader],
+    requestSchemaName: 'OperatorBootstrapRequest',
+    responses: {
+      '201': {
+        description:
+          'The first operator grant was created. This can succeed exactly once for the lifetime of a deployment.',
+        schemaName: 'OperatorBootstrapResponse',
+      },
+      '401': authRequiredResponse,
+      '403': operatorBootstrapRefusedResponse,
+      '422': invalidAuthInputResponse,
+      '429': authRateLimitedResponse,
+      ...sharedErrorResponses,
+    },
+    security: apiSecurityRequirements.cookieSession,
+    summary:
+      'Creates the first operator capability grant in a deployed environment. Requires a Platform Admin session at phishing-resistant assurance and the deployment-time bootstrap secret, and is refused once any grant exists.',
   },
   {
     method: 'post',

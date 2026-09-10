@@ -18,7 +18,10 @@ import {
 import { AuthRepository } from '../../src/auth/repository.js';
 import { AuthService } from '../../src/auth/service.js';
 import type { HealthDependency } from '../../src/database/database.service.js';
-import { ScriptedAuthenticatorVerifier } from '../support/authenticator.js';
+import {
+  ScriptedAuthenticatorVerifier,
+  scriptedAuthenticatorData,
+} from '../support/authenticator.js';
 import {
   connectDatabase,
   execute,
@@ -373,9 +376,9 @@ describe('privilege escalation attempts', () => {
       transport: 'cookie' as const,
     };
     const assertion = {
-      clientDataDigest: 'digest',
+      authenticatorData: scriptedAuthenticatorData(4),
+      clientDataJSON: 'e30',
       credentialId: 'credential-race',
-      signCount: 4,
       signature: 'signature',
     };
 
@@ -853,6 +856,7 @@ describe('recovery abuse', () => {
       delivery,
       identitySubjectFor: (subject) =>
         new LocalIdentityProvider().assert(subject).providerSubject,
+      logger: silentLogger(),
       now,
       repository,
     });
@@ -887,6 +891,7 @@ describe('recovery abuse', () => {
       delivery,
       identitySubjectFor: (subject) =>
         new LocalIdentityProvider().assert(subject).providerSubject,
+      logger: silentLogger(),
       now,
       repository,
     });
@@ -1042,6 +1047,7 @@ describe('races between rotation and revocation', () => {
       delivery,
       identitySubjectFor: (subject) =>
         new LocalIdentityProvider().assert(subject).providerSubject,
+      logger: silentLogger(),
       now,
       repository,
     });
@@ -1140,6 +1146,7 @@ describe('recovery delivery failure', () => {
       delivery: failing,
       identitySubjectFor: (subject) =>
         new LocalIdentityProvider().assert(subject).providerSubject,
+      logger: silentLogger(),
       now,
       repository,
     });

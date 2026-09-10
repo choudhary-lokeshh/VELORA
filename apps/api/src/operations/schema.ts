@@ -253,3 +253,44 @@ export const operationsOperatorActions = pgTable(
     ),
   ],
 );
+
+/**
+ * The first operator grant in a deployed environment, and the proof it happened
+ * once.
+ *
+ * A platform where nobody holds a capability grant has nobody who can issue
+ * one, and this is the only way out of that. It is deliberately a table with
+ * room for exactly one row: `singleton` is constrained to true and uniquely
+ * indexed, so the second bootstrap in a race loses on a database constraint
+ * rather than on an application check somebody could reorder. The row is never
+ * deleted, which is what makes a replay after a restart fail the same way the
+ * replay a second later does.
+ *
+ * The token is stored as a digest. Whoever supplied it holds the only copy, and
+ * a platform that kept one could re-run its own bootstrap.
+ */
+export const operationsOperatorBootstraps = pgTable(
+  'operations_operator_bootstraps',
+  {
+    consumedAt: timestamptz('consumed_at').notNull(),
+    /** The grant this bootstrap created, so the two can be read together. */
+    grantId: uuid('grant_id').notNull(),
+    id: uuid('id').primaryKey(),
+    singleton: boolean('singleton').notNull().default(true),
+    subjectReference: text('subject_reference').notNull(),
+    tokenDigest: text('token_digest').notNull(),
+  },
+  (table) => [
+    uniqueIndex('operations_operator_bootstraps_singleton_uk').on(
+      table.singleton,
+    ),
+    check(
+      'operations_operator_bootstraps_singleton_check',
+      sql`${table.singleton} is true`,
+    ),
+    check(
+      'operations_operator_bootstraps_token_digest_check',
+      sql`${table.tokenDigest} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);

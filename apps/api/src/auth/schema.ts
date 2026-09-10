@@ -698,3 +698,99 @@ export const authHighImpactAuthorizations = pgTable(
     ),
   ],
 );
+
+/**
+ * A federated sign-in attempt, from the moment a browser is sent to the
+ * provider until the moment it comes back.
+ *
+ * It is in PostgreSQL rather than in a cookie or ephemeral Redis for one
+ * reason: every value here is a single-use anti-replay control, and a control
+ * that survives one process and not another is a control that stops working
+ * exactly when a deployment is being restarted. The state is stored as a digest
+ * because the browser holds the value and the server only ever has to recognise
+ * it; the nonce and the code verifier are stored as they are because both have
+ * to be presented back to the provider verbatim.
+ */
+export const authFederatedAuthorizations = pgTable(
+  'auth_federated_authorizations',
+  {
+    /** Which surface started the attempt, and therefore what may be issued. */
+    audience: text('audience').notNull(),
+    codeVerifier: text('code_verifier').notNull(),
+    consumedAt: timestamptz('consumed_at'),
+    createdAt: timestamptz('created_at').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    nonce: text('nonce').notNull(),
+    /**
+     * Where to return the person afterwards. Always a path on the surface that
+     * started the attempt, validated before it was stored and again before it
+     * is used — an absolute address here would be an open redirect with a
+     * database row behind it.
+     */
+    returnTo: text('return_to'),
+    stateDigest: digestColumn('state_digest').primaryKey(),
+  },
+  (table) => [
+    check(
+      'auth_federated_authorizations_state_digest_check',
+      isHexDigest(table.stateDigest),
+    ),
+    check(
+      'auth_federated_authorizations_audience_check',
+      inList(table.audience, [
+        'consumer_web',
+        'creator_studio',
+        'platform_admin',
+      ]),
+    ),
+    check(
+      'auth_federated_authorizations_lifetime_check',
+      sql`${table.expiresAt} > ${table.createdAt}`,
+    ),
+    index('auth_federated_authorizations_expiry_idx').on(table.expiresAt),
+  ],
+);
+
+export const authPrivilegedChallengePurposes = [
+  'enrolment',
+  'assertion',
+] as const;
+
+/**
+ * Challenges for the privileged authenticator ceremonies.
+ *
+ * The single-use property of a WebAuthn assertion rests entirely on the
+ * relying party consuming its challenge exactly once, so the challenge is a
+ * durable row consumed by a conditional update rather than a value held in
+ * memory. Stored as a digest: the browser is given the challenge, and this side
+ * only ever needs to recognise the one it issued.
+ */
+export const authPrivilegedChallenges = pgTable(
+  'auth_privileged_challenges',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => authAccounts.id, { onDelete: 'cascade' }),
+    challengeDigest: digestColumn('challenge_digest').primaryKey(),
+    consumedAt: timestamptz('consumed_at'),
+    createdAt: timestamptz('created_at').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    purpose: text('purpose').notNull(),
+  },
+  (table) => [
+    check(
+      'auth_privileged_challenges_digest_check',
+      isHexDigest(table.challengeDigest),
+    ),
+    check(
+      'auth_privileged_challenges_purpose_check',
+      inList(table.purpose, [...authPrivilegedChallengePurposes]),
+    ),
+    check(
+      'auth_privileged_challenges_lifetime_check',
+      sql`${table.expiresAt} > ${table.createdAt}`,
+    ),
+    index('auth_privileged_challenges_account_idx').on(table.accountId),
+    index('auth_privileged_challenges_expiry_idx').on(table.expiresAt),
+  ],
+);

@@ -44,6 +44,7 @@
     "infra:up": "docker compose up --detach --wait",
     "infra:down": "docker compose down",
     "db:migrate": "pnpm --filter @velora/api db:migrate",
+    "deployment:doctor": "pnpm --filter @velora/api deployment:doctor",
     "audit:dependencies": "node scripts/check-dependency-security.mjs",
     "auth:policy": "node scripts/check-auth-policy.mjs",
     "design:parity": "node scripts/check-design-parity.mjs",

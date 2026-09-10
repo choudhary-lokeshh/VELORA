@@ -1,3 +1,5 @@
+import { timingSafeEqual } from 'node:crypto';
+
 import type { SafeLogger } from '@velora/observability/server';
 
 import type { CachedControlReader } from './controls.js';
@@ -74,6 +76,16 @@ export class OperationsService {
        * staging and production refuse at startup.
        */
       readonly bootstrapOperators: boolean;
+      /**
+       * The digest of the deployment-time bootstrap secret, when one is
+       * configured.
+       *
+       * A digest rather than the value, so the running process never holds a
+       * comparable copy of a secret it only has to recognise. Absent means this
+       * deployment has no bootstrap door open at all, which is the correct
+       * state for every deployment that already has an operator.
+       */
+      readonly bootstrapTokenDigest?: string | undefined;
       readonly controls: CachedControlReader;
       readonly identifiers?: () => string;
       readonly logger: SafeLogger;
@@ -276,6 +288,113 @@ export class OperationsService {
     );
     if (grant === undefined) return { kind: 'unchanged' };
     return { grant, kind: 'granted' };
+  }
+
+  /**
+   * The first operator grant in a deployed environment.
+   *
+   * A deployment where nobody holds a grant has nobody who can issue one, and
+   * this is the only way out of that. Three independent things have to be true,
+   * and the caller supplies only one of them:
+   *
+   * - the caller already holds a Platform Admin session at phishing-resistant
+   *   assurance, which the route establishes before calling this at all;
+   * - the deployment-time secret matches, which proves whoever is asking also
+   *   deployed this environment;
+   * - and no grant exists yet, checked inside the transaction that writes one.
+   *
+   * The exactly-once property is the database's. `singleton` is uniquely
+   * indexed, so two concurrent attempts cannot both insert, and the row is
+   * never removed — which is what makes a replay after a restart fail the same
+   * way a replay a second later does.
+   *
+   * Every refusal answers the same way. Whether the secret was wrong, the door
+   * is closed, or somebody already came through is not something a caller
+   * learns from here.
+   */
+  async bootstrapFirstOperator(input: {
+    readonly correlationId?: string | undefined;
+    readonly presentedTokenDigest: string;
+    readonly reason: string;
+    readonly subjectReference: string;
+  }): Promise<GrantOutcome> {
+    const expected = this.dependencies.bootstrapTokenDigest;
+    const matched =
+      expected?.length === input.presentedTokenDigest.length &&
+      timingSafeEqual(
+        Buffer.from(expected, 'utf8'),
+        Buffer.from(input.presentedTokenDigest, 'utf8'),
+      );
+    if (!matched) {
+      await this.recordAction({
+        action: 'operator.role.granted',
+        actorReference: input.subjectReference,
+        capability: 'operators.manage',
+        correlationId: input.correlationId,
+        failureCode: 'bootstrap_refused',
+        outcome: 'refused',
+        reason: input.reason,
+        requestedState: 'super_admin',
+        subjectId: input.subjectReference,
+        subjectType: 'operator',
+      });
+      return { kind: 'unchanged' };
+    }
+
+    const now = this.dependencies.now();
+    const grantId = this.identifier();
+    const bootstrapId = this.identifier();
+    const grant = await this.dependencies.repository.transaction(
+      async (executor) => {
+        if (
+          (await this.dependencies.repository.countLiveGrants(executor)) > 0
+        ) {
+          return undefined;
+        }
+        const claimed = await this.dependencies.repository.claimBootstrap(
+          executor,
+          {
+            grantId,
+            id: bootstrapId,
+            now,
+            subjectReference: input.subjectReference,
+            tokenDigest: input.presentedTokenDigest,
+          },
+        );
+        if (!claimed) return undefined;
+        return this.dependencies.repository.insertGrant(executor, {
+          // Deliberately nobody. The first grant has no granting operator by
+          // definition, and naming the subject here would record them granting
+          // themselves an authority they did not yet hold.
+          grantedBy: undefined,
+          id: grantId,
+          now,
+          reason: input.reason,
+          role: 'super_admin',
+          subjectReference: input.subjectReference,
+        });
+      },
+    );
+
+    await this.recordAction({
+      action: 'operator.role.granted',
+      actorReference: input.subjectReference,
+      capability: 'operators.manage',
+      correlationId: input.correlationId,
+      ...(grant === undefined ? { failureCode: 'bootstrap_refused' } : {}),
+      outcome: grant === undefined ? 'refused' : 'applied',
+      reason: input.reason,
+      requestedState: 'super_admin',
+      subjectId: input.subjectReference,
+      subjectType: 'operator',
+    });
+    if (grant === undefined) return { kind: 'unchanged' };
+    return { grant, kind: 'granted' };
+  }
+
+  /** Whether the one bootstrap this deployment has has already been taken. */
+  async bootstrapConsumed(): Promise<boolean> {
+    return this.dependencies.repository.bootstrapConsumed();
   }
 
   /** Ends one operator's role. Repeating it is safe and changes nothing. */

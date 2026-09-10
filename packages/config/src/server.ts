@@ -38,6 +38,82 @@ export const unavailablePrivilegedVerifier = 'unavailable';
 export const localTestPrivilegedVerifier = 'local-test-privileged';
 
 /**
+ * The production-capable AUTH adapters.
+ *
+ * Each one names an open standard rather than a vendor, because the vendor
+ * questions in `docs/decisions/DECISIONS_REQUIRED.md` are still open and
+ * choosing one here would answer them by accident. What these values do is
+ * remove a different problem: until they existed, a deployed environment could
+ * not select *any* implementation, so production was not fail-closed but
+ * structurally impossible, and there was no configuration an owner could supply
+ * that would ever start one.
+ *
+ * Selecting one of these is not enablement either. Every one of them refuses to
+ * start without the deployment configuration it needs, which is checked in
+ * every environment by the second guard below, so an environment that names a
+ * provider and cannot reach it fails at startup rather than at the first
+ * person's sign-in.
+ */
+
+/**
+ * OpenID Connect, as a confidential relying party.
+ *
+ * The provider verifies the credential and VELORA verifies the provider: the
+ * ID token's signature is checked against the issuer's published keys, the
+ * issuer and audience must match exactly, the nonce must be the one this
+ * platform minted, and the authorization code is exchanged over the back
+ * channel with PKCE. A decoded but unverified token is never trusted, and the
+ * external subject is a reference rather than an authorization.
+ *
+ * Which OpenID provider is a separate, unresolved decision. This adapter works
+ * against any conforming one, so answering it later is configuration rather
+ * than an architecture change.
+ */
+export const oidcIdentityProvider = 'oidc';
+
+/**
+ * Ed25519 access-token signing on key material this process was given.
+ *
+ * The same authority the local signer uses, with the property that made the
+ * local one unusable removed: there is no generated ephemeral key and no
+ * fallback. Key material arrives from the runtime secret manager as an
+ * environment value or a mounted file, is never committed, and never appears in
+ * a log or a redacted configuration. Verification needs public key material
+ * alone, so a verifier can never mint a token, and retired public keys stay
+ * listed until their tokens have expired, which is how a key is rotated without
+ * signing everybody out.
+ */
+export const managedAccessTokenSigner = 'managed-ed25519';
+
+/**
+ * Recovery delivery over SMTP submission.
+ *
+ * An open standard rather than a vendor API, so the email-provider decision
+ * stays open: an owner can point this at a hosted provider's submission
+ * endpoint or at a relay they operate, and neither choice is embedded in
+ * VELORA. The transport is encrypted or the message is not sent — the adapter
+ * requires implicit TLS or a successful STARTTLS upgrade, and refuses to
+ * authenticate over a cleartext connection.
+ *
+ * It is production-*capable*, not production-*approved*. A recovery message
+ * still needs a destination, and no domain stores a consumer's email address
+ * today; that is recorded as its own decision in `DECISIONS_REQUIRED` and this
+ * adapter does not answer it.
+ */
+export const smtpRecoveryDelivery = 'smtp';
+
+/**
+ * WebAuthn assertion verification for privileged access.
+ *
+ * Phishing-resistant by construction: the authenticator signs over a challenge
+ * this server issued exactly once and over the origin the browser actually
+ * reached, so an assertion collected on another origin verifies nowhere. The
+ * relying-party identifier and the origins that may present an assertion are
+ * deployment configuration, never anything a request can choose.
+ */
+export const webauthnPrivilegedVerifier = 'webauthn';
+
+/**
  * How an operator comes to hold operator capabilities at all.
  *
  * `grants` is the only value a deployed environment may have: an operator has
@@ -572,6 +648,48 @@ const optionalTextSchema = z
     value === undefined || value.trim().length === 0 ? undefined : value,
   );
 
+/**
+ * The loopback address in every form `URL` hands back.
+ *
+ * A deployed environment that names one is not reachable by anybody but itself,
+ * so the value is always a mistake there — usually a template that was copied
+ * from a developer's machine and never finished. `URL` already collapses the
+ * IPv4 shorthands, so only the IPv6 spellings need naming: the loopback itself,
+ * the whole `127.0.0.0/8` block, and the IPv4-mapped form `URL` prints in hex.
+ */
+const ipv4LoopbackHostPattern = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u;
+const mappedIpv4LoopbackHostPattern =
+  /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/u;
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '[::1]' ||
+    ipv4LoopbackHostPattern.test(hostname) ||
+    mappedIpv4LoopbackHostPattern.test(hostname)
+  );
+}
+
+function parseUrl(value: string): URL | undefined {
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A registrable domain and nothing else: no scheme, no port, no path, no
+ * trailing dot.
+ *
+ * The WebAuthn relying-party identifier is compared against the origin an
+ * assertion was collected at, so a value carrying anything else does not narrow
+ * that comparison — it breaks it, and a broken comparison is one that never
+ * matches or one that matches too much depending on where it is spliced in.
+ */
+const registrableDomainPattern =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/u;
+
 export const serverConfigSchema = z
   .object({
     AI_KILL_SWITCH: z
@@ -582,7 +700,7 @@ export const serverConfigSchema = z
       .default(unavailableAiProvider),
     APP_ENV: appEnvironmentSchema.default('local'),
     AUTH_ACCESS_TOKEN_SIGNER: z
-      .enum([localAccessTokenSigner])
+      .enum([localAccessTokenSigner, managedAccessTokenSigner])
       .default(localAccessTokenSigner),
     AUTH_ACCESS_TOKEN_SIGNING_KEY: signingKeySchema,
     AUTH_ACCESS_TOKEN_VERIFICATION_KEYS: verificationKeysSchema,
@@ -590,17 +708,82 @@ export const serverConfigSchema = z
     AUTH_BROWSER_ORIGINS_CREATOR_STUDIO: originListSchema,
     AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN: originListSchema,
     AUTH_IDENTITY_PROVIDER: z
-      .enum([localIdentityProvider])
+      .enum([localIdentityProvider, oidcIdentityProvider])
       .default(localIdentityProvider),
     AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER: z
-      .enum([unavailablePrivilegedVerifier, localTestPrivilegedVerifier])
+      .enum([
+        unavailablePrivilegedVerifier,
+        localTestPrivilegedVerifier,
+        webauthnPrivilegedVerifier,
+      ])
       .default(unavailablePrivilegedVerifier),
     ADMIN_OPERATOR_BOOTSTRAP: z
       .enum([grantedOperatorBootstrap, localTestOperatorBootstrap])
       .default(grantedOperatorBootstrap),
+    /**
+     * The one-time authorization for the first operator grant in a deployed
+     * environment.
+     *
+     * A deployment where nobody holds a capability grant has nobody who can
+     * issue one, and that is the whole of the problem this value solves. It is
+     * supplied at deployment time from the secret manager, it is never
+     * persisted in the form it was supplied, and the grant it authorises can
+     * succeed exactly once: after that the recorded bootstrap refuses every
+     * further attempt, including after a restart and including with the same
+     * token. Absent is the ordinary state of a running platform — the token is
+     * removed once the first operator exists.
+     */
+    ADMIN_OPERATOR_BOOTSTRAP_TOKEN: optionalTextSchema,
     AUTH_RECOVERY_DELIVERY: z
-      .enum([localRecoveryDelivery])
+      .enum([localRecoveryDelivery, smtpRecoveryDelivery])
       .default(localRecoveryDelivery),
+    /**
+     * The OpenID provider's exact issuer identifier, as it appears in an ID
+     * token's `iss` claim.
+     *
+     * Discovery is performed against this value and the document it returns
+     * must name it back, so a provider that answers for a different issuer is
+     * refused rather than followed. It comes from deployment configuration and
+     * from nowhere else: no route, header, or request field contributes to it,
+     * which is what keeps discovery from becoming a request-driven fetch.
+     */
+    AUTH_OIDC_ISSUER: optionalTextSchema,
+    AUTH_OIDC_CLIENT_ID: optionalTextSchema,
+    /**
+     * The confidential client's secret. Backend only: it authenticates the
+     * back-channel code exchange, it is never handed to a browser, and it
+     * appears in no route and in no redacted configuration.
+     */
+    AUTH_OIDC_CLIENT_SECRET: optionalTextSchema,
+    /**
+     * The exact address the provider redirects back to, as registered with the
+     * provider. One address for every surface: the API receives the callback
+     * and then returns the person to the surface they started from, so adding a
+     * surface never means registering another redirect.
+     */
+    AUTH_OIDC_REDIRECT_URI: optionalTextSchema,
+    /**
+     * Where recovery messages are submitted, as `smtps://` for implicit TLS or
+     * `smtp://` for a connection the adapter upgrades with STARTTLS before it
+     * authenticates or sends. Credentials may be carried in the URL; they are
+     * read here and never rendered anywhere.
+     */
+    AUTH_RECOVERY_SMTP_URL: optionalTextSchema,
+    /** The envelope and header sender a recovery message is sent from. */
+    AUTH_RECOVERY_SENDER_ADDRESS: optionalTextSchema,
+    /**
+     * The WebAuthn relying-party identifier: a registrable domain, with no
+     * scheme, port, or path. Every privileged origin must be this host or a
+     * subdomain of it, which is the rule that stops an assertion collected
+     * anywhere else from verifying here.
+     */
+    AUTH_WEBAUTHN_RELYING_PARTY_ID: optionalTextSchema,
+    /**
+     * The exact origins a privileged assertion may be collected at. An
+     * assertion naming any other origin is refused, so this is the list that
+     * decides where an operator can step up.
+     */
+    AUTH_WEBAUTHN_ORIGINS: originListSchema,
     AUTH_TOKEN_ISSUER: z.url().default('https://auth.velora.invalid'),
     BILLING_COMMERCE_ELIGIBILITY: z
       .enum([unavailableCommerceEligibility, localTestCommerceEligibility])
@@ -675,6 +858,29 @@ export const serverConfigSchema = z
       .enum([unavailablePayoutProvider, localTestPayoutProvider])
       .default(unavailablePayoutProvider),
     PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
+    /**
+     * How many reverse proxies sit in front of this API, exactly.
+     *
+     * `X-Forwarded-For` is a header any client can send, so a platform that
+     * reads the leftmost entry hands every caller a free rate-limit bypass, and
+     * one that reads the rightmost trusts its own proxy and nothing else. The
+     * correct read is the entry this many hops from the right, which is only
+     * knowable from the deployment topology — hence a count rather than a
+     * boolean. Zero means nothing is in front and the header is ignored
+     * entirely, which is the only safe default and the right answer for a
+     * process a client can reach directly.
+     */
+    TRUSTED_PROXY_HOP_COUNT: z.coerce.number().int().min(0).max(8).default(0),
+    /**
+     * The build this process is running, for incident correlation.
+     *
+     * Not a secret and not authority: nothing branches on it. It is reported by
+     * the readiness surface and by the deployment doctor so an operator reading
+     * a report knows which commit produced it, which is the question every
+     * incident starts with. Absent in local development, where the answer is
+     * "whatever is checked out".
+     */
+    RELEASE_SHA: optionalTextSchema,
     QUEUE_REDIS_URL: redisUrlSchema,
     REALTIME_CALL_ELIGIBILITY: z
       .enum([unavailableCallEligibility, composedCallEligibility])
@@ -946,29 +1152,291 @@ export const serverConfigSchema = z
         path: ['MEDIA_MALWARE_SCANNER'],
       });
     }
-    for (const [path, message] of [
-      [
-        'AUTH_IDENTITY_PROVIDER',
-        'no production identity provider is approved; see DECISIONS_REQUIRED',
-      ],
-      [
-        'AUTH_ACCESS_TOKEN_SIGNER',
-        'no production signing authority is approved; see DECISIONS_REQUIRED',
-      ],
-      [
-        'AUTH_RECOVERY_DELIVERY',
-        'no production recovery delivery channel is approved; see DECISIONS_REQUIRED',
-      ],
-      [
-        'AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER',
-        'no phishing-resistant authenticator verifier is approved; see DECISIONS_REQUIRED',
-      ],
-    ] as const) {
+    // The four AUTH seams. These refuse the *development* adapters by name
+    // rather than refusing every value: a deployed environment must be able to
+    // select a real implementation and then fail on its missing configuration,
+    // which is a state an owner can act on. Refusing every value made
+    // production unreachable rather than fail-closed, and no configuration an
+    // owner could supply would ever have started one.
+    if (config.AUTH_IDENTITY_PROVIDER === localIdentityProvider) {
       context.addIssue({
         code: 'custom',
-        message: `${path} is not usable in ${config.APP_ENV}: ${message}`,
-        path: [path],
+        message: `AUTH_IDENTITY_PROVIDER is not usable in ${config.APP_ENV}: the ${localIdentityProvider} adapter performs no credential check and would admit anybody who typed a subject; select ${oidcIdentityProvider} and configure its provider`,
+        path: ['AUTH_IDENTITY_PROVIDER'],
       });
+    }
+    if (config.AUTH_ACCESS_TOKEN_SIGNER === localAccessTokenSigner) {
+      context.addIssue({
+        code: 'custom',
+        message: `AUTH_ACCESS_TOKEN_SIGNER is not usable in ${config.APP_ENV}: the ${localAccessTokenSigner} signer generates an ephemeral key when none is configured, so every restart would silently invalidate every token it ever signed; select ${managedAccessTokenSigner} and supply key material from the secret manager`,
+        path: ['AUTH_ACCESS_TOKEN_SIGNER'],
+      });
+    }
+    if (config.AUTH_RECOVERY_DELIVERY === localRecoveryDelivery) {
+      context.addIssue({
+        code: 'custom',
+        message: `AUTH_RECOVERY_DELIVERY is not usable in ${config.APP_ENV}: the ${localRecoveryDelivery} sink records what it would have sent and delivers nothing, so a person locked out would be told a message was on its way that never existed; select ${smtpRecoveryDelivery} and configure a submission endpoint`,
+        path: ['AUTH_RECOVERY_DELIVERY'],
+      });
+    }
+    if (
+      config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER !==
+      webauthnPrivilegedVerifier
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER is not usable in ${config.APP_ENV}: ${config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER} cannot establish phishing-resistant assurance, and ADR-0017 requires it before any privileged action; select ${webauthnPrivilegedVerifier} and configure its relying party`,
+        path: ['AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER'],
+      });
+    }
+
+    // Transport. Everything a browser is told to reach, and everything a
+    // provider is told to reach back, must be an address that exists outside
+    // this process and carries TLS. A deployed environment naming a loopback
+    // host is describing a machine only it can reach; one naming `http:` is
+    // describing a session cookie somebody can read off the wire.
+    for (const [path, origins] of [
+      [
+        'AUTH_BROWSER_ORIGINS_CONSUMER_WEB',
+        config.AUTH_BROWSER_ORIGINS_CONSUMER_WEB,
+      ],
+      [
+        'AUTH_BROWSER_ORIGINS_CREATOR_STUDIO',
+        config.AUTH_BROWSER_ORIGINS_CREATOR_STUDIO,
+      ],
+      [
+        'AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN',
+        config.AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN,
+      ],
+      ['AUTH_WEBAUTHN_ORIGINS', config.AUTH_WEBAUTHN_ORIGINS],
+    ] as const) {
+      for (const origin of origins) {
+        const url = parseUrl(origin);
+        if (url === undefined) continue;
+        if (url.protocol !== 'https:') {
+          context.addIssue({
+            code: 'custom',
+            message: `${path} must use https in ${config.APP_ENV}: ${origin} would carry a session cookie in cleartext`,
+            path: [path],
+          });
+        }
+        if (isLoopbackHost(url.hostname)) {
+          context.addIssue({
+            code: 'custom',
+            message: `${path} cannot name a loopback host in ${config.APP_ENV}: ${origin} is reachable only from the machine running this process`,
+            path: [path],
+          });
+        }
+      }
+    }
+    for (const path of [
+      'AUTH_BROWSER_ORIGINS_CONSUMER_WEB',
+      'AUTH_BROWSER_ORIGINS_CREATOR_STUDIO',
+      'AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN',
+    ] as const) {
+      if (config[path].length === 0) {
+        context.addIssue({
+          code: 'custom',
+          message: `${path} must name at least one origin in ${config.APP_ENV}: an audience with no allowed origin cannot start a browser session at all, which is a deployment that looks broken rather than one that is closed`,
+          path: [path],
+        });
+      }
+    }
+
+    const issuer = parseUrl(config.AUTH_TOKEN_ISSUER);
+    if (
+      issuer?.protocol !== 'https:' ||
+      isLoopbackHost(issuer.hostname) ||
+      issuer.hostname.endsWith('.invalid')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `AUTH_TOKEN_ISSUER must be a real https address in ${config.APP_ENV}: it is the issuer every access token names and every verifier compares against, and the default placeholder resolves nowhere`,
+        path: ['AUTH_TOKEN_ISSUER'],
+      });
+    }
+
+    for (const [path, value] of [
+      ['WEB_PUBLIC_ORIGIN', config.WEB_PUBLIC_ORIGIN],
+      ['VELORA_API_BASE_URL', config.VELORA_API_BASE_URL],
+      ['AUTH_OIDC_ISSUER', config.AUTH_OIDC_ISSUER],
+      ['AUTH_OIDC_REDIRECT_URI', config.AUTH_OIDC_REDIRECT_URI],
+    ] as const) {
+      if (value === undefined) continue;
+      const url = parseUrl(value);
+      if (url === undefined) continue;
+      if (url.protocol !== 'https:' || isLoopbackHost(url.hostname)) {
+        context.addIssue({
+          code: 'custom',
+          message: `${path} must be an https address on a host other than loopback in ${config.APP_ENV}`,
+          path: [path],
+        });
+      }
+    }
+  })
+  .superRefine((config, context) => {
+    // Provider configuration completeness, in every environment rather than
+    // only deployed ones. Selecting a provider and omitting what it needs is a
+    // startup failure everywhere, on the same rule the LiveKit selection
+    // follows below: an adapter that fell back would present one behaviour to
+    // the developer who configured it and another to the one who did not.
+    if (config.AUTH_IDENTITY_PROVIDER === oidcIdentityProvider) {
+      for (const path of [
+        'AUTH_OIDC_ISSUER',
+        'AUTH_OIDC_CLIENT_ID',
+        'AUTH_OIDC_CLIENT_SECRET',
+        'AUTH_OIDC_REDIRECT_URI',
+      ] as const) {
+        if (config[path] === undefined) {
+          context.addIssue({
+            code: 'custom',
+            message: `${path} is required when AUTH_IDENTITY_PROVIDER is ${oidcIdentityProvider}`,
+            path: [path],
+          });
+        }
+      }
+      const discovered = config.AUTH_OIDC_ISSUER;
+      if (discovered !== undefined) {
+        const url = parseUrl(discovered);
+        // The issuer is compared to an ID token claim character by character,
+        // so a trailing slash or a query is not a formatting difference: it is
+        // a value that will never match what the provider sends.
+        if (
+          url === undefined ||
+          (url.protocol !== 'https:' && url.protocol !== 'http:') ||
+          url.search !== '' ||
+          url.hash !== '' ||
+          discovered.endsWith('/')
+        ) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'AUTH_OIDC_ISSUER must be the provider issuer identifier: an http(s) URL with no query, no fragment, and no trailing slash',
+            path: ['AUTH_OIDC_ISSUER'],
+          });
+        }
+      }
+      const redirect = config.AUTH_OIDC_REDIRECT_URI;
+      if (redirect !== undefined) {
+        const url = parseUrl(redirect);
+        if (
+          url === undefined ||
+          (url.protocol !== 'https:' && url.protocol !== 'http:') ||
+          url.search !== '' ||
+          url.hash !== ''
+        ) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'AUTH_OIDC_REDIRECT_URI must be an http(s) address with no query and no fragment, exactly as registered with the provider',
+            path: ['AUTH_OIDC_REDIRECT_URI'],
+          });
+        }
+      }
+    }
+
+    if (config.AUTH_ACCESS_TOKEN_SIGNER === managedAccessTokenSigner) {
+      if (config.AUTH_ACCESS_TOKEN_SIGNING_KEY === undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: `AUTH_ACCESS_TOKEN_SIGNING_KEY is required when AUTH_ACCESS_TOKEN_SIGNER is ${managedAccessTokenSigner}: this signer has no generated fallback, deliberately`,
+          path: ['AUTH_ACCESS_TOKEN_SIGNING_KEY'],
+        });
+      }
+    }
+
+    if (config.AUTH_RECOVERY_DELIVERY === smtpRecoveryDelivery) {
+      for (const path of [
+        'AUTH_RECOVERY_SMTP_URL',
+        'AUTH_RECOVERY_SENDER_ADDRESS',
+      ] as const) {
+        if (config[path] === undefined) {
+          context.addIssue({
+            code: 'custom',
+            message: `${path} is required when AUTH_RECOVERY_DELIVERY is ${smtpRecoveryDelivery}`,
+            path: [path],
+          });
+        }
+      }
+      const submission = config.AUTH_RECOVERY_SMTP_URL;
+      if (submission !== undefined) {
+        const url = parseUrl(submission);
+        if (
+          url === undefined ||
+          (url.protocol !== 'smtp:' && url.protocol !== 'smtps:')
+        ) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'AUTH_RECOVERY_SMTP_URL must be an smtp:// or smtps:// submission address',
+            path: ['AUTH_RECOVERY_SMTP_URL'],
+          });
+        }
+      }
+      const sender = config.AUTH_RECOVERY_SENDER_ADDRESS;
+      // Deliberately the narrowest check that catches a mistake rather than an
+      // attempt to validate an address: a value with no `@`, with whitespace,
+      // or with a line break is a header injection or a placeholder, and
+      // everything past that is the receiving server's opinion, not this one's.
+      if (
+        sender !== undefined &&
+        (!/^[^\s@]+@[^\s@]+$/u.test(sender) || /[\r\n]/u.test(sender))
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'AUTH_RECOVERY_SENDER_ADDRESS must be a single address with no whitespace and no line break',
+          path: ['AUTH_RECOVERY_SENDER_ADDRESS'],
+        });
+      }
+    }
+
+    if (
+      config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER ===
+      webauthnPrivilegedVerifier
+    ) {
+      const relyingParty = config.AUTH_WEBAUTHN_RELYING_PARTY_ID;
+      if (relyingParty === undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: `AUTH_WEBAUTHN_RELYING_PARTY_ID is required when AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER is ${webauthnPrivilegedVerifier}`,
+          path: ['AUTH_WEBAUTHN_RELYING_PARTY_ID'],
+        });
+      } else if (!registrableDomainPattern.test(relyingParty)) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'AUTH_WEBAUTHN_RELYING_PARTY_ID must be a registrable domain with no scheme, port, or path',
+          path: ['AUTH_WEBAUTHN_RELYING_PARTY_ID'],
+        });
+      }
+      if (config.AUTH_WEBAUTHN_ORIGINS.length === 0) {
+        context.addIssue({
+          code: 'custom',
+          message: `AUTH_WEBAUTHN_ORIGINS must name at least one origin when AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER is ${webauthnPrivilegedVerifier}: an assertion is verified against the origin it was collected at, and an empty list verifies nowhere`,
+          path: ['AUTH_WEBAUTHN_ORIGINS'],
+        });
+      }
+      // Every privileged origin has to sit inside the relying party, or the
+      // authenticator's own scoping rules would have refused to produce the
+      // assertion in the first place. Catching it here turns a silent
+      // never-verifies into a startup failure naming the origin.
+      if (relyingParty !== undefined) {
+        for (const origin of config.AUTH_WEBAUTHN_ORIGINS) {
+          const url = parseUrl(origin);
+          if (url === undefined) continue;
+          if (
+            url.hostname !== relyingParty &&
+            !url.hostname.endsWith(`.${relyingParty}`)
+          ) {
+            context.addIssue({
+              code: 'custom',
+              message: `AUTH_WEBAUTHN_ORIGINS entry ${origin} is not the relying party ${relyingParty} or a subdomain of it, so an assertion collected there can never verify here`,
+              path: ['AUTH_WEBAUTHN_ORIGINS'],
+            });
+          }
+        }
+      }
     }
   })
   .superRefine((config, context) => {
@@ -1184,6 +1652,26 @@ export function redactServerConfig(config: ServerConfig) {
       config.AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER,
     queueRedisConfigured: config.QUEUE_REDIS_URL.length > 0,
     recoveryDelivery: config.AUTH_RECOVERY_DELIVERY,
+    // Whether each production adapter has what it needs, never what it was
+    // given. The OIDC client secret, the SMTP credentials, and the bootstrap
+    // token are the three values in this configuration that would compromise
+    // the platform if they reached a log line, so none of them is rendered
+    // here in any form.
+    identityProviderCredentialsConfigured:
+      config.AUTH_OIDC_ISSUER !== undefined &&
+      config.AUTH_OIDC_CLIENT_ID !== undefined &&
+      config.AUTH_OIDC_CLIENT_SECRET !== undefined &&
+      config.AUTH_OIDC_REDIRECT_URI !== undefined,
+    recoveryDeliveryConfigured:
+      config.AUTH_RECOVERY_SMTP_URL !== undefined &&
+      config.AUTH_RECOVERY_SENDER_ADDRESS !== undefined,
+    privilegedVerifierConfigured:
+      config.AUTH_WEBAUTHN_RELYING_PARTY_ID !== undefined &&
+      config.AUTH_WEBAUTHN_ORIGINS.length > 0,
+    operatorBootstrapTokenConfigured:
+      config.ADMIN_OPERATOR_BOOTSTRAP_TOKEN !== undefined,
+    trustedProxyHopCount: config.TRUSTED_PROXY_HOP_COUNT,
+    release: config.RELEASE_SHA,
     tokenIssuer: config.AUTH_TOKEN_ISSUER,
   } as const;
 }

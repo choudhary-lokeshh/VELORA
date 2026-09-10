@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const contractPath = 'packages/validation/openapi/velora.v1.json';
-const expectedOperationCount = 207;
+const expectedOperationCount = 213;
 const expectedOperationDigest =
-  'efa59a671b87f1ea24f866ba7c89ef696a5d4689d0a7c2f15a725c37fc05a28b';
+  '34915128f129a9b25c1babfed18ab2ccd797e3bfab1a4f57585fb00dc3a25fae';
 const methods = new Set(['delete', 'get', 'patch', 'post', 'put']);
 const allowedClassifications = new Set([
   'ADMIN_BLOCKED',
@@ -15,6 +15,11 @@ const allowedClassifications = new Set([
 
 const providerBlockedOperations = new Set([
   'createAiSuggestion',
+  // Both answer 501 wherever no federated identity provider is configured,
+  // which is every local composition and every deployment before an owner
+  // supplies one. That is the provider being absent, not the route failing.
+  'completeFederatedAuthorization',
+  'createFederatedAuthorization',
   'receiveIdentityProviderEvent',
   'receiveNotificationProviderEvent',
   'receiveProviderEvent',

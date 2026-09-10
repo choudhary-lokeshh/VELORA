@@ -70,7 +70,14 @@ interface ResponseDefinition {
   readonly description: string;
   /** Response headers beyond correlation, declared by the response itself. */
   readonly headers?: Readonly<Record<string, ResponseHeaderDefinition>>;
-  readonly schemaName: keyof typeof apiSchemas;
+  /**
+   * Absent for a response that carries no body.
+   *
+   * A browser redirect is the case that needs it: the whole answer is a status
+   * and a `Location`, and naming a schema for it would publish a body no
+   * caller will ever receive.
+   */
+  readonly schemaName?: keyof typeof apiSchemas;
 }
 
 function requestHeaderParameter(
@@ -112,13 +119,17 @@ function operation(operationDefinition: (typeof apiOperations)[number]) {
     ).map(([status, responseDefinition]) => [
       status,
       {
-        content: {
-          'application/json': {
-            schema: {
-              $ref: `#/components/schemas/${responseDefinition.schemaName}`,
-            },
-          },
-        },
+        ...(responseDefinition.schemaName === undefined
+          ? {}
+          : {
+              content: {
+                'application/json': {
+                  schema: {
+                    $ref: `#/components/schemas/${responseDefinition.schemaName}`,
+                  },
+                },
+              },
+            }),
         description: responseDefinition.description,
         headers: {
           [correlationResponseHeader]: correlationHeader,

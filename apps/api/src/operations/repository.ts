@@ -15,6 +15,7 @@ import type {
 import {
   operationsControls,
   operationsOperatorActions,
+  operationsOperatorBootstraps,
   operationsOperatorGrants,
 } from './schema.js';
 
@@ -207,6 +208,64 @@ export class OperationsRepository {
       .onConflictDoNothing()
       .returning();
     return rows[0];
+  }
+
+  /**
+   * Counts the operators who currently hold a grant.
+   *
+   * The one question the bootstrap depends on, asked inside its transaction:
+   * a deployment with somebody in it already has a way to grant, and does not
+   * need this door.
+   */
+  async countLiveGrants(executor: Executor): Promise<number> {
+    const rows = await executor
+      .select({ total: sql<number>`count(*)::int` })
+      .from(operationsOperatorGrants)
+      .where(isNull(operationsOperatorGrants.revokedAt));
+    return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Claims the one bootstrap this deployment will ever have.
+   *
+   * The uniqueness is the database's, not this code's: `singleton` is uniquely
+   * indexed and constrained to true, so a second insert fails on a constraint
+   * whatever order two concurrent attempts interleave in. `onConflictDoNothing`
+   * turns that into an answer rather than an exception, and an answer of
+   * `undefined` means somebody else already did it.
+   */
+  async claimBootstrap(
+    executor: Executor,
+    input: {
+      readonly grantId: string;
+      readonly id: string;
+      readonly now: Date;
+      readonly subjectReference: string;
+      readonly tokenDigest: string;
+    },
+  ): Promise<boolean> {
+    const rows = await executor
+      .insert(operationsOperatorBootstraps)
+      .values({
+        consumedAt: input.now,
+        grantId: input.grantId,
+        id: input.id,
+        singleton: true,
+        subjectReference: input.subjectReference,
+        tokenDigest: input.tokenDigest,
+      })
+      .onConflictDoNothing()
+      .returning({ id: operationsOperatorBootstraps.id });
+    return rows[0] !== undefined;
+  }
+
+  /** Whether the one bootstrap has already been taken. */
+  async bootstrapConsumed(): Promise<boolean> {
+    const rows = await this.database
+      .select({ id: operationsOperatorBootstraps.id })
+      .from(operationsOperatorBootstraps)
+      .limit(1);
+    return rows[0] !== undefined;
   }
 
   /** Ends the live grant for one operator. Answers what it ended, if anything. */

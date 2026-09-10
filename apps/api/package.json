@@ -13,7 +13,8 @@
     "start:worker": "bun run dist/worker.js",
     "test": "bun test --timeout 15000 test/unit",
     "test:integration": "node scripts/run-integration-tests.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "deployment:doctor": "bun --env-file=../../.env run scripts/deployment-doctor.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "catalog:",

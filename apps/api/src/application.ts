@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Elysia } from 'elysia';
 import {
   loadServerConfig,
@@ -379,6 +381,13 @@ export function createApplication(
       createOperationsRuntime({
         bootstrapOperators:
           config.ADMIN_OPERATOR_BOOTSTRAP === localTestOperatorBootstrap,
+        ...(config.ADMIN_OPERATOR_BOOTSTRAP_TOKEN === undefined
+          ? {}
+          : {
+              bootstrapTokenDigest: createHash('sha256')
+                .update(config.ADMIN_OPERATOR_BOOTSTRAP_TOKEN, 'utf8')
+                .digest('hex'),
+            }),
         database: ownedDatabase.database,
         logger,
       });
@@ -1000,6 +1009,9 @@ export function createApplication(
     if (result.cookies !== undefined && result.cookies.length > 0) {
       set.headers['set-cookie'] = [...result.cookies];
     }
+    for (const [name, value] of Object.entries(result.headers ?? {})) {
+      set.headers[name] = value;
+    }
     return result.body;
   }
 
@@ -1533,6 +1545,40 @@ export function createApplication(
     .post(
       apiRoutePaths.localMobileSession,
       admitted(async (input) => auth.routes.createLocalMobileSession(input)),
+    )
+    .post(
+      apiRoutePaths.federatedAuthorizations,
+      admitted(async (input) =>
+        auth.routes.createFederatedAuthorization(input),
+      ),
+    )
+    .get(
+      apiRoutePaths.federatedCallback,
+      admitted(async (input) =>
+        auth.routes.completeFederatedAuthorization(input),
+      ),
+    )
+    .post(
+      apiRoutePaths.privilegedChallenges,
+      admitted(async (input) => auth.routes.createPrivilegedChallenge(input)),
+    )
+    .post(
+      apiRoutePaths.privilegedAuthenticators,
+      admitted(async (input) =>
+        auth.routes.enrolPrivilegedAuthenticator(input),
+      ),
+    )
+    .post(
+      apiRoutePaths.privilegedStepUp,
+      admitted(async (input) => auth.routes.stepUpPrivilegedSession(input)),
+    )
+    .post(
+      apiRoutePaths.adminOperatorBootstrap,
+      admitted(
+        operatorRoute(async (routes, input) =>
+          routes.bootstrapFirstOperator(input),
+        ),
+      ),
     )
     .get(
       apiRoutePaths.session,

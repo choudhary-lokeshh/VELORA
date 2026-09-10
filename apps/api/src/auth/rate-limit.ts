@@ -121,6 +121,16 @@ export class InMemoryRateLimiter implements RateLimiter {
  */
 export const authAttemptLimits = {
   authenticate: { limit: 20, windowSeconds: 60 },
+  /**
+   * Privileged ceremonies: challenge issue, enrolment, and step-up.
+   *
+   * Tighter than ordinary authentication because the population is operators
+   * rather than the public, and a burst of privileged attempts from one caller
+   * is a signal rather than traffic. PostgreSQL still holds the invariant that
+   * matters — a challenge is consumable once — so this bounds noise, not
+   * correctness.
+   */
+  privileged: { limit: 10, windowSeconds: 60 },
   recovery: { limit: 20, windowSeconds: 60 },
   refresh: { limit: 60, windowSeconds: 60 },
 } as const;

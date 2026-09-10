@@ -1,5 +1,7 @@
 import { and, count, eq, gt, isNull } from 'drizzle-orm';
 
+import type { SafeLogger } from '@velora/observability/server';
+
 import type { AuthContext } from './context.js';
 import {
   highImpactCooldownMilliseconds,
@@ -75,6 +77,7 @@ export interface RecoveryServiceDependencies {
   readonly authService: AuthService;
   readonly delivery: RecoveryDeliveryPort;
   readonly identitySubjectFor: (subject: string) => string;
+  readonly logger: SafeLogger;
   readonly now: () => Date;
   readonly repository: AuthRepository;
 }
@@ -215,11 +218,24 @@ export class RecoveryService {
     // expires harmlessly; delivering inside would hold a transaction open
     // across provider I/O.
     if (issued) {
-      await this.dependencies.delivery.deliver({
-        destination: normalized,
-        expiresAt,
-        token,
-      });
+      try {
+        await this.dependencies.delivery.deliver({
+          destination: normalized,
+          expiresAt,
+          token,
+        });
+      } catch (error) {
+        // A delivery failure must not change the answer. Only a request for an
+        // account that exists reaches this line, so letting the error escape
+        // would answer 500 for a known subject and 202 for an unknown one —
+        // turning the one path that is careful never to disclose whether an
+        // account exists into the place it is disclosed. The token expires on
+        // its own, and the operator hears about it here.
+        this.dependencies.logger.error(
+          { correlationId: input.correlationId, error },
+          'recovery delivery failed',
+        );
+      }
     }
 
     return { kind: 'accepted' };

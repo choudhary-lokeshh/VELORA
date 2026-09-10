@@ -114,6 +114,9 @@ const truncationRoots = [
   // cascades into any of the three, so all three are their own roots.
   'operations_controls',
   'operations_operator_actions',
+  // The one-row bootstrap record. Nothing points at it, so nothing cascades
+  // into it, and a suite that left it behind would find the door already used.
+  'operations_operator_bootstraps',
   'operations_operator_grants',
   // PAYOUTS' book and its records. Entries cascade from neither journal table
   // — the composite currency keys carry `no action` — so all three are listed,

@@ -30,21 +30,40 @@ opinion.
 
 ## What staging and production do today
 
-Neither starts. Every AUTH adapter that exists is a development or test
-implementation, and the loader refuses all four unconditionally outside `local`
-and `test`:
+They start when an owner supplies real infrastructure, and they refuse until
+then. That distinction is the whole of what [ADR-0049](../decisions/ADR-0049-deployment-enablement-and-production-auth.md)
+changed: a deployed environment used to be told that no value it could hold
+would ever be accepted, which is not fail-closed but unreachable.
+
+Four AUTH seams now have a production-capable selection each — `oidc`,
+`managed-ed25519`, `smtp`, and `webauthn` — and each of them refuses to start
+without the configuration it needs. So the refusal an unconfigured deployment
+sees names something an owner can act on:
+
+```text
+AUTH_OIDC_ISSUER is required when AUTH_IDENTITY_PROVIDER is oidc
+```
+
+rather than something nobody can:
 
 ```text
 AUTH_IDENTITY_PROVIDER is not usable in production: no production identity
-provider is approved; see DECISIONS_REQUIRED
+provider is approved
 ```
 
-That is the accurate state of a platform with no approved identity provider,
-signing authority, recovery delivery channel, or phishing-resistant
-authenticator verifier. It is lifted by the decisions in
-[open decisions](../decisions/DECISIONS_REQUIRED.md), not by configuration.
-Every provider seam below is refused in those environments for its own separate
-reason, so lifting the AUTH block alone enables nothing else.
+The development adapters are still refused by name in staging and production,
+and every other provider seam below is still refused there for its own separate
+reason. Selecting an AUTH provider enables authentication and nothing else: no
+media may be stored, no money may move, no notice may be delivered, and no call
+may be carried, because each of those is blocked by a decision in
+[open decisions](../decisions/DECISIONS_REQUIRED.md) rather than by a missing
+adapter.
+
+A deployed environment additionally refuses addresses that only exist on the
+machine running it. Browser origins must be `https` and must not name a loopback
+host, all three audience lists must name at least one origin, and
+`AUTH_TOKEN_ISSUER`, `WEB_PUBLIC_ORIGIN`, `VELORA_API_BASE_URL`,
+`AUTH_OIDC_ISSUER`, and `AUTH_OIDC_REDIRECT_URI` are held to the same rule.
 
 ## Classifications
 
@@ -70,6 +89,8 @@ runner. None of these values ever reaches a browser or a mobile bundle.
 | `HOST` | No | Safe default | `127.0.0.1` in `local`/`test`, `0.0.0.0` otherwise | The derived value applies; a container that must bind elsewhere sets it |
 | `PORT` | No | Safe default | `4000` | The default applies |
 | `LOG_LEVEL` | No | Safe default | `info` | The default applies. One of `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
+| `TRUSTED_PROXY_HOP_COUNT` | No | Safe default | `0` | `X-Forwarded-For` is ignored entirely, which is the only safe reading for a process a client can reach directly. Set it to the exact number of reverse proxies in front of this API: the client address is the entry that many hops from the right, and any other reading either trusts a header a caller wrote or attributes every request to the proxy |
+| `RELEASE_SHA` | No | Safe default | none | The readiness surface and the deployment doctor report the build as unknown. Nothing branches on it; it exists so an operator reading a report knows which commit produced it |
 
 `APP_ENV` decides every fail-closed guard in this document. It is the one field
 whose wrong value is silently permissive rather than loud.
@@ -96,16 +117,25 @@ queue Redis is durable BullMQ infrastructure and may not.
 
 | Variable | Secret | Classification | Default | If missing |
 |---|---|---|---|---|
-| `AUTH_IDENTITY_PROVIDER` | No | Fixed `local`; blocked in production | `local` | The default applies locally; staging and production refuse to start regardless of the value |
-| `AUTH_ACCESS_TOKEN_SIGNER` | No | Fixed `local-development-ed25519`; blocked in production | `local-development-ed25519` | As above |
-| `AUTH_RECOVERY_DELIVERY` | No | Fixed `local-test`; blocked in production | `local-test` | As above |
-| `AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER` | No | Fixed `unavailable`; blocked in production | `unavailable` | As above |
-| `AUTH_TOKEN_ISSUER` | No | Safe default | `https://auth.velora.invalid` | The default applies. A URL, and deliberately an unresolvable one until an issuer exists |
-| `AUTH_ACCESS_TOKEN_SIGNING_KEY` | Yes | Safe default | none | The API generates an ephemeral Ed25519 key pair that does not survive a restart, so every issued access token stops verifying. Format: base64 PKCS8, at least 32 bytes decoded. Where the value comes from: an approved KMS or secret manager, which does not exist yet |
+| `AUTH_IDENTITY_PROVIDER` | No | `local` blocked in production | `local` | The default applies locally. `oidc` is the deployable value and requires the four `AUTH_OIDC_*` fields below in every environment |
+| `AUTH_ACCESS_TOKEN_SIGNER` | No | `local-development-ed25519` blocked in production | `local-development-ed25519` | The default applies locally. `managed-ed25519` is the deployable value and requires `AUTH_ACCESS_TOKEN_SIGNING_KEY`; it has no generated fallback, deliberately |
+| `AUTH_RECOVERY_DELIVERY` | No | `local-test` blocked in production | `local-test` | The default applies locally. `smtp` is the deployable value and requires `AUTH_RECOVERY_SMTP_URL` and `AUTH_RECOVERY_SENDER_ADDRESS` |
+| `AUTH_PRIVILEGED_AUTHENTICATOR_VERIFIER` | No | `unavailable` and `local-test-privileged` blocked in production | `unavailable` | The default refuses every assertion. `webauthn` is the deployable value, is the only one a deployed environment may hold, and requires `AUTH_WEBAUTHN_RELYING_PARTY_ID` and `AUTH_WEBAUTHN_ORIGINS` |
+| `AUTH_OIDC_ISSUER` | No | Future provider; required with `oidc` | none | The provider's exact issuer identifier, with no query, fragment, or trailing slash: it is compared to an ID token's `iss` claim character by character. Discovery runs against it and the document must name it back. In staging and production it must be `https` and must not be loopback |
+| `AUTH_OIDC_CLIENT_ID` | No | Future provider; required with `oidc` | none | The confidential client's identifier, as registered with the provider |
+| `AUTH_OIDC_CLIENT_SECRET` | Yes | Future provider; required with `oidc` | none | Authenticates the back-channel code exchange over HTTP Basic. Backend only: no route returns it and it appears in no log or redacted configuration. Where the value comes from: the runtime secret manager |
+| `AUTH_OIDC_REDIRECT_URI` | No | Future provider; required with `oidc` | none | The exact address the provider returns a browser to, as registered there. One address for every surface — the API receives the callback and returns the person to whichever surface started the attempt |
+| `AUTH_RECOVERY_SMTP_URL` | Yes | Future provider; required with `smtp` | none | `smtps://` for implicit TLS or `smtp://` for a connection the adapter upgrades with STARTTLS before it authenticates or names a recipient. May carry credentials; they are read once and rendered nowhere. An endpoint that cannot upgrade is one nothing is sent over |
+| `AUTH_RECOVERY_SENDER_ADDRESS` | No | Future provider; required with `smtp` | none | The envelope and header sender. A value with whitespace or a line break is refused, because it would be a header injection rather than an address |
+| `AUTH_WEBAUTHN_RELYING_PARTY_ID` | No | Future provider; required with `webauthn` | none | A registrable domain with no scheme, port, or path. Every privileged origin must be this host or a subdomain of it, or the authenticator's own scoping would have refused to produce the assertion |
+| `AUTH_WEBAUTHN_ORIGINS` | No | Future provider; required with `webauthn` | none | The exact origins a privileged assertion may be collected at. An assertion naming any other origin is refused, which is what makes a phished operator's answer verify nowhere |
+| `AUTH_TOKEN_ISSUER` | No | Safe default | `https://auth.velora.invalid` | The default applies locally and is refused in staging and production, where it must be a real `https` address on a host other than loopback |
+| `AUTH_ACCESS_TOKEN_SIGNING_KEY` | Yes | Safe default locally; required with `managed-ed25519` | none | With the local signer the API generates an ephemeral Ed25519 key pair that does not survive a restart, so every issued access token stops verifying. With `managed-ed25519` there is no fallback and startup fails. Format: base64 PKCS8, at least 32 bytes decoded. Where the value comes from: the runtime secret manager or a mounted file |
 | `AUTH_ACCESS_TOKEN_VERIFICATION_KEYS` | No, public key material | Safe default | none | No retired key verifies. Comma-separated base64 SPKI Ed25519 public keys. Listing a key here rotates a signing key without invalidating live tokens; removing one revokes every token it signed |
 | `AUTH_BROWSER_ORIGINS_CONSUMER_WEB` | No | Required for that audience | `http://127.0.0.1:3000` | That audience cannot start a browser session at all |
 | `AUTH_BROWSER_ORIGINS_CREATOR_STUDIO` | No | Required for that audience | `http://127.0.0.1:3001` | As above |
 | `AUTH_BROWSER_ORIGINS_PLATFORM_ADMIN` | No | Required for that audience | blank | Platform Admin cannot start a browser session. Blank is the deliberate default: Admin has no approved origin |
+| `ADMIN_OPERATOR_BOOTSTRAP_TOKEN` | Yes | Safe default | none | No first operator grant can be taken. Present only while a deployment has nobody in it: the token authorises exactly one grant, is stored as a digest once used, and is removed from the secret manager afterwards. Presenting it is not sufficient on its own — the caller must already hold a Platform Admin session at fresh phishing-resistant assurance |
 | `ADMIN_OPERATOR_BOOTSTRAP` | No | Fixed `grants`; blocked in production | `grants` | An operator holds exactly the capabilities somebody granted them in OPERATIONS, and one with no grant may do nothing at all. `local-test` treats an ungranted operator as a super administrator so a developer can reach the console on a freshly seeded database; staging and production refuse it and fail to start. Who holds the first grant in a deployed environment is `DECISION REQUIRED` |
 
 Origin lists are comma-separated exact `scheme://host[:port]` values. A path, a

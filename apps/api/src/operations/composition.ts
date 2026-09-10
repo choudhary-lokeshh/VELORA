@@ -32,6 +32,12 @@ export interface OperationsRuntime {
 export function createOperationsRuntime(dependencies: {
   /** True only where configuration selected the local-test operator bootstrap. */
   readonly bootstrapOperators: boolean;
+  /**
+   * Digest of the deployment-time secret that authorises the first operator
+   * grant, when one is configured. Digested at composition so the secret itself
+   * is read once, at startup, and never held anywhere it could be logged.
+   */
+  readonly bootstrapTokenDigest?: string | undefined;
   readonly database: DatabaseHandle;
   readonly identifiers?: () => string;
   readonly logger: SafeLogger;
@@ -52,6 +58,9 @@ export function createOperationsRuntime(dependencies: {
     repository,
     service: new OperationsService({
       bootstrapOperators: dependencies.bootstrapOperators,
+      ...(dependencies.bootstrapTokenDigest === undefined
+        ? {}
+        : { bootstrapTokenDigest: dependencies.bootstrapTokenDigest }),
       controls,
       ...(dependencies.identifiers === undefined
         ? {}
