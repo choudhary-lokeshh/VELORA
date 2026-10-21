@@ -697,7 +697,13 @@ function CreatorCatalogView({
                     >
                       {/* A plain element rather than the framework's optimised
                         one: the address is issued per request. */}
-                      <img alt="" className="v-item-cover__image" src={cover} />
+                      <img
+                        alt=""
+                        className="v-item-cover__image"
+                        decoding="async"
+                        loading="lazy"
+                        src={cover}
+                      />
                     </div>
                   )}
                   <div className="v-stack v-stack--2">

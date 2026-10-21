@@ -285,6 +285,8 @@ export function ClubDestination({
                                 <img
                                   alt=""
                                   className="v-item-cover__image"
+                                  decoding="async"
+                                  loading="lazy"
                                   src={cover}
                                 />
                               </div>

@@ -7,6 +7,7 @@ import {
   type ButtonHTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
   type InputHTMLAttributes,
@@ -114,14 +115,7 @@ export function ButtonLink({
   readonly tone?: ButtonTone;
 }) {
   return (
-    <Link
-      {...rest}
-      className={buttonClass({ block, size, tone })}
-      href={href}
-      style={{
-        color: tone === 'primary' ? 'var(--text-on-accent)' : undefined,
-      }}
-    >
+    <Link {...rest} className={buttonClass({ block, size, tone })} href={href}>
       {icon === undefined ? null : <Icon name={icon} size="sm" />}
       {children}
     </Link>
@@ -245,7 +239,9 @@ export function Field({
 }
 
 export function TextInput(
-  props: Omit<InputHTMLAttributes<HTMLInputElement>, 'className'>,
+  props: Omit<InputHTMLAttributes<HTMLInputElement>, 'className'> & {
+    readonly ref?: Ref<HTMLInputElement>;
+  },
 ) {
   return <input {...props} className="v-control" />;
 }
@@ -631,18 +627,29 @@ export function ErrorMessage({
 export function EmptyState({
   actions,
   body,
+  focusRef,
   icon = 'sparkle',
   testId,
   title,
 }: {
   readonly actions?: ReactNode;
   readonly body?: ReactNode;
+  /**
+   * Where focus can be sent when this replaces the last thing on a list.
+   * Given only by a caller that moves focus here; otherwise it is no stop.
+   */
+  readonly focusRef?: Ref<HTMLDivElement>;
   readonly icon?: IconName;
   readonly testId: string;
   readonly title: string;
 }) {
   return (
-    <div className="v-empty" data-testid={testId}>
+    <div
+      className="v-empty"
+      data-testid={testId}
+      ref={focusRef}
+      tabIndex={focusRef === undefined ? undefined : -1}
+    >
       <span className="v-empty__mark">
         <Icon name={icon} size="lg" />
       </span>
@@ -723,18 +730,24 @@ export function Skeleton({
  */
 export function RowSkeleton({ rows = 3 }: { readonly rows?: number }) {
   return (
-    <ul aria-hidden="true" className="v-list">
-      {Array.from({ length: rows }, (_, index) => (
-        <li className="v-row" key={index}>
-          <Skeleton circle height={40} width={40} />
-          <span className="v-row__body">
-            <Skeleton height={12} width="42%" />
-            <span style={{ display: 'block', height: 'var(--space-2)' }} />
-            <Skeleton height={12} width="72%" />
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      {/* The shape is hidden, so the waiting is said. */}
+      <p className="v-visually-hidden" role="status">
+        Loading
+      </p>
+      <ul aria-hidden="true" className="v-list">
+        {Array.from({ length: rows }, (_, index) => (
+          <li className="v-row" key={index}>
+            <Skeleton circle height={40} width={40} />
+            <span className="v-row__body">
+              <Skeleton height={12} width="42%" />
+              <span style={{ display: 'block', height: 'var(--space-2)' }} />
+              <Skeleton height={12} width="72%" />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -763,6 +776,7 @@ export interface SegmentedOption<T extends string> {
  */
 export function Segmented<T extends string>({
   as = 'tabs',
+  id,
   label,
   onChange,
   options,
@@ -780,6 +794,11 @@ export function Segmented<T extends string>({
    * arrow keys that move and select.
    */
   readonly as?: 'tabs' | 'radiogroup';
+  /**
+   * Names the strip, so the `TabPanel` given the same name is the panel each
+   * tab says it controls. A strip without one controls nothing on the page.
+   */
+  readonly id?: string;
   readonly label: string;
   readonly onChange: (next: T) => void;
   readonly options: readonly SegmentedOption<T>[];
@@ -787,6 +806,8 @@ export function Segmented<T extends string>({
 }) {
   const tabs = as === 'tabs';
   const strip = useRef<HTMLDivElement>(null);
+  const generated = useId();
+  const group = id ?? generated;
 
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const step =
@@ -832,7 +853,11 @@ export function Segmented<T extends string>({
         return (
           <button
             {...(tabs
-              ? { 'aria-selected': selected }
+              ? {
+                  'aria-controls': id === undefined ? undefined : panelIdOf(id),
+                  'aria-selected': selected,
+                  id: tabIdOf(group, option.value),
+                }
               : { 'aria-checked': selected })}
             className="v-segmented__item"
             data-testid={`segment-${option.value}`}
@@ -848,11 +873,56 @@ export function Segmented<T extends string>({
           >
             {option.label}
             {option.count === undefined ? null : (
-              <span className="v-segmented__count">{option.count}</span>
+              // Heard as "Waiting on you, 2" rather than "Waiting on you2".
+              <span className="v-segmented__count">
+                <span className="v-visually-hidden">, </span>
+                {option.count}
+              </span>
             )}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function tabIdOf(group: string, value: string): string {
+  return `${group}-tab-${value}`;
+}
+
+function panelIdOf(group: string): string {
+  return `${group}-panel`;
+}
+
+/**
+ * What the selected tab shows.
+ *
+ * One panel whose content follows the selection rather than one per tab with
+ * the rest hidden, because only the chosen section is ever read from the
+ * server. It is named by the tab that is selected, so arriving in it says
+ * which section this is.
+ */
+export function TabPanel({
+  children,
+  className,
+  group,
+  value,
+}: {
+  readonly children: ReactNode;
+  readonly className?: string;
+  /** The `id` given to the `Segmented` this panel belongs to. */
+  readonly group: string;
+  /** The selected option's value. */
+  readonly value: string;
+}) {
+  return (
+    <div
+      aria-labelledby={tabIdOf(group, value)}
+      className={className}
+      id={panelIdOf(group)}
+      role="tabpanel"
+    >
+      {children}
     </div>
   );
 }

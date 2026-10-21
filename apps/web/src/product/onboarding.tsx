@@ -31,6 +31,7 @@ import { LanguagePicker } from './language-picker';
 import { ProfilePhotos } from './media';
 import { regionName } from './locale';
 import { useSeededField, useSingleFlight } from './resource';
+import { SignOutEverywhereDialog } from './settings';
 
 /**
  * Admission, one step at a time.
@@ -74,6 +75,7 @@ export function Welcome() {
   const stage = journeyStage(account.onboarding.value);
   const position = ladder.indexOf(stage);
   const [message, setMessage] = useState<string | undefined>(undefined);
+  const [leaving, setLeaving] = useState(false);
   const { busy, run } = useSingleFlight();
 
   const submit = (work: () => Promise<ApiResult<unknown>>) => {
@@ -227,13 +229,24 @@ export function Welcome() {
           <Button
             data-testid="auth-sign-out-everywhere"
             disabled={session.busy}
-            onClick={session.signOutEverywhere}
+            onClick={() => {
+              setLeaving(true);
+            }}
             size="sm"
             tone="ghost"
           >
             Sign out everywhere
           </Button>
         </div>
+        {/* Confirmed here as in Settings: it ends sessions on other devices
+            too, which nothing on this screen could undo. */}
+        {leaving ? (
+          <SignOutEverywhereDialog
+            onClose={() => {
+              setLeaving(false);
+            }}
+          />
+        ) : null}
       </footer>
     </div>
   );

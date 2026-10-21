@@ -91,35 +91,40 @@ export function Wallet() {
   const api = useApi();
   const wallet = useWallet();
   const action = useSingleFlight();
+  // Its own flight, so a second press while a page is on its way cannot ask
+  // for the same page twice and list every line in it twice.
+  const more = useSingleFlight();
   const [activity, setActivity] = useState<WalletActivity[] | undefined>(
     undefined,
   );
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<string | undefined>(undefined);
+  // Where the read that failed started, so trying again asks for that again.
+  const failedFrom = useRef<string | undefined>(undefined);
 
   const load = useCallback(
-    (from?: string) => {
-      void api
-        .walletActivity(from === undefined ? {} : { cursor: from })
-        .then((result) => {
-          if (!isOk(result)) {
-            setMessage(failureMessage(result));
-            return;
-          }
-          setActivity((held) =>
-            from === undefined
-              ? [...result.value.activity]
-              : [...(held ?? []), ...result.value.activity],
-          );
-          setCursor(result.value.nextCursor);
-          setMessage(undefined);
-        });
+    async (from?: string) => {
+      const result = await api.walletActivity(
+        from === undefined ? {} : { cursor: from },
+      );
+      if (!isOk(result)) {
+        failedFrom.current = from;
+        setMessage(failureMessage(result));
+        return;
+      }
+      setActivity((held) =>
+        from === undefined
+          ? [...result.value.activity]
+          : [...(held ?? []), ...result.value.activity],
+      );
+      setCursor(result.value.nextCursor);
+      setMessage(undefined);
     },
     [api],
   );
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const state = wallet.state;
@@ -144,6 +149,9 @@ export function Wallet() {
         </Card>
       ) : state === undefined ? (
         <Card testId="wallet-loading">
+          <p className="v-visually-hidden" role="status">
+            Loading
+          </p>
           <Skeleton height={28} width="40%" />
           <Skeleton height={12} width="70%" />
         </Card>
@@ -173,7 +181,7 @@ export function Wallet() {
                     reference: 'local-development-grant',
                   }),
                 );
-                load();
+                void load();
               });
             }}
             state={state}
@@ -188,7 +196,7 @@ export function Wallet() {
                 <div>
                   <Button
                     onClick={() => {
-                      load();
+                      void load();
                     }}
                     size="sm"
                   >
@@ -209,24 +217,41 @@ export function Wallet() {
                 ))}
               </ul>
             )}
-            {cursor === undefined ? null : (
-              <Button
-                data-testid="wallet-history-more"
-                onClick={() => {
-                  load(cursor);
-                }}
-                size="sm"
-              >
-                Show more
-              </Button>
+            {/*
+              A later read that failed, said where the history is and with the
+              retry beside it. It stands in for Show more, which would only ask
+              the same question again.
+            */}
+            {message === undefined || activity === undefined ? (
+              cursor === undefined ? null : (
+                <Button
+                  busy={more.busy}
+                  data-testid="wallet-history-more"
+                  onClick={() => {
+                    more.run(() => load(cursor));
+                  }}
+                  size="sm"
+                >
+                  Show more
+                </Button>
+              )
+            ) : (
+              <div className="v-stack v-stack--3">
+                <ErrorMessage testId="wallet-message">{message}</ErrorMessage>
+                <div>
+                  <Button
+                    busy={more.busy}
+                    onClick={() => {
+                      more.run(() => load(failedFrom.current));
+                    }}
+                    size="sm"
+                  >
+                    Try again
+                  </Button>
+                </div>
+              </div>
             )}
           </Section>
-
-          {message === undefined || activity === undefined ? null : (
-            <p className="v-caption v-quiet" data-testid="wallet-message">
-              {message}
-            </p>
-          )}
         </div>
       )}
     </>

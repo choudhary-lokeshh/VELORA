@@ -112,7 +112,9 @@ test.describe('Consumer Web session lifecycle', () => {
       await expect(
         closer.getByTestId('auth-sign-out-everywhere'),
       ).toBeVisible();
+      // Asked first, as Settings always did: it ends every session at once.
       await closer.getByTestId('auth-sign-out-everywhere').click();
+      await closer.getByTestId('sign-out-everywhere-accept').click();
       await closer.waitForURL(/\/sign-in/u, { timeout: 30_000 });
 
       const other = await second.newPage();

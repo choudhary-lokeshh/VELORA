@@ -262,6 +262,43 @@ describe('an encounter', () => {
   });
 });
 
+describe('reactions', () => {
+  it('names each one, and says when the other person sends one', async () => {
+    const double = createApiDouble(liveState({ simulated: true }));
+    renderProduct(<Live />, double, { pathname: '/live' });
+    await screen.findByTestId('live-door');
+    await click('live-start-video');
+    await screen.findByTestId('live-chat-input');
+
+    // A word rather than the contract's key.
+    await click('live-react');
+    expect(screen.getByRole('button', { name: 'Wave' })).toBe(
+      screen.getByTestId('live-reaction-wave'),
+    );
+    await click('live-react');
+
+    // Something already read, so the next reaction is new rather than the
+    // history of an encounter somebody rejoined.
+    fireEvent.change(screen.getByTestId('live-chat-input'), {
+      target: { value: 'hello there' },
+    });
+    await click('live-chat-send');
+    await waitFor(() => {
+      expect(screen.getByTestId('live-chat-list').textContent).toContain(
+        'hello there',
+      );
+    });
+
+    await scenario('peer_reaction');
+    // The glyph on the stage is hidden from assistive technology, so this is
+    // the only way the wave reaches somebody who cannot see it.
+    const heard = await screen.findByText('Robin reacted: Wave', undefined, {
+      timeout: 4000,
+    });
+    expect(heard.getAttribute('role')).toBe('status');
+  });
+});
+
 describe('connecting', () => {
   it('is one-sided after a single press', async () => {
     const double = createApiDouble(liveState());

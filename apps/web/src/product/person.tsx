@@ -199,7 +199,6 @@ export function PersonPage({ personId }: { readonly personId: string }) {
 
         {ivory ? (
           <div className="v-person-detail__heading">
-            <p className="v-label">A new conversation starts here</p>
             <h1 className="v-title v-wrap" ref={heading}>
               {shown.displayName}
             </h1>
@@ -231,14 +230,18 @@ export function PersonPage({ personId }: { readonly personId: string }) {
 
         {images.length < 2 ? null : (
           <ul className="v-person-gallery" data-testid="person-gallery">
-            {images.slice(1).map((image) => {
+            {images.slice(1).map((image, index) => {
               const address = addresses.get(image.id);
               return address === undefined ? null : (
                 <li key={image.id}>
-                  {/* Same reasoning as the hero above. */}
+                  {/* Same reasoning as the hero above. Named, unlike the
+                      hero, because nothing beside a gallery photo says whose
+                      it is or where it sits among the others. */}
                   <img
-                    alt=""
+                    alt={`Photo ${String(index + 2)} of ${String(images.length)}, ${shown.displayName}`}
                     className="v-person-gallery__image"
+                    decoding="async"
+                    loading="lazy"
                     src={address}
                   />
                 </li>

@@ -213,7 +213,17 @@ export function AppShell({
         </ul>
 
         <div className="v-sidebar__foot">
-          <Link className="v-sidebar__account" href="/you">
+          {/* Named in full, because at the rail and in the preview the name
+              beside the picture is hidden and the picture is silent. */}
+          <Link
+            aria-label={
+              account.profile.value?.displayName === undefined
+                ? 'Your account'
+                : `Your account, ${displayName}`
+            }
+            className="v-sidebar__account"
+            href="/you"
+          >
             <Avatar displayName={displayName} size="xs" />
             <span className="v-sidebar__account-name v-small v-truncate">
               {displayName}

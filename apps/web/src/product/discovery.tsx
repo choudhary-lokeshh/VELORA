@@ -82,6 +82,15 @@ export function Discovery() {
   const [pending, setPending] = useState<string | undefined>(undefined);
   const decision = useSingleFlight();
   const inFlight = useRef<AbortController | undefined>(undefined);
+  const list = useRef<HTMLUListElement>(null);
+  const emptied = useRef<HTMLDivElement>(null);
+  /*
+   * Set when somebody leaves the list because of a decision, and spent once
+   * the list without them has rendered. The control that was pressed left with
+   * their card, and focus left on nothing starts the keyboard again from the
+   * top of the document.
+   */
+  const refocus = useRef(false);
 
   const loadAvailability = useCallback(
     async (signal: AbortSignal) => api.availability(signal),
@@ -160,6 +169,7 @@ export function Discovery() {
   }, [fill]);
 
   const drop = (candidateId: string) => {
+    refocus.current = true;
     setFeed((current) => ({
       ...current,
       candidates: current.candidates.filter(
@@ -167,6 +177,12 @@ export function Discovery() {
       ),
     }));
   };
+
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    (list.current ?? emptied.current)?.focus();
+  }, [feed]);
 
   const decide = (
     candidateId: string,
@@ -285,6 +301,7 @@ export function Discovery() {
               ? 'You have seen everybody available to you for now. People appear here when they make themselves available, so it is worth coming back.'
               : 'Nobody is available to you right now. Being available yourself is what makes you visible to other people too.'
           }
+          focusRef={emptied}
           icon="compass"
           testId="discovery-empty"
           title={
@@ -297,6 +314,8 @@ export function Discovery() {
         <ul
           className={ivory ? 'v-discovery-stage' : 'v-deck'}
           data-testid="discovery-candidates"
+          ref={list}
+          tabIndex={-1}
         >
           {(ivory ? feed.candidates.slice(0, 1) : feed.candidates).map(
             (candidate) => (
@@ -417,7 +436,6 @@ function CandidateCard({
       <div className="v-person__body">
         {editorial ? (
           <div className="v-discovery-story">
-            <p className="v-label">Less scrolling. More curiosity.</p>
             <h2 className="v-discovery-story__title">
               Find your kind of conversation.
             </h2>

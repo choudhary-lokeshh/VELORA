@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ApiResult, SafetyStatement } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
@@ -452,7 +452,7 @@ function RecentlyMetCard() {
                     {entry.person.displayName.slice(0, 1).toUpperCase()}
                   </span>
                   <div className="v-row__body">
-                    <p className="v-strong">{entry.person.displayName}</p>
+                    <p className="v-row__title">{entry.person.displayName}</p>
                     <p className="v-caption v-quiet">
                       Met {formatRelative(entry.endedAt)}
                     </p>
@@ -486,6 +486,17 @@ function BlockedCard() {
   const [unblocking, setUnblocking] = useState<string | undefined>(undefined);
   const { busy, run } = useSingleFlight();
   const blocked = blocks.value?.blocks ?? [];
+  const list = useRef<HTMLUListElement>(null);
+  const emptied = useRef<HTMLParagraphElement>(null);
+  // Spent once the re-read without the unblocked row has landed: its Unblock
+  // control went with it, and focus left on nothing starts again at the top.
+  const refocus = useRef(false);
+
+  useEffect(() => {
+    if (!refocus.current || blocks.loading) return;
+    refocus.current = false;
+    (list.current ?? emptied.current)?.focus();
+  }, [blocks.loading, blocks.value]);
 
   return (
     <Section raised testId="blocked-card" title="People you have blocked">
@@ -506,7 +517,12 @@ function BlockedCard() {
       )}
 
       {!blocks.loading && blocks.error === undefined && blocked.length === 0 ? (
-        <p className="v-small v-muted" data-testid="blocks-empty">
+        <p
+          className="v-small v-muted"
+          data-testid="blocks-empty"
+          ref={emptied}
+          tabIndex={-1}
+        >
           You have not blocked anybody. You can block or report somebody from
           anywhere they appear.
         </p>
@@ -520,7 +536,12 @@ function BlockedCard() {
             in discovery again; neither blocking nor unblocking tells them
             anything.
           </Notice>
-          <ul className="v-list v-list--divided" data-testid="block-list">
+          <ul
+            className="v-list v-list--divided"
+            data-testid="block-list"
+            ref={list}
+            tabIndex={-1}
+          >
             {blocked.map((block) => (
               <li key={block.blockedId}>
                 <div className="v-row">
@@ -566,6 +587,7 @@ function BlockedCard() {
           onConfirm={() => {
             run(async () => {
               const result = await api.unblock(unblocking);
+              if (isOk(result)) refocus.current = true;
               toast.show(
                 isOk(result)
                   ? 'Block removed. They are not told either way.'

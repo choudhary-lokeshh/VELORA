@@ -170,7 +170,7 @@ export function AvailabilityCard() {
         <label className="v-field__label" htmlFor="availability-hours">
           For
         </label>
-        <div style={{ width: '140px' }}>
+        <div style={{ width: '8.75rem' }}>
           <Select
             data-testid="availability-hours"
             id="availability-hours"

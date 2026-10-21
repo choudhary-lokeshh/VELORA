@@ -1014,6 +1014,12 @@
   width: 1px;
 }
 
+/* The input is hidden inside its label, so the label shows where focus is. */
+.v-media-slot > label.v-btn:has(.v-media-slot__input:focus-visible) {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
 .v-media-list {
   display: grid;
   gap: var(--space-3);
@@ -1626,6 +1632,13 @@
   align-self: center;
 }
 
+/* What the selected tab shows, laid out as the door's own column. */
+.v-live__door-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
 /*
  * Choose is a list somebody scrolls, so the way back to Instant stays put. A
  * switcher that leaves with the first row is a switcher somebody has to scroll
@@ -1872,6 +1885,14 @@
 .v-live__pref-select option {
   background: var(--surface-2);
   color: var(--text-primary);
+}
+
+/* A finger gets the full control height, as the compact buttons do. */
+@media (pointer: coarse) {
+  .v-live__pref,
+  .v-live__pref-group {
+    min-height: var(--control-height);
+  }
 }
 
 /* ------------------------------------------------------------- choose -- */
@@ -2280,7 +2301,7 @@
 .v-live__peer--carried .v-live__peer-plate,
 .v-live__peer--carried .v-live__transport {
   backdrop-filter: blur(12px);
-  background: var(--surface-scrim, rgb(12 10 12 / 62%));
+  background: rgb(12 10 12 / 62%);
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
 }
@@ -2506,7 +2527,7 @@
 
 .v-live__connection--connected {
   background: var(--status-positive-wash);
-  border-color: rgb(95 192 138 / 38%);
+  border-color: color-mix(in srgb, var(--status-positive) 38%, transparent);
   color: var(--status-positive);
 }
 
@@ -2547,7 +2568,7 @@
   align-items: center;
   background: var(--surface-overlay);
   backdrop-filter: blur(20px);
-  border: 1px solid rgb(95 192 138 / 38%);
+  border: 1px solid color-mix(in srgb, var(--status-positive) 38%, transparent);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-3);
   display: flex;
@@ -3087,7 +3108,7 @@
 
 .v-live__exit .v-btn:hover:not(:disabled) {
   background: var(--status-critical-wash);
-  border-color: rgb(242 96 106 / 34%);
+  border-color: color-mix(in srgb, var(--status-critical) 34%, transparent);
   color: var(--status-critical);
 }
 
@@ -3124,12 +3145,12 @@
 /* A device that is off says so in colour as well as in its glyph and label. */
 .v-live__device--off .v-icon-btn {
   background: var(--status-critical-wash);
-  border-color: rgb(242 96 106 / 34%);
+  border-color: color-mix(in srgb, var(--status-critical) 34%, transparent);
   color: var(--status-critical);
 }
 
 .v-live__device--off .v-icon-btn:hover:not(:disabled) {
-  background: rgb(242 96 106 / 22%);
+  background: color-mix(in srgb, var(--status-critical) 22%, transparent);
   border-color: var(--status-critical);
   color: var(--status-critical);
 }
@@ -3209,7 +3230,7 @@
 .v-live__notice .v-inline-error {
   backdrop-filter: blur(20px);
   background: var(--surface-overlay);
-  border: 1px solid rgb(242 96 106 / 34%);
+  border: 1px solid color-mix(in srgb, var(--status-critical) 34%, transparent);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-3);
   margin-block-end: var(--space-2);

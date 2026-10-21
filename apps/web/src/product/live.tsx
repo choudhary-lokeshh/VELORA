@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -42,6 +43,7 @@ import {
   Segmented,
   Skeleton,
   StatusMessage,
+  TabPanel,
   initialsOf,
   toneOf,
 } from '../design/primitives';
@@ -204,6 +206,19 @@ const reactionGlyphs: Readonly<Record<string, string>> = {
   laugh: '😄',
   smile: '🙂',
   wave: '👋',
+};
+
+/**
+ * What each reaction is called, for somebody who hears the stage rather than
+ * sees it. The key is the contract's word, not a sentence.
+ */
+const reactionLabels: Readonly<Record<string, string>> = {
+  clap: 'Clap',
+  fire: 'Fire',
+  heart: 'Heart',
+  laugh: 'Laugh',
+  smile: 'Smile',
+  wave: 'Wave',
 };
 
 const reactionOrder: readonly LiveReaction[] = [
@@ -454,6 +469,9 @@ export function Live() {
         />
         {message === undefined ? (
           <Card testId="live-loading">
+            <p className="v-visually-hidden" role="status">
+              Loading
+            </p>
             <Skeleton height={20} width="50%" />
             <Skeleton height={12} width="70%" />
           </Card>
@@ -630,6 +648,7 @@ function LiveDoor({
   readonly wallet: WalletView;
 }) {
   const [returning] = useState(() => hasVisited());
+  const tabs = useId();
   const waiting = invitations.filter(
     (invitation) =>
       invitation.direction === 'incoming' && invitation.state === 'pending',
@@ -644,6 +663,7 @@ function LiveDoor({
     >
       <div className="v-live__door-inner">
         <Segmented<Mode>
+          id={tabs}
           label="How to meet somebody"
           onChange={onModeChange}
           options={[
@@ -655,88 +675,95 @@ function LiveDoor({
           value={mode}
         />
 
-        {mode === 'instant' ? (
-          <>
-            <div className="v-live__door-hero">
-              <span className="v-live__mark" data-live-idle>
-                <Icon name="live" size="lg" />
-              </span>
-              <h2 className="v-display v-live__door-title">Meet someone</h2>
+        {/*
+          A column of its own rather than the door's, so the two sections share
+          one panel the tabs can name. It lays its content out exactly as the
+          door did.
+        */}
+        <TabPanel className="v-live__door-panel" group={tabs} value={mode}>
+          {mode === 'instant' ? (
+            <>
+              <div className="v-live__door-hero">
+                <span className="v-live__mark" data-live-idle>
+                  <Icon name="live" size="lg" />
+                </span>
+                <h2 className="v-display v-live__door-title">Meet someone</h2>
+                {returning ? null : (
+                  <p className="v-live__lede">
+                    One other person who is here right now. Talk for as long as
+                    it is good, and move on whenever you like.
+                  </p>
+                )}
+              </div>
+
+              {/*
+                One dominant control and one quiet one, stacked rather than
+                side by side. Two filled pills of the same size is a door with
+                no answer to "what do I press", and agreeing to be heard is
+                still not agreeing to be seen — so the quieter way in stays a
+                separate control rather than a setting on this one.
+              */}
+              <div className="v-live__door-actions">
+                <Button
+                  busy={busy}
+                  data-testid="live-start-video"
+                  icon="video"
+                  onClick={() => {
+                    onStart('video');
+                  }}
+                  size="lg"
+                  tone="primary"
+                >
+                  Start
+                </Button>
+                <Button
+                  data-testid="live-start-voice"
+                  disabled={busy}
+                  icon="phone"
+                  onClick={() => {
+                    onStart('voice');
+                  }}
+                  size="sm"
+                  tone="ghost"
+                >
+                  Voice only
+                </Button>
+              </div>
+
+              <PreferenceControls
+                languageOptions={languageOptions}
+                onChange={onPreferences}
+                preferences={preferences}
+                wallet={wallet}
+              />
+
+              {/*
+                What happens here, said once and laid out sideways. As a
+                bulleted list down the page it read as documentation, which is
+                the one thing a live-social door must not be. It is shown on
+                somebody's first visit and never again.
+              */}
               {returning ? null : (
-                <p className="v-live__lede">
-                  One other person who is here right now. Talk for as long as it
-                  is good, and move on whenever you like.
-                </p>
+                <ul className="v-live__steps">
+                  <li>
+                    <Icon name="camera" size="sm" />
+                    <span>Your camera opens when you press Start.</span>
+                  </li>
+                  <li>
+                    <Icon name="live" size="sm" />
+                    <span>VELORA finds somebody. You never choose who.</span>
+                  </li>
+                  <li>
+                    <Icon name="link" size="sm" />
+                    <span>Connect counts only if you both press it.</span>
+                  </li>
+                </ul>
               )}
-            </div>
-
-            {/*
-              One dominant control and one quiet one, stacked rather than side
-              by side. Two filled pills of the same size is a door with no
-              answer to "what do I press", and agreeing to be heard is still not
-              agreeing to be seen — so the quieter way in stays a separate
-              control rather than a setting on this one.
-            */}
-            <div className="v-live__door-actions">
-              <Button
-                busy={busy}
-                data-testid="live-start-video"
-                icon="video"
-                onClick={() => {
-                  onStart('video');
-                }}
-                size="lg"
-                tone="primary"
-              >
-                Start
-              </Button>
-              <Button
-                data-testid="live-start-voice"
-                disabled={busy}
-                icon="phone"
-                onClick={() => {
-                  onStart('voice');
-                }}
-                size="sm"
-                tone="ghost"
-              >
-                Voice only
-              </Button>
-            </div>
-
-            <PreferenceControls
-              languageOptions={languageOptions}
-              onChange={onPreferences}
-              preferences={preferences}
-              wallet={wallet}
-            />
-
-            {/*
-              What happens here, said once and laid out sideways. As a bulleted
-              list down the page it read as documentation, which is the one
-              thing a live-social door must not be. It is shown on somebody's
-              first visit and never again.
-            */}
-            {returning ? null : (
-              <ul className="v-live__steps">
-                <li>
-                  <Icon name="camera" size="sm" />
-                  <span>Your camera opens when you press Start.</span>
-                </li>
-                <li>
-                  <Icon name="live" size="sm" />
-                  <span>VELORA finds somebody. You never choose who.</span>
-                </li>
-                <li>
-                  <Icon name="link" size="sm" />
-                  <span>Connect counts only if you both press it.</span>
-                </li>
-              </ul>
-            )}
-          </>
-        ) : (
-          <ChoosePanel invitations={invitations} onState={onState} />
-        )}
+            </>
+          ) : (
+            <ChoosePanel invitations={invitations} onState={onState} />
+          )}
+        </TabPanel>
       </div>
 
       {/*
@@ -805,9 +832,10 @@ function PreferenceControls({
         type="button"
       >
         <Icon name="globe" size="sm" />
-        <span>
-          {preferences.region === 'same' ? 'Prefer near me' : 'Anywhere'}
-        </span>
+        {/* One name, with the pressed state saying whether it is on. A label
+            that changed as well told a screen reader "Anywhere, not pressed",
+            which reads as the opposite of what it means. */}
+        <span>Prefer near me</span>
       </button>
 
       {languageOptions.length === 0 ? null : (
@@ -1253,6 +1281,10 @@ function LiveStage({
   }, []);
 
   const showing = live && !movingOn;
+  // The newest reaction from the other side, for as long as it is on the
+  // stage. The glyphs are hidden from assistive technology, so this is how a
+  // wave reaches somebody who cannot see one.
+  const heard = bursts.filter((burst) => !burst.self).at(-1);
   // The camera is the ground of the screen only while there is nobody to look
   // at. The moment the canvas is about somebody — a person found, or an account
   // of what became of them — it moves to the corner, because a full-bleed
@@ -1337,6 +1369,13 @@ function LiveStage({
           </span>
         ))}
       </div>
+      <p className="v-visually-hidden" role="status">
+        {heard === undefined || encounter === undefined
+          ? ''
+          : `${encounter.peer.displayName} reacted: ${
+              reactionLabels[heard.reaction] ?? heard.reaction
+            }`}
+      </p>
 
       {showing ? <PeerStrip encounter={encounter} /> : null}
 
@@ -2213,7 +2252,9 @@ function Dock({
                       <span aria-hidden="true">
                         {reactionGlyphs[reaction] ?? '·'}
                       </span>
-                      <span className="v-visually-hidden">{reaction}</span>
+                      <span className="v-visually-hidden">
+                        {reactionLabels[reaction] ?? reaction}
+                      </span>
                     </button>
                   ))}
                 </div>

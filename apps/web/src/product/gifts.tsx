@@ -119,23 +119,23 @@ export function SentGifts() {
           <RowSkeleton rows={3} />
         </Card>
       ) : rows.length === 0 ? (
-        <Card>
-          <EmptyState
-            actions={
-              <ButtonLink
-                data-testid="sent-gifts-browse"
-                href="/discover?show=creators"
-                tone="secondary"
-              >
-                Browse creators
-              </ButtonLink>
-            }
-            body="A creator's page is where you choose one. A gift is support and nothing else — it unlocks no content and gives no access."
-            icon="sparkle"
-            testId="sent-gifts-empty"
-            title="No gifts sent"
-          />
-        </Card>
+        // On the page's own ground: an empty state draws its own edge, and a
+        // card around it was a box in a box.
+        <EmptyState
+          actions={
+            <ButtonLink
+              data-testid="sent-gifts-browse"
+              href="/discover?show=creators"
+              tone="secondary"
+            >
+              Browse creators
+            </ButtonLink>
+          }
+          body="A creator's page is where you choose one. A gift is support and nothing else — it unlocks no content and gives no access."
+          icon="sparkle"
+          testId="sent-gifts-empty"
+          title="No gifts sent"
+        />
       ) : (
         <Card flush>
           <ul className="v-list v-list--divided" data-testid="sent-gifts-list">

@@ -230,7 +230,7 @@
 }
 
 .v-tabbar__label {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -450,7 +450,7 @@
 
   .v-sidebar__label {
     flex: none;
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 600;
     letter-spacing: 0.02em;
   }

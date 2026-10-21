@@ -3,8 +3,9 @@
 import type { LiveWindow } from '@velora/consumer-client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useId } from 'react';
 
-import { PageHeader, Segmented } from '../design/primitives';
+import { PageHeader, Segmented, TabPanel } from '../design/primitives';
 import { CreatorDirectory } from './creators';
 import { Discovery } from './discovery';
 import { LiveWindows } from './live-windows';
@@ -76,6 +77,7 @@ export function Discover({
   const requested = parameters.get('show');
   const section: Section = requested === 'creators' ? 'creators' : 'people';
   const ivory = useIvoryPreview();
+  const tabs = useId();
 
   return (
     <>
@@ -93,6 +95,7 @@ export function Discover({
 
       <div className="v-lede-gap">
         <Segmented
+          id={tabs}
           label="What to browse"
           onChange={(next) => {
             // `replace` rather than `push`: switching a section changes what
@@ -107,16 +110,18 @@ export function Discover({
         />
       </div>
 
-      {section === 'creators' ? (
-        <CreatorDirectory
-          apiBaseUrl={apiBaseUrl}
-          {...(fetchImplementation === undefined
-            ? {}
-            : { fetchImplementation })}
-        />
-      ) : (
-        <Discovery />
-      )}
+      <TabPanel group={tabs} value={section}>
+        {section === 'creators' ? (
+          <CreatorDirectory
+            apiBaseUrl={apiBaseUrl}
+            {...(fetchImplementation === undefined
+              ? {}
+              : { fetchImplementation })}
+          />
+        ) : (
+          <Discovery />
+        )}
+      </TabPanel>
     </>
   );
 }

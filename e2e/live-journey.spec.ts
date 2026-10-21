@@ -348,10 +348,13 @@ test.describe('Live discovery', () => {
     // Two controls and no more. There is no country picker, no age band, and
     // no compatibility score anywhere on this screen, because the contract
     // cannot express one.
+    // One label, and the state is what is pressed: a label that flipped with
+    // the state announced "Anywhere, not pressed" while Anywhere was in effect.
     const region = page.getByTestId('live-pref-region');
-    await expect(region).toHaveText('Anywhere');
-    await region.click();
     await expect(region).toHaveText('Prefer near me');
+    await expect(region).toHaveAttribute('aria-pressed', 'false');
+    await region.click();
+    await expect(region).toHaveAttribute('aria-pressed', 'true');
 
     // Narrowing is applied to the search rather than remembered and ignored.
     await page.getByTestId('live-start-video').click();
@@ -370,7 +373,10 @@ test.describe('Live discovery', () => {
     // Left as it was found, so the next test in this serial group searches
     // across everybody.
     await page.getByTestId('live-pref-region').click();
-    await expect(page.getByTestId('live-pref-region')).toHaveText('Anywhere');
+    await expect(page.getByTestId('live-pref-region')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
   });
 
   test('meets somebody for nothing, and moves no coins doing it', async ({

@@ -221,6 +221,11 @@ a:hover {
   line-height: var(--text-caption-line);
 }
 
+.v-micro {
+  font-size: var(--text-micro-size);
+  line-height: var(--text-micro-line);
+}
+
 .v-label {
   font-size: var(--text-micro-size);
   font-weight: 600;

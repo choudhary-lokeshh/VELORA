@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { languagePattern, maximumProfileLanguages } from '@velora/validation';
 
@@ -33,6 +33,20 @@ export function LanguagePicker({
 }) {
   const [draft, setDraft] = useState('');
   const [message, setMessage] = useState<string | undefined>(undefined);
+  const input = useRef<HTMLInputElement>(null);
+  /*
+   * Set when a chip is removed, and spent once the list without it has
+   * rendered — after, because a full list disables the field and a disabled
+   * field cannot take focus. The remove control went with its chip, and the
+   * field is where the next language goes.
+   */
+  const refocus = useRef(false);
+
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    input.current?.focus();
+  }, [value]);
 
   const normalized = draft.trim().toLowerCase();
   const wellFormed = languagePattern.test(normalized);
@@ -79,6 +93,7 @@ export function LanguagePicker({
               disabled={full}
               maxLength={3}
               name="language"
+              ref={input}
               onChange={(event) => {
                 setDraft(event.target.value.toLowerCase());
                 setMessage(undefined);
@@ -115,9 +130,14 @@ export function LanguagePicker({
                   data-testid={`language-remove-${code}`}
                   onClick={() => {
                     setMessage(undefined);
+                    refocus.current = true;
                     onChange(value.filter((entry) => entry !== code));
                   }}
-                  style={{ color: 'inherit', display: 'flex' }}
+                  style={{
+                    color: 'inherit',
+                    display: 'flex',
+                    padding: 'var(--space-1)',
+                  }}
                   type="button"
                 >
                   <Icon name="x" size="sm" />

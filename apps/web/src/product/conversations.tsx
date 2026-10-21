@@ -235,15 +235,14 @@ export function MessagesLayout({
 }
 
 export function NoConversationSelected() {
+  // No card around it: an empty state draws its own edge.
   return (
-    <div className="v-card" data-testid="conversation-none">
-      <EmptyState
-        body="Choose a conversation to read it."
-        icon="message"
-        testId="conversation-none-empty"
-        title="Nothing open"
-      />
-    </div>
+    <EmptyState
+      body="Choose a conversation to read it."
+      icon="message"
+      testId="conversation-none"
+      title="Nothing open"
+    />
   );
 }
 
@@ -290,19 +289,17 @@ export function ConversationThread({
 
   if (conversation === undefined) {
     return (
-      <div className="v-card" data-testid="conversation-missing">
-        <EmptyState
-          actions={
-            <Link className="v-btn v-btn--secondary" href="/messages">
-              Back to messages
-            </Link>
-          }
-          body="It may have been closed, or it may never have been yours. Either way there is nothing to show here."
-          icon="alert"
-          testId="conversation-missing-empty"
-          title="That conversation is not available"
-        />
-      </div>
+      <EmptyState
+        actions={
+          <Link className="v-btn v-btn--secondary" href="/messages">
+            Back to messages
+          </Link>
+        }
+        body="It may have been closed, or it may never have been yours. Either way there is nothing to show here."
+        icon="alert"
+        testId="conversation-missing"
+        title="That conversation is not available"
+      />
     );
   }
 

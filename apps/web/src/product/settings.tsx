@@ -330,7 +330,6 @@ function CloseAccountCard() {
 function SessionCard() {
   const session = useSession();
   const [confirming, setConfirming] = useState(false);
-  const { busy, run } = useSingleFlight();
 
   return (
     <Section gap={4} raised testId="session-card" title="This device">
@@ -349,7 +348,7 @@ function SessionCard() {
         </Button>
         <Button
           data-testid="auth-sign-out-everywhere"
-          disabled={session.busy || busy}
+          disabled={session.busy}
           onClick={() => {
             setConfirming(true);
           }}
@@ -360,28 +359,49 @@ function SessionCard() {
       </div>
 
       {confirming ? (
-        <ConfirmDialog
-          busy={busy}
-          confirmLabel="Sign out everywhere"
-          onCancel={() => {
+        <SignOutEverywhereDialog
+          onClose={() => {
             setConfirming(false);
           }}
-          onConfirm={() => {
-            run(async () => {
-              session.signOutEverywhere();
-              setConfirming(false);
-              return Promise.resolve();
-            });
-          }}
-          testId="sign-out-everywhere"
-          title="Sign out on every device?"
-        >
-          <p>
-            Every session you have anywhere ends immediately, including this
-            one. You will need to sign in again on each device.
-          </p>
-        </ConfirmDialog>
+        />
       ) : null}
     </Section>
+  );
+}
+
+/**
+ * The confirmation in front of ending every session.
+ *
+ * Shared with Welcome, which offers the same control before there is a product
+ * to reach Settings from. One component, so the two places that end every
+ * session on every device cannot come to say different things about it.
+ */
+export function SignOutEverywhereDialog({
+  onClose,
+}: {
+  readonly onClose: () => void;
+}) {
+  const session = useSession();
+  const { busy, run } = useSingleFlight();
+  return (
+    <ConfirmDialog
+      busy={busy}
+      confirmLabel="Sign out everywhere"
+      onCancel={onClose}
+      onConfirm={() => {
+        run(async () => {
+          session.signOutEverywhere();
+          onClose();
+          return Promise.resolve();
+        });
+      }}
+      testId="sign-out-everywhere"
+      title="Sign out on every device?"
+    >
+      <p>
+        Every session you have anywhere ends immediately, including this one.
+        You will need to sign in again on each device.
+      </p>
+    </ConfirmDialog>
   );
 }

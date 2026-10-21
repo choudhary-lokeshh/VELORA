@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import type { ApiResult, Introduction } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
@@ -17,6 +17,7 @@ import {
   PageHeader,
   RowSkeleton,
   Segmented,
+  TabPanel,
 } from '../design/primitives';
 import { CallControls } from './calls';
 import { portraitReferences, useMediaAddresses } from './imagery';
@@ -74,8 +75,24 @@ export function Introductions() {
   const pathname = usePathname();
   const parameters = useSearchParams();
   const requested = parameters.get('show');
+  const tabs = useId();
+  const list = useRef<HTMLUListElement>(null);
+  const empty = useRef<HTMLDivElement>(null);
+  /*
+   * Set when an answer took a row off this list, and spent once the re-read
+   * that removes it has landed. The control that was pressed goes with its
+   * row, and focus left on nothing starts the keyboard again from the top of
+   * the document.
+   */
+  const refocus = useRef(false);
 
   useRevalidateOnFocus(introductions.reload);
+
+  useEffect(() => {
+    if (!refocus.current || introductions.loading) return;
+    refocus.current = false;
+    (list.current ?? empty.current)?.focus();
+  }, [introductions.loading, introductions.value]);
 
   const rows = introductions.value?.introductions ?? [];
   const incoming = rows.filter(
@@ -140,6 +157,7 @@ export function Introductions() {
             : (failureMessage(result) ?? 'That did not work.'),
           isOk(result) ? 'positive' : 'critical',
         );
+        if (isOk(result)) refocus.current = true;
         // Re-read either way. The server decides what state the pair is in, and
         // an accepted action can still have been overtaken by the other side.
         introductions.reload();
@@ -200,6 +218,7 @@ export function Introductions() {
 
       <div className="v-lede-gap">
         <Segmented
+          id={tabs}
           label="Which introductions"
           onChange={showGroup}
           options={[
@@ -219,71 +238,82 @@ export function Introductions() {
         />
       </div>
 
-      {introductions.loading && introductions.value === undefined ? (
-        <RowSkeleton rows={3} />
-      ) : null}
+      <TabPanel group={tabs} value={group}>
+        {introductions.loading && introductions.value === undefined ? (
+          <RowSkeleton rows={3} />
+        ) : null}
 
-      {introductions.error === undefined ? null : (
-        <div className="v-stack v-stack--3">
-          <ErrorMessage testId="introductions-failed">
-            {introductions.error}
-          </ErrorMessage>
-          {introductions.retryable ? (
-            <div>
-              <Button onClick={introductions.reload}>Try again</Button>
-            </div>
-          ) : null}
-        </div>
-      )}
+        {introductions.error === undefined ? null : (
+          <div className="v-stack v-stack--3">
+            <ErrorMessage testId="introductions-failed">
+              {introductions.error}
+            </ErrorMessage>
+            {introductions.retryable ? (
+              <div>
+                <Button onClick={introductions.reload}>Try again</Button>
+              </div>
+            ) : null}
+          </div>
+        )}
 
-      {!introductions.loading &&
-      introductions.error === undefined &&
-      shown.length === 0 ? (
-        <EmptyState
-          icon={group === 'mutual' ? 'link' : 'heart'}
-          testId={`introductions-empty-${group}`}
-          {...emptyCopy[group]}
-        />
-      ) : null}
+        {!introductions.loading &&
+        introductions.error === undefined &&
+        shown.length === 0 ? (
+          <EmptyState
+            focusRef={empty}
+            icon={group === 'mutual' ? 'link' : 'heart'}
+            testId={`introductions-empty-${group}`}
+            {...emptyCopy[group]}
+          />
+        ) : null}
 
-      {shown.length === 0 ? null : (
-        <ul className="v-intro-grid" data-testid={`introductions-${group}`}>
-          {shown.map((row) => (
-            <li key={row.id}>
-              <IntroductionCard
-                busy={busy}
-                introduction={row}
-                portrait={portraits.get(row.counterpart.media[0]?.id ?? '')}
-                onAccept={() => {
-                  act(
-                    row.id,
-                    async () => api.signalIntroduction(row.counterpart.id),
-                    'You are introduced. Say hello whenever you like.',
-                  );
-                }}
-                onChanged={introductions.reload}
-                onDecline={() => {
-                  act(
-                    row.id,
-                    async () => api.declineIntroduction(row.id),
-                    'Declined. They are not told.',
-                  );
-                }}
-                onOpen={() => {
-                  openConversation(row);
-                }}
-                onWithdraw={() => {
-                  act(
-                    row.id,
-                    async () => api.withdrawIntroduction(row.id),
-                    'Withdrawn. They never heard about it.',
-                  );
-                }}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+        {shown.length === 0 ? null : (
+          <ul
+            className="v-intro-grid"
+            data-testid={`introductions-${group}`}
+            ref={list}
+            tabIndex={-1}
+          >
+            {shown.map((row) => (
+              <li key={row.id}>
+                <IntroductionCard
+                  busy={busy}
+                  introduction={row}
+                  portrait={portraits.get(row.counterpart.media[0]?.id ?? '')}
+                  onAccept={() => {
+                    act(
+                      row.id,
+                      async () => api.signalIntroduction(row.counterpart.id),
+                      'You are introduced. Say hello whenever you like.',
+                    );
+                  }}
+                  onChanged={() => {
+                    refocus.current = true;
+                    introductions.reload();
+                  }}
+                  onDecline={() => {
+                    act(
+                      row.id,
+                      async () => api.declineIntroduction(row.id),
+                      'Declined. They are not told.',
+                    );
+                  }}
+                  onOpen={() => {
+                    openConversation(row);
+                  }}
+                  onWithdraw={() => {
+                    act(
+                      row.id,
+                      async () => api.withdrawIntroduction(row.id),
+                      'Withdrawn. They never heard about it.',
+                    );
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </TabPanel>
     </>
   );
 }

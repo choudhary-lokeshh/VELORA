@@ -4,15 +4,22 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { maximumProfileLanguages } from '@velora/validation';
+
 import { ConversationThread } from '../src/product/conversations';
+import { Discovery } from '../src/product/discovery';
 import { Introductions } from '../src/product/introductions';
+import { LanguagePicker } from '../src/product/language-picker';
 import { SentGifts } from '../src/product/gifts';
 import { ClubDestination } from '../src/product/club';
 import { Welcome } from '../src/product/onboarding';
-import { Segmented } from '../src/design/primitives';
+import { Wallet } from '../src/product/wallet';
+import { Segmented, TabPanel } from '../src/design/primitives';
 import {
   admittedState,
   createApiDouble,
@@ -189,6 +196,40 @@ describe('a tab strip behaves the way its role promises', () => {
     fireEvent.keyDown(screen.getByTestId('segment-two'), { key: 'End' });
     fireEvent.keyDown(screen.getByTestId('segment-two'), { key: 'Home' });
     expect(chosen).toEqual(['three', 'one']);
+  });
+
+  it('says which panel each tab controls, and the panel says which tab it is', () => {
+    render(
+      <>
+        <Segmented
+          id="browse"
+          label="Which"
+          onChange={() => undefined}
+          options={[
+            { label: 'One', value: 'one' },
+            { count: 2, label: 'Two', value: 'two' },
+          ]}
+          value="two"
+        />
+        <TabPanel group="browse" value="two">
+          <p>What two shows</p>
+        </TabPanel>
+      </>,
+    );
+
+    const panel = screen.getByRole('tabpanel');
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab.getAttribute('aria-controls')).toBe(panel.id);
+    }
+    // Named by the selected tab, and that tab's name keeps its count apart
+    // from its label rather than reading "Two2". jsdom's name computation
+    // trims the space a browser keeps after the comma, so only the comma is
+    // insisted on.
+    const named = /^Two, ?2$/u;
+    expect(screen.getByRole('tabpanel', { name: named })).toBe(panel);
+    expect(screen.getByRole('tab', { name: named, selected: true })).toBe(
+      screen.getByTestId('segment-two'),
+    );
   });
 });
 
@@ -438,5 +479,130 @@ describe('what somebody who cannot see the screen is told', () => {
         'You said: ',
       );
     });
+  });
+});
+
+/**
+ * Where focus goes when the thing holding it is taken away.
+ *
+ * The control somebody pressed was inside the row it removed, so focus was left
+ * on nothing and the next Tab started again from the top of the document.
+ */
+describe('focus has somewhere to go after a removal', () => {
+  it('lands on the people still listed after a pass', async () => {
+    const state = admittedState();
+    const [first] = state.candidates;
+    if (first === undefined) throw new Error('fixture needs a candidate');
+    state.candidates = [
+      first,
+      {
+        ...first,
+        displayName: 'Sam',
+        id: '77777777-7777-4777-8777-777777777777',
+      },
+    ];
+    renderProduct(<Discovery />, createApiDouble(state), {
+      pathname: '/discover',
+    });
+
+    fireEvent.click(await screen.findByTestId(`discovery-pass-${first.id}`));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`candidate-${first.id}`)).toBeNull();
+    });
+    expect(document.activeElement).toBe(
+      screen.getByTestId('discovery-candidates'),
+    );
+  });
+
+  it('lands on what replaced the list when the last person leaves it', async () => {
+    renderProduct(<Discovery />, createApiDouble(admittedState()), {
+      pathname: '/discover',
+    });
+
+    fireEvent.click(
+      await screen.findByTestId(`discovery-pass-${otherPersonId}`),
+    );
+
+    const empty = await screen.findByTestId('discovery-empty');
+    expect(document.activeElement).toBe(empty);
+  });
+
+  function Languages({ initial }: { readonly initial: readonly string[] }) {
+    const [value, setValue] = useState(initial);
+    return <LanguagePicker onChange={setValue} value={value} />;
+  }
+
+  it('returns to the language field when a language is removed', () => {
+    render(<Languages initial={['en', 'es']} />);
+
+    fireEvent.click(screen.getByTestId('language-remove-es'));
+
+    expect(screen.queryByTestId('language-remove-es')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByTestId('language-input'));
+  });
+
+  it('returns to the field even when a full list had disabled it', () => {
+    const full = ['en', 'es', 'fr', 'de', 'it'].slice(
+      0,
+      maximumProfileLanguages,
+    );
+    render(<Languages initial={full} />);
+    const field = screen.getByTestId<HTMLInputElement>('language-input');
+    expect(field.disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId(`language-remove-${full[0] ?? ''}`));
+
+    expect(field.disabled).toBe(false);
+    expect(document.activeElement).toBe(field);
+  });
+});
+
+describe('a session ended everywhere is ended on purpose', () => {
+  it('asks first on Welcome, the same way Settings does', async () => {
+    const state = emptyState();
+    state.account = null;
+    const double = createApiDouble(state);
+    renderProduct(<Welcome />, double, { pathname: '/welcome' });
+
+    fireEvent.click(await screen.findByTestId('auth-sign-out-everywhere'));
+
+    const dialog = await screen.findByTestId('sign-out-everywhere');
+    expect(dialog.textContent).toContain('Sign out on every device?');
+    // Nothing has ended yet: every other device is still signed in.
+    expect(
+      double.calls.some((call) => call.path === '/v1/auth/logout-all'),
+    ).toBe(false);
+
+    fireEvent.click(screen.getByTestId('sign-out-everywhere-accept'));
+    await waitFor(() => {
+      expect(
+        double.calls.some((call) => call.path === '/v1/auth/logout-all'),
+      ).toBe(true);
+    });
+  });
+});
+
+describe('a history that could not be read again says so where it is', () => {
+  it('shows the failure inside the history with a retry beside it', async () => {
+    const state = admittedState();
+    state.wallet = { ...state.wallet, enabled: true };
+    const double = createApiDouble(state);
+    renderProduct(<Wallet />, double, { pathname: '/you/wallet' });
+    await screen.findByTestId('wallet-history-empty');
+
+    // The grant succeeds and the history read after it does not.
+    double.failNext('/v1/wallet/activity', 'GET');
+    fireEvent.click(screen.getByTestId('wallet-grant'));
+
+    const history = screen.getByTestId('wallet-history');
+    const failure = await within(history).findByTestId('wallet-message');
+    expect(failure.getAttribute('role')).toBe('alert');
+
+    fireEvent.click(within(history).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => {
+      expect(history.textContent).toContain('Development grant');
+    });
+    expect(within(history).queryByTestId('wallet-message')).toBeNull();
   });
 });

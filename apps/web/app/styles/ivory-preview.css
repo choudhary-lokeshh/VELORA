@@ -320,9 +320,6 @@ html[data-design-preview='ivory'] {
   .v-discovery-story {
     display: contents;
   }
-  .v-discovery-story .v-label:first-child {
-    display: none;
-  }
   .v-discovery-story__title {
     font-size: var(--preview-title-size);
     font-weight: 500;
@@ -401,6 +398,19 @@ html[data-design-preview='ivory'] {
     --ember: #d4e89d;
     --text-on-accent: #17251a;
     --focus-ring: #e7f4bd;
+    /* The stage is dark, so its rules and status colours are NIGHT CURRENT's:
+       the ivory ones were drawn for a light ground and failed contrast here. */
+    --border-hairline: rgb(246 241 243 / 8%);
+    --border-soft: rgb(246 241 243 / 14%);
+    --border-strong: rgb(246 241 243 / 26%);
+    --status-positive: #5fc08a;
+    --status-positive-wash: rgb(95 192 138 / 14%);
+    --status-caution: #e4b04a;
+    --status-caution-wash: rgb(228 176 74 / 14%);
+    --status-critical: #f2606a;
+    --status-critical-wash: rgb(242 96 106 / 14%);
+    --status-neutral: #82a9de;
+    --status-neutral-wash: rgb(130 169 222 / 14%);
     color: var(--text-primary);
   }
 }
@@ -555,10 +565,6 @@ html[data-design-preview='ivory'] {
       flex-direction: column;
       gap: var(--space-6);
     }
-    .v-discovery-story .v-label:first-child {
-      color: var(--ember);
-      display: block;
-    }
     .v-discovery-story > .v-body {
       display: block;
       line-height: 1.5;
@@ -607,9 +613,6 @@ html[data-design-preview='ivory'] {
       gap: var(--space-6);
       padding-top: var(--space-6);
     }
-    .v-person-detail__heading .v-label {
-      color: var(--ember);
-    }
     .v-person-detail__biography {
       grid-area: bio;
       font-size: 1.375rem;
@@ -629,23 +632,25 @@ html[data-design-preview='ivory'] {
 @media (width >= 1024px) {
   html[data-design-preview='ivory'] {
     .v-live__door:not(.v-live__door--choose) .v-live__door-inner {
-      align-items: start;
-      display: grid;
-      gap: var(--space-8) var(--space-16);
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--space-8);
       max-inline-size: 68rem;
       text-align: start;
     }
     .v-live__door:not(.v-live__door--choose)
       .v-live__door-inner
       > .v-segmented {
-      grid-column: 1 / -1;
-      justify-self: start;
+      align-self: flex-start;
+    }
+    .v-live__door:not(.v-live__door--choose) .v-live__door-panel {
+      align-items: start;
+      display: grid;
+      gap: var(--space-8) var(--space-16);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
     .v-live__door-hero {
       align-items: flex-start;
       grid-column: 1;
-      grid-row: 2;
+      grid-row: 1;
     }
     .v-live__door-title {
       font-size: clamp(2.75rem, 4vw, 4rem);
@@ -658,14 +663,14 @@ html[data-design-preview='ivory'] {
     .v-live__door-actions {
       align-items: flex-start;
       grid-column: 1;
-      grid-row: 3;
+      grid-row: 2;
     }
-    .v-live__door-inner > .v-live__prefs {
+    .v-live__door-panel > .v-live__prefs {
       background: var(--surface-1);
       border: 1px solid var(--border-hairline);
       border-radius: var(--radius-xl);
       grid-column: 2;
-      grid-row: 2 / 5;
+      grid-row: 1 / 4;
       padding: var(--space-6);
       align-self: start;
     }
@@ -679,7 +684,7 @@ html[data-design-preview='ivory'] {
     }
     .v-live__steps {
       grid-column: 1;
-      grid-row: 4;
+      grid-row: 3;
     }
     .v-live__door-note {
       max-inline-size: 68rem;

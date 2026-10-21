@@ -139,7 +139,7 @@ export function ConsumerAiAssist({
     <Card testId={testId}>
       <div className="v-stack v-stack--4">
         <div className="v-inline v-inline--between">
-          <div className="v-stack v-stack--1">
+          <div className="v-stack v-stack--2">
             <p className="v-subheading">Writing assist</p>
             <p className="v-caption v-quiet">
               AI suggestion only. Review and edit it before you use it.

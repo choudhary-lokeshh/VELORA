@@ -59,6 +59,12 @@
 .v-btn--primary:hover:not(:disabled) {
   background: var(--ember-bright);
   box-shadow: var(--shadow-2);
+  /*
+   * Restated, because a button can be a link and the document's `a:hover`
+   * outranks the class above. Without it the label took the hover fill's own
+   * colour and vanished.
+   */
+  color: var(--text-on-accent);
   transform: translateY(-1px);
 }
 
@@ -71,6 +77,7 @@
 .v-btn--secondary:hover:not(:disabled) {
   background: var(--surface-2);
   border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .v-btn--ghost {
@@ -85,12 +92,16 @@
 
 .v-btn--danger {
   background: var(--status-critical-wash);
-  border-color: rgb(242 96 106 / 40%);
+  border-color: color-mix(in srgb, var(--status-critical) 40%, transparent);
   color: var(--status-critical);
 }
 
+/*
+ * The rule going to full strength is the hover cue. The fill stays as it is,
+ * because the stronger one it used to take put the label under 4.5:1.
+ */
 .v-btn--danger:hover:not(:disabled) {
-  background: rgb(242 96 106 / 22%);
+  background: var(--status-critical-wash);
   border-color: var(--status-critical);
 }
 
@@ -158,6 +169,22 @@
 .v-icon-btn--sm {
   height: var(--control-height-sm);
   width: var(--control-height-sm);
+}
+
+/*
+ * The compact sizes are for a pointer. A finger gets the full control height
+ * whatever the size asked for, because the size is about density and a missed
+ * tap is not.
+ */
+@media (pointer: coarse) {
+  .v-btn--sm,
+  .v-icon-btn--sm {
+    min-height: var(--control-height);
+  }
+
+  .v-icon-btn--sm {
+    width: var(--control-height);
+  }
 }
 
 /* ============================ Forms =================================== */
@@ -671,7 +698,7 @@ select.v-control {
 
 .v-notice--info {
   background: var(--status-neutral-wash);
-  border-color: rgb(130 169 222 / 26%);
+  border-color: color-mix(in srgb, var(--status-neutral) 26%, transparent);
 }
 
 .v-notice--info .v-notice__icon {
@@ -680,7 +707,7 @@ select.v-control {
 
 .v-notice--caution {
   background: var(--status-caution-wash);
-  border-color: rgb(228 176 74 / 26%);
+  border-color: color-mix(in srgb, var(--status-caution) 26%, transparent);
 }
 
 .v-notice--caution .v-notice__icon {
@@ -689,7 +716,7 @@ select.v-control {
 
 .v-notice--critical {
   background: var(--status-critical-wash);
-  border-color: rgb(242 96 106 / 30%);
+  border-color: color-mix(in srgb, var(--status-critical) 30%, transparent);
 }
 
 .v-notice--critical .v-notice__icon {
