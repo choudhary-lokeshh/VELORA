@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Field,
   Panel,
@@ -248,6 +249,14 @@ export function OperatorActions() {
           </Scroller>
         </PanelBody>
       )}
+
+      {collection.error !== undefined && collection.items.length > 0 ? (
+        <PanelFoot>
+          <ErrorMessage testId="operator-actions-stale">
+            {collection.error}
+          </ErrorMessage>
+        </PanelFoot>
+      ) : null}
 
       {collection.hasMore ? (
         <PanelFoot>

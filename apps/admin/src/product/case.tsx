@@ -956,6 +956,7 @@ function DecisionDialog({
 
   return (
     <Dialog
+      busy={busy}
       onClose={onClose}
       testId="decision-dialog"
       title="Record a decision"

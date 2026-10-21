@@ -59,13 +59,21 @@ export function formatAge(seconds: number): string {
   return `${String(Math.floor(hours / 24))}d`;
 }
 
-/** A date and a time, without the seconds nobody needs. */
+/**
+ * A date and a time, without the seconds nobody needs, and with the zone.
+ *
+ * Shown in the operator's own zone and named, because the instant on an audit
+ * row is evidence that travels — into an incident channel, a provider ticket,
+ * a colleague's time zone — and a time with no zone means something different
+ * to each of them.
+ */
 export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString(undefined, {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     month: 'short',
+    timeZoneName: 'short',
     year: 'numeric',
   });
 }

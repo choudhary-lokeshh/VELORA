@@ -94,6 +94,10 @@ export function Money() {
   const state = useResource<FinancialState>(load);
   const value = state.value;
   const [refunding, setRefunding] = useState(false);
+  // Held here rather than in the dialog, so closing it after an answer that
+  // never arrived and opening it again is still the same attempt. Renewed only
+  // once BILLING has confirmed the refund this key was for.
+  const [refundKey, setRefundKey] = useState(newIdempotencyKey);
 
   return (
     <>
@@ -201,10 +205,12 @@ export function Money() {
 
       {refunding ? (
         <RefundDialog
+          idempotencyKey={refundKey}
           onClose={() => {
             setRefunding(false);
           }}
           onDone={() => {
+            setRefundKey(newIdempotencyKey());
             setRefunding(false);
             state.reload();
           }}
@@ -418,10 +424,12 @@ function Totals({
  * is reached from a dispute, a support conversation, or a reconciliation
  * finding rather than by looking.
  *
- * The idempotency key is made once, when the dialog opens, and reused for every
- * attempt at this refund. A key regenerated per press would make the header
- * decoration rather than protection, and a retried refund that produced a
- * second refund is money the platform does not get back.
+ * The idempotency key belongs to the screen rather than to the dialog, and is
+ * reused for every attempt at this refund — including one made after closing
+ * the dialog on a failure and opening it again. It is replaced only once BILLING
+ * has confirmed a refund under it. A key regenerated per press, or per opening,
+ * would make the header decoration rather than protection, and a retried refund
+ * that produced a second refund is money the platform does not get back.
  */
 function newIdempotencyKey(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -433,9 +441,11 @@ function newIdempotencyKey(): string {
 }
 
 function RefundDialog({
+  idempotencyKey,
   onClose,
   onDone,
 }: {
+  readonly idempotencyKey: string;
   readonly onClose: () => void;
   readonly onDone: () => void;
 }) {
@@ -445,20 +455,27 @@ function RefundDialog({
   const [paymentId, setPaymentId] = useState('');
   const [amountMinor, setAmountMinor] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('EUR');
-  const [reasonCode, setReasonCode] = useState<RefundReasonCode>(
-    'operator_correction',
-  );
+  // Deliberately unset, for the reason the decision form gives: a preselected
+  // reason is one an operator never chose, and it is still recorded as theirs.
+  const [reasonCode, setReasonCode] = useState<RefundReasonCode | ''>('');
   const [acknowledged, setAcknowledged] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
-  const [idempotencyKey] = useState(newIdempotencyKey);
 
   const amountPattern = /^\d{1,18}$/u;
   const amountValid = amountPattern.test(amountMinor.trim());
   const blocked =
-    !acknowledged || paymentId.trim().length === 0 || !amountValid;
+    !acknowledged ||
+    reasonCode === '' ||
+    paymentId.trim().length === 0 ||
+    !amountValid;
 
   return (
-    <Dialog onClose={onClose} testId="refund-dialog" title="Issue a refund">
+    <Dialog
+      busy={busy}
+      onClose={onClose}
+      testId="refund-dialog"
+      title="Issue a refund"
+    >
       <p className="a-small a-muted">
         This asks BILLING to return money to a member. It is applied by the
         payment provider, it is recorded against your session with the reason
@@ -540,10 +557,11 @@ function RefundDialog({
               {...control}
               data-testid="refund-reason"
               onChange={(event) => {
-                setReasonCode(event.target.value as RefundReasonCode);
+                setReasonCode(event.target.value as RefundReasonCode | '');
               }}
               value={reasonCode}
             >
+              <option value="">Choose a reason</option>
               {Object.entries(refundReasonLabels).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -585,7 +603,7 @@ function RefundDialog({
                   amountMinor: amountMinor.trim(),
                   currency,
                   paymentId: paymentId.trim(),
-                  reasonCode,
+                  reasonCode: reasonCode as RefundReasonCode,
                 },
                 idempotencyKey,
               });

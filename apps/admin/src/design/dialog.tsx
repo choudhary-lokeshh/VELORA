@@ -25,6 +25,11 @@ import { Button, type ButtonTone } from './primitives';
  * Below the tablet breakpoint the same component presents as a bottom sheet.
  * That is a stylesheet decision, not a second component: the semantics of "this
  * is the only thing you can interact with right now" do not change with width.
+ *
+ * While the operation it confirms is in flight it cannot be dismissed. The
+ * answer is about to arrive in this dialog, and an operator who closed it on the
+ * way would not hear whether the platform did the thing they asked for — which
+ * on this surface is how a second press becomes a second operation.
  */
 
 const focusableSelector = [
@@ -37,6 +42,7 @@ const focusableSelector = [
 ].join(',');
 
 export function Dialog({
+  busy = false,
   children,
   labelledBy,
   onClose,
@@ -44,6 +50,8 @@ export function Dialog({
   title,
   wide = false,
 }: {
+  /** An operation is in flight: Escape, the scrim, and the close control wait. */
+  readonly busy?: boolean;
   readonly children: ReactNode;
   /** Supplied when the caller renders its own heading inside the dialog. */
   readonly labelledBy?: string;
@@ -59,8 +67,9 @@ export function Dialog({
   const headingId = labelledBy ?? `${generatedId}-title`;
 
   const close = useCallback(() => {
+    if (busy) return;
     onClose();
-  }, [onClose]);
+  }, [busy, onClose]);
 
   useEffect(() => {
     restoreTo.current = document.activeElement;
@@ -130,7 +139,8 @@ export function Dialog({
       {/*
         The scrim closes on a press because that is what a press outside a modal
         means everywhere else. It is not the only way out: Escape and the close
-        control both work, so nothing depends on hitting a target.
+        control both work, so nothing depends on hitting a target. While busy,
+        none of the three does anything until the answer is in.
       */}
       <div className="a-scrim" onClick={close} />
       <div
@@ -153,6 +163,7 @@ export function Dialog({
               className="a-dialog__close a-icon-btn a-icon-btn--sm"
               data-dialog-close="true"
               data-testid="dialog-close"
+              disabled={busy}
               onClick={close}
               type="button"
             >
@@ -177,6 +188,7 @@ export function ConfirmDialog({
   busy = false,
   cancelLabel = 'Cancel',
   children,
+  confirmDisabled = false,
   confirmLabel,
   confirmTone = 'danger',
   onCancel,
@@ -187,6 +199,8 @@ export function ConfirmDialog({
   readonly busy?: boolean;
   readonly cancelLabel?: string;
   readonly children: ReactNode;
+  /** The confirmation is not yet complete — an acknowledgement unticked. */
+  readonly confirmDisabled?: boolean;
   readonly confirmLabel: string;
   readonly confirmTone?: ButtonTone;
   readonly onCancel: () => void;
@@ -195,7 +209,7 @@ export function ConfirmDialog({
   readonly title: string;
 }) {
   return (
-    <Dialog onClose={onCancel} testId={testId} title={title}>
+    <Dialog busy={busy} onClose={onCancel} testId={testId} title={title}>
       <div className="a-small a-muted a-stack a-stack--3">{children}</div>
       <div className="a-dialog__actions">
         <Button
@@ -209,6 +223,7 @@ export function ConfirmDialog({
         <Button
           busy={busy}
           data-testid={`${testId ?? 'confirm'}-accept`}
+          disabled={confirmDisabled}
           onClick={onConfirm}
           tone={confirmTone}
         >

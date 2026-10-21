@@ -6,6 +6,7 @@ import type { AdminAuditEntry, AdminAuditStream } from '../api/contract';
 import {
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Notice,
   Panel,
@@ -181,6 +182,14 @@ export function Audit({
             />
           </PanelBody>
         )}
+
+        {entries.error !== undefined && entries.items.length > 0 ? (
+          <PanelFoot>
+            <ErrorMessage testId={`audit-${stream}-stale`}>
+              {entries.error}
+            </ErrorMessage>
+          </PanelFoot>
+        ) : null}
 
         {entries.hasMore ? (
           <PanelFoot>

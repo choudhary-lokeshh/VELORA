@@ -179,10 +179,13 @@ export function AdminShell({
  * already finished, and interrupting an operator mid-sentence to tell them a
  * read succeeded is the wrong trade. A refusal that needs to interrupt is an
  * `ErrorMessage` on the screen that caused it, not a toast.
+ *
+ * The region is always in the document, empty or not. A live region that
+ * arrives together with its first message is one most screen readers never
+ * announce, because nothing they were watching changed.
  */
 export function Toaster() {
   const { dismiss, toasts } = useToast();
-  if (toasts.length === 0) return null;
   return (
     <div aria-live="polite" className="a-toaster" data-testid="toaster">
       {toasts.map((toast) => (

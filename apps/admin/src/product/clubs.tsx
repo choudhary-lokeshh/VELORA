@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Fact,
   Facts,
@@ -141,6 +142,12 @@ export function Clubs() {
           </Scroller>
         </PanelBody>
       )}
+
+      {clubs.error !== undefined && clubs.items.length > 0 ? (
+        <PanelFoot>
+          <ErrorMessage testId="club-list-stale">{clubs.error}</ErrorMessage>
+        </PanelFoot>
+      ) : null}
 
       {clubs.hasMore ? (
         <PanelFoot>

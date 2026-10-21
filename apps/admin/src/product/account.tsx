@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
 import type { AccountDetail, WalletDetail } from '../api/contract';
+import { failureMessage } from '../api/messages';
 import { ConfirmDialog } from '../design/dialog';
 import {
   Badge,
   BlockedState,
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Fact,
   Facts,
@@ -74,6 +76,7 @@ export function AccountDetailScreen({
   const [revoking, setRevoking] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | undefined>(undefined);
+  const [failure, setFailure] = useState<string | undefined>(undefined);
 
   const revoke = () => {
     const trimmed = reason.trim();
@@ -86,13 +89,15 @@ export function AccountDetailScreen({
         accountId,
         reason: trimmed,
       });
+      // A refusal stays in the dialog that asked, with the reason still in it.
+      if (result.kind !== 'ok') {
+        setFailure(failureMessage(result));
+        return;
+      }
       setRevoking(false);
       setReason('');
       setReasonError(undefined);
-      if (result.kind !== 'ok') {
-        toast.show('No session was revoked.', 'critical');
-        return;
-      }
+      setFailure(undefined);
       detail.reload();
       // What actually happened, in the platform's numbers rather than a "Done".
       toast.show(
@@ -385,6 +390,7 @@ export function AccountDetailScreen({
                   setRevoking(true);
                   setReason('');
                   setReasonError(undefined);
+                  setFailure(undefined);
                 }}
                 size="sm"
                 tone="danger"
@@ -525,6 +531,9 @@ export function AccountDetailScreen({
             account changes.
           </p>
           <p>This is written to the operator audit with your reason.</p>
+          {failure === undefined ? null : (
+            <ErrorMessage testId="account-revoke-error">{failure}</ErrorMessage>
+          )}
           <Field
             error={reasonError}
             hint="At least eight characters. The next operator reads this."

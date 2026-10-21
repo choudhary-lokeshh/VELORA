@@ -278,6 +278,7 @@ function AppealRow({
             <ConfirmDialog
               busy={busy}
               cancelLabel="Cancel"
+              confirmDisabled={!acknowledged}
               confirmLabel={
                 resolving === 'upheld'
                   ? 'Uphold the appeal'

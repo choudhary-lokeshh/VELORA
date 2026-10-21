@@ -248,6 +248,12 @@ export interface Collection<TItem, TMeta = undefined> {
  * was open. A creator who has just archived something is looking at the top of
  * the list; refetching four pages to preserve a scroll position they have
  * already left would be four requests to show them the same thing.
+ *
+ * A reload keeps the rows on the screen while it asks again; a new query does
+ * not. A changed `load` is a different question — another queue, another
+ * filter, another handle — and showing the previous question's rows under the
+ * new one's heading until the answer arrives would be showing an operator work
+ * that is not in the queue they just chose.
  */
 export function useCollection<TItem, TMeta = undefined>(
   load: (
@@ -322,6 +328,13 @@ export function useCollection<TItem, TMeta = undefined>(
       setSettled(true);
       return undefined;
     }
+    // This effect runs when the query itself changed, never on `reload`, so
+    // what it clears is the answer to a different question — and the failure
+    // of one, which would otherwise stand in for the new read until it lands.
+    setItems((existing) => (existing.length === 0 ? existing : []));
+    setCursor(undefined);
+    setError(undefined);
+    setRetryable(false);
     read(undefined);
     return () => {
       inFlight.current?.abort();

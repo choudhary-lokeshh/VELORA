@@ -70,6 +70,9 @@ html[data-design-preview='console'] {
   .a-sidebar__session-text {
     color: var(--console-nav-muted);
   }
+  .a-sidebar :focus-visible {
+    outline-color: var(--console-nav-text);
+  }
   .a-envbar {
     background: var(--surface-1);
     border-bottom: 1px solid var(--border-hairline);
@@ -154,6 +157,9 @@ html[data-design-preview='console'] {
   .a-attention__tile:hover {
     background: var(--surface-2);
   }
+  .a-attention__tile:focus-visible {
+    outline-offset: calc(var(--focus-width) * -2);
+  }
   .a-attention__value {
     font-size: 2rem;
   }
@@ -198,7 +204,7 @@ html[data-design-preview='console'] {
 }
 @media (prefers-reduced-motion: no-preference) {
   html[data-design-preview='console'] .a-page-header {
-    animation: a-console-enter 200ms ease-out;
+    animation: a-console-enter var(--duration-base) var(--ease-out);
   }
   @keyframes a-console-enter {
     from {

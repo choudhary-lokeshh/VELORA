@@ -29,6 +29,7 @@ import {
   PanelBody,
   PanelFoot,
   PanelHead,
+  PanelSkeleton,
   RowSkeleton,
   Scroller,
   Select,
@@ -250,6 +251,14 @@ export function Creators({
             </PanelBody>
           )}
 
+          {creators.error !== undefined && creators.items.length > 0 ? (
+            <PanelFoot>
+              <ErrorMessage testId="creator-list-stale">
+                {creators.error}
+              </ErrorMessage>
+            </PanelFoot>
+          ) : null}
+
           {creators.hasMore ? (
             <PanelFoot>
               <Button
@@ -272,6 +281,14 @@ export function Creators({
                 Choose a row to see what the platform holds for that account and
                 what may be done to it.
               </p>
+            </PanelBody>
+          </Panel>
+        ) : selected === undefined && creators.loading ? (
+          // Not yet "not loaded": nothing has answered, and saying the address
+          // names somebody outside the pages read would be saying it early.
+          <Panel testId="creator-detail-loading">
+            <PanelBody>
+              <PanelSkeleton rows={4} />
             </PanelBody>
           </Panel>
         ) : selected === undefined ? (
@@ -519,8 +536,10 @@ function OperationDialog({
   const api = useApi();
   const toast = useToast();
   const { busy, run } = useSingleFlight();
-  const [reasonCode, setReasonCode] =
-    useState<EnforcementReasonCode>('platform_integrity');
+  // Deliberately unset, for the reason the decision form gives: which reason
+  // fits which enforcement is policy, and a preselected one is recorded against
+  // a suspension nobody chose it for.
+  const [reasonCode, setReasonCode] = useState<EnforcementReasonCode | ''>('');
   const [membershipId, setMembershipId] = useState('');
   const [objectType, setObjectType] =
     useState<RemovableObjectType>('creator_profile');
@@ -531,12 +550,14 @@ function OperationDialog({
   const needsObjectId = objectType !== 'creator_profile';
   const blocked =
     !acknowledged ||
+    reasonCode === '' ||
     (operation.kind === 'membership' && membershipId.trim().length === 0) ||
     (operation.kind === 'object' &&
       needsObjectId &&
       objectId.trim().length === 0);
 
   const submit = () => {
+    if (reasonCode === '') return;
     run(async () => {
       let result: ApiResult<unknown>;
       switch (operation.kind) {
@@ -585,6 +606,7 @@ function OperationDialog({
 
   return (
     <Dialog
+      busy={busy}
       onClose={onClose}
       testId="operation-dialog"
       title={operationTitles[operation.kind]}
@@ -682,10 +704,11 @@ function OperationDialog({
               {...control}
               data-testid="operation-reason"
               onChange={(event) => {
-                setReasonCode(event.target.value as EnforcementReasonCode);
+                setReasonCode(event.target.value as EnforcementReasonCode | '');
               }}
               value={reasonCode}
             >
+              <option value="">Choose a reason</option>
               {(
                 [
                   'underage_risk',

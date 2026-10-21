@@ -16,6 +16,7 @@ import {
   Button,
   ButtonLink,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Fact,
   Facts,
@@ -193,6 +194,14 @@ export function Payments() {
             </Scroller>
           </PanelBody>
         )}
+
+        {payments.error !== undefined && payments.items.length > 0 ? (
+          <PanelFoot>
+            <ErrorMessage testId="payment-list-stale">
+              {payments.error}
+            </ErrorMessage>
+          </PanelFoot>
+        ) : null}
 
         {payments.hasMore ? (
           <PanelFoot>

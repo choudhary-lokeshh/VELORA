@@ -7,6 +7,7 @@ import type { ActivityEntry, ActivityPage } from '../api/contract';
 import {
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Field,
   PageHeader,
@@ -272,6 +273,14 @@ export function ActivityStream({
           <Timeline entries={entries} testId={`${testId}-timeline`} />
         )}
       </PanelBody>
+      {collection.error !== undefined && collection.items.length > 0 ? (
+        <PanelFoot>
+          <ErrorMessage testId={`${testId}-stale`}>
+            {collection.error}
+          </ErrorMessage>
+        </PanelFoot>
+      ) : null}
+
       {collection.hasMore ? (
         <PanelFoot>
           <Button

@@ -35,10 +35,14 @@ import { AdminShell } from './shell';
 export function Bootstrap() {
   return (
     <div className="a-bootstrap" data-testid="bootstrap">
+      {/*
+        The words are inside the status, so what is announced is what is
+        happening rather than a wordmark on its own.
+      */}
       <p aria-live="polite" className="a-bootstrap__mark" role="status">
-        VELORA
+        <span aria-hidden="true">VELORA</span>
+        <span className="a-visually-hidden">Loading Platform Admin</span>
       </p>
-      <p className="a-visually-hidden">Loading Platform Admin</p>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import type { AdminPayout } from '../api/contract';
 import {
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Notice,
   Panel,
@@ -169,6 +170,14 @@ export function Payouts() {
             </Scroller>
           </PanelBody>
         )}
+
+        {payouts.error !== undefined && payouts.items.length > 0 ? (
+          <PanelFoot>
+            <ErrorMessage testId="payout-list-stale">
+              {payouts.error}
+            </ErrorMessage>
+          </PanelFoot>
+        ) : null}
 
         {payouts.hasMore ? (
           <PanelFoot>

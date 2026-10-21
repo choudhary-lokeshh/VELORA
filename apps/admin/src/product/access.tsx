@@ -91,7 +91,6 @@ function LocalDevSignIn() {
           style={{ marginTop: 'var(--space-3)' }}
         >
           <Field
-            error={error}
             hint="An arbitrary identity subject (e.g. admin@velora.test) used by the local identity provider."
             label="Admin identity subject"
           >

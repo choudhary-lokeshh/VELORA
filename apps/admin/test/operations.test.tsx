@@ -72,6 +72,11 @@ describe('the operations overview', () => {
     expect(
       screen.getByTestId('overview-appeals-awaiting').textContent,
     ).toContain('2');
+    // Plain ink. Whether a count above zero is late is not a judgement the
+    // platform publishes, so the console does not colour it as one.
+    expect(screen.getByTestId('overview-cases-unclaimed-count').className).toBe(
+      'a-attention__value',
+    );
     expect(
       screen.getByTestId('overview-by-queue-consumer_conduct').textContent,
     ).toBe('7');

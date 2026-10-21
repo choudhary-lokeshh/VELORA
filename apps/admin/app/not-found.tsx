@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
 import { homePath } from '../src/app/navigation';
+import { ButtonLink } from '../src/design/primitives';
 
 export const metadata: Metadata = { title: 'Page not found' };
 
@@ -21,9 +21,9 @@ export default function NotFound() {
           closed. Nothing was changed.
         </p>
         <p>
-          <Link className="a-btn a-btn--primary" href={homePath}>
+          <ButtonLink href={homePath} tone="primary">
             Back to the console
-          </Link>
+          </ButtonLink>
         </p>
       </main>
     </div>

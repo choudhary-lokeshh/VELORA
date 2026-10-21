@@ -386,6 +386,14 @@ export interface AdminApiDoubleState {
     premiumWindows: { label: string; total: number }[];
     searchAdmitted: boolean;
   };
+  /** The scheduled live windows GROWTH publishes, in the wire shape. */
+  liveWindows: {
+    endsAt: string;
+    slug: string;
+    startsAt: string;
+    state: 'upcoming' | 'active' | 'ended';
+    title: string;
+  }[];
   publicEntry: {
     canonicalOrigin?: string;
     environment: 'local' | 'test' | 'staging' | 'production';
@@ -596,6 +604,7 @@ export function anonymousState(): AdminApiDoubleState {
       premiumWindows: [],
       searchAdmitted: true,
     },
+    liveWindows: [],
     publicEntry: {
       environment: 'test',
       indexable: false,
@@ -723,6 +732,10 @@ export function createAdminApiDouble(
       return state.session === null
         ? error(401, 'AUTH_REQUIRED')
         : json(200, state.session);
+    }
+    if (path === '/v1/growth/live-windows' && method === 'GET') {
+      // A public read: GROWTH announces windows to everybody, signed in or not.
+      return json(200, { windows: state.liveWindows });
     }
     if (path === '/v1/auth/logout') {
       state.session = null;
@@ -1017,6 +1030,39 @@ export function createAdminApiDouble(
         searchAdmitted: state.live.searchAdmitted,
         since: iso(-86_400_000),
       });
+    }
+
+    if (path === '/v1/admin/growth/live-windows' && method === 'POST') {
+      if (!holds('growth.manage')) return error(403, 'ACTION_NOT_PERMITTED');
+      const requested = body as {
+        endsAt: string;
+        slug: string;
+        startsAt: string;
+        title: string;
+      };
+      // The server's own bound: a window ends after it starts and lasts no
+      // more than a day, and anything else is a 422 rather than a guess.
+      const length =
+        Date.parse(requested.endsAt) - Date.parse(requested.startsAt);
+      if (!(length > 0) || length > 86_400_000) {
+        return error(422, 'VALIDATION_FAILED');
+      }
+      state.liveWindows = [
+        ...state.liveWindows.filter((row) => row.slug !== requested.slug),
+        { ...requested, state: 'upcoming' },
+      ];
+      return json(200, { windows: state.liveWindows });
+    }
+    if (
+      path === '/v1/admin/growth/live-windows/cancellation' &&
+      method === 'POST'
+    ) {
+      if (!holds('growth.manage')) return error(403, 'ACTION_NOT_PERMITTED');
+      const requested = body as { slug: string };
+      state.liveWindows = state.liveWindows.filter(
+        (row) => row.slug !== requested.slug,
+      );
+      return json(200, { windows: state.liveWindows });
     }
 
     if (path === '/v1/admin/public-entry') {

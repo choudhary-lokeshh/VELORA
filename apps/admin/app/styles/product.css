@@ -208,7 +208,7 @@
   color: var(--text-primary);
   font-size: var(--text-body-size);
   font-weight: 500;
-  line-height: var(--text-body-leading);
+  line-height: var(--text-body-line);
 }
 
 .a-timeline__when {
@@ -259,12 +259,8 @@
   line-height: 1;
 }
 
-.a-attention__value--waiting {
-  color: var(--status-caution);
-}
-
 .a-attention__caption {
   color: var(--text-secondary);
   font-size: var(--text-small-size);
-  line-height: var(--text-small-leading);
+  line-height: var(--text-small-line);
 }

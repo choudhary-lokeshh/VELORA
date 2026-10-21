@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import type { SubjectMatch } from '../api/contract';
+import { failureMessage } from '../api/messages';
 import {
   Button,
   EmptyState,
+  ErrorMessage,
   Field,
   Panel,
   PanelBody,
@@ -68,7 +70,7 @@ export function SubjectSearchPanel() {
   const [matches, setMatches] = useState<readonly SubjectMatch[] | undefined>(
     undefined,
   );
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<string | undefined>(undefined);
 
   const submit = () => {
     const value = term.trim();
@@ -76,11 +78,14 @@ export function SubjectSearchPanel() {
     run(async () => {
       const result = await api.findSubject(value);
       if (result.kind !== 'ok') {
-        setFailed(true);
+        // What actually went wrong. "Try again" is the right advice for an
+        // unreachable platform and the wrong advice for a refusal, which
+        // answers the same however often it is asked.
+        setFailure(failureMessage(result));
         setMatches(undefined);
         return;
       }
-      setFailed(false);
+      setFailure(undefined);
       setMatches(result.value.matches);
     });
   };
@@ -122,10 +127,8 @@ export function SubjectSearchPanel() {
           </div>
         </form>
 
-        {failed ? (
-          <p className="a-small a-muted" data-testid="subject-search-failed">
-            The platform could not be asked. Try again.
-          </p>
+        {failure !== undefined ? (
+          <ErrorMessage testId="subject-search-failed">{failure}</ErrorMessage>
         ) : matches === undefined ? null : matches.length === 0 ? (
           <EmptyState
             body="Nothing on this platform wears that identifier. That is the whole answer — nothing was probed and nothing was disclosed."

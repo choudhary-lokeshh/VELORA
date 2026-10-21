@@ -7,9 +7,11 @@ import type {
   LiveWindow,
   LiveWindowList,
 } from '../api/contract';
+import { failureMessage } from '../api/messages';
 import {
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Field,
   Metric,
@@ -20,7 +22,6 @@ import {
   PanelHead,
   PanelSkeleton,
   Scroller,
-  StatusMessage,
   Table,
   TextInput,
 } from '../design/primitives';
@@ -189,10 +190,12 @@ function LiveWindows({ onChanged }: { readonly onChanged: () => void }) {
     <Panel testId="growth-windows">
       <PanelHead title="Live windows" />
       <PanelBody>
+        {/*
+          Every message here reports a refusal — a missing field, or a
+          withdrawal or schedule the platform declined — so it is said as one.
+        */}
         {message === undefined ? null : (
-          <StatusMessage testId="growth-windows-message">
-            {message}
-          </StatusMessage>
+          <ErrorMessage testId="growth-windows-message">{message}</ErrorMessage>
         )}
         {windows === undefined ? (
           <EmptyState
@@ -231,6 +234,7 @@ function LiveWindows({ onChanged }: { readonly onChanged: () => void }) {
                     <td>{momentOf(window.endsAt)}</td>
                     <td>
                       <Button
+                        aria-label={`Withdraw ${window.title}`}
                         busy={busy}
                         onClick={() => {
                           apply(async () => {
@@ -332,8 +336,16 @@ function LiveWindows({ onChanged }: { readonly onChanged: () => void }) {
                 setApplied(result.value.windows);
                 return;
               }
+              // A validation refusal is the one this sentence describes. Any
+              // other is said in the platform's own words, because "it must
+              // end after it starts" is no help when the platform was not
+              // reached at all.
+              const refused =
+                'That window was refused. A window must end after it starts and run for no more than a day.';
               setMessage(
-                'That window was refused. A window must end after it starts and run for no more than a day.',
+                result.kind === 'refused' && result.code === 'VALIDATION_FAILED'
+                  ? refused
+                  : (failureMessage(result) ?? refused),
               );
             });
           }}
@@ -362,8 +374,14 @@ function dayOf(value: string): string {
   return new Date(value).toLocaleDateString();
 }
 
+/**
+ * An instant, in the operator's own zone, with that zone named.
+ *
+ * A window is scheduled in one zone and announced in every other, so the zone
+ * is part of the fact rather than decoration on it.
+ */
 function momentOf(value: string): string {
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString(undefined, { timeZoneName: 'short' });
 }
 
 /**

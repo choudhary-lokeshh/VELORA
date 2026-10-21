@@ -47,8 +47,6 @@ interface Tile {
   readonly count: number;
   readonly href: string;
   readonly id: string;
-  /** Whether a figure above zero means somebody is owed work. */
-  readonly waiting: boolean;
 }
 
 function tilesFor(value: AdminOverview): readonly Tile[] {
@@ -59,56 +57,48 @@ function tilesFor(value: AdminOverview): readonly Tile[] {
       count: attention.casesUnclaimed,
       href: '/queues',
       id: 'cases-unclaimed',
-      waiting: true,
     },
     {
       caption: 'Cases open in total',
       count: attention.casesOpen,
       href: '/queues',
       id: 'cases-open',
-      waiting: false,
     },
     {
       caption: 'Appeals awaiting an answer',
       count: attention.appealsAwaiting,
       href: '/queues/appeals',
       id: 'appeals-awaiting',
-      waiting: true,
     },
     {
       caption: 'Commercial records needing a person',
       count: attention.financialRecordsNeedingPerson,
       href: '/money',
       id: 'financial-attention',
-      waiting: true,
     },
     {
       caption: 'Claims still live',
       count: attention.disputesOpen,
       href: '/money/disputes',
       id: 'disputes-open',
-      waiting: true,
     },
     {
       caption: 'Payouts awaiting a provider answer',
       count: attention.payoutsAwaitingConfirmation,
       href: '/money/payouts',
       id: 'payouts-awaiting',
-      waiting: true,
     },
     {
       caption: 'Creators under suspension',
       count: attention.creatorsSuspended,
       href: '/creators',
       id: 'creators-suspended',
-      waiting: false,
     },
     {
       caption: 'Accounts under restriction',
       count: attention.accountsRestricted,
       href: '/accounts',
       id: 'accounts-restricted',
-      waiting: false,
     },
   ];
 }
@@ -184,12 +174,13 @@ export function Overview() {
                     href={tile.href}
                     key={tile.id}
                   >
+                    {/*
+                      Plain ink. Whether a count above zero is late is not
+                      something the platform publishes about it, and colour
+                      on this surface is only ever the server's judgement.
+                    */}
                     <span
-                      className={`a-attention__value${
-                        tile.waiting && tile.count > 0
-                          ? ' a-attention__value--waiting'
-                          : ''
-                      }`}
+                      className="a-attention__value"
                       data-testid={`overview-${tile.id}-count`}
                     >
                       {tile.count}

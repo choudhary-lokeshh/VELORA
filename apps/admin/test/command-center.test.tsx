@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AccountDetailScreen } from '../src/product/account';
 import { ActivityScreen } from '../src/product/activity';
 import { PlatformControls } from '../src/product/controls';
+import { PlatformGrowth } from '../src/product/growth';
 import { PlatformLive } from '../src/product/live-ops';
 import { PlatformOperations } from '../src/product/operations';
 import { PlatformOperators } from '../src/product/operators';
@@ -119,9 +120,11 @@ describe('the control plane', () => {
       expect(double.state.controls[0]?.enabled).toBe(false);
     });
     // The confirmation names the effect and the bound, never "Done".
-    expect((await screen.findByTestId('toaster')).textContent).toContain(
-      'live.search is now off',
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId('toaster').textContent).toContain(
+        'live.search is now off',
+      );
+    });
     // The compare-and-set token the write presented is the one the read
     // published, which is what makes two operators on this screen safe.
     const write = double.calls.find(
@@ -161,9 +164,42 @@ describe('the control plane', () => {
     });
     fireEvent.click(screen.getByTestId('control-confirm-accept'));
 
-    expect((await screen.findByTestId('toaster')).textContent).toContain(
-      'Another operator changed live.search first',
+    await waitFor(() => {
+      expect(screen.getByTestId('toaster').textContent).toContain(
+        'Another operator changed live.search first',
+      );
+    });
+  });
+
+  it('keeps a refused change in its dialog, and says why there', async () => {
+    const double = createAdminApiDouble(
+      operatorHolding(['config.read', 'config.write']),
     );
+    renderConsole(<PlatformControls />, double, {
+      pathname: '/platform/controls',
+    });
+
+    fireEvent.click(await screen.findByTestId('control-live.search-toggle'));
+    fireEvent.change(await screen.findByTestId('control-reason'), {
+      target: { value: 'abuse spike from one region' },
+    });
+    double.refuseNext('/v1/admin/controls', 503, 'DEPENDENCY_UNAVAILABLE');
+    fireEvent.click(screen.getByTestId('control-confirm-accept'));
+
+    // The answer is in the dialog that asked, beside the reason the operator
+    // typed — not in a toast that leaves them to reopen it and type it again.
+    const dialog = screen.getByTestId('control-confirm');
+    expect(
+      (await within(dialog).findByTestId('control-error')).textContent,
+    ).toContain('Nothing was changed');
+    expect(
+      within(dialog).getByTestId<HTMLTextAreaElement>('control-reason').value,
+    ).toBe('abuse spike from one region');
+    expect(double.state.controls[0]?.enabled).toBe(true);
+    // The live region is there, empty, because nothing succeeded.
+    const toaster = screen.getByTestId('toaster');
+    expect(toaster.getAttribute('aria-live')).toBe('polite');
+    expect(toaster.textContent).toBe('');
   });
 
   it('records the refusal as well as the change', async () => {
@@ -278,6 +314,30 @@ describe('operator roles', () => {
     );
   });
 
+  it('keeps a refused grant in its dialog, and says why there', async () => {
+    const double = createAdminApiDouble(operatorHolding(['operators.manage']));
+    renderConsole(<PlatformOperators />, double, {
+      pathname: '/platform/operators',
+    });
+
+    fireEvent.change(await screen.findByTestId('operator-subject'), {
+      target: { value: operatorAccountId },
+    });
+    fireEvent.change(screen.getByTestId('operator-reason'), {
+      target: { value: 'joining the on-call rota' },
+    });
+    fireEvent.click(screen.getByTestId('operator-submit'));
+    double.refuseNext('/v1/admin/operators/role', 403, 'ACTION_NOT_PERMITTED');
+    fireEvent.click(await screen.findByTestId('operator-confirm-accept'));
+
+    const dialog = screen.getByTestId('operator-confirm');
+    expect(
+      (await within(dialog).findByTestId('operator-error')).textContent,
+    ).toContain('Privileged access was refused');
+    expect(double.state.operatorGrants).toHaveLength(0);
+    expect(screen.getByTestId('toaster').textContent).toBe('');
+  });
+
   it('refuses an operator who does not hold operators.manage', async () => {
     const double = createAdminApiDouble(operatorHolding(['users.read']));
     renderConsole(<PlatformOperators />, double, {
@@ -383,6 +443,30 @@ describe('finding a record', () => {
 
     const match = await screen.findByTestId('subject-match-account');
     expect(match.getAttribute('href')).toBe(`/accounts/${accountId}`);
+  });
+
+  it('says why a lookup failed, in the platform’s own words', async () => {
+    const double = createAdminApiDouble(operatorHolding(['operations.read']));
+    renderConsole(<SubjectSearchPanel />, double, { pathname: '/overview' });
+
+    fireEvent.change(screen.getByTestId('subject-search-term'), {
+      target: { value: accountId },
+    });
+    double.failNext('/v1/admin/search');
+    fireEvent.click(screen.getByTestId('subject-search-submit'));
+    const unreachable = await screen.findByTestId('subject-search-failed');
+    expect(unreachable.getAttribute('role')).toBe('alert');
+    expect(unreachable.textContent).toContain('could not be reached');
+
+    // A refusal is not "try again": it answers the same however often it is
+    // asked, and the message says that rather than inviting a second press.
+    double.refuseNext('/v1/admin/search', 403, 'ACTION_NOT_PERMITTED');
+    fireEvent.click(screen.getByTestId('subject-search-submit'));
+    await waitFor(() => {
+      expect(screen.getByTestId('subject-search-failed').textContent).toContain(
+        'Privileged access was refused',
+      );
+    });
   });
 
   it('answers a value nothing wears with nothing at all', async () => {
@@ -521,12 +605,45 @@ describe('one account, in operational terms', () => {
     fireEvent.click(screen.getByTestId('account-revoke-confirm-accept'));
 
     // Not "Done": what actually happened, in the numbers the platform changed.
-    expect((await screen.findByTestId('toaster')).textContent).toContain(
-      '2 browser session(s) and 1 device sign-in(s) ended',
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId('toaster').textContent).toContain(
+        '2 browser session(s) and 1 device sign-in(s) ended',
+      );
+    });
     await waitFor(() => {
       expect(double.state.operatorActions[0]?.action).toBe('sessions.revoked');
     });
+  });
+
+  it('keeps a refused revocation in its dialog, and says why there', async () => {
+    const double = createAdminApiDouble(
+      accountDetailState(['users.read', 'sessions.revoke']),
+    );
+    renderConsole(<AccountDetailScreen accountId={accountId} />, double, {
+      params: { accountId },
+      pathname: `/accounts/${accountId}`,
+    });
+
+    fireEvent.click(await screen.findByTestId('account-revoke-sessions'));
+    fireEvent.change(await screen.findByTestId('account-revoke-reason'), {
+      target: { value: 'credential stuffing on this account' },
+    });
+    double.refuseNext(
+      '/v1/admin/accounts/session-revocation',
+      503,
+      'DEPENDENCY_UNAVAILABLE',
+    );
+    fireEvent.click(screen.getByTestId('account-revoke-confirm-accept'));
+
+    const dialog = screen.getByTestId('account-revoke-confirm');
+    expect(
+      (await within(dialog).findByTestId('account-revoke-error')).textContent,
+    ).toContain('Nothing was changed');
+    expect(
+      within(dialog).getByTestId<HTMLTextAreaElement>('account-revoke-reason')
+        .value,
+    ).toBe('credential stuffing on this account');
+    expect(screen.getByTestId('toaster').textContent).toBe('');
   });
 
   it('shows the coin position beside what the journal implies', async () => {
@@ -752,5 +869,92 @@ describe('public entry', () => {
     expect(
       (await screen.findByTestId('public-entry-state')).textContent,
     ).toContain('https://velora.example');
+  });
+});
+
+/* =============================== Growth ============================== */
+
+describe('growth', () => {
+  const startsAt = '2026-10-24T18:00:00.000Z';
+
+  function withWindow(): AdminApiDoubleState {
+    return operatorHolding(['growth.read', 'growth.manage'], {
+      liveWindows: [
+        {
+          endsAt: '2026-10-24T22:00:00.000Z',
+          slug: 'friday-night',
+          startsAt,
+          state: 'upcoming',
+          title: 'Friday night',
+        },
+      ],
+    });
+  }
+
+  it('names the window each withdrawal acts on, and the zone it starts in', async () => {
+    const double = createAdminApiDouble(withWindow());
+    renderConsole(<PlatformGrowth />, double, {
+      pathname: '/platform/growth',
+    });
+
+    // Every row's control reads "Withdraw" on the screen; to somebody moving
+    // through the controls rather than the table, each says which window.
+    const withdraw = await screen.findByRole('button', {
+      name: 'Withdraw Friday night',
+    });
+    const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+      .formatToParts(new Date(startsAt))
+      .find((part) => part.type === 'timeZoneName')?.value;
+    expect(withdraw.closest('tr')?.textContent).toContain(zone ?? 'no zone');
+
+    fireEvent.click(withdraw);
+    await waitFor(() => {
+      expect(double.state.liveWindows).toHaveLength(0);
+    });
+  });
+
+  it('says why a schedule was refused, in the platform’s own words', async () => {
+    const double = createAdminApiDouble(withWindow());
+    renderConsole(<PlatformGrowth />, double, {
+      pathname: '/platform/growth',
+    });
+
+    await screen.findByRole('button', { name: 'Withdraw Friday night' });
+    fireEvent.change(screen.getByTestId('growth-window-slug'), {
+      target: { value: 'saturday-night' },
+    });
+    fireEvent.change(screen.getByTestId('growth-window-title'), {
+      target: { value: 'Saturday night' },
+    });
+    fireEvent.change(screen.getByTestId('growth-window-starts'), {
+      target: { value: '2026-10-25T20:00' },
+    });
+    fireEvent.change(screen.getByTestId('growth-window-ends'), {
+      target: { value: '2026-10-25T23:00' },
+    });
+
+    // The platform was not reached, which is not a window that ends too soon.
+    double.failNext('/v1/admin/growth/live-windows');
+    fireEvent.click(screen.getByTestId('growth-window-schedule'));
+    const message = await screen.findByTestId('growth-windows-message');
+    expect(message.getAttribute('role')).toBe('alert');
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('growth-windows-message').textContent,
+      ).toContain('could not be reached');
+    });
+
+    // A window the platform's own bound refuses keeps the sentence that says
+    // what the bound is.
+    fireEvent.change(screen.getByTestId('growth-window-ends'), {
+      target: { value: '2026-10-25T19:00' },
+    });
+    fireEvent.click(screen.getByTestId('growth-window-schedule'));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('growth-windows-message').textContent,
+      ).toContain('must end after it starts');
+    });
+    expect(double.state.liveWindows).toHaveLength(1);
   });
 });

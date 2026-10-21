@@ -10,6 +10,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Panel,
   PanelBody,
@@ -182,6 +183,17 @@ export function Queues() {
             </Scroller>
           </PanelBody>
         )}
+
+        {/*
+          The rows above are the last answer that arrived. A re-read or a
+          further page that failed says so here rather than leaving them
+          looking current.
+        */}
+        {cases.error !== undefined && cases.items.length > 0 ? (
+          <PanelFoot>
+            <ErrorMessage testId="case-list-stale">{cases.error}</ErrorMessage>
+          </PanelFoot>
+        ) : null}
 
         {cases.hasMore ? (
           <PanelFoot>

@@ -4,12 +4,14 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import type { ControlList, OperationalControl } from '../api/contract';
+import { failureMessage } from '../api/messages';
 import { ConfirmDialog } from '../design/dialog';
 import {
   AreaNav,
   Badge,
   BlockedState,
   Button,
+  ErrorMessage,
   ErrorState,
   Field,
   Notice,
@@ -64,6 +66,7 @@ export function PlatformControls() {
   );
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | undefined>(undefined);
+  const [failure, setFailure] = useState<string | undefined>(undefined);
 
   const mayWrite = operator.may('config.write');
 
@@ -80,13 +83,17 @@ export function PlatformControls() {
         key: control.key,
         reason: trimmed,
       });
+      // A refusal stays in the dialog that asked, with the reason the operator
+      // typed still in it: closing on a failure would leave them guessing
+      // whether the platform changed anything.
+      if (result.kind !== 'ok') {
+        setFailure(failureMessage(result));
+        return;
+      }
       setPending(undefined);
       setReason('');
       setReasonError(undefined);
-      if (result.kind !== 'ok') {
-        toast.show('The control was not changed.', 'critical');
-        return;
-      }
+      setFailure(undefined);
       controls.reload();
       if (result.value.outcome === 'conflict') {
         // Not an error, and not a success. Somebody else moved it while this
@@ -180,6 +187,7 @@ export function PlatformControls() {
                         setPending(control);
                         setReason('');
                         setReasonError(undefined);
+                        setFailure(undefined);
                       }}
                       tone={control.enabled ? 'danger' : 'primary'}
                     >
@@ -212,6 +220,9 @@ export function PlatformControls() {
             This changes what the platform does for everybody, and the reason
             below is written to the operator audit.
           </p>
+          {failure === undefined ? null : (
+            <ErrorMessage testId="control-error">{failure}</ErrorMessage>
+          )}
           <Field
             error={reasonError}
             hint="At least eight characters. The next operator reads this."

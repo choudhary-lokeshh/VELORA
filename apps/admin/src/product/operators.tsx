@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
 import type { OperatorGrantList, OperatorRoleBody } from '../api/contract';
+import { failureMessage } from '../api/messages';
 import { ConfirmDialog } from '../design/dialog';
 import {
   AreaNav,
@@ -11,6 +12,7 @@ import {
   BlockedState,
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Field,
   Notice,
@@ -65,6 +67,7 @@ export function PlatformOperators() {
   const [confirming, setConfirming] = useState<OperatorRoleBody | undefined>(
     undefined,
   );
+  const [failure, setFailure] = useState<string | undefined>(undefined);
 
   const mayManage = operator.may('operators.manage');
 
@@ -84,6 +87,7 @@ export function PlatformOperators() {
     }
     setErrors(next);
     if (next.reason !== undefined || next.subject !== undefined) return;
+    setFailure(undefined);
     setConfirming({
       reason: trimmedReason,
       ...(role === 'none'
@@ -96,11 +100,13 @@ export function PlatformOperators() {
   const commit = (body: OperatorRoleBody) => {
     run(async () => {
       const result = await api.setOperatorRole(body);
-      setConfirming(undefined);
+      // A refusal stays in the dialog that asked, beside the grant it refused.
       if (result.kind !== 'ok') {
-        toast.show('The role was not changed.', 'critical');
+        setFailure(failureMessage(result));
         return;
       }
+      setConfirming(undefined);
+      setFailure(undefined);
       grants.reload();
       operator.refresh();
       setSubject('');
@@ -345,6 +351,9 @@ export function PlatformOperators() {
               : ` will hold every capability of ${confirming.role}, replacing whatever they hold now.`}
           </p>
           <p>This is written to the operator audit with your reason.</p>
+          {failure === undefined ? null : (
+            <ErrorMessage testId="operator-error">{failure}</ErrorMessage>
+          )}
         </ConfirmDialog>
       )}
     </>

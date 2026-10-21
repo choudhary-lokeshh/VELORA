@@ -9,6 +9,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Notice,
   PageHeader,
@@ -251,6 +252,14 @@ export function Accounts() {
             </Scroller>
           </PanelBody>
         )}
+
+        {accounts.error !== undefined && accounts.items.length > 0 ? (
+          <PanelFoot>
+            <ErrorMessage testId="account-list-stale">
+              {accounts.error}
+            </ErrorMessage>
+          </PanelFoot>
+        ) : null}
 
         {accounts.hasMore ? (
           <PanelFoot>

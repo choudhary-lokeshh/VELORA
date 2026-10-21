@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import {
+  useEffect,
   useId,
   useState,
   type ButtonHTMLAttributes,
@@ -731,34 +732,52 @@ export function Skeleton({
  * The shape is what stops the jump: a skeleton the same height as its content
  * means the table does not move when the answer arrives, and a table that moves
  * under a cursor is a table where the wrong row gets opened.
+ *
+ * The bars are hidden from assistive technology and the word beside them is
+ * not. A screen that only drew grey shapes would be silent to somebody who
+ * cannot see them, and silence reads as "nothing here".
  */
 export function RowSkeleton({ rows = 4 }: { readonly rows?: number }) {
   return (
-    <div aria-hidden="true" className="a-stack">
-      {Array.from({ length: rows }, (_, index) => (
-        <div className="a-skeleton-row" key={index}>
-          <Skeleton
-            height={10}
-            width={`${String(28 + ((index * 13) % 34))}%`}
-          />
-        </div>
-      ))}
-    </div>
+    <>
+      <LoadingAnnouncement />
+      <div aria-hidden="true" className="a-stack">
+        {Array.from({ length: rows }, (_, index) => (
+          <div className="a-skeleton-row" key={index}>
+            <Skeleton
+              height={10}
+              width={`${String(28 + ((index * 13) % 34))}%`}
+            />
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
 export function PanelSkeleton({ rows = 3 }: { readonly rows?: number }) {
   return (
-    <div aria-hidden="true" className="a-stack a-stack--3">
-      <Skeleton height={10} width="24%" />
-      {Array.from({ length: rows }, (_, index) => (
-        <Skeleton
-          height={10}
-          key={index}
-          width={`${String(80 - index * 14)}%`}
-        />
-      ))}
-    </div>
+    <>
+      <LoadingAnnouncement />
+      <div aria-hidden="true" className="a-stack a-stack--3">
+        <Skeleton height={10} width="24%" />
+        {Array.from({ length: rows }, (_, index) => (
+          <Skeleton
+            height={10}
+            key={index}
+            width={`${String(80 - index * 14)}%`}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function LoadingAnnouncement() {
+  return (
+    <p className="a-visually-hidden" role="status">
+      Loading
+    </p>
   );
 }
 
@@ -805,6 +824,9 @@ export function AreaNav({
 
 /* ============================== References =========================== */
 
+/** How long the copy control shows its check before it is a copy control again. */
+const copiedFor = 2000;
+
 /**
  * An opaque identifier, in a face where an `l` and a `1` are different shapes.
  *
@@ -817,6 +839,10 @@ export function AreaNav({
  * The clipboard is not assumed to exist. A browser that refuses it, or a
  * context without it, leaves the text exactly as selectable as it already was
  * rather than leaving a control that silently does nothing.
+ *
+ * The control keeps its name when it succeeds. "Copied" is said once, beside
+ * it, and the mark returns after a moment — a control renamed to its own past
+ * tense is a control that no longer says what pressing it does.
  */
 export function Reference({
   short,
@@ -834,31 +860,50 @@ export function Reference({
   // whether the key exists is the check that matches what actually happens.
   const copyable = typeof navigator !== 'undefined' && 'clipboard' in navigator;
 
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timer = setTimeout(() => {
+      setCopied(false);
+    }, copiedFor);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [copied]);
+
   return (
     <span className="a-reference">
       <span className="a-mono" data-testid={testId} title={value}>
         {short ?? value}
       </span>
       {copyable ? (
-        <button
-          aria-label={copied ? 'Copied' : `Copy ${value}`}
-          className="a-icon-btn a-icon-btn--sm"
-          data-testid={testId === undefined ? undefined : `${testId}-copy`}
-          onClick={() => {
-            void navigator.clipboard.writeText(value).then(
-              () => {
-                setCopied(true);
-              },
-              () => {
-                // A refused clipboard is not an error worth interrupting for.
-                // The value is still on the screen and still selectable.
-              },
-            );
-          }}
-          type="button"
-        >
-          <Icon name={copied ? 'check' : 'copy'} size="sm" />
-        </button>
+        <>
+          <button
+            aria-label={`Copy ${value}`}
+            className="a-icon-btn a-icon-btn--sm"
+            data-testid={testId === undefined ? undefined : `${testId}-copy`}
+            onClick={() => {
+              void navigator.clipboard.writeText(value).then(
+                () => {
+                  setCopied(true);
+                },
+                () => {
+                  // A refused clipboard is not an error worth interrupting for.
+                  // The value is still on the screen and still selectable.
+                },
+              );
+            }}
+            type="button"
+          >
+            <Icon name={copied ? 'check' : 'copy'} size="sm" />
+          </button>
+          <span
+            className="a-visually-hidden"
+            data-testid={testId === undefined ? undefined : `${testId}-copied`}
+            role="status"
+          >
+            {copied ? 'Copied' : ''}
+          </span>
+        </>
       ) : null}
     </span>
   );
@@ -926,6 +971,13 @@ export interface SegmentedOption<T extends string> {
   readonly value: T;
 }
 
+/**
+ * A filter with a handful of values, one of which is on.
+ *
+ * A group of pressed buttons rather than a tab list. Each value re-reads the
+ * same list rather than revealing a panel of its own, and a `tablist` promises
+ * arrow-key movement and a `tabpanel` that this control has neither of.
+ */
 export function Segmented<T extends string>({
   label,
   onChange,
@@ -938,17 +990,16 @@ export function Segmented<T extends string>({
   readonly value: T;
 }) {
   return (
-    <div aria-label={label} className="a-segmented" role="tablist">
+    <div aria-label={label} className="a-segmented" role="group">
       {options.map((option) => (
         <button
-          aria-selected={option.value === value}
+          aria-pressed={option.value === value}
           className="a-segmented__item"
           data-testid={`segment-${option.value}`}
           key={option.value}
           onClick={() => {
             onChange(option.value);
           }}
-          role="tab"
           type="button"
         >
           {option.label}

@@ -1,17 +1,23 @@
 import {
+  act,
   cleanup,
   fireEvent,
+  render,
   screen,
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AdminGate } from '../src/app/gate';
+import NotFound from '../app/not-found';
+import { AdminGate, Bootstrap } from '../src/app/gate';
+import { ConfirmDialog } from '../src/design/dialog';
+import { Reference } from '../src/design/primitives';
 import { Access } from '../src/product/access';
 import { Appeals } from '../src/product/appeals';
 import { CaseScreen } from '../src/product/case';
 import { Creators } from '../src/product/creators';
+import { formatDateTime } from '../src/product/format';
 import { Disputes, Money } from '../src/product/money';
 import {
   PlatformIdentity,
@@ -25,6 +31,7 @@ import {
   consumerSessionState,
   createAdminApiDouble,
   privilegedState,
+  type AdminApiDouble,
   type AdminApiDoubleState,
 } from './support/api-double';
 import { navigations } from './support/navigation';
@@ -48,6 +55,47 @@ afterEach(cleanup);
 /** The visible text of one element, for assertions about what an operator reads. */
 function textOf(testId: string): string {
   return screen.getByTestId(testId).textContent;
+}
+
+/**
+ * The same double, with one path that can be told to wait.
+ *
+ * Nothing waits until `hold` is called, so a screen's first read arrives as it
+ * always does; after it, every request to the path waits for `release`. That is
+ * what lets a test look at the screen while an answer is still on its way.
+ */
+function holdable(
+  double: AdminApiDouble,
+  path: string,
+): {
+  readonly double: AdminApiDouble;
+  readonly hold: () => void;
+  readonly release: () => void;
+} {
+  let held: Promise<void> | undefined;
+  let release: () => void = () => undefined;
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const request =
+      input instanceof Request
+        ? input
+        : new Request(input instanceof URL ? input.href : input, init);
+    if (new URL(request.url).pathname === path && held !== undefined) {
+      await held;
+    }
+    return double.fetch(request);
+  };
+  return {
+    double: { ...double, fetch },
+    hold: () => {
+      held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    },
+    release: () => {
+      held = undefined;
+      release();
+    },
+  };
 }
 
 const openedAt = '2026-08-20T09:00:00.000Z';
@@ -123,6 +171,49 @@ describe('the door', () => {
     expect(
       screen.getByRole('button', { name: /sign in as local platform admin/iu }),
     ).toBeDefined();
+  });
+
+  it('says a refused local sign-in once, as the platform said it', async () => {
+    const double = createAdminApiDouble(anonymousState());
+    renderConsole(<Access />, double, {
+      appEnvironment: 'local',
+      pathname: '/access',
+    });
+
+    fireEvent.change(await screen.findByTestId('local-admin-subject-input'), {
+      target: { value: 'admin@velora.test' },
+    });
+    fireEvent.click(screen.getByTestId('local-admin-submit'));
+
+    // The refusal is the platform's answer to the request rather than a fault
+    // in what was typed, so it is said once, as an alert, and not again under
+    // the field as though the subject were malformed.
+    const error = await screen.findByTestId('local-admin-error');
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(screen.getAllByText(error.textContent)).toHaveLength(1);
+    expect(
+      screen
+        .getByTestId('local-admin-subject-input')
+        .getAttribute('aria-invalid'),
+    ).toBeNull();
+  });
+
+  it('says what it is doing while it waits, inside the announcement', () => {
+    render(<Bootstrap />);
+
+    expect(screen.getByRole('status').textContent).toContain(
+      'Loading Platform Admin',
+    );
+  });
+
+  it('offers the way back as the console’s own primary control', () => {
+    render(<NotFound />);
+
+    const back = screen.getByRole('link', { name: 'Back to the console' });
+    expect(back.className).toContain('a-btn--primary');
+    // The button's own ink, which a global link hover would otherwise repaint
+    // in the signal colour on the signal colour.
+    expect(back.getAttribute('style')).toContain('var(--text-on-accent)');
   });
 
   it.each(['staging', 'production'] as const)(
@@ -257,6 +348,55 @@ describe('the queues', () => {
     expect(filtered.at(-1)?.query).toMatchObject({
       moderationQueue: 'creator_content',
     });
+  });
+
+  it('offers the queue filter as one pressed choice in a named group', async () => {
+    const double = createAdminApiDouble(withCase());
+    renderConsole(<Queues />, double, { pathname: '/queues' });
+    await screen.findByTestId('case-case-1');
+
+    // Each choice re-reads the same list rather than revealing a panel of its
+    // own, so it is a pressed button in a group and not a tab.
+    const group = screen.getByRole('group', { name: 'Filter by queue' });
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(
+      within(group).getByTestId('segment-all').getAttribute('aria-pressed'),
+    ).toBe('true');
+
+    fireEvent.click(within(group).getByTestId('segment-creator_content'));
+    expect(
+      within(group)
+        .getByTestId('segment-creator_content')
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      within(group).getByTestId('segment-all').getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
+  it('never shows one queue’s cases under another while it reads', async () => {
+    const gate = holdable(
+      createAdminApiDouble(withCase()),
+      '/v1/admin/safety/cases',
+    );
+    renderConsole(<Queues />, gate.double, { pathname: '/queues' });
+    await screen.findByTestId('case-case-1');
+
+    gate.hold();
+    fireEvent.click(screen.getByTestId('segment-creator_content'));
+
+    // The case belongs to consumer conduct. While the creator-content read is
+    // on its way the list says it is loading, rather than showing that case
+    // under a filter it is not in.
+    await waitFor(() => {
+      expect(screen.queryByTestId('case-case-1')).toBeNull();
+    });
+    expect(
+      within(screen.getByTestId('case-list')).getByRole('status').textContent,
+    ).toBe('Loading');
+
+    gate.release();
+    expect(await screen.findByTestId('case-list-empty')).toBeDefined();
   });
 
   it('says nothing is waiting rather than showing an empty table', async () => {
@@ -529,9 +669,17 @@ describe('appeals', () => {
 
     fireEvent.click(await screen.findByTestId('appeal-refuse-appeal-1'));
     const dialog = await screen.findByTestId('appeal-confirm');
-    fireEvent.click(within(dialog).getByTestId('appeal-confirm-accept'));
+    const accept = within(dialog).getByTestId<HTMLButtonElement>(
+      'appeal-confirm-accept',
+    );
+    // Unavailable rather than silently ignored: a control that looks pressable
+    // and does nothing is one an operator presses again.
+    expect(accept.disabled).toBe(true);
+    fireEvent.click(accept);
 
     expect(double.state.appeals[0]?.state).toBe('received');
+    fireEvent.click(within(dialog).getByTestId('appeal-acknowledge'));
+    expect(accept.disabled).toBe(false);
   });
 });
 
@@ -625,6 +773,58 @@ describe('the creator directory', () => {
     ).toMatchObject({ creatorId: 'creator-1', reasonCode: 'harassment' });
   });
 
+  it('will not apply an operation until a reason is chosen', async () => {
+    const double = createAdminApiDouble(withCreator());
+    renderConsole(<Creators selectedId="creator-1" />, double, {
+      pathname: '/creators',
+      search: 'selected=creator-1',
+    });
+
+    fireEvent.click(await screen.findByTestId('creator-suspend'));
+    const dialog = await screen.findByTestId('operation-dialog');
+    const submit =
+      within(dialog).getByTestId<HTMLButtonElement>('operation-submit');
+    fireEvent.click(within(dialog).getByTestId('operation-acknowledge'));
+
+    // No reason is preselected: one the operator never chose would still be
+    // recorded against this suspension as theirs.
+    expect(
+      within(dialog).getByTestId<HTMLSelectElement>('operation-reason').value,
+    ).toBe('');
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByTestId('operation-reason'), {
+      target: { value: 'spam_or_scam' },
+    });
+    expect(submit.disabled).toBe(false);
+  });
+
+  it('keeps the rows it has and says when a re-read failed', async () => {
+    const double = createAdminApiDouble(withCreator());
+    renderConsole(<Creators selectedId="creator-1" />, double, {
+      pathname: '/creators',
+      search: 'selected=creator-1',
+    });
+
+    fireEvent.click(await screen.findByTestId('creator-suspend'));
+    const dialog = await screen.findByTestId('operation-dialog');
+    fireEvent.change(within(dialog).getByTestId('operation-reason'), {
+      target: { value: 'harassment' },
+    });
+    fireEvent.click(within(dialog).getByTestId('operation-acknowledge'));
+    // The suspension lands; the re-read after it does not.
+    double.failNext('/v1/admin/creators');
+    fireEvent.click(within(dialog).getByTestId('operation-submit'));
+
+    expect(
+      (await screen.findByTestId('creator-list-stale')).textContent,
+    ).toContain('could not be reached');
+    // The rows already read stay where the operator is working, and the detail
+    // beside them with them.
+    expect(screen.getByTestId('creator-creator-1')).toBeDefined();
+    expect(screen.getByTestId('creator-detail')).toBeDefined();
+  });
+
   it('offers a lift rather than a second suspension once somebody is suspended', async () => {
     const double = createAdminApiDouble(
       withCreator({ status: 'suspended', suspendedAt: openedAt }),
@@ -639,12 +839,22 @@ describe('the creator directory', () => {
   });
 
   it('says a deep link names somebody outside the pages loaded', async () => {
-    const double = createAdminApiDouble(withCreator());
-    renderConsole(<Creators selectedId="creator-9" />, double, {
+    const gate = holdable(
+      createAdminApiDouble(withCreator()),
+      '/v1/admin/creators',
+    );
+    gate.hold();
+    renderConsole(<Creators selectedId="creator-9" />, gate.double, {
       pathname: '/creators',
       search: 'selected=creator-9',
     });
 
+    // Not before the directory has answered: until then nothing is known to be
+    // outside it.
+    expect(await screen.findByTestId('creator-detail-loading')).toBeDefined();
+    expect(screen.queryByTestId('creator-not-loaded')).toBeNull();
+
+    gate.release();
     expect(
       (await screen.findByTestId('creator-not-loaded')).textContent,
     ).toContain('not among the creators loaded');
@@ -773,7 +983,89 @@ describe('money', () => {
     expect(textOf('money-payable-no-total')).toContain('never added together');
   });
 
+  /** Everything a refund asks for, filled in the order an operator would. */
+  function fillRefund(dialog: HTMLElement): void {
+    fireEvent.change(within(dialog).getByTestId('refund-payment'), {
+      target: { value: 'payment-1' },
+    });
+    fireEvent.change(within(dialog).getByTestId('refund-amount'), {
+      target: { value: '1050' },
+    });
+    fireEvent.change(within(dialog).getByTestId('refund-reason'), {
+      target: { value: 'operator_correction' },
+    });
+    fireEvent.click(within(dialog).getByTestId('refund-acknowledge'));
+  }
+
+  function refundKeys(double: AdminApiDouble): (string | undefined)[] {
+    return double.calls
+      .filter((call) => call.path === '/v1/admin/billing/refunds')
+      .map((call) => call.headers['x-velora-idempotency-key']);
+  }
+
   it('carries one idempotency key through a retried refund', async () => {
+    const double = createAdminApiDouble(withMoney());
+    renderConsole(<Money />, double, { pathname: '/money' });
+
+    fireEvent.click(await screen.findByTestId('money-refund'));
+    const dialog = await screen.findByTestId('refund-dialog');
+    fillRefund(dialog);
+
+    double.failNext('/v1/admin/billing/refunds');
+    fireEvent.click(within(dialog).getByTestId('refund-submit'));
+    await screen.findByTestId('refund-error');
+
+    fireEvent.click(within(dialog).getByTestId('refund-submit'));
+    await waitFor(() => {
+      expect(Object.keys(double.state.refunds)).toHaveLength(1);
+    });
+
+    expect(new Set(refundKeys(double)).size).toBe(1);
+  });
+
+  it('keeps the key across closing the dialog, and renews it only after a confirmed refund', async () => {
+    const double = createAdminApiDouble(withMoney());
+    renderConsole(<Money />, double, { pathname: '/money' });
+
+    // The first attempt never gets an answer, and the operator closes the
+    // dialog on it.
+    fireEvent.click(await screen.findByTestId('money-refund'));
+    const first = await screen.findByTestId('refund-dialog');
+    fillRefund(first);
+    double.failNext('/v1/admin/billing/refunds');
+    fireEvent.click(within(first).getByTestId('refund-submit'));
+    await within(first).findByTestId('refund-error');
+    fireEvent.click(within(first).getByTestId('dialog-close'));
+    expect(screen.queryByTestId('refund-dialog')).toBeNull();
+
+    // Opening it again is the same attempt, so it carries the same key — had
+    // the first one reached BILLING, this one is answered with that refund
+    // rather than becoming a second.
+    fireEvent.click(screen.getByTestId('money-refund'));
+    const second = await screen.findByTestId('refund-dialog');
+    fillRefund(second);
+    fireEvent.click(within(second).getByTestId('refund-submit'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('refund-dialog')).toBeNull();
+    });
+
+    // A refund BILLING confirmed is finished, and the next one is a new
+    // instruction with a key of its own.
+    fireEvent.click(screen.getByTestId('money-refund'));
+    const third = await screen.findByTestId('refund-dialog');
+    fillRefund(third);
+    fireEvent.click(within(third).getByTestId('refund-submit'));
+    await waitFor(() => {
+      expect(Object.keys(double.state.refunds)).toHaveLength(2);
+    });
+
+    const [failed, retried, next] = refundKeys(double);
+    expect(failed).toBeDefined();
+    expect(retried).toBe(failed);
+    expect(next).not.toBe(retried);
+  });
+
+  it('will not refund until a reason is chosen', async () => {
     const double = createAdminApiDouble(withMoney());
     renderConsole(<Money />, double, { pathname: '/money' });
 
@@ -787,19 +1079,50 @@ describe('money', () => {
     });
     fireEvent.click(within(dialog).getByTestId('refund-acknowledge'));
 
-    double.failNext('/v1/admin/billing/refunds');
-    fireEvent.click(within(dialog).getByTestId('refund-submit'));
-    await screen.findByTestId('refund-error');
+    const submit =
+      within(dialog).getByTestId<HTMLButtonElement>('refund-submit');
+    expect(
+      within(dialog).getByTestId<HTMLSelectElement>('refund-reason').value,
+    ).toBe('');
+    expect(submit.disabled).toBe(true);
 
-    fireEvent.click(within(dialog).getByTestId('refund-submit'));
-    await waitFor(() => {
-      expect(Object.keys(double.state.refunds)).toHaveLength(1);
+    fireEvent.change(within(dialog).getByTestId('refund-reason'), {
+      target: { value: 'operator_correction' },
     });
+    expect(submit.disabled).toBe(false);
+  });
 
-    const keys = double.calls
-      .filter((call) => call.path === '/v1/admin/billing/refunds')
-      .map((call) => call.headers['x-velora-idempotency-key']);
-    expect(new Set(keys).size).toBe(1);
+  it('cannot be dismissed while the refund is on its way', async () => {
+    const gate = holdable(
+      createAdminApiDouble(withMoney()),
+      '/v1/admin/billing/refunds',
+    );
+    renderConsole(<Money />, gate.double, { pathname: '/money' });
+
+    fireEvent.click(await screen.findByTestId('money-refund'));
+    const dialog = await screen.findByTestId('refund-dialog');
+    fillRefund(dialog);
+    gate.hold();
+    fireEvent.click(within(dialog).getByTestId('refund-submit'));
+
+    // Escape, the scrim, and the close control all wait for the answer, because
+    // an operator who closed the dialog now would never hear it.
+    const close = within(dialog).getByTestId<HTMLButtonElement>('dialog-close');
+    await waitFor(() => {
+      expect(close.disabled).toBe(true);
+    });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const scrim = document.querySelector('.a-scrim');
+    expect(scrim).not.toBeNull();
+    if (scrim !== null) fireEvent.click(scrim);
+    fireEvent.click(close);
+    expect(screen.getByTestId('refund-dialog')).toBe(dialog);
+
+    gate.release();
+    await waitFor(() => {
+      expect(screen.queryByTestId('refund-dialog')).toBeNull();
+    });
+    expect(Object.keys(gate.double.state.refunds)).toHaveLength(1);
   });
 
   it('refuses an amount that is not whole minor units', async () => {
@@ -952,5 +1275,93 @@ describe('what a refusal looks like', () => {
     expect(
       within(failure).getByRole('button', { name: 'Try again' }),
     ).toBeDefined();
+  });
+});
+
+/* ============================= Primitives ============================ */
+
+describe('the shared primitives', () => {
+  it('holds a confirmation open while the operation it confirms is busy', () => {
+    const onCancel = vi.fn();
+    const { rerender } = render(
+      <ConfirmDialog
+        busy
+        confirmLabel="Pause it"
+        onCancel={onCancel}
+        onConfirm={() => undefined}
+        testId="busy-confirm"
+        title="Pause live.search"
+      >
+        <p>This changes what the platform does for everybody.</p>
+      </ConfirmDialog>,
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const scrim = document.querySelector('.a-scrim');
+    if (scrim !== null) fireEvent.click(scrim);
+    expect(screen.getByTestId<HTMLButtonElement>('dialog-close').disabled).toBe(
+      true,
+    );
+    expect(onCancel).not.toHaveBeenCalled();
+
+    // Once the answer is in, every way out works again.
+    rerender(
+      <ConfirmDialog
+        confirmLabel="Pause it"
+        onCancel={onCancel}
+        onConfirm={() => undefined}
+        testId="busy-confirm"
+        title="Pause live.search"
+      >
+        <p>This changes what the platform does for everybody.</p>
+      </ConfirmDialog>,
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it copied, keeps its name, and becomes a copy control again', async () => {
+    const writeText = vi.fn(async () => {
+      await Promise.resolve();
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    vi.useFakeTimers();
+    try {
+      render(<Reference testId="reference" value="lt_payment_1234" />);
+      const control = screen.getByTestId('reference-copy');
+
+      fireEvent.click(control);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(writeText).toHaveBeenCalledWith('lt_payment_1234');
+      expect(screen.getByTestId('reference-copied').textContent).toBe('Copied');
+      expect(screen.getByTestId('reference-copied').getAttribute('role')).toBe(
+        'status',
+      );
+      // The control still says what pressing it does.
+      expect(control.getAttribute('aria-label')).toBe('Copy lt_payment_1234');
+
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(screen.getByTestId('reference-copied').textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
+  it('names the zone on every instant it prints', () => {
+    const value = '2026-08-20T09:00:00.000Z';
+    const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+      .formatToParts(new Date(value))
+      .find((part) => part.type === 'timeZoneName')?.value;
+
+    expect(zone).toBeDefined();
+    expect(formatDateTime(value)).toContain(zone ?? 'no zone');
   });
 });

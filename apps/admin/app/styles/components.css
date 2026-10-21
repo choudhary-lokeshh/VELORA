@@ -826,7 +826,7 @@
   color: var(--text-primary);
 }
 
-.a-segmented__item[aria-selected='true'] {
+.a-segmented__item[aria-pressed='true'] {
   background: var(--surface-1);
   box-shadow: var(--shadow-1);
   color: var(--text-primary);
@@ -1040,10 +1040,12 @@
   border-bottom: 1px solid var(--border-hairline);
   color: var(--text-secondary);
   display: flex;
+  flex-wrap: wrap;
   font-size: var(--text-caption-size);
   gap: var(--space-2);
   letter-spacing: var(--tracking-label);
   padding: var(--space-1) var(--space-4);
+  row-gap: var(--space-1);
   text-transform: uppercase;
 }
 
