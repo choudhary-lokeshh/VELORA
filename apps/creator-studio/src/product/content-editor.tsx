@@ -106,9 +106,13 @@ export function EditContent({ contentId }: { readonly contentId: string }) {
 
   if (item !== undefined) {
     // The editor compares what is on the screen against what the server holds,
-    // so after a save it has to be given the new answer. Without this the form
-    // would go on saying there were unsaved changes to something already saved.
-    return <ContentEditor item={item} onSaved={catalog.reload} />;
+    // so after a save it has to be given the new answer. Keying on the version
+    // remounts it whenever the answer moves, which seeds it afresh; a re-read
+    // that moves nothing keeps what somebody typed, because the same answer as
+    // a new object is not a reason to take it back.
+    return (
+      <ContentEditor item={item} key={item.version} onSaved={catalog.reload} />
+    );
   }
 
   if (catalog.error !== undefined) {
@@ -274,16 +278,6 @@ function ContentEditor({
   const openClubs = (clubs.value?.clubs ?? []).filter(
     (club) => club.lifecycle !== 'closed',
   );
-
-  const version = item?.version;
-  useEffect(() => {
-    if (item === undefined) return;
-    setTitle(item.title);
-    setSummary(item.summary ?? '');
-    setBody(item.body ?? '');
-    setAudience(item.visibility);
-    setClubId(item.clubId ?? '');
-  }, [item, version]);
 
   const trimmedTitle = title.trim();
   const titleError =

@@ -1108,6 +1108,55 @@ describe('the catalog', () => {
     });
   });
 
+  /**
+   * Removing a picture re-reads the catalog without moving the item's version,
+   * which is the ordering this forces: an edit typed before the re-read answers
+   * has to survive it. The same answer arriving as a new object is not a reason
+   * to take the text back.
+   */
+  it('keeps an edit when a re-read answers with the same version', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        content: [
+          {
+            body: 'Original body.',
+            id: 'content-1',
+            lifecycle: 'draft',
+            media: [{ id: 'media-1', position: 0, state: 'ready' }],
+            title: 'A first post',
+            version: 3,
+            visibility: 'public',
+          },
+        ],
+      }),
+    );
+    renderStudio(<EditContent contentId="content-1" />, double, {
+      params: { contentId: 'content-1' },
+      pathname: '/catalog/content-1',
+    });
+
+    const body = await screen.findByTestId<HTMLTextAreaElement>('content-body');
+    fireEvent.change(body, { target: { value: 'A revised body.' } });
+    const reads = () =>
+      double.calls.filter(
+        (call) => call.path === '/v1/creator/content' && call.method === 'GET',
+      ).length;
+    const readsBefore = reads();
+    fireEvent.click(await screen.findByTestId('content-media-0-remove'));
+    await waitFor(() => {
+      expect(reads()).toBeGreaterThan(readsBefore);
+    });
+    // Let the re-read's answer render before asking what it did.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(screen.getByTestId<HTMLTextAreaElement>('content-body').value).toBe(
+      'A revised body.',
+    );
+    expect(screen.getByTestId('content-unsaved')).toBeTruthy();
+  });
+
   it('edits an existing item with its version', async () => {
     const double = createCreatorApiDouble(
       withProfile({
