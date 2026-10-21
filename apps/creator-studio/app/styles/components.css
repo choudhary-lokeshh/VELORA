@@ -434,6 +434,17 @@
   position: absolute;
 }
 
+/*
+ * Forced colours replace every background with the canvas, so the dot that says
+ * which choice is made disappeared and every option read as unchosen.
+ */
+@media (forced-colors: active) {
+  .s-choice--on .s-choice__mark::after {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
 .s-choice__input:focus-visible + .s-choice__mark {
   outline: var(--focus-width) solid var(--focus-ring);
   outline-offset: var(--focus-offset);
@@ -526,6 +537,11 @@
   justify-content: space-between;
 }
 
+/* A club's name is the page title here, and it may be one long word. */
+.s-page-header__row > h1 {
+  min-width: 0;
+}
+
 .s-page-header__lede {
   color: var(--text-secondary);
   font-size: var(--text-body-size);
@@ -599,8 +615,8 @@
  *
  * A fixed ratio rather than the source's, so a grid keeps its shape whatever
  * somebody uploads and does not reflow as short-lived addresses arrive. The
- * state and the control sit over a scrim so they stay readable on a bright
- * picture.
+ * state and the control sit on a solid chip of the work surface so they stay
+ * readable on any picture.
  */
 .s-image-grid {
   display: grid;
@@ -639,6 +655,15 @@
   }
 }
 
+/*
+ * A refused image has no picture to keep the shape of, and it carries a
+ * sentence saying why. Held to the fixed ratio, that sentence was clipped by
+ * the tile at the very widths where it wraps.
+ */
+.s-image-tile[data-state='rejected'] {
+  aspect-ratio: auto;
+}
+
 .s-image-tile__image {
   block-size: 100%;
   inline-size: 100%;
@@ -647,10 +672,14 @@
   position: absolute;
 }
 
+/*
+ * The work surface rather than the scrim. The ghost control and the badge in
+ * here are drawn for paper, and on a translucent dark wash their text fell well
+ * below a readable contrast over any picture that was not already bright.
+ */
 .s-image-tile__foot {
   align-items: center;
-  backdrop-filter: blur(10px);
-  background: var(--surface-overlay);
+  background: var(--surface-1);
   border-radius: var(--radius-pill);
   display: flex;
   gap: var(--space-2);
@@ -670,6 +699,22 @@
   overflow: hidden;
   position: absolute;
   white-space: nowrap;
+}
+
+/*
+ * The input is what holds focus and what is disabled, and it is a one-pixel
+ * clipped box: its own ring is drawn where nobody can see it, and its disabled
+ * state changed nothing about the label a creator is looking at. The label
+ * says both instead, exactly as a button would.
+ */
+.s-btn:has(> .s-file-input:focus-visible) {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.s-btn:has(> .s-file-input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .s-avatar__image {
@@ -1051,6 +1096,15 @@
   background: var(--surface-2);
 }
 
+/*
+ * A flush card clips its corners, and a full-width row's ring sat outside the
+ * row — so the clip took the ring's sides and left a keyboard user two lines.
+ * Drawn inside the row instead, where nothing can cut it.
+ */
+.s-card--flush :is(.s-row, .s-shortcut):focus-visible {
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
 /* ================================ Tabs =============================== */
 
 /*
@@ -1104,6 +1158,30 @@
 
 .s-segmented__item[aria-selected='true'] .s-segmented__count {
   color: var(--ember-ink);
+}
+
+/* The selected face is a fill and a shadow, and forced colours remove both. */
+@media (forced-colors: active) {
+  .s-segmented__item[aria-selected='true'] {
+    outline: 2px solid CanvasText;
+  }
+}
+
+/*
+ * A compact control is compact for a mouse. A fingertip needs the full control
+ * height whatever the control looks like, so on a coarse pointer the small
+ * sizes grow to it rather than staying a target somebody has to aim for.
+ */
+@media (pointer: coarse) {
+  .s-btn--sm,
+  .s-segmented__item {
+    min-height: var(--control-height);
+  }
+
+  .s-icon-btn--sm {
+    height: var(--control-height);
+    width: var(--control-height);
+  }
 }
 
 /* ============================== Dialogs ============================== */
@@ -1195,6 +1273,11 @@
   display: flex;
   gap: var(--space-4);
   justify-content: space-between;
+}
+
+/* A title naming something a creator wrote may be one long word. */
+.s-dialog__head > h2 {
+  min-width: 0;
 }
 
 .s-dialog__close {

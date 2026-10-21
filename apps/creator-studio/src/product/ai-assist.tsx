@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { failureMessage, type AiSuggestionBody } from '@velora/creator-client';
 
@@ -77,6 +77,7 @@ export function CreatorAiAssist({
   const [error, setError] = useState<string | undefined>(undefined);
   const [suggestion, setSuggestion] = useState<string | undefined>(undefined);
   const [tone, setTone] = useState<StudioTone>('warm');
+  const headingId = useId();
 
   useEffect(
     () => () => {
@@ -125,9 +126,19 @@ export function CreatorAiAssist({
 
   return (
     <Card testId={testId}>
-      <div className="s-stack s-stack--3">
+      {/*
+        One editor can hold four of these, each with a "Tone", a "Generate
+        draft" and a "Use in draft". Grouped under their own heading, each set
+        is announced with the field it writes for rather than as four identical
+        controls nobody can tell apart.
+      */}
+      <div
+        aria-labelledby={headingId}
+        className="s-stack s-stack--3"
+        role="group"
+      >
         <div className="s-stack s-stack--1">
-          <p className="s-subheading">
+          <p className="s-subheading" id={headingId}>
             Studio draft assist · {capabilityLabel(capability)}
           </p>
           <p className="s-caption s-quiet">

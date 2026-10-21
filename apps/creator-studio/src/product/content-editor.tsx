@@ -271,6 +271,11 @@ function ContentEditor({
   const [clubId, setClubId] = useState(item?.clubId ?? '');
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
+  // Kept apart from a refused save, because each is said beside the control
+  // that produced it and those two controls are in different cards.
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | undefined>(
+    undefined,
+  );
   const [confirmingArchive, setConfirmingArchive] = useState(false);
 
   const loadClubs = useCallback(async () => api.clubs({ pageSize: 50 }), [api]);
@@ -355,7 +360,7 @@ function ContentEditor({
             'This item changed somewhere else since you opened it. Reload and try again.',
         },
       );
-      setMessage(failure);
+      setLifecycleMessage(failure);
       if (failure === undefined) {
         toast.show(confirmation, 'positive');
         router.push('/catalog');
@@ -402,10 +407,6 @@ function ContentEditor({
           Your creator access cannot change items at the moment, so nothing here
           will save.
         </Notice>
-      )}
-
-      {message === undefined ? null : (
-        <ErrorMessage testId="content-editor-error">{message}</ErrorMessage>
       )}
 
       <Card>
@@ -508,6 +509,11 @@ function ContentEditor({
           />
 
           <div className="s-form-actions">
+            {message === undefined ? null : (
+              <ErrorMessage testId="content-editor-error">
+                {message}
+              </ErrorMessage>
+            )}
             <Button
               busy={busy}
               data-testid="content-save"
@@ -538,7 +544,13 @@ function ContentEditor({
           lede="Who this is for. Changing it saves with everything else."
           title="Audience"
         />
-        <div className="s-stack s-stack--3">
+        {/*
+          A fieldset, so the two choices are announced as one question with a
+          name rather than as two unrelated radio buttons. The card's heading
+          already says it on screen.
+        */}
+        <fieldset className="s-fieldset">
+          <legend className="s-visually-hidden">Audience</legend>
           <ChoiceCard
             checked={audience === 'public'}
             description="Anyone who opens your public page, once this item is published."
@@ -561,7 +573,7 @@ function ContentEditor({
             testId="content-audience-members"
             value="members_only"
           />
-        </div>
+        </fieldset>
 
         {audience === 'members_only' ? (
           openClubs.length === 0 ? (
@@ -616,6 +628,11 @@ function ContentEditor({
             }
             title="Visibility"
           />
+          {lifecycleMessage === undefined ? null : (
+            <ErrorMessage testId="content-editor-lifecycle-error">
+              {lifecycleMessage}
+            </ErrorMessage>
+          )}
           <div className="s-inline s-inline--tight">
             {item.lifecycle === 'draft' ? (
               <Button

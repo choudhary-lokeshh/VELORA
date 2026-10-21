@@ -118,14 +118,7 @@ export function ButtonLink({
   readonly tone?: ButtonTone;
 }) {
   return (
-    <Link
-      {...rest}
-      className={buttonClass({ block, size, tone })}
-      href={href}
-      style={{
-        color: tone === 'primary' ? 'var(--text-on-accent)' : undefined,
-      }}
-    >
+    <Link {...rest} className={buttonClass({ block, size, tone })} href={href}>
       {icon === undefined ? null : <Icon name={icon} size="sm" />}
       {children}
     </Link>
@@ -422,7 +415,7 @@ export function PageHeader({
         <p className="s-label s-quiet">{eyebrow}</p>
       )}
       <div className="s-page-header__row">
-        <h1 className="s-title" ref={register}>
+        <h1 className="s-title s-wrap" ref={register}>
           {title}
         </h1>
         {actions === undefined ? null : (

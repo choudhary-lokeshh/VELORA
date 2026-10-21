@@ -216,10 +216,14 @@ export function StudioShell({
  * The region is polite rather than assertive: a toast reports something that has
  * already finished, and interrupting somebody mid-sentence to tell them a save
  * succeeded is the wrong trade.
+ *
+ * The region is always in the document, empty or not. A live region that is
+ * inserted together with its first message is a region assistive technology
+ * has not started watching yet, so that first message — usually the only one —
+ * went unannounced. Empty, it is a fixed box with no size and no paint.
  */
 export function Toaster() {
   const { dismiss, toasts } = useToast();
-  if (toasts.length === 0) return null;
   return (
     <div aria-live="polite" className="s-toaster" data-testid="toaster">
       {toasts.map((toast) => (

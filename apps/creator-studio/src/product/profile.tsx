@@ -292,10 +292,6 @@ function ProfileEditor({
           title="Identity"
         />
 
-        {message === undefined ? null : (
-          <ErrorMessage testId="creator-profile-error">{message}</ErrorMessage>
-        )}
-
         <form
           className="s-stack s-stack--5"
           onSubmit={(event) => {
@@ -402,6 +398,11 @@ function ProfileEditor({
           <LinksField error={linkError} links={links} onChange={setLinks} />
 
           <div className="s-form-actions">
+            {message === undefined ? null : (
+              <ErrorMessage testId="creator-profile-error">
+                {message}
+              </ErrorMessage>
+            )}
             <Button
               busy={busy}
               data-testid="creator-save-profile"

@@ -230,6 +230,18 @@
   position: relative;
 }
 
+/*
+ * Forced colours replace every background with the canvas, which erased the
+ * mark and left "which page am I on" carried by nothing. The system ink keeps
+ * it, in whatever colour the person has chosen.
+ */
+@media (forced-colors: active) {
+  .s-tabbar__item[aria-current='page']::before {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
 /* ============================== The rail ============================= */
 
 .s-sidebar {
@@ -274,8 +286,19 @@
     text-decoration: none;
   }
 
-  .s-sidebar__brand-text {
-    display: none;
+  /*
+   * The rail has no room for the words, but the links still need them as
+   * names. `display: none` took them out of the accessibility tree too, and
+   * left the brand and account links announced as nothing at all.
+   */
+  .s-sidebar__brand-text,
+  .s-sidebar__account-name {
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
   }
 
   .s-sidebar__nav {
@@ -340,10 +363,6 @@
     background: var(--surface-3);
   }
 
-  .s-sidebar__account-name {
-    display: none;
-  }
-
   .s-topbar {
     background: transparent;
     backdrop-filter: none;
@@ -393,10 +412,16 @@
   }
 
   .s-sidebar__brand-text {
+    clip-path: none;
     display: block;
     font-size: var(--text-caption-size);
     font-weight: 600;
+    height: auto;
     letter-spacing: var(--tracking-wordmark);
+    overflow: visible;
+    position: static;
+    white-space: normal;
+    width: auto;
   }
 
   .s-sidebar__item {
@@ -420,9 +445,14 @@
     padding: var(--space-2) var(--space-3);
   }
 
+  /* Still `s-truncate`: the clipping and the single line are that class's. */
   .s-sidebar__account-name {
+    clip-path: none;
     display: block;
+    height: auto;
     min-width: 0;
+    position: static;
+    width: auto;
   }
 
   .s-view {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   ClubInviteList,
@@ -160,6 +160,10 @@ function ClubDetail({
   const lifecycle = clubLifecycleLook(club.lifecycle);
   const closed = club.lifecycle === 'closed';
   const editable = creator.canWrite && !closed;
+  // Held here rather than in the details form, which is remounted whenever the
+  // club's version moves. The scratchpad is never saved, so nothing the server
+  // answers is a reason to clear it.
+  const [announcement, setAnnouncement] = useState('');
 
   return (
     <>
@@ -211,7 +215,15 @@ function ClubDetail({
           </Card>
 
           <ClubLifecycle club={club} onChanged={onChanged} />
-          {closed ? null : <ClubSettings club={club} onChanged={onChanged} />}
+          {closed ? null : (
+            <ClubSettings
+              announcement={announcement}
+              club={club}
+              key={club.version}
+              onAnnouncementChange={setAnnouncement}
+              onChanged={onChanged}
+            />
+          )}
         </div>
       </div>
     </>
@@ -343,10 +355,14 @@ function ClubLifecycle({
  * somebody to look for the setting that would enable it.
  */
 function ClubSettings({
+  announcement,
   club,
+  onAnnouncementChange,
   onChanged,
 }: {
+  readonly announcement: string;
   readonly club: CreatorClub;
+  readonly onAnnouncementChange: (next: string) => void;
   readonly onChanged: () => void;
 }) {
   const api = useApi();
@@ -356,16 +372,17 @@ function ClubSettings({
   const [name, setName] = useState(club.name);
   const [description, setDescription] = useState(club.description ?? '');
   const [benefits, setBenefits] = useState<readonly string[]>(club.benefits);
-  const [announcement, setAnnouncement] = useState('');
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
 
-  const version = club.version;
-  useEffect(() => {
-    setName(club.name);
-    setDescription(club.description ?? '');
-    setBenefits(club.benefits);
-  }, [club, version]);
+  /*
+   * Seeded once per version, by mounting rather than by an effect — the rule
+   * `ProfileEditor` and `ContentEditor` already follow. The caller keys this on
+   * the club's version, so a save that moves it seeds the form again from what
+   * came back. An effect on the `club` object re-seeded on every re-read too,
+   * including the one a refused save makes, and took back what was typed in
+   * the moment the creator was told why it had not saved.
+   */
 
   if (!creator.canWrite) return null;
 
@@ -470,7 +487,7 @@ function ClubSettings({
           )}
         </Field>
 
-        <fieldset className="s-stack s-stack--3" data-testid="club-benefits">
+        <fieldset className="s-fieldset" data-testid="club-benefits">
           <legend className="s-field__label">What members get</legend>
           <p className="s-field__hint">
             Short lines somebody reads before joining. Say what you actually
@@ -537,7 +554,7 @@ function ClubSettings({
               {...control}
               data-testid="club-announcement-scratchpad"
               onChange={(event) => {
-                setAnnouncement(event.target.value);
+                onAnnouncementChange(event.target.value);
               }}
               rows={3}
               value={announcement}
@@ -547,7 +564,7 @@ function ClubSettings({
         <CreatorAiAssist
           capability="creator_club_announcement"
           draft={announcement}
-          onReplace={setAnnouncement}
+          onReplace={onAnnouncementChange}
           testId="club-announcement-ai"
         />
 
@@ -619,6 +636,9 @@ function ClubAccess({
   );
   const members = useCollection(load);
   const live = members.items.filter((entry) => entry.state === 'active');
+  // A later page that failed leaves the earlier ones on screen, so the failure
+  // is said beside the control that asked for it rather than replacing them.
+  const moreFailed = members.error !== undefined && members.items.length > 0;
 
   return (
     <Card flush testId="club-access">
@@ -684,16 +704,23 @@ function ClubAccess({
         </ul>
       )}
 
-      {members.hasMore ? (
-        <div className="s-card__pad s-card__pad--block">
-          <Button
-            block
-            busy={members.loadingMore}
-            data-testid="club-members-more"
-            onClick={members.loadMore}
-          >
-            Load more
-          </Button>
+      {members.hasMore || moreFailed ? (
+        <div className="s-card__pad s-card__pad--block s-stack s-stack--3">
+          {moreFailed ? (
+            <ErrorMessage testId="club-members-more-failed">
+              {members.error}
+            </ErrorMessage>
+          ) : null}
+          {members.hasMore ? (
+            <Button
+              block
+              busy={members.loadingMore}
+              data-testid="club-members-more"
+              onClick={members.loadMore}
+            >
+              Load more
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -979,10 +1006,20 @@ function IssuedInvitation({
   const toast = useToast();
   const [revealed, setRevealed] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const heading = useRef<HTMLParagraphElement>(null);
+
+  /*
+   * The panel appears above the list, away from the control that asked for it,
+   * and nothing else says it arrived. Focus moves to its heading and never to
+   * the value, so arriving at the panel cannot read the secret aloud.
+   */
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
 
   return (
     <div className="s-secret" data-testid="club-invite-secret">
-      <p className="s-secret__head">
+      <p className="s-secret__head" ref={heading} tabIndex={-1}>
         <span className="s-point__mark">
           <Icon name="ticket" size="sm" />
         </span>
@@ -1082,6 +1119,7 @@ function ClubContent({ club }: { readonly club: CreatorClub }) {
   );
   const catalog = useCollection<CreatorContent>(load);
   const items = catalog.items.filter((item) => item.clubId === club.id);
+  const moreFailed = catalog.error !== undefined && catalog.items.length > 0;
 
   return (
     <Card flush testId="club-content">
@@ -1136,16 +1174,23 @@ function ClubContent({ club }: { readonly club: CreatorClub }) {
         </ul>
       )}
 
-      {catalog.hasMore ? (
-        <div className="s-card__pad s-card__pad--block">
-          <Button
-            block
-            busy={catalog.loadingMore}
-            data-testid="club-content-more"
-            onClick={catalog.loadMore}
-          >
-            Look further back in your catalog
-          </Button>
+      {catalog.hasMore || moreFailed ? (
+        <div className="s-card__pad s-card__pad--block s-stack s-stack--3">
+          {moreFailed ? (
+            <ErrorMessage testId="club-content-more-failed">
+              {catalog.error}
+            </ErrorMessage>
+          ) : null}
+          {catalog.hasMore ? (
+            <Button
+              block
+              busy={catalog.loadingMore}
+              data-testid="club-content-more"
+              onClick={catalog.loadMore}
+            >
+              Look further back in your catalog
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </Card>

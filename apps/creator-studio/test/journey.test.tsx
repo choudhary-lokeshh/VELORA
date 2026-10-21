@@ -1357,6 +1357,10 @@ describe('private clubs', () => {
     const panel = await screen.findByTestId('club-invite-secret');
     expect(panel.textContent).toContain('shown once');
     expect(panel.textContent).toContain('cannot show it to you again');
+    // Arriving is announced by its heading, never by the secret itself.
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe('Copy this now');
+    });
 
     // Masked until asked for.
     const value = screen.getByTestId('club-invite-secret-value');
@@ -1484,6 +1488,88 @@ describe('private clubs', () => {
     const dialog = await screen.findByTestId('club-close-confirm');
     expect(dialog.textContent).toContain('cannot be undone');
     expect(dialog.textContent).toContain('2 people currently hold access');
+  });
+
+  /**
+   * A refused save re-reads the club, and the re-read answers with the same
+   * version as a new object. That is not a reason to take back what somebody
+   * typed — and a refusal is exactly when they most need to still see it.
+   */
+  it('keeps what was typed into the details when a save is refused', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        clubs: [
+          {
+            benefits: ['Monthly studio notes'],
+            id: 'club-1',
+            lifecycle: 'published',
+            memberCount: 0,
+            name: 'Inner Circle',
+            slug: 'inner',
+            version: 1,
+          },
+        ],
+      }),
+    );
+    renderStudio(<ClubScreen clubId="club-1" />, double, {
+      params: { clubId: 'club-1' },
+      pathname: '/clubs/club-1',
+    });
+
+    fireEvent.change(await screen.findByTestId('club-edit-name'), {
+      target: { value: 'Inner Circle Studio' },
+    });
+    fireEvent.change(screen.getByTestId('club-benefit-0'), {
+      target: { value: 'Weekly studio notes' },
+    });
+    const reads = () =>
+      double.calls.filter(
+        (call) => call.path === '/v1/creator/clubs' && call.method === 'GET',
+      ).length;
+    const readsBefore = reads();
+    double.refuseNext('/v1/creator/clubs', 'POST', 429, 'RATE_LIMITED');
+    fireEvent.click(screen.getByTestId('club-save'));
+
+    expect(
+      (await screen.findByTestId('club-settings-error')).textContent,
+    ).toContain('Too many attempts');
+    await waitFor(() => {
+      expect(reads()).toBeGreaterThan(readsBefore);
+    });
+    // Let the re-read's answer render before asking what it did.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(screen.getByTestId<HTMLInputElement>('club-edit-name').value).toBe(
+      'Inner Circle Studio',
+    );
+    expect(screen.getByTestId<HTMLInputElement>('club-benefit-0').value).toBe(
+      'Weekly studio notes',
+    );
+    expect(screen.getByTestId('club-unsaved')).toBeTruthy();
+    expect(double.state.clubs[0]?.name).toBe('Inner Circle');
+
+    // Pressed again, it saves, and the form is seeded from what came back —
+    // all but the scratchpad, which is never saved and so never re-seeded.
+    fireEvent.change(screen.getByTestId('club-announcement-scratchpad'), {
+      target: { value: 'Doors open on Friday.' },
+    });
+    fireEvent.click(screen.getByTestId('club-save'));
+    await waitFor(() => {
+      expect(double.state.clubs[0]?.version).toBe(2);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('club-unsaved')).toBeNull();
+    });
+    expect(screen.getByTestId<HTMLInputElement>('club-edit-name').value).toBe(
+      'Inner Circle Studio',
+    );
+    expect(double.state.clubs[0]?.benefits).toEqual(['Weekly studio notes']);
+    expect(
+      screen.getByTestId<HTMLTextAreaElement>('club-announcement-scratchpad')
+        .value,
+    ).toBe('Doors open on Friday.');
   });
 });
 
@@ -1655,8 +1741,14 @@ describe('money', () => {
     });
     fireEvent.click(screen.getByTestId('offer-create-submit'));
 
-    await screen.findByTestId('offer-manage-offer-1');
-    fireEvent.click(screen.getByTestId('offer-manage-offer-1'));
+    const manage = await screen.findByTestId('offer-manage-offer-1');
+    // A disclosure, announced as one.
+    expect(manage.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(manage);
+    expect(manage.getAttribute('aria-expanded')).toBe('true');
+    expect(manage.getAttribute('aria-controls')).toBe(
+      screen.getByTestId('offer-panel-offer-1').id,
+    );
 
     // A draft with no price cannot go on sale, and the screen says why rather
     // than offering a control that would refuse.
@@ -1828,6 +1920,11 @@ describe('money', () => {
       within(dialog).getByTestId('payouts-withdraw-confirm-accept'),
     );
     await screen.findByTestId('payouts-failed');
+    // Said inside the confirmation, which is what the creator is looking at;
+    // the page behind it is under the scrim.
+    expect(within(dialog).getByTestId('payouts-failed').textContent).toContain(
+      'Nothing was sent',
+    );
 
     fireEvent.click(
       within(dialog).getByTestId('payouts-withdraw-confirm-accept'),

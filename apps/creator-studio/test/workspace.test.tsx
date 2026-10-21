@@ -1,7 +1,14 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { Catalog } from '../src/product/catalog';
+import { NewContent } from '../src/product/content-editor';
 import { ReceivedGifts } from '../src/product/gifts';
 import {
   activeCreatorState,
@@ -275,5 +282,152 @@ describe('the gifts a creator received', () => {
 
     await screen.findByTestId('received-gifts-empty');
     expect(screen.queryByTestId('received-gifts-list')).toBeNull();
+  });
+});
+
+/** A catalog one item longer than the first page, so there is a second one. */
+function longCatalog(): Partial<CreatorApiDoubleState> {
+  return {
+    content: Array.from({ length: 26 }, (_, index) => ({
+      id: `content-${String(index + 1)}`,
+      lifecycle: 'draft' as const,
+      title: `Draft ${String(index + 1)}`,
+      version: 1,
+      visibility: 'public' as const,
+    })),
+  };
+}
+
+describe('the catalog while something is happening', () => {
+  it('announces through a region that was already there', async () => {
+    const double = createCreatorApiDouble(withProfile(mixedCatalog()));
+    renderStudio(<Catalog />, double, { pathname: '/catalog' });
+
+    // Present and empty before anything has been said, so the first
+    // confirmation is not inserted together with the region announcing it.
+    const region = screen.getByTestId('toaster');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.textContent).toBe('');
+
+    fireEvent.click(await screen.findByTestId('content-publish-content-draft'));
+    await waitFor(() => {
+      expect(region.textContent).toContain('Published.');
+    });
+    expect(screen.getByTestId('toaster')).toBe(region);
+  });
+
+  it('says only the pressed control is working, and holds the rest', async () => {
+    const double = createCreatorApiDouble(
+      withProfile({
+        content: [
+          {
+            id: 'content-a',
+            lifecycle: 'draft',
+            title: 'First',
+            version: 1,
+            visibility: 'public',
+          },
+          {
+            id: 'content-b',
+            lifecycle: 'draft',
+            title: 'Second',
+            version: 1,
+            visibility: 'public',
+          },
+        ],
+      }),
+    );
+    renderStudio(<Catalog />, double, { pathname: '/catalog' });
+
+    fireEvent.click(await screen.findByTestId('content-publish-content-a'));
+
+    expect(
+      screen.getByTestId('content-publish-content-a').getAttribute('aria-busy'),
+    ).toBe('true');
+    const other = screen.getByTestId<HTMLButtonElement>(
+      'content-publish-content-b',
+    );
+    expect(other.getAttribute('aria-busy')).toBeNull();
+    expect(other.disabled).toBe(true);
+    expect(
+      screen.getByTestId('content-archive-content-a').getAttribute('aria-busy'),
+    ).toBeNull();
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId<HTMLButtonElement>('content-publish-content-b')
+          .disabled,
+      ).toBe(false);
+    });
+    expect(double.state.content[0]?.lifecycle).toBe('published');
+  });
+
+  it('keeps what loaded when a later page fails, and says why beside Load more', async () => {
+    const double = createCreatorApiDouble(withProfile(longCatalog()));
+    renderStudio(<Catalog />, double, { pathname: '/catalog' });
+
+    const more = await screen.findByTestId('catalog-load-more');
+    double.failNext('/v1/creator/content', 'GET');
+    fireEvent.click(more);
+
+    expect(
+      (await screen.findByTestId('catalog-more-failed')).textContent,
+    ).toContain('could not be reached');
+    // The first page is still there, and so is the control that tries again.
+    expect(screen.getByTestId('content-item-content-1')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('catalog-load-more'));
+
+    await screen.findByTestId('content-item-content-26');
+    expect(screen.queryByTestId('catalog-more-failed')).toBeNull();
+  });
+});
+
+describe('the editor, read by assistive technology', () => {
+  it('names the audience choice and each assist by what it is for', async () => {
+    const double = createCreatorApiDouble(withProfile());
+    renderStudio(<NewContent />, double, { pathname: '/catalog/new' });
+
+    await screen.findByTestId('content-title');
+    const audience = screen.getByRole('group', { name: 'Audience' });
+    expect(within(audience).getAllByRole('radio')).toHaveLength(2);
+
+    // Four assists on one screen, each with the same three controls, told
+    // apart by the field each one writes for.
+    const title = screen.getByRole('group', {
+      name: 'Studio draft assist · Title draft',
+    });
+    expect(
+      within(title).getByRole('button', { name: 'Generate draft' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('group', {
+        name: 'Studio draft assist · Caption draft',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('says a refused save beside the control that was pressed', async () => {
+    const double = createCreatorApiDouble(withProfile());
+    renderStudio(<NewContent />, double, { pathname: '/catalog/new' });
+
+    fireEvent.change(await screen.findByTestId('content-title'), {
+      target: { value: 'A first post' },
+    });
+    double.refuseNext('/v1/creator/content', 'POST', 429, 'RATE_LIMITED');
+    const save = screen.getByTestId<HTMLButtonElement>('content-save');
+    await waitFor(() => {
+      expect(save.disabled).toBe(false);
+    });
+    fireEvent.click(save);
+
+    const error = await screen.findByTestId('content-editor-error');
+    expect(error.textContent).toContain('Too many attempts');
+    expect(error.closest('.s-form-actions')).not.toBeNull();
+    expect(error.closest('.s-form-actions')).toBe(
+      save.closest('.s-form-actions'),
+    );
+    expect(screen.getByTestId<HTMLInputElement>('content-title').value).toBe(
+      'A first post',
+    );
   });
 });

@@ -102,7 +102,12 @@ a {
   text-underline-offset: 3px;
 }
 
-a:hover {
+/*
+ * Prose links only. A link that carries a class is a component — a button, a
+ * row, a navigation item — and owns its own hover; this rule outranked every
+ * one of them and turned a primary button's label the colour of its own fill.
+ */
+a:not([class]):hover {
   color: var(--ember-deep);
   text-decoration-color: currentcolor;
 }

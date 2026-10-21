@@ -45,9 +45,6 @@ html[data-design-preview='editorial'] {
     font-size: 1.25rem;
     letter-spacing: 0.08em;
   }
-  .s-sidebar__brand > svg {
-    display: none;
-  }
   .s-sidebar__item {
     border-radius: var(--radius-pill);
   }
@@ -185,6 +182,10 @@ html[data-design-preview='editorial'] {
 
 @media (width >= 64rem) {
   html[data-design-preview='editorial'] {
+    /* Kept on the tablet rail, where it is all the brand link shows. */
+    .s-sidebar__brand > svg {
+      display: none;
+    }
     .s-sidebar {
       padding: var(--space-8) var(--space-4);
       gap: var(--space-12);

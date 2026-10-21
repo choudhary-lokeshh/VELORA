@@ -79,6 +79,9 @@ export function Clubs() {
     [api],
   );
   const clubs = useCollection<CreatorClub>(load);
+  // A later page that failed leaves the earlier ones on screen, so the failure
+  // is said beside the control that asked for it rather than replacing them.
+  const moreFailed = clubs.error !== undefined && clubs.items.length > 0;
 
   return (
     <>
@@ -152,15 +155,24 @@ export function Clubs() {
         )}
       </Card>
 
-      {clubs.hasMore ? (
-        <Button
-          block
-          busy={clubs.loadingMore}
-          data-testid="clubs-load-more"
-          onClick={clubs.loadMore}
-        >
-          Load more
-        </Button>
+      {clubs.hasMore || moreFailed ? (
+        <div className="s-stack s-stack--3">
+          {moreFailed ? (
+            <ErrorMessage testId="clubs-more-failed">
+              {clubs.error}
+            </ErrorMessage>
+          ) : null}
+          {clubs.hasMore ? (
+            <Button
+              block
+              busy={clubs.loadingMore}
+              data-testid="clubs-load-more"
+              onClick={clubs.loadMore}
+            >
+              Load more
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {creating ? (

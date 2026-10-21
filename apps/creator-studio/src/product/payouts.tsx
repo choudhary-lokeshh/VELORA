@@ -149,7 +149,9 @@ export function Payouts() {
       />
       <MoneyNav />
 
-      {failure === undefined ? null : (
+      {/* While the confirmation is open the failure is said inside it, where
+          the creator is looking; the scrim covers this one. */}
+      {failure === undefined || withdrawing !== undefined ? null : (
         <ErrorMessage testId="payouts-failed">{failure}</ErrorMessage>
       )}
 
@@ -259,6 +261,9 @@ export function Payouts() {
                   data-testid={`payouts-withdraw-${balance.currency}`}
                   disabled={busy}
                   onClick={() => {
+                    // A new confirmation starts clean; an earlier failure
+                    // belongs to the attempt it described.
+                    setFailure(undefined);
                     setWithdrawing({
                       amountMinor: balance.releasable,
                       currency: balance.currency,
@@ -390,6 +395,9 @@ export function Payouts() {
             Requesting twice does not send twice: this request carries a key
             that VELORA recognises.
           </p>
+          {failure === undefined ? null : (
+            <ErrorMessage testId="payouts-failed">{failure}</ErrorMessage>
+          )}
         </ConfirmDialog>
       )}
     </>

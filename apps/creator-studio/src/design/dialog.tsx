@@ -141,7 +141,7 @@ export function Dialog({
         <span className="s-sheet-grip" />
         {title === undefined ? null : (
           <div className="s-dialog__head">
-            <h2 className="s-heading" id={headingId}>
+            <h2 className="s-heading s-wrap" id={headingId}>
               {title}
             </h2>
             <button

@@ -17,6 +17,7 @@ import {
   CardHead,
   CardSkeleton,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   InfoRow,
   ListRow,
@@ -275,6 +276,9 @@ function HistoryCard({
     [api, currency],
   );
   const history = useCollection<CreatorEarningsEntry>(load);
+  // A later page that failed leaves the earlier ones on screen, so the failure
+  // is said beside the control that asked for it rather than replacing them.
+  const moreFailed = history.error !== undefined && history.items.length > 0;
 
   return (
     <Card flush testId="earnings-history">
@@ -319,16 +323,23 @@ function HistoryCard({
         </ul>
       )}
 
-      {history.hasMore ? (
-        <div className="s-card__pad s-card__pad--block">
-          <Button
-            block
-            busy={history.loadingMore}
-            data-testid="earnings-history-more"
-            onClick={history.loadMore}
-          >
-            Load older activity
-          </Button>
+      {history.hasMore || moreFailed ? (
+        <div className="s-card__pad s-card__pad--block s-stack s-stack--3">
+          {moreFailed ? (
+            <ErrorMessage testId="earnings-history-more-failed">
+              {history.error}
+            </ErrorMessage>
+          ) : null}
+          {history.hasMore ? (
+            <Button
+              block
+              busy={history.loadingMore}
+              data-testid="earnings-history-more"
+              onClick={history.loadMore}
+            >
+              Load older activity
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </Card>

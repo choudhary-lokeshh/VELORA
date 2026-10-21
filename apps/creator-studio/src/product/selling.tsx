@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type {
   CommercialOffer,
@@ -142,6 +142,9 @@ export function Selling() {
 
   const readiness = offers.meta;
   const enabled = readiness?.enabled ?? false;
+  // A later page that failed leaves the earlier ones on screen, so the failure
+  // is said beside the control that asked for it rather than replacing them.
+  const moreFailed = offers.error !== undefined && offers.items.length > 0;
   const reload = () => {
     offers.reload();
     clubs.reload();
@@ -221,16 +224,23 @@ export function Selling() {
             ))}
           </ul>
         )}
-        {offers.hasMore ? (
-          <div className="s-card__pad s-card__pad--block">
-            <Button
-              block
-              busy={offers.loadingMore}
-              data-testid="offers-more"
-              onClick={offers.loadMore}
-            >
-              Load more
-            </Button>
+        {offers.hasMore || moreFailed ? (
+          <div className="s-card__pad s-card__pad--block s-stack s-stack--3">
+            {moreFailed ? (
+              <ErrorMessage testId="offers-more-failed">
+                {offers.error}
+              </ErrorMessage>
+            ) : null}
+            {offers.hasMore ? (
+              <Button
+                block
+                busy={offers.loadingMore}
+                data-testid="offers-more"
+                onClick={offers.loadMore}
+              >
+                Load more
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </Card>
@@ -392,6 +402,7 @@ function OfferRow({
   const state = offerStateLook(offer.state);
   const live = offer.prices.filter((price) => price.state === 'active');
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const manageable =
     creator.canWrite &&
     readiness?.enabled === true &&
@@ -426,7 +437,11 @@ function OfferRow({
             Created {formatDate(offer.createdAt)}
           </span>
           {manageable ? (
+            // A disclosure, announced as one: whether its panel is open and
+            // which panel that is. A label changing to "Done" says neither.
             <Button
+              aria-controls={panelId}
+              aria-expanded={open}
               data-testid={`offer-manage-${offer.id}`}
               onClick={() => {
                 setOpen((current) => !current);
@@ -441,6 +456,7 @@ function OfferRow({
         <div
           className="s-card__pad s-stack s-stack--5"
           data-testid={`offer-panel-${offer.id}`}
+          id={panelId}
         >
           <ConsumerPreview club={club} offer={offer} />
           <PriceControls

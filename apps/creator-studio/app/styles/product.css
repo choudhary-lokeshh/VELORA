@@ -52,6 +52,14 @@
 }
 
 /*
+ * A refused save is said beside the control that was pressed, on a line of its
+ * own. Above the form it could be a screen's height away from that control.
+ */
+.s-form-actions > .s-inline-error {
+  flex-basis: 100%;
+}
+
+/*
  * A label, an address, and a way to remove the row. Two columns from the
  * tablet up; stacked below it, because two inputs side by side on a phone are
  * two inputs nobody can read.
@@ -445,6 +453,19 @@
   background: var(--surface-1);
   box-shadow: var(--shadow-1);
   color: var(--text-primary);
+}
+
+/* The same two allowances the segmented strip makes; see `components.css`. */
+@media (pointer: coarse) {
+  .s-subnav__item {
+    min-height: var(--control-height);
+  }
+}
+
+@media (forced-colors: active) {
+  .s-subnav__item[aria-current='page'] {
+    outline: 2px solid CanvasText;
+  }
 }
 
 /* ============================== Account ============================== */

@@ -17,6 +17,7 @@ import {
   ErrorMessage,
   ErrorState,
   ListRow,
+  Notice,
   PageHeader,
   RowSkeleton,
   Segmented,
@@ -85,6 +86,20 @@ export function Catalog() {
     undefined,
   );
   const { busy, run } = useSingleFlight();
+  /*
+   * Which row's control is working, and which way it is moving that row.
+   *
+   * Every row's controls are held while one request is in flight, because only
+   * one may be. Only the one that was pressed says it is working: a spinner on
+   * every row of the catalog reads as every row changing.
+   */
+  const [pending, setPending] = useState<
+    | {
+        readonly id: string;
+        readonly lifecycle: 'draft' | 'published' | 'archived';
+      }
+    | undefined
+  >(undefined);
 
   const loadCatalog = useCallback(
     async (cursor: string | undefined) => {
@@ -102,6 +117,9 @@ export function Catalog() {
     [api],
   );
   const catalog = useCollection<CreatorContent>(loadCatalog);
+  // A later page that failed leaves the earlier ones on screen, so the failure
+  // is said beside the control that asked for it rather than replacing them.
+  const moreFailed = catalog.error !== undefined && catalog.items.length > 0;
 
   const loadClubs = useCallback(async () => api.clubs({ pageSize: 50 }), [api]);
   const clubs = useResource<CreatorClubList>(loadClubs);
@@ -139,17 +157,17 @@ export function Catalog() {
     confirmation: string,
   ) => {
     run(async () => {
-      const failure = failureMessage(
-        await api.setContentLifecycle({
-          contentId: item.id,
-          lifecycle,
-          version: item.version,
-        }),
-        {
-          conflict:
-            'This item changed somewhere else since this page was loaded. Reload and try again.',
-        },
-      );
+      setPending({ id: item.id, lifecycle });
+      const result = await api.setContentLifecycle({
+        contentId: item.id,
+        lifecycle,
+        version: item.version,
+      });
+      setPending(undefined);
+      const failure = failureMessage(result, {
+        conflict:
+          'This item changed somewhere else since this page was loaded. Reload and try again.',
+      });
       setMessage(failure);
       if (failure === undefined) toast.show(confirmation, 'positive');
       catalog.reload();
@@ -175,14 +193,20 @@ export function Catalog() {
         title="Catalog"
       />
 
+      {/*
+        A caution rather than a failure, as on Clubs: nothing went wrong to
+        load this page, and an alarm-coloured alert above a list that loaded
+        fine reads as a fault that is not there.
+      */}
       {!creator.settled || creator.canWrite ? null : (
-        <Card>
-          <ErrorState
-            body="Your creator access cannot publish or change items at the moment. Everything you have made is still listed below and still yours."
-            testId="catalog-read-only"
-            title="Read only for now"
-          />
-        </Card>
+        <Notice
+          testId="catalog-read-only"
+          title="Read only for now"
+          tone="caution"
+        >
+          Your creator access cannot publish or change items at the moment.
+          Everything you have made is still listed below and still yours.
+        </Notice>
       )}
 
       {message === undefined ? null : (
@@ -264,6 +288,9 @@ export function Catalog() {
                     item.media.find((entry) => entry.state === 'ready')?.id
                   }
                   item={item}
+                  moving={
+                    pending?.id === item.id ? pending.lifecycle : undefined
+                  }
                   onArchive={() => {
                     setConfirming(item);
                   }}
@@ -283,15 +310,24 @@ export function Catalog() {
         )}
       </Card>
 
-      {catalog.hasMore ? (
-        <Button
-          block
-          busy={catalog.loadingMore}
-          data-testid="catalog-load-more"
-          onClick={catalog.loadMore}
-        >
-          Load more
-        </Button>
+      {catalog.hasMore || moreFailed ? (
+        <div className="s-stack s-stack--3">
+          {moreFailed ? (
+            <ErrorMessage testId="catalog-more-failed">
+              {catalog.error}
+            </ErrorMessage>
+          ) : null}
+          {catalog.hasMore ? (
+            <Button
+              block
+              busy={catalog.loadingMore}
+              data-testid="catalog-load-more"
+              onClick={catalog.loadMore}
+            >
+              Load more
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {confirming === undefined ? null : (
@@ -326,17 +362,21 @@ function ContentRow({
   imageAddress,
   imageReference,
   item,
+  moving,
   onArchive,
   onPublish,
   onRestore,
   onUnpublish,
 }: {
+  /** Some row's request is in flight, so no row may start another. */
   readonly busy: boolean;
   readonly clubName: string | undefined;
   readonly editable: boolean;
   readonly imageAddress: string | undefined;
   readonly imageReference: string | undefined;
   readonly item: CreatorContent;
+  /** Where this row is being moved to, while its own request is in flight. */
+  readonly moving: 'draft' | 'published' | 'archived' | undefined;
   readonly onArchive: () => void;
   readonly onPublish: () => void;
   readonly onRestore: () => void;
@@ -421,6 +461,7 @@ function ContentRow({
         <div className="s-item-row__actions">
           {item.lifecycle === 'draft' ? (
             <Button
+              busy={moving === 'published'}
               data-testid={`content-publish-${item.id}`}
               disabled={busy}
               onClick={onPublish}
@@ -432,6 +473,7 @@ function ContentRow({
           ) : null}
           {item.lifecycle === 'published' ? (
             <Button
+              busy={moving === 'draft'}
               data-testid={`content-unpublish-${item.id}`}
               disabled={busy}
               onClick={onUnpublish}
@@ -442,6 +484,7 @@ function ContentRow({
           ) : null}
           {item.lifecycle === 'archived' ? (
             <Button
+              busy={moving === 'draft'}
               data-testid={`content-restore-${item.id}`}
               disabled={busy}
               onClick={onRestore}
@@ -451,6 +494,7 @@ function ContentRow({
             </Button>
           ) : (
             <Button
+              busy={moving === 'archived'}
               data-testid={`content-archive-${item.id}`}
               disabled={busy}
               onClick={onArchive}
