@@ -779,3 +779,64 @@ export const creators = [
 export function subjectFor(kind, index) {
   return `${kind}-${String(index + 1).padStart(2, '0')}@velora.seed`;
 }
+
+/**
+ * One account that reaches every surface, so a developer can walk the whole
+ * product without signing in as a different seeded person for each part.
+ *
+ * It is an ordinary account built through the same routes as every other: a
+ * consumer with a profile, a photograph, introductions, conversations, coins, a
+ * club membership and a paid membership, and also a creator with a published
+ * page, catalog, and a club people belong to. Platform Admin needs nothing
+ * seeded: a local-test bootstrap gives every local operator session super admin
+ * standing. The region is one the local-test commerce authority publishes, so
+ * the paid paths are reachable rather than refused.
+ */
+export const showcase = {
+  consumer: {
+    bio: 'The account that sees everything in this local world. Everyone it knows was seeded beside it.',
+    displayName: 'Alex Rivera',
+    languages: ['es'],
+    matchingGender: 'non_binary',
+    region: 'ES',
+    tone: ['#3f5a4a', '#16221b'],
+  },
+  creator: {
+    bio: 'A local creator page for walking Creator Studio end to end. Nothing here is real, and all of it went through the same routes a creator uses.',
+    clubs: [
+      {
+        benefits: [
+          'A members-only note every week',
+          'Early looks at what is coming',
+        ],
+        description: 'The club this local account runs, with members in it.',
+        membership: {
+          monthlyMinor: '500',
+          yearlyMinor: '5000',
+        },
+        name: 'Rivera Notes',
+      },
+    ],
+    displayName: 'Alex Rivera Studio',
+    handle: 'alexrivera',
+    items: [
+      {
+        body: 'The first public item on this page, with pictures, so the catalog and the public page both have something in them.',
+        images: 2,
+        summary: 'A public item with pictures.',
+        title: 'Welcome to the studio',
+      },
+      {
+        body: 'Only members of Rivera Notes can read this one.',
+        images: 1,
+        members: true,
+        summary: 'A members-only item.',
+        title: 'For members of Rivera Notes',
+      },
+    ],
+    links: [{ label: 'Studio', url: 'https://example.invalid/alexrivera' }],
+    region: 'ES',
+    tone: ['#3f5a4a', '#16221b'],
+  },
+  subject: 'you@velora.seed',
+};

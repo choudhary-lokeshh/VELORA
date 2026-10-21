@@ -88,6 +88,19 @@ deployed environment could not produce a seeded
 account anyway: no storage provider, no local sign-in adapter, and no notification
 channel exists outside local and test.
 
+One seeded account reaches every surface, so the whole product can be walked
+without switching identities: sign in as `you@velora.seed`. On Consumer Web it
+has a profile and photograph, introductions with three people, one person
+waiting on its answer, three conversations, 400 coins, a club membership, and a
+paid membership. On Creator Studio it has a published page, a catalog, and a
+club with members, a paying member, and a gift. On Platform Admin it has super
+admin standing, which the local-test bootstrap gives every local operator
+session. Open the surfaces at `http://127.0.0.1:3000`, `:3001` and `:3002`, not
+`localhost`. The API admits only those origins, and a page on `localhost`
+cannot sign in. Use Chromium or Firefox, or run `bun run dev --domains` for
+Safari, because WebKit does not keep a `Secure` session cookie over plain-HTTP
+loopback.
+
 Virtual gifting is deliberately local/test-only. The seed provisions its data-driven catalog through the local API and sends gifts through the real checkout, signed provider event, durable inbox, balanced BILLING journal, creator-revenue event, history, and reversal-compatible state machine. Staging and production still accept only the unavailable payment provider and unpublished commerce policy; fixture prices and creator shares are not launch terms, and no gift grants content access or implies a payout. See the [virtual gifting freeze report](docs/architecture/23-virtual-gifting-freeze-report.md).
 
 Everybody it creates is invented, adult, and pictured by an image generated from

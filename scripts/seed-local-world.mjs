@@ -8,6 +8,7 @@ import {
   commonLanguage,
   consumers,
   creators,
+  showcase,
   subjectFor,
 } from './seed-fixtures.mjs';
 import { assertLocalSeedTarget } from './seed-safety.mjs';
@@ -263,8 +264,11 @@ async function upload(
 }
 
 /** A consumer with a complete, discoverable, currently available profile. */
-async function seedConsumer(fixture, index) {
-  const subject = subjectFor('person', index);
+async function seedConsumer(
+  fixture,
+  index,
+  subject = subjectFor('person', index),
+) {
   const session = await signIn('consumer_web', subject);
 
   let account = await session.call('GET', '/v1/users/me');
@@ -501,8 +505,11 @@ async function seedConversations(introductions) {
 }
 
 /** A creator: a consumer account, a capability, a published page, and imagery. */
-async function seedCreator(fixture, index) {
-  const subject = subjectFor('creator', index);
+async function seedCreator(
+  fixture,
+  index,
+  subject = subjectFor('creator', index),
+) {
   const consumerSession = await signIn('consumer_web', subject);
   const foundAccount = await consumerSession.call('GET', '/v1/users/me');
   if (!foundAccount.ok) await consumerSession.must('POST', '/v1/users', {});
@@ -974,6 +981,188 @@ async function seedCoins(people) {
   return { empty, funded };
 }
 
+/**
+ * The showcase account: one identity that reaches every part of the product.
+ *
+ * Built after everybody else, because almost everything it shows is a
+ * relationship with somebody already seeded: people it was introduced to,
+ * people waiting on it, a club it belongs to, a membership it paid for, members
+ * in its own club. Every step is idempotent for the same reasons the rest of
+ * this file is, so a re-run tops it up rather than duplicating it.
+ */
+async function seedShowcase({ people, priced, seededCreators, work }) {
+  const index = consumers.length;
+  const you = await seedConsumer(showcase.consumer, index, showcase.subject);
+  await waitForConsumerImages([you]);
+  await makeVisible([you]);
+
+  // Three mutual introductions, one person waiting on the showcase's answer,
+  // and one the showcase is waiting on.
+  const introductions = new Map();
+  for (const other of [people[5], people[7], people[9]]) {
+    if (other === undefined) continue;
+    const first = await you.session.call(
+      'POST',
+      '/v1/discovery/introductions',
+      { candidateId: other.id },
+    );
+    const second = await other.session.call(
+      'POST',
+      '/v1/discovery/introductions',
+      { candidateId: you.id },
+    );
+    if (second.ok && second.body.state === 'mutual') {
+      introductions.set(second.body.id, { one: you, other });
+    } else if (first.ok && first.body.state === 'mutual') {
+      introductions.set(first.body.id, { one: you, other });
+    }
+  }
+  const incoming = people[11];
+  if (incoming !== undefined) {
+    await incoming.session.call('POST', '/v1/discovery/introductions', {
+      candidateId: you.id,
+    });
+  }
+  const outgoing = people[13];
+  if (outgoing !== undefined) {
+    await you.session.call('POST', '/v1/discovery/introductions', {
+      candidateId: outgoing.id,
+    });
+  }
+  const conversations = await seedConversations(introductions);
+
+  const coins = await you.session.call('POST', '/v1/wallet/grants', {
+    coins: '400',
+    reference: 'seed-coins-showcase',
+  });
+
+  // A member of another creator's club by invitation, unless it already is.
+  const host = work[0];
+  const hostClub = host?.clubs[0];
+  if (host !== undefined && hostClub !== undefined) {
+    const held = await you.session.must('GET', '/v1/clubs/access');
+    const member = held.access.some(
+      (entry) => entry.clubId === hostClub.id && entry.state === 'active',
+    );
+    if (!member) {
+      const issued = await host.studio.call(
+        'POST',
+        '/v1/creator/clubs/invites',
+        { clubId: hostClub.id },
+      );
+      if (issued.ok) {
+        await you.session.call('POST', '/v1/clubs/redemptions', {
+          secret: issued.body.secret,
+        });
+      }
+    }
+  }
+
+  // A paid membership of somebody else's club, through the provider's page.
+  const sale = priced.find((one) => one.handle !== showcase.creator.handle);
+  const paid =
+    sale === undefined ? undefined : await seedSubscriptions([sale], [you]);
+
+  // A gift sent to a creator.
+  const recipient = seededCreators[0];
+  let giftSent = false;
+  if (recipient !== undefined) {
+    const catalog = await you.session.call(
+      'GET',
+      `/v1/billing/gifts/catalog?handle=${encodeURIComponent(recipient.fixture.handle)}&currency=USD`,
+    );
+    const item = catalog.ok ? catalog.body.items[0] : undefined;
+    if (item !== undefined) {
+      const gift = await you.session.call(
+        'POST',
+        '/v1/billing/gifts',
+        {
+          context: { type: 'creator_profile' },
+          currency: 'USD',
+          giftItemId: item.id,
+          handle: recipient.fixture.handle,
+        },
+        { 'x-velora-idempotency-key': 'seed-showcase-gift-sent' },
+      );
+      giftSent = gift.ok;
+    }
+  }
+
+  // The same account as a creator, with members, a paying member, and a gift.
+  const creator = await seedCreator(
+    showcase.creator,
+    seededCreators.length,
+    showcase.subject,
+  );
+  const studioWork = await seedCreatorWork(creator, seededCreators.length);
+  // Two members by invitation. `seedMemberships` leaves a club's first
+  // invitation outstanding on purpose, which would leave this club empty.
+  let members = 0;
+  const ownClub = studioWork.clubs[0];
+  if (ownClub !== undefined) {
+    const invites = await studioWork.studio.must(
+      'GET',
+      `/v1/creator/clubs/invites?clubId=${encodeURIComponent(ownClub.id)}`,
+    );
+    members = invites.invites.filter(
+      (invite) => invite.redeemedAt !== undefined,
+    ).length;
+    for (const joiner of people.slice(1, 3).slice(members)) {
+      const issued = await studioWork.studio.call(
+        'POST',
+        '/v1/creator/clubs/invites',
+        { clubId: ownClub.id },
+      );
+      if (!issued.ok) continue;
+      const used = await joiner.session.call('POST', '/v1/clubs/redemptions', {
+        secret: issued.body.secret,
+      });
+      if (used.ok) members += 1;
+    }
+  }
+  const offers = await seedMembershipOffers([studioWork]);
+  const payingMembers = await seedSubscriptions(offers, people);
+
+  const sender = people.find((person) =>
+    ['ES', 'FR', 'JP'].includes(person.fixture.region),
+  );
+  let giftReceived = false;
+  if (sender !== undefined) {
+    const catalog = await sender.session.call(
+      'GET',
+      `/v1/billing/gifts/catalog?handle=${encodeURIComponent(showcase.creator.handle)}&currency=USD`,
+    );
+    const item = catalog.ok ? catalog.body.items[0] : undefined;
+    if (item !== undefined) {
+      const gift = await sender.session.call(
+        'POST',
+        '/v1/billing/gifts',
+        {
+          context: { type: 'creator_profile' },
+          currency: 'USD',
+          giftItemId: item.id,
+          handle: showcase.creator.handle,
+        },
+        { 'x-velora-idempotency-key': 'seed-showcase-gift-received' },
+      );
+      giftReceived = gift.ok;
+    }
+  }
+
+  return {
+    clubs: studioWork.clubs.length,
+    coins: coins.ok,
+    conversations: conversations.opened,
+    giftReceived,
+    giftSent,
+    introductions: introductions.size,
+    items: studioWork.items,
+    members,
+    paid: paid?.active ?? 0,
+    payingMembers: payingMembers.active + payingMembers.ending,
+  };
+}
+
 async function main() {
   guard();
   say(`seeding ${apiBaseUrl}`);
@@ -1036,10 +1225,20 @@ async function main() {
     `${String(coins.funded)} wallets funded, ${String(coins.empty)} deliberately empty`,
   );
 
+  const you = await seedShowcase({ people, priced, seededCreators, work });
+  say(
+    `showcase ${showcase.subject}: ${String(you.introductions)} introductions, ${String(you.conversations)} conversations, ${String(you.items)} catalog items, ${String(you.members)} club members`,
+  );
+
   process.stdout.write(
     [
       '',
       'VELORA local world seeded.',
+      '',
+      `One account sees everything: sign in as ${showcase.subject}`,
+      '  Consumer Web     a profile, introductions, chats, coins, a club, a paid membership',
+      '  Creator Studio   a published page, catalog, a club with members',
+      '  Platform Admin   super admin standing through the local-test bootstrap',
       '',
       `  people            ${String(people.length)}`,
       `  creators          ${String(seededCreators.length)}`,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { consumers, creators, subjectFor } from './seed-fixtures.mjs';
+import { consumers, creators, showcase, subjectFor } from './seed-fixtures.mjs';
 import { assertLocalSeedTarget } from './seed-safety.mjs';
 
 const accept = (apiBaseUrl) =>
@@ -128,6 +128,39 @@ for (const creator of creators) {
       `${creator.handle}/${item.title} must not use remote media`,
     );
   }
+}
+
+// The showcase reaches every surface, so it must collide with nobody and be
+// held to the same local-only rules as the creators it sits beside.
+assert.ok(
+  !subjects.includes(showcase.subject),
+  'the showcase subject must be its own',
+);
+assert.ok(
+  !creators.some((creator) => creator.handle === showcase.creator.handle),
+  'the showcase handle must be its own',
+);
+assert.equal(
+  showcase.consumer.region,
+  showcase.creator.region,
+  'the showcase is one person in one region',
+);
+assert.ok(
+  ['ES', 'FR'].includes(showcase.creator.region),
+  'the showcase needs an eligible local-test operating region',
+);
+for (const link of showcase.creator.links) {
+  assert.equal(
+    new URL(link.url).hostname,
+    'example.invalid',
+    'showcase fixture link must stay non-routable',
+  );
+}
+for (const item of showcase.creator.items) {
+  assert.ok(
+    Number.isInteger(item.images) && item.images > 0,
+    `showcase/${item.title} needs generated local media`,
+  );
 }
 
 process.stdout.write(
