@@ -209,10 +209,13 @@ function FederatedSignIn() {
  * Enrol a phishing-resistant authenticator.
  *
  * Reachable to any Platform Admin session, deliberately, and not only to one
- * that already stepped up: enrolment is how an operator reaches phishing-
- * resistant assurance in the first place, so requiring it here would close the
- * only door to itself. The server still consumes a challenge it issued to this
- * operator and verifies the registration against it.
+ * that already stepped up: a first enrolment is how an operator reaches
+ * phishing-resistant assurance in the first place, so requiring it here would
+ * close the only door to itself. A second key is different. The server refuses
+ * it until the operator has stepped up with a key they already hold, and that
+ * refusal arrives here as the ordinary privileged refusal. The server still
+ * consumes a challenge it issued to this operator and verifies the
+ * registration against it.
  */
 function PrivilegedEnrolment({ accountId }: { readonly accountId: string }) {
   const api = useApi();
@@ -321,7 +324,7 @@ function PrivilegedEnrolment({ accountId }: { readonly accountId: string }) {
               {enrolled.count === 1 ? '' : 's'}.{' '}
               {enrolled.ready
                 ? 'ADR-0017 asks for two independently stored ones, and that is satisfied.'
-                : 'ADR-0017 asks for two independently stored ones, so enrol another on a different device.'}
+                : 'ADR-0017 asks for two independently stored ones, so step up with this one, then enrol another on a different device.'}
             </Notice>
           ) : null}
           <Button

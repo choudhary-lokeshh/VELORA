@@ -46,6 +46,7 @@ import {
   AdminContextResolver,
   UngrantedOperatorStanding,
   type OperatorStandingPort,
+  type PrivilegedReadinessPort,
 } from './context.js';
 import { AdminCreatorDirectory } from './directory.js';
 import { AdminMediaRoutes } from './media-routes.js';
@@ -97,6 +98,11 @@ export interface AdminRuntime {
  * lifecycle, an unpublished item is PRIVATE CLUBS' lifecycle, and the record of
  * the decision is TRUST & SAFETY's enforcement log.
  */
+/** The readiness answer of a production runtime that has no AUTH service. */
+const unreadyEverywhere: PrivilegedReadinessPort = {
+  productionReadiness: () => Promise.resolve({ ready: false }),
+};
+
 export function createAdminRuntime(input: {
   readonly caller: CallerResolver;
   /** AUTH exact-action execution, not an ADMIN role or permission store. */
@@ -208,6 +214,12 @@ export function createAdminRuntime(input: {
   const adminContext = new AdminContextResolver({
     caller: input.caller,
     now,
+    // ADR-0017: two independently stored authenticators before production
+    // privileged access. A production runtime assembled without AUTH's answer
+    // refuses everybody rather than skipping the requirement.
+    ...(input.environment === 'production'
+      ? { readiness: input.privilegedAccess ?? unreadyEverywhere }
+      : {}),
     standing: input.standing ?? new UngrantedOperatorStanding(),
   });
   const controls = input.controls ?? new DefaultControlReader();

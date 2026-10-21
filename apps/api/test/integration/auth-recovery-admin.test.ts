@@ -1,7 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 
 import { Ed25519AccessTokenAuthority } from '../../src/auth/access-token.js';
-import { requireAudience, requireAssurance } from '../../src/auth/context.js';
+import {
+  AuthorizationError,
+  requireAudience,
+  requireAssurance,
+} from '../../src/auth/context.js';
 import {
   LocalIdentityProvider,
   UnavailablePrivilegedAuthenticatorVerifier,
@@ -489,7 +493,7 @@ describe('privileged step-up assurance', () => {
     const account = await signedInAccount('stepup-unavailable@velora.test');
     const sessionId = await adminSession(account.context.accountId);
     await service.enrolAuthenticator({
-      accountId: account.context.accountId,
+      context: adminContext(account.context.accountId, 'enrolment'),
       correlationId: 'unavailable',
       credentialId: 'credential-unavailable',
       label: 'security key',
@@ -517,7 +521,7 @@ describe('privileged step-up assurance', () => {
     const { service } = privileged();
     const account = await signedInAccount('stepup-consumer@velora.test');
     await service.enrolAuthenticator({
-      accountId: account.context.accountId,
+      context: adminContext(account.context.accountId, 'enrolment'),
       correlationId: 'consumer-stepup',
       credentialId: 'credential-consumer',
       label: 'security key',
@@ -543,7 +547,7 @@ describe('privileged step-up assurance', () => {
     const account = await signedInAccount('stepup-revoked@velora.test');
     const sessionId = await adminSession(account.context.accountId);
     const authenticatorId = await service.enrolAuthenticator({
-      accountId: account.context.accountId,
+      context: adminContext(account.context.accountId, 'enrolment'),
       correlationId: 'revoked',
       credentialId: 'credential-revoked',
       label: 'security key',
@@ -577,7 +581,7 @@ describe('privileged step-up assurance', () => {
     const account = await signedInAccount('stepup-replay@velora.test');
     const sessionId = await adminSession(account.context.accountId);
     await service.enrolAuthenticator({
-      accountId: account.context.accountId,
+      context: adminContext(account.context.accountId, 'enrolment'),
       correlationId: 'replay',
       credentialId: 'credential-replay',
       label: 'security key',
@@ -620,7 +624,7 @@ describe('privileged step-up assurance', () => {
     const account = await signedInAccount('passkey@velora.test');
     const sessionId = await adminSession(account.context.accountId);
     await service.enrolAuthenticator({
-      accountId: account.context.accountId,
+      context: adminContext(account.context.accountId, 'enrolment'),
       correlationId: 'passkey',
       credentialId: 'credential-passkey',
       label: 'platform passkey',
@@ -662,7 +666,7 @@ describe('privileged step-up assurance', () => {
 
     for (let index = 0; index < requiredProductionAuthenticators; index += 1) {
       await service.enrolAuthenticator({
-        accountId: account.context.accountId,
+        context: adminContext(account.context.accountId, 'enrolment'),
         correlationId: 'readiness',
         credentialId: `credential-${String(index)}`,
         label: `security key ${String(index)}`,
@@ -675,13 +679,142 @@ describe('privileged step-up assurance', () => {
   });
 });
 
+/**
+ * Restart audit A2. A first authenticator is how an operator reaches
+ * phishing-resistant assurance, so it needs only the session. Every later one
+ * needs fresh phishing-resistant assurance; otherwise whoever held only an
+ * operator's first factor could enrol a key of their own and step up with it.
+ */
+describe('privileged authenticator enrolment', () => {
+  const key = (index: number) => ({
+    correlationId: `enrolment-${String(index)}`,
+    credentialId: `credential-enrolment-${String(index)}`,
+    label: `security key ${String(index)}`,
+    publicKey: 'public-key',
+  });
+
+  async function heldKeys(accountId: string): Promise<number> {
+    const rows = await rowsOf<{ total: number }>(
+      database.sql`select count(*)::int as total from auth_admin_authenticators where account_id = ${accountId} and revoked_at is null`,
+    );
+    return rows[0]?.total ?? 0;
+  }
+
+  it('enrols a first key on a single-factor session', async () => {
+    const { service } = privileged();
+    const account = await signedInAccount('enrol-first@velora.test');
+    await service.enrolAuthenticator({
+      ...key(0),
+      context: adminContext(
+        account.context.accountId,
+        'first',
+        'single_factor',
+      ),
+    });
+    expect(await heldKeys(account.context.accountId)).toBe(1);
+  });
+
+  it('refuses a second key from a session holding only the first factor', async () => {
+    const { service } = privileged();
+    const account = await signedInAccount('enrol-second@velora.test');
+    const firstFactor = adminContext(
+      account.context.accountId,
+      'second',
+      'single_factor',
+    );
+    await service.enrolAuthenticator({ ...key(0), context: firstFactor });
+
+    const refusal = await service
+      .enrolAuthenticator({ ...key(1), context: firstFactor })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(refusal).toBeInstanceOf(AuthorizationError);
+    expect(await heldKeys(account.context.accountId)).toBe(1);
+  });
+
+  it('refuses a second key once the step-up has aged past the window', async () => {
+    const { service } = privileged();
+    const account = await signedInAccount('enrol-stale@velora.test');
+    const stepped = adminContext(account.context.accountId, 'stale');
+    await service.enrolAuthenticator({ ...key(0), context: stepped });
+
+    clock.current = new Date(
+      clock.current.getTime() + stepUpAssuranceMaximumAgeMilliseconds + 1_000,
+    );
+    const refusal = await service
+      .enrolAuthenticator({ ...key(1), context: stepped })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(refusal).toBeInstanceOf(AuthorizationError);
+    expect(await heldKeys(account.context.accountId)).toBe(1);
+  });
+
+  it('enrols a second key after a fresh step-up', async () => {
+    const { service } = privileged();
+    const account = await signedInAccount('enrol-fresh@velora.test');
+    const stepped = adminContext(account.context.accountId, 'fresh');
+    await service.enrolAuthenticator({ ...key(0), context: stepped });
+    await service.enrolAuthenticator({ ...key(1), context: stepped });
+    expect(await heldKeys(account.context.accountId)).toBe(2);
+  });
+
+  it('lets only one of two concurrent first keys through on a first factor', async () => {
+    const { service } = privileged();
+    const account = await signedInAccount('enrol-race@velora.test');
+    const firstFactor = adminContext(
+      account.context.accountId,
+      'race',
+      'single_factor',
+    );
+    const outcomes = await Promise.allSettled([
+      service.enrolAuthenticator({ ...key(0), context: firstFactor }),
+      service.enrolAuthenticator({ ...key(1), context: firstFactor }),
+    ]);
+
+    expect(
+      outcomes.filter((outcome) => outcome.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const refused = outcomes.find((outcome) => outcome.status === 'rejected');
+    expect(
+      refused?.status === 'rejected' ? refused.reason : undefined,
+    ).toBeInstanceOf(AuthorizationError);
+    expect(await heldKeys(account.context.accountId)).toBe(1);
+  });
+
+  it('treats an account whose keys were all revoked as keyless again', async () => {
+    const { service } = privileged();
+    const account = await signedInAccount('enrol-revoked@velora.test');
+    const firstFactor = adminContext(
+      account.context.accountId,
+      'revoked',
+      'single_factor',
+    );
+    const authenticatorId = await service.enrolAuthenticator({
+      ...key(0),
+      context: firstFactor,
+    });
+    await service.revokeAuthenticator({
+      authenticatorId,
+      correlationId: 'revoked',
+      reason: 'lost',
+    });
+
+    await service.enrolAuthenticator({ ...key(1), context: firstFactor });
+    expect(await heldKeys(account.context.accountId)).toBe(1);
+  });
+});
+
 describe('exact-action authorization for high-impact operations', () => {
   async function privilegedActor(subject: string) {
     const { service } = privileged();
     const account = await signedInAccount(subject);
     const sessionId = await adminSession(account.context.accountId);
     await service.enrolAuthenticator({
-      accountId: account.context.accountId,
+      context: adminContext(account.context.accountId, 'enrolment'),
       correlationId: 'setup',
       credentialId: `credential-${subject}`,
       label: 'security key',
@@ -1042,7 +1175,7 @@ describe('privileged recovery dual control', () => {
     const { first, requestId, second, service, target } =
       await scenario('dual');
     await service.enrolAuthenticator({
-      accountId: target.context.accountId,
+      context: adminContext(target.context.accountId, 'enrolment'),
       correlationId: 'dual',
       credentialId: 'credential-target',
       label: 'security key',

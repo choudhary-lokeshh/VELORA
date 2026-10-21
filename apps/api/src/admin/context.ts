@@ -81,11 +81,27 @@ export class UngrantedOperatorStanding implements OperatorStandingPort {
   }
 }
 
+/**
+ * Whether an operator holds the authenticators privileged access requires.
+ *
+ * AUTH's question, answered from AUTH's own rows. ADMIN only asks it.
+ */
+export interface PrivilegedReadinessPort {
+  productionReadiness(accountId: string): Promise<{ readonly ready: boolean }>;
+}
+
 export class AdminContextResolver {
   constructor(
     private readonly dependencies: {
       readonly caller: CallerResolver;
       readonly now: () => Date;
+      /**
+       * Present only where ADR-0017's two-authenticator requirement applies.
+       * When present, an operator who has not met it is refused every
+       * capability, however fresh their assurance, because one stolen or lost
+       * key must never be the whole of an operator's access.
+       */
+      readonly readiness?: PrivilegedReadinessPort;
       readonly standing: OperatorStandingPort;
     },
   ) {}
@@ -146,6 +162,8 @@ export class AdminContextResolver {
       if (!(error instanceof AuthorizationError)) throw error;
       return this.refused(input);
     }
+
+    if (!(await this.ready(context))) return this.refused(input);
 
     // The grant is looked up only after the audience and the assurance passed,
     // so a consumer session never causes a read on an operator's behalf and
@@ -226,6 +244,27 @@ export class AdminContextResolver {
       if (!(error instanceof AuthorizationError)) throw error;
       return this.refused(input);
     }
+  }
+
+  /**
+   * The operator's standing, refused unless they meet the authenticator
+   * requirement.
+   *
+   * For the one act that turns standing into authority without a capability:
+   * taking the first grant. Reading one's own standing stays available, so the
+   * console can still tell an operator what is missing.
+   */
+  async resolveReadyStanding(input: RouteRequest): Promise<AdminRouteContext> {
+    const resolved = await this.resolveStanding(input);
+    if ('failure' in resolved) return resolved;
+    if (!(await this.ready(resolved.context.auth))) return this.refused(input);
+    return resolved;
+  }
+
+  private async ready(context: AuthContext): Promise<boolean> {
+    const { readiness } = this.dependencies;
+    if (readiness === undefined) return true;
+    return (await readiness.productionReadiness(context.accountId)).ready;
   }
 
   private refused(input: RouteRequest): AdminRouteContext {

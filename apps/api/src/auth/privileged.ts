@@ -12,6 +12,7 @@ import type {
 import { highImpactCooldownMilliseconds } from './policy.js';
 import type { AuthExecutor, AuthRepository } from './repository.js';
 import {
+  authAccounts,
   authAdminAuthenticators,
   authHighImpactAuthorizations,
   authPrivilegedRecoveryApprovals,
@@ -108,9 +109,28 @@ export class PrivilegedAccessService {
     return this.dependencies.verifier.kind;
   }
 
+  /**
+   * Enrols an authenticator for the operator the context names.
+   *
+   * A first authenticator needs no assurance beyond the session, because
+   * enrolling one is how an operator reaches phishing-resistant assurance at
+   * all, and recovery returns an account to that state by revoking every key.
+   * Every later one is a security change ADR-0017 classes as high-impact, so it
+   * needs fresh phishing-resistant assurance: an assertion from a key the
+   * operator already holds. Without that, whoever held only an operator's first
+   * factor could enrol a key of their own and step up with it.
+   *
+   * The account row is locked while the held keys are counted and the new one
+   * is written, so two concurrent attempts on a keyless account cannot both see
+   * none. The loser counts the winner's key and is held to the fresh-assurance
+   * rule.
+   *
+   * @throws AuthorizationError when a further authenticator is attempted
+   * without fresh phishing-resistant assurance.
+   */
   async enrolAuthenticator(input: {
-    readonly accountId: string;
     readonly attachment?: 'cross_platform' | 'platform' | undefined;
+    readonly context: AuthContext;
     readonly correlationId: string;
     readonly credentialId: string;
     readonly label: string;
@@ -118,10 +138,28 @@ export class PrivilegedAccessService {
   }): Promise<string> {
     const { repository } = this.dependencies;
     const now = this.dependencies.now();
+    const { accountId } = input.context;
     const id = crypto.randomUUID();
     await repository.transaction(async (executor) => {
+      await executor
+        .select({ id: authAccounts.id })
+        .from(authAccounts)
+        .where(eq(authAccounts.id, accountId))
+        .for('update');
+      const held = await executor
+        .select({ total: count() })
+        .from(authAdminAuthenticators)
+        .where(
+          and(
+            eq(authAdminAuthenticators.accountId, accountId),
+            isNull(authAdminAuthenticators.revokedAt),
+          ),
+        );
+      if ((held[0]?.total ?? 0) > 0) {
+        requireFreshAssurance(input.context, 'phishing_resistant', now);
+      }
       await executor.insert(authAdminAuthenticators).values({
-        accountId: input.accountId,
+        accountId,
         attachment: input.attachment ?? null,
         createdAt: now,
         credentialId: input.credentialId,
@@ -130,7 +168,7 @@ export class PrivilegedAccessService {
         publicKey: input.publicKey,
       });
       await repository.recordSecurityEvent(executor, {
-        accountId: input.accountId,
+        accountId,
         audience: 'platform_admin',
         correlationId: input.correlationId,
         eventType: 'admin_authenticator_enrolled',

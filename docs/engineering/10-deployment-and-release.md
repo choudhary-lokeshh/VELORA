@@ -192,13 +192,20 @@ There is exactly one way out and it works exactly once.
 
 1. Sign in through the identity provider. The session is `platform_admin` at
    single-factor assurance, which can reach nothing privileged.
-2. Enrol an authenticator. Do this twice, on two devices —
-   [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md)
-   requires two independently stored authenticators before production privileged
-   access, and a single key is one lost key away from a console nobody can open.
-3. Present an authenticator. The session now holds phishing-resistant assurance.
-4. Open the **First operator** panel, paste the bootstrap secret, and record why
-   this person holds it. The reason is written to the operator audit beside the
+2. Enrol a first authenticator. A first key needs only the signed-in session.
+3. Present it. The session now holds phishing-resistant assurance, for five
+   minutes.
+4. Within that window, enrol a second authenticator on a different device. A
+   second key is refused to a session that has not stepped up recently,
+   because otherwise whoever held only the first factor could add a key of
+   their own. [ADR-0017](../decisions/ADR-0017-auth-session-recovery-security-policy.md)
+   requires two independently stored authenticators before production
+   privileged access. Production enforces it: with one key, every console
+   capability and the first-operator grant are refused, and a single key is one
+   lost key away from a console nobody can open.
+5. Present an authenticator again if the window has passed, then open the
+   **First operator** panel, paste the bootstrap secret, and record why this
+   person holds it. The reason is written to the operator audit beside the
    grant.
 
 **Afterwards.**

@@ -7771,7 +7771,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description The browser origin, Fetch Metadata, or CSRF evidence for this state-changing request was rejected, or the requested identity adapter is not enabled. The body is an ApiError. */
+            /** @description The browser origin, Fetch Metadata, or CSRF evidence was rejected, or the operator already holds an enrolled authenticator and has not stepped up with one recently enough to add another. The body is an ApiError, with code ACTION_NOT_PERMITTED in the step-up case. */
             403: {
                 headers: {
                     /** @description Request correlation identifier */

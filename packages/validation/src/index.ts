@@ -958,6 +958,11 @@ const authBrowserOriginResponse = {
   schemaName: 'ApiError',
 } as const;
 
+const privilegedEnrolmentForbiddenResponse = {
+  description: `The browser origin, Fetch Metadata, or CSRF evidence was rejected, or the operator already holds an enrolled authenticator and has not stepped up with one recently enough to add another. The body is an ApiError, with code ${productErrorCodes.actionNotPermitted} in the step-up case.`,
+  schemaName: 'ApiError',
+} as const;
+
 const federatedUnavailableResponse = {
   description: `This deployment has no federated identity provider configured, so there is nowhere to send anybody and nothing to verify. The body is an ApiError with code ${authErrorCodes.federatedUnavailable}.`,
   schemaName: 'ApiError',
@@ -1344,7 +1349,7 @@ export const apiOperations = [
         schemaName: 'PrivilegedEnrolmentResponse',
       },
       '401': authRequiredResponse,
-      '403': authBrowserOriginResponse,
+      '403': privilegedEnrolmentForbiddenResponse,
       '409': privilegedVerificationResponse,
       '422': invalidAuthInputResponse,
       '429': authRateLimitedResponse,

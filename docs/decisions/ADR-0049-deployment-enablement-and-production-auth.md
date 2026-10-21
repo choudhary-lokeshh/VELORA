@@ -66,6 +66,8 @@ The signature algorithm is derived from the stored key rather than stored beside
 
 Attestation is not requested and not verified. That is the recommended posture for a relying party not enforcing an enterprise authenticator allowlist: an enrolled credential is trusted because an already-authenticated operator enrolled it against a challenge this server issued, not because of a certificate chain nobody has decided how to pin.
 
+A first authenticator is enrolled on the signed-in session alone, because enrolling one is how an operator reaches phishing-resistant assurance and recovery returns an account to that keyless state. Every later one requires fresh phishing-resistant assurance, as ADR-0017 requires for any identity or security change; without it, whoever held only an operator's first factor could enrol a key of their own and step up with it. AUTH counts the held keys and writes the new one under a lock on the account row, so two concurrent first-key attempts cannot both see none. In production, ADMIN's context resolver also refuses every capability and the first grant to an operator holding fewer than the two authenticators ADR-0017 requires; enrolment, step-up and the operator's own standing stay reachable so the second key can be added. Both gaps were found by the 2026-10-15 restart audit and corrected on 2026-10-21.
+
 Challenges live in `auth_privileged_challenges` rather than in memory or ephemeral Redis. Single use is the entire anti-replay property, and a control a restart forgets is not one.
 
 ### Recovery delivery is SMTP submission, and the transport is encrypted or nothing is sent
@@ -96,7 +98,7 @@ Browser origins must be `https` and must not name a loopback host, and all three
 
 A deployment where nobody holds a grant has nobody who can issue one. `POST /v1/admin/operators/bootstrap` is the way out, and it requires all three of:
 
-- a live Platform Admin session at fresh phishing-resistant assurance, which means a real identity provider admitted this person **and** a real authenticator answered a challenge;
+- a live Platform Admin session at fresh phishing-resistant assurance, which means a real identity provider admitted this person **and** a real authenticator answered a challenge — and, in production, an operator who holds the two enrolled authenticators ADR-0017 requires;
 - the deployment-time secret in `ADMIN_OPERATOR_BOOTSTRAP_TOKEN`, which means whoever is asking also deployed this environment;
 - no live grant existing, checked inside the transaction that writes one.
 

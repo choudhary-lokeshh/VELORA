@@ -356,14 +356,6 @@ describe('privilege escalation attempts', () => {
         ${'b'.repeat(64)}
       )
     `);
-    await service.enrolAuthenticator({
-      accountId: account.context.accountId,
-      correlationId: 'stepup-race',
-      credentialId: 'credential-race',
-      label: 'security key',
-      publicKey: 'public-key',
-    });
-
     const context = {
       absoluteExpiresAt: new Date(clock.current.getTime() + 28_800_000),
       accountId: account.context.accountId,
@@ -375,6 +367,13 @@ describe('privilege escalation attempts', () => {
       sessionId,
       transport: 'cookie' as const,
     };
+    await service.enrolAuthenticator({
+      context,
+      correlationId: 'stepup-race',
+      credentialId: 'credential-race',
+      label: 'security key',
+      publicKey: 'public-key',
+    });
     const assertion = {
       authenticatorData: scriptedAuthenticatorData(4),
       clientDataJSON: 'e30',

@@ -134,8 +134,10 @@ export class AdminOperatorRoutes {
    * something a caller learns here.
    */
   async bootstrapFirstOperator(input: RouteRequest): Promise<RouteResult> {
+    // The first grant is privileged access too, so it waits for the same
+    // authenticators every capability does.
     const resolved =
-      await this.dependencies.adminContext.resolveStanding(input);
+      await this.dependencies.adminContext.resolveReadyStanding(input);
     if ('failure' in resolved) return resolved.failure;
     const parsed = parseRouteBody(operatorBootstrapRequestSchema, input.body);
     if (!parsed.ok) {

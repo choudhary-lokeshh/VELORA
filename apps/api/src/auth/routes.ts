@@ -21,6 +21,7 @@ import {
   maximumAuthRequestBodyBytes,
   mobileRefreshRequestSchema,
   mobileTokenResponseSchema,
+  productErrorCodes,
   recoveryCompletionRequestSchema,
   recoveryStartRequestSchema,
   type AuthErrorCode,
@@ -33,7 +34,7 @@ import {
   type CallerResolver,
   type ResolvedCaller,
 } from './caller.js';
-import type { AuthContext } from './context.js';
+import { AuthorizationError, type AuthContext } from './context.js';
 import {
   clearedFederatedStateCookie,
   issuedFederatedStateCookie,
@@ -95,7 +96,7 @@ export interface AuthRoutesDependencies {
 
 function failure(
   status: number,
-  code: AuthErrorCode,
+  code: AuthErrorCode | typeof productErrorCodes.actionNotPermitted,
   correlationId: string,
   cookies?: readonly string[],
 ): AuthRouteResult {
@@ -705,17 +706,30 @@ export class AuthRoutes {
       );
     }
 
-    const authenticatorId =
-      await this.dependencies.privilegedAccess.enrolAuthenticator({
-        accountId: resolved.context.accountId,
-        correlationId: input.correlationId,
-        credentialId: verified.credentialId,
-        label: parsed.value.label,
-        publicKey: verified.publicKey,
-        ...(parsed.value.attachment === undefined
-          ? {}
-          : { attachment: parsed.value.attachment }),
-      });
+    let authenticatorId: string;
+    try {
+      authenticatorId =
+        await this.dependencies.privilegedAccess.enrolAuthenticator({
+          context: resolved.context,
+          correlationId: input.correlationId,
+          credentialId: verified.credentialId,
+          label: parsed.value.label,
+          publicKey: verified.publicKey,
+          ...(parsed.value.attachment === undefined
+            ? {}
+            : { attachment: parsed.value.attachment }),
+        });
+    } catch (error) {
+      if (!(error instanceof AuthorizationError)) throw error;
+      // An operator who already holds a key adds another only after proving
+      // one of them recently. The refusal is the same one every privileged
+      // route gives for stale assurance, so it says nothing about why.
+      return failure(
+        403,
+        productErrorCodes.actionNotPermitted,
+        input.correlationId,
+      );
+    }
     const readiness =
       await this.dependencies.privilegedAccess.productionReadiness(
         resolved.context.accountId,
@@ -793,7 +807,8 @@ export class AuthRoutes {
    *
    * Assurance is deliberately *not* required here. Enrolment and step-up are
    * how an operator reaches phishing-resistant assurance in the first place, so
-   * demanding it would close the only door to itself.
+   * demanding it would close the only door to itself. A second and later
+   * enrolment does require it, and AUTH's service decides that, not this.
    */
   private async requirePrivilegedCaller(
     input: AuthRouteRequest,
