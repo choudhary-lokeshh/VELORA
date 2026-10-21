@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'bun:test';
+import { afterAll, afterEach, describe, expect, it } from 'bun:test';
 import { generateKeyPairSync, sign as signBytes } from 'node:crypto';
 
 import { OidcIdentityProvider } from '../../src/auth/oidc.js';
@@ -30,6 +30,8 @@ const clientSecret = 'velora-test-secret';
 
 interface ProviderScript {
   discoveryIssuer: string | undefined;
+  jwksReads: number;
+  publishedKeys: readonly Record<string, unknown>[] | undefined;
   idToken: ((issuer: string) => string) | undefined;
   tokenStatus: number | undefined;
   seenAuthorization: string | undefined;
@@ -38,6 +40,8 @@ interface ProviderScript {
 
 const script: ProviderScript = {
   discoveryIssuer: undefined,
+  jwksReads: 0,
+  publishedKeys: undefined,
   idToken: undefined,
   seenAuthorization: undefined,
   seenBody: undefined,
@@ -77,7 +81,10 @@ const server: ReturnType<typeof Bun.serve> = Bun.serve({
         token_endpoint: `${issuer}/token`,
       });
     }
-    if (url.pathname === '/jwks') return Response.json({ keys: [jwk] });
+    if (url.pathname === '/jwks') {
+      script.jwksReads += 1;
+      return Response.json({ keys: script.publishedKeys ?? [jwk] });
+    }
     if (url.pathname === '/token') {
       script.seenAuthorization = request.headers.get('authorization') ?? '';
       script.seenBody = await request.text();
@@ -361,6 +368,77 @@ describe('OpenID code exchange', () => {
       }),
     ).toBeUndefined();
     script.discoveryIssuer = undefined;
+  });
+});
+
+describe('OpenID key set currency', () => {
+  /**
+   * Removing a key from the published set is how a provider revokes it. A key
+   * this process already holds is therefore trusted only while the set it came
+   * from is current, and is re-read on the same cadence as discovery.
+   */
+  function providerAt(clock: { now: number }): OidcIdentityProvider {
+    return new OidcIdentityProvider({
+      clientId,
+      clientSecret,
+      http: new AllowlistedOutboundHttp({ allowLoopback: true }),
+      issuer,
+      now: () => new Date(clock.now),
+      redirectUri,
+    });
+  }
+
+  function tokenAt(clock: { now: number }) {
+    return (providerIssuer: string): string => {
+      const seconds = Math.floor(clock.now / 1000);
+      return signToken(
+        { alg: 'RS256', kid: signingKeyId, typ: 'JWT' },
+        {
+          aud: clientId,
+          exp: seconds + 300,
+          iat: seconds,
+          iss: providerIssuer,
+          nonce: 'nonce-value',
+          sub: 'provider-subject-1',
+        },
+      );
+    };
+  }
+
+  const attempt = {
+    code: 'auth-code',
+    codeVerifier: 'verifier-value',
+    nonce: 'nonce-value',
+  };
+
+  afterEach(() => {
+    script.publishedKeys = undefined;
+    script.idToken = undefined;
+  });
+
+  it('stops trusting a key the provider removed once the set is due a re-read', async () => {
+    const clock = { now: Date.now() };
+    const provider = providerAt(clock);
+    script.tokenStatus = undefined;
+    script.idToken = tokenAt(clock);
+    expect(await provider.completeAuthorization(attempt)).toBeDefined();
+
+    script.publishedKeys = [];
+    clock.now += 3_600_000;
+    expect(await provider.completeAuthorization(attempt)).toBeUndefined();
+  });
+
+  it('keeps a known key without re-reading while the set is current', async () => {
+    const clock = { now: Date.now() };
+    const provider = providerAt(clock);
+    script.tokenStatus = undefined;
+    script.idToken = tokenAt(clock);
+    expect(await provider.completeAuthorization(attempt)).toBeDefined();
+    const reads = script.jwksReads;
+
+    clock.now += 3_599_000;
+    expect(await provider.completeAuthorization(attempt)).toBeDefined();
+    expect(script.jwksReads).toBe(reads);
   });
 });
 

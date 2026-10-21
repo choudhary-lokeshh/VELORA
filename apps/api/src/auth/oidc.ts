@@ -399,8 +399,22 @@ export class OidcIdentityProvider implements FederatedIdentityProvider {
     const cached = this.keys;
     if (cached !== undefined) {
       const key = cached.keys.get(keyId);
-      if (key !== undefined) return key;
-      if (now - cached.readAt < keyRefreshFloorMilliseconds) return undefined;
+      // Removing a key from the published set is how a provider revokes it, so
+      // a key already held is trusted only while that set is current. Without
+      // the age check a known identifier would stay trusted for the life of
+      // the process.
+      if (
+        key !== undefined &&
+        now - cached.readAt < documentLifetimeMilliseconds
+      ) {
+        return key;
+      }
+      if (
+        key === undefined &&
+        now - cached.readAt < keyRefreshFloorMilliseconds
+      ) {
+        return undefined;
+      }
     }
     const refreshed = await this.readKeys();
     this.keys = { keys: refreshed, readAt: now };
