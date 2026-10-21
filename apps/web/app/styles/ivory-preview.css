@@ -65,8 +65,12 @@ html[data-design-preview='ivory'] {
   .v-landing__bar {
     position: relative;
     z-index: 1;
+    /* The wider wordmark and Sign in share 320 px at 200% text only by
+       wrapping; without it the bar pushed the page sideways. */
+    flex-wrap: wrap;
     max-width: none;
     padding-inline: clamp(1rem, 5vw, 5rem);
+    row-gap: var(--space-3);
   }
   .v-landing__bar .v-wordmark {
     font-size: clamp(1.75rem, 3vw, 2.5rem);
