@@ -7,7 +7,13 @@ import type {
 import { failureMessage, isOk, isRetryable } from '@velora/consumer-client';
 import { maximumMessageBodyCharacters } from '@velora/validation/messaging-bounds';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  AccessibilityInfo,
+  FlatList,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import { mintUuid } from '../device/installation';
 import { useApi, useSession, useToast } from '../frame/providers';
@@ -89,6 +95,19 @@ function merge(
   return [...byId.values()];
 }
 
+/** The newest position in a set of messages, or zero for none. */
+function newestSequence(messages: readonly Message[]): number {
+  return messages.reduce(
+    (sequence, message) => Math.max(sequence, message.sequence),
+    0,
+  );
+}
+
+/** A message as it is spoken: who said it, then what. */
+function spoken(message: Message, own: boolean): string {
+  return `${own ? 'You' : 'They'} said: ${message.body}`;
+}
+
 export function ConversationScreen({
   conversationId,
   onBack,
@@ -165,6 +184,12 @@ function Thread({
   const [draft, setDraft] = useState('');
   const [call, setCall] = useState<Call | undefined>(undefined);
   const inFlight = useRef<AbortController | undefined>(undefined);
+  /*
+   * The newest position this thread has already been heard at. Undefined
+   * until the first page lands, which sets it without announcing anything:
+   * what was here before somebody opened the thread is read by reading it.
+   */
+  const heard = useRef<number | undefined>(undefined);
   const callFlight = useSingleFlight();
   const sending = useSingleFlight();
   const conversationId = conversation.id;
@@ -193,6 +218,7 @@ function Thread({
       }
       setError(undefined);
       setCursor(result.value.nextCursor);
+      heard.current ??= newestSequence(result.value.messages);
       setMessages((current) =>
         merge(replace ? [] : current, result.value.messages),
       );
@@ -204,6 +230,7 @@ function Thread({
     setMessages([]);
     setCursor(undefined);
     setPending(undefined);
+    heard.current = undefined;
     void readPage(undefined, true);
     return () => {
       inFlight.current?.abort();
@@ -225,13 +252,36 @@ function Thread({
     }, [api, applyCurrentCall, call, readPage]),
   );
 
+  /*
+   * What the other person says after the thread is open, said aloud.
+   *
+   * The whole list was a live region, so a reader heard the thread re-read on
+   * every revalidation and every older page — and their own sends announced
+   * back to them. Only the other person's messages, only those newer than
+   * anything already heard, and in the words a message's own label uses.
+   */
+  useEffect(() => {
+    const through = heard.current;
+    // Whose message is whose is not known until the account has been read,
+    // and announcing somebody's own words back to them as the other person's
+    // would be worse than waiting.
+    if (through === undefined || ownAccountId === undefined) return;
+    const arrived = messages
+      .filter(
+        (message) =>
+          message.sequence > through && message.senderId !== ownAccountId,
+      )
+      .sort((left, right) => left.sequence - right.sequence);
+    for (const message of arrived) {
+      AccessibilityInfo.announceForAccessibility(spoken(message, false));
+    }
+    heard.current = Math.max(through, newestSequence(messages));
+  }, [messages, ownAccountId]);
+
   // Opening a thread is a read. The server clamps this to what exists and the
   // write is monotonic, so a stale device can never move the position back.
   useEffect(() => {
-    const newest = messages.reduce(
-      (sequence, message) => Math.max(sequence, message.sequence),
-      0,
-    );
+    const newest = newestSequence(messages);
     if (newest <= conversation.lastReadSequence) return;
     void api
       .markConversationRead({ conversationId, sequence: newest })
@@ -414,9 +464,6 @@ function Thread({
           />
         ) : (
           <FlatList
-            // A log: messages arrive rather than being asked for, and a
-            // reader should hear one land instead of re-reading to find it.
-            accessibilityLiveRegion="polite"
             contentContainerStyle={styles.thread}
             data={ordered}
             inverted
@@ -618,7 +665,7 @@ function Bubble({
           as an undifferentiated run of sentences.
         */
         accessible
-        accessibilityLabel={`${own ? 'You' : 'They'} said: ${message.body}`}
+        accessibilityLabel={spoken(message, own)}
         style={[styles.bubble, own ? styles.bubbleOwn : styles.bubbleTheirs]}
       >
         <Text tone={own ? 'onAccent' : 'primary'} variant="small">
@@ -627,7 +674,6 @@ function Bubble({
         {showTime ? (
           <Text
             align={own ? 'right' : 'left'}
-            style={own ? styles.stampOwn : undefined}
             tone={own ? 'onAccent' : 'tertiary'}
             variant="micro"
           >
@@ -685,6 +731,5 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   half: { flex: 1 },
   pending: { alignItems: 'flex-start' },
-  stampOwn: { opacity: 0.72 },
   thread: { gap: space[2], paddingVertical: space[4] },
 });

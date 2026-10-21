@@ -3,13 +3,14 @@ import type {
   Call,
   CallMedium,
   Introduction,
+  IntroductionList,
 } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
 import { useApi, useToast } from '../frame/providers';
-import { Screen } from '../frame/shell';
+import { pullToRefresh, Screen } from '../frame/shell';
 import {
   Actions,
   Avatar,
@@ -17,6 +18,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   Inline,
   Notice,
@@ -26,6 +28,7 @@ import {
 } from '../design/primitives';
 import { color, space } from '../design/theme';
 import {
+  useMorePages,
   useResource,
   useRevalidateOnForeground,
   useSingleFlight,
@@ -62,6 +65,14 @@ import { PersonSafetyMenu } from './safety-actions';
  */
 
 const pageSize = 20;
+
+const introductionsOf = (page: IntroductionList) => page.introductions;
+const introductionKey = (row: Introduction) => row.id;
+
+/** The space between two cards, which was the list's own gap. */
+function Gap() {
+  return <View style={styles.gap} />;
+}
 
 /** How a state reads to the person holding the phone. */
 const callStateLabels: Readonly<Record<string, string>> = {
@@ -123,6 +134,12 @@ export function IntroductionsScreen() {
     [api],
   );
   const introductions = useResource(load);
+  const pages = useMorePages(
+    introductions.value,
+    introductionsOf,
+    introductionKey,
+    async (cursor) => api.introductions({ cursor, pageSize }),
+  );
   const [call, setCall] = useState<Call | undefined>(undefined);
   const { busy, run } = useSingleFlight();
 
@@ -189,7 +206,7 @@ export function IntroductionsScreen() {
     });
   };
 
-  const rows = introductions.value?.introductions ?? [];
+  const rows = pages.items;
   const portraits = useMediaAddresses(
     portraitReferences(rows.map((row) => row.counterpart)),
     'avatar_large',
@@ -205,111 +222,150 @@ export function IntroductionsScreen() {
       testID="introductions-screen"
       title="Introductions"
     >
-      {call === undefined ? null : (
-        <View style={styles.callHolder}>
-          <CurrentCall
-            call={call}
-            onAccept={() => {
-              actOnCall(async () => api.acceptCall(call.id));
-            }}
-            onCancel={() => {
-              actOnCall(async () => api.cancelCall(call.id));
-            }}
-            onDismiss={() => {
-              setCall(undefined);
-            }}
-            onEnd={() => {
-              actOnCall(async () => api.endCall(call.id));
-            }}
-            onJoin={() => {
-              authorize(call.id);
-            }}
-            onReject={() => {
-              actOnCall(async () => api.rejectCall(call.id));
-            }}
-            pending={busy}
-          />
-        </View>
-      )}
-
       {/*
-        Said before a call is placed rather than only once one is ringing.
-        Somebody who presses Voice expecting to be heard has already been
-        misled, and a notice that only appears on the call card arrives too
-        late to be honest.
+        One scrolling list, with the call and the notice at its head and every
+        state that is not a list in its place. Pinned above the list they took
+        the screen at a large text size and left the list no height at all;
+        outside it, the empty and failed states could not be pulled to read
+        again, because the screen's own pull only exists where it scrolls.
       */}
-      {call === undefined && rows.some((row) => row.state === 'mutual') ? (
-        <View style={styles.mediaNotice}>
-          <Notice
-            testID="calls-media-unavailable"
-            title="Calls carry no sound yet"
-          >
-            You can place a call, answer one, and hang up. This device cannot
-            open a microphone or a camera for it.
-          </Notice>
-        </View>
-      ) : null}
-
-      {!answered ? (
-        <Card>
-          <RowSkeleton rows={3} />
-        </Card>
-      ) : introductions.error !== undefined && rows.length === 0 ? (
-        <ErrorState
-          body={introductions.error}
-          testID="introductions-failed"
-          {...(introductions.retryable
-            ? { onRetry: introductions.reload }
-            : {})}
-        />
-      ) : rows.length === 0 ? (
-        <EmptyState
-          body="When you and somebody else both say you are interested, you appear here and can open a conversation."
-          icon="link"
-          testID="introductions-empty"
-          title="No introductions yet"
-        />
-      ) : (
-        <FlatList
-          contentContainerStyle={styles.list}
-          data={[...rows]}
-          keyExtractor={(row) => row.id}
-          renderItem={({ item }) => (
-            <IntroductionCard
-              busy={busy}
-              introduction={item}
-              portrait={portraits.get(item.counterpart.media[0]?.id ?? '')}
-              onAccept={() => {
-                act(
-                  async () => api.signalIntroduction(item.counterpart.id),
-                  'Said yes. You can open a conversation now.',
-                );
-              }}
-              onBlocked={introductions.reload}
-              onCall={(medium) => {
-                actOnCall(async () =>
-                  api.call({ introductionId: item.id, medium }),
-                );
-              }}
-              onOpen={() => {
-                act(
-                  async () => api.openConversation(item.id),
-                  'Conversation opened. It is under Messages.',
-                );
-              }}
-              onWithdraw={() => {
-                act(
-                  async () => api.withdrawIntroduction(item.id),
-                  'Withdrawn. They are not told.',
-                );
-              }}
-              placing={call !== undefined}
+      <FlatList
+        contentContainerStyle={styles.list}
+        data={[...rows]}
+        ItemSeparatorComponent={Gap}
+        keyExtractor={(row) => row.id}
+        ListEmptyComponent={
+          !answered ? (
+            <Card>
+              <RowSkeleton rows={3} />
+            </Card>
+          ) : introductions.error !== undefined ? (
+            <ErrorState
+              body={introductions.error}
+              testID="introductions-failed"
+              {...(introductions.retryable
+                ? { onRetry: introductions.reload }
+                : {})}
             />
-          )}
-          showsVerticalScrollIndicator={false}
-          testID="introductions-list"
-        />
-      )}
+          ) : (
+            <EmptyState
+              body="When you and somebody else both say you are interested, you appear here and can open a conversation."
+              icon="link"
+              testID="introductions-empty"
+              title="No introductions yet"
+            />
+          )
+        }
+        ListFooterComponent={
+          pages.more === undefined ? null : (
+            <Stack gap={2} style={styles.more}>
+              <Button
+                busy={pages.busy}
+                onPress={pages.more}
+                size="small"
+                testID="introductions-more"
+                tone="ghost"
+              >
+                Show more introductions
+              </Button>
+              {pages.error === undefined ? null : (
+                <ErrorMessage testID="introductions-more-failed">
+                  {pages.error}
+                </ErrorMessage>
+              )}
+            </Stack>
+          )
+        }
+        ListHeaderComponent={
+          <View style={rows.length === 0 ? undefined : styles.head}>
+            {call === undefined ? null : (
+              <View style={styles.callHolder}>
+                <CurrentCall
+                  call={call}
+                  onAccept={() => {
+                    actOnCall(async () => api.acceptCall(call.id));
+                  }}
+                  onCancel={() => {
+                    actOnCall(async () => api.cancelCall(call.id));
+                  }}
+                  onDismiss={() => {
+                    setCall(undefined);
+                  }}
+                  onEnd={() => {
+                    actOnCall(async () => api.endCall(call.id));
+                  }}
+                  onJoin={() => {
+                    authorize(call.id);
+                  }}
+                  onReject={() => {
+                    actOnCall(async () => api.rejectCall(call.id));
+                  }}
+                  pending={busy}
+                />
+              </View>
+            )}
+
+            {/*
+              Said before a call is placed rather than only once one is ringing.
+              Somebody who presses Voice expecting to be heard has already been
+              misled, and a notice that only appears on the call card arrives
+              too late to be honest.
+            */}
+            {call === undefined &&
+            rows.some((row) => row.state === 'mutual') ? (
+              <View style={styles.mediaNotice}>
+                <Notice
+                  testID="calls-media-unavailable"
+                  title="Calls carry no sound yet"
+                >
+                  You can place a call, answer one, and hang up. This device
+                  cannot open a microphone or a camera for it.
+                </Notice>
+              </View>
+            ) : null}
+          </View>
+        }
+        onRefresh={introductions.reload}
+        refreshControl={pullToRefresh(
+          introductions.reload,
+          introductions.loading && introductions.value !== undefined,
+        )}
+        refreshing={introductions.loading && introductions.value !== undefined}
+        renderItem={({ item }) => (
+          <IntroductionCard
+            busy={busy}
+            introduction={item}
+            portrait={portraits.get(item.counterpart.media[0]?.id ?? '')}
+            onAccept={() => {
+              act(
+                async () => api.signalIntroduction(item.counterpart.id),
+                'Said yes. You can open a conversation now.',
+              );
+            }}
+            onBlocked={introductions.reload}
+            onCall={(medium) => {
+              actOnCall(async () =>
+                api.call({ introductionId: item.id, medium }),
+              );
+            }}
+            onOpen={() => {
+              act(
+                async () => api.openConversation(item.id),
+                'Conversation opened. It is under Messages.',
+              );
+            }}
+            onWithdraw={() => {
+              act(
+                async () => api.withdrawIntroduction(item.id),
+                'Withdrawn. They are not told.',
+              );
+            }}
+            placing={call !== undefined}
+          />
+        )}
+        showsVerticalScrollIndicator={false}
+        testID="introductions-list"
+      />
     </Screen>
   );
 }
@@ -610,5 +666,9 @@ const styles = StyleSheet.create({
     gap: space[3],
   },
   identityText: { alignItems: 'flex-start', flex: 1, gap: space[2] },
-  list: { gap: space[4], paddingBottom: space[6], paddingTop: space[4] },
+  gap: { height: space[4] },
+  /* What the list's top padding was, now below its head rather than above it. */
+  head: { paddingBottom: space[4] },
+  list: { paddingBottom: space[6] },
+  more: { paddingTop: space[4] },
 });

@@ -717,9 +717,18 @@ export function Avatar({
       {source === undefined ? (
         <View style={styles.avatarInitials}>
           <Text
+            /*
+              The box is fixed, so the letters cannot grow with the system
+              setting the way body copy does: uncapped, two initials at 200 %
+              outgrew a 36-point circle. The line height follows the size it
+              is given rather than the `small` step's, which clipped the tops
+              of the letters at every size but the smallest.
+            */
+            scaleCapOverride={largeTextScale}
             style={{
               color: ivoryPreview ? mediaInk : color.textPrimary,
               fontSize: Math.round(points * 0.36),
+              lineHeight: Math.round(points * 0.36 * 1.25),
             }}
             tone="primary"
             variant="small"
@@ -1106,12 +1115,18 @@ export function Segmented<T extends string>({
 /* =============================== List row ============================ */
 
 export function ListRow({
+  accessibilityLabel,
   children,
   leading,
   onPress,
   testID,
   trailing,
 }: {
+  /**
+   * What the row says when the words in it are not the whole of it — a state
+   * carried only by weight or a coloured mark, which a reader never hears.
+   */
+  readonly accessibilityLabel?: string | undefined;
   readonly children: ReactNode;
   readonly leading?: ReactNode;
   readonly onPress?: () => void;
@@ -1121,7 +1136,19 @@ export function ListRow({
   const body = (
     <View style={styles.listRow}>
       {leading}
-      <View style={styles.listRowBody}>{children}</View>
+      <View
+        style={styles.listRowBody}
+        /*
+          On the words rather than the row when the row is not itself a
+          control, so a trailing control keeps its own name and stays
+          reachable on its own.
+        */
+        {...(onPress === undefined && accessibilityLabel !== undefined
+          ? { accessibilityLabel, accessible: true }
+          : {})}
+      >
+        {children}
+      </View>
       {/*
         A row that leads somewhere keeps its chevron even when it also carries a
         badge. Dropping it made a conversation with something unread the only
@@ -1141,6 +1168,7 @@ export function ListRow({
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => (pressed ? styles.buttonPressed : undefined)}
+      {...(accessibilityLabel === undefined ? {} : { accessibilityLabel })}
       {...(testID === undefined ? {} : { testID })}
     >
       {body}

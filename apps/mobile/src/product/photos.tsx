@@ -37,7 +37,7 @@ import {
   Text,
 } from '../design/primitives';
 import { Icon } from '../design/icons';
-import { color, space } from '../design/theme';
+import { color, layout, space } from '../design/theme';
 import { useMediaAddresses } from './imagery';
 
 /**
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
    */
   thumbnail: {
     borderRadius: space[2],
-    height: 40,
-    width: 40,
+    height: layout.controlHeightSmall,
+    width: layout.controlHeightSmall,
   },
 });

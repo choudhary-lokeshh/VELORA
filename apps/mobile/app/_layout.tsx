@@ -1,5 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
+import { useEffect } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -29,6 +31,23 @@ import { LaunchScreen } from '../src/product/welcome';
 export default function RootLayout() {
   const typeface = useInterfaceTypeface();
   const reducedMotion = useReducedMotion();
+
+  /*
+   * The native root, behind every screen, in the preview's own canvas.
+   *
+   * The build's native background is NIGHT CURRENT's, because a native build
+   * reads a colour before any JavaScript runs and the deployed expression is
+   * the only one it may ship. In the light preview that dark root showed
+   * through every gap the JavaScript did not paint — a screen transition, the
+   * keyboard sliding in — as a flash of near-black over a white product. Set
+   * once, at mount, and only where the preview is explicitly selected; a
+   * module that cannot answer leaves the native default rather than failing a
+   * launch over a background.
+   */
+  useEffect(() => {
+    if (!ivoryPreview) return;
+    SystemUI.setBackgroundColorAsync(color.canvas).catch(() => undefined);
+  }, []);
 
   if (!typeface.ready) return <LaunchScreen />;
 

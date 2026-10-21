@@ -1,5 +1,10 @@
 import { usePathname } from 'expo-router';
-import { createContext, useContext, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import {
   Keyboard,
   PixelRatio,
@@ -10,6 +15,7 @@ import {
   StyleSheet,
   useWindowDimensions,
   View,
+  type RefreshControlProps,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
@@ -179,9 +185,13 @@ export function Screen({
   const padding = {
     // The tab bar already holds the gesture band open where there is one, and
     // the keyboard's measured overlap keeps the bottom of the content
-    // reachable while it is up.
+    // reachable while it is up. With the keys up the overlap already covers
+    // the gesture band and the room below the content, so adding both again
+    // left a field's Save a keyboard-and-a-half above the keys.
     paddingBottom:
-      space[10] + (tabBarBelow ? 0 : insets.bottom) + keyboard.overlap,
+      keyboard.overlap > 0
+        ? space[2] + keyboard.overlap
+        : space[10] + (tabBarBelow ? 0 : insets.bottom),
     paddingHorizontal: space[4],
     paddingLeft: space[4] + insets.left,
     paddingRight: space[4] + insets.right,
@@ -206,15 +216,7 @@ export function Screen({
           style={styles.body}
           {...(onRefresh === undefined
             ? {}
-            : {
-                refreshControl: (
-                  <RefreshControl
-                    onRefresh={onRefresh}
-                    refreshing={refreshing}
-                    tintColor={color.textTertiary}
-                  />
-                ),
-              })}
+            : { refreshControl: pullToRefresh(onRefresh, refreshing) })}
         >
           {children}
         </ScrollView>
@@ -222,6 +224,31 @@ export function Screen({
         <View style={[styles.body, padding]}>{children}</View>
       )}
     </View>
+  );
+}
+
+/**
+ * The pull-to-refresh control, in this product's colours.
+ *
+ * Android draws its own default — a teal arrow on a white disc — which on this
+ * canvas was the one piece of stock Material left on the screen. A function
+ * rather than a component, because a scroll view clones the element it is
+ * handed and has to find a `RefreshControl` there, not a wrapper around one.
+ * A screen that owns a virtualised list passes it to the list, alongside the
+ * `onRefresh` and `refreshing` the list needs before it will use one.
+ */
+export function pullToRefresh(
+  onRefresh: () => void,
+  refreshing: boolean,
+): ReactElement<RefreshControlProps> {
+  return (
+    <RefreshControl
+      colors={[color.ember]}
+      onRefresh={onRefresh}
+      progressBackgroundColor={color.surface2}
+      refreshing={refreshing}
+      tintColor={color.textTertiary}
+    />
   );
 }
 
@@ -393,7 +420,13 @@ export function TabBar({
       accessibilityRole="tablist"
       style={[
         styles.tabBar,
-        { paddingBottom: Math.max(insets.bottom, space[2]) },
+        {
+          paddingBottom: Math.max(insets.bottom, space[2]),
+          // A phone on its side puts the cutout and the navigation buttons at
+          // one end of the bar, and the end tab under them.
+          paddingLeft: space[1] + insets.left,
+          paddingRight: space[1] + insets.right,
+        },
       ]}
       testID="tab-bar"
     >
@@ -507,36 +540,64 @@ export function Toaster() {
   const overTabBar = destinations.some(
     (destination) => pathname === `/${destination.name}` || pathname === '/',
   );
-  if (toasts.length === 0) return null;
+  /*
+   * And above the keyboard, when it is up.
+   *
+   * A failed save is reported here while somebody is still typing, and on a
+   * window Android 15 no longer resizes the toast sat behind the keys — the
+   * one sentence saying the save did not happen was the one nobody could see.
+   * Measured with the same mechanism every screen uses, against a layer the
+   * size of the window that is always mounted: the keyboard is usually up
+   * before the toast exists, and a toast that measured itself on arrival would
+   * have missed the event it needed.
+   */
+  const keyboard = useKeyboardOverlap();
   return (
     <View
+      collapsable={false}
       pointerEvents="box-none"
-      style={[
-        styles.toaster,
-        {
-          bottom:
-            insets.bottom + (overTabBar ? layout.tabBarHeight : 0) + space[3],
-        },
-      ]}
-      testID="toaster"
+      ref={keyboard.target}
+      style={StyleSheet.absoluteFill}
     >
-      {toasts.map((toast) => (
-        <Pressable
-          accessibilityLabel={`${toast.message}. Dismiss`}
-          accessibilityLiveRegion="polite"
-          accessibilityRole="button"
-          key={toast.id}
-          onPress={() => {
-            dismiss(toast.id);
-          }}
-          style={styles.toast}
-          testID={`toast-${String(toast.id)}`}
+      {toasts.length === 0 ? null : (
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.toaster,
+            {
+              // The keyboard covers the tab bar and the gesture band both, so
+              // with it up neither is added.
+              bottom:
+                keyboard.overlap > 0
+                  ? keyboard.overlap + space[3]
+                  : insets.bottom +
+                    (overTabBar ? layout.tabBarHeight : 0) +
+                    space[3],
+              left: space[4] + insets.left,
+              right: space[4] + insets.right,
+            },
+          ]}
+          testID="toaster"
         >
-          <Text tone={toastInk[toast.tone]} variant="small" weight="medium">
-            {toast.message}
-          </Text>
-        </Pressable>
-      ))}
+          {toasts.map((toast) => (
+            <Pressable
+              accessibilityLabel={`${toast.message}. Dismiss`}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="button"
+              key={toast.id}
+              onPress={() => {
+                dismiss(toast.id);
+              }}
+              style={styles.toast}
+              testID={`toast-${String(toast.id)}`}
+            >
+              <Text tone={toastInk[toast.tone]} variant="small" weight="medium">
+                {toast.message}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -632,9 +693,7 @@ const styles = StyleSheet.create({
   },
   toaster: {
     gap: space[2],
-    left: space[4],
     position: 'absolute',
-    right: space[4],
   },
   wordmark: {
     alignItems: 'center',

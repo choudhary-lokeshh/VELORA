@@ -1,4 +1,11 @@
-import type { Appeal, SafetyStatement } from '@velora/consumer-client';
+import type {
+  Appeal,
+  Block,
+  BlockList,
+  Report,
+  ReportList,
+  SafetyStatement,
+} from '@velora/consumer-client';
 import { failureMessage } from '@velora/consumer-client';
 import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -21,7 +28,7 @@ import {
 import { Sheet } from '../design/sheet';
 import { color, space } from '../design/theme';
 import { formatDate } from './locale';
-import { useResource, useSingleFlight } from './resource';
+import { useMorePages, useResource, useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';
 
 /**
@@ -81,6 +88,11 @@ const reportLabels: Readonly<
 /** The narrative bound the contract publishes for an appeal. */
 const maximumAppealStatement = 2000;
 
+const blocksOf = (page: BlockList) => page.blocks;
+const blockKey = (block: Block) => block.blockedId;
+const reportsOf = (page: ReportList) => page.reports;
+const reportKey = (report: Report) => report.id;
+
 export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
   const api = useApi();
   const toast = useToast();
@@ -112,16 +124,28 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
   const blocks = useResource(loadBlocks);
   const recentlyMet = useResource(loadRecentlyMet);
   const reports = useResource(loadReports);
+  const blockPages = useMorePages(
+    blocks.value,
+    blocksOf,
+    blockKey,
+    async (cursor) => api.blocks({ cursor, pageSize }),
+  );
+  const reportPages = useMorePages(
+    reports.value,
+    reportsOf,
+    reportKey,
+    async (cursor) => api.reports({ cursor, pageSize }),
+  );
   const [appealing, setAppealing] = useState<SafetyStatement | undefined>(
     undefined,
   );
 
   const statements = standing.value?.statements ?? [];
   const complaints = appeals.value?.appeals ?? [];
-  const blocked = blocks.value?.blocks ?? [];
+  const blocked = blockPages.items;
   const met = recentlyMet.value?.people ?? [];
   const metWindowHours = recentlyMet.value?.windowHours;
-  const filed = reports.value?.reports ?? [];
+  const filed = reportPages.items;
 
   const reloadAll = () => {
     standing.reload();
@@ -381,6 +405,24 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
                 ))}
               </View>
             )}
+            {blockPages.more === undefined ? null : (
+              <Stack gap={2}>
+                <Button
+                  busy={blockPages.busy}
+                  onPress={blockPages.more}
+                  size="small"
+                  testID="blocks-more"
+                  tone="ghost"
+                >
+                  Show more blocks
+                </Button>
+                {blockPages.error === undefined ? null : (
+                  <ErrorMessage testID="blocks-more-failed">
+                    {blockPages.error}
+                  </ErrorMessage>
+                )}
+              </Stack>
+            )}
           </Stack>
         </Card>
 
@@ -422,6 +464,24 @@ export function SafetyScreen({ onBack }: { readonly onBack: () => void }) {
                   );
                 })}
               </View>
+            )}
+            {reportPages.more === undefined ? null : (
+              <Stack gap={2}>
+                <Button
+                  busy={reportPages.busy}
+                  onPress={reportPages.more}
+                  size="small"
+                  testID="reports-more"
+                  tone="ghost"
+                >
+                  Show more reports
+                </Button>
+                {reportPages.error === undefined ? null : (
+                  <ErrorMessage testID="reports-more-failed">
+                    {reportPages.error}
+                  </ErrorMessage>
+                )}
+              </Stack>
             )}
             <Text tone="tertiary" variant="caption">
               You are told that a report was received and closed, and never what

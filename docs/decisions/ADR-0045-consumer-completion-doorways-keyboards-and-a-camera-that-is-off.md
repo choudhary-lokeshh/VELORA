@@ -48,7 +48,7 @@ The Live stage's measurement — this view's position in the window against the 
 
 ### The hardware Back answers in one place, in the order a phone promises
 
-An open sheet closes. An open confirmation closes. An active encounter asks — with the same End the dock offers, because ending is a thing done to somebody rather than a way of leaving a screen. A running search stops, which involves nobody else. Anything else falls through to the navigator. One handler with the order written out, rather than one per concern: the platform answers listeners most-recent-first, and two effects racing over mount order is how Back closes the wrong thing.
+An open sheet closes. An open confirmation closes. An active encounter asks — with the same End the dock offers, because ending is a thing done to somebody rather than a way of leaving a screen. A running search stops, which involves nobody else. Anything else falls through to the navigator. One handler with the order written out, rather than one per concern: the platform answers listeners most-recent-first, and two effects racing over mount order is how Back closes the wrong thing. The handler exists only while Live is the focused screen (amended 2026-10-21): registered unconditionally, it outranked the navigator on every screen, so during an encounter Back on a person or conversation opened from Live toggled a hidden End confirmation, and during a search Back on another tab silently stopped it.
 
 ### The phone gets the corridor, and the creator gets a face
 

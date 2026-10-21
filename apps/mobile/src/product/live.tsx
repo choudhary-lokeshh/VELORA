@@ -12,8 +12,10 @@ import type {
 } from '@velora/consumer-client';
 import { failureMessage, isOk } from '@velora/consumer-client';
 import { CameraView } from 'expo-camera';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   BackHandler,
   PanResponder,
@@ -432,7 +434,12 @@ export function LiveScreen({
     <LiveStage
       busy={action.busy}
       encounter={encounter}
-      insets={{ bottom: insets.bottom, top: insets.top }}
+      insets={{
+        bottom: insets.bottom,
+        left: insets.left,
+        right: insets.right,
+        top: insets.top,
+      }}
       languageOptions={state?.languageOptions ?? []}
       media={media}
       medium={medium}
@@ -806,7 +813,13 @@ function PreferenceControls({
 
       {languageOptions.length === 0 ? null : (
         <Pressable
-          accessibilityLabel="Preferred language"
+          /*
+            The value rides in the name. "Preferred language" alone told a
+            reader there was a setting and never what it was set to, and the
+            hint says what a press does, because it steps rather than opens.
+          */
+          accessibilityHint="Changes to the next language"
+          accessibilityLabel={`Preferred language: ${current === '' ? 'Any language' : languageName(current)}`}
           accessibilityRole="button"
           onPress={() => {
             // A phone has no select, and a modal for two or three values would
@@ -1112,6 +1125,18 @@ interface Burst {
 }
 
 /**
+ * The safe area at either end of the screen.
+ *
+ * Zero on a phone held upright, and the cutout and the navigation buttons on
+ * one held on its side — where every layer that runs edge to edge put its
+ * first or last control underneath them.
+ */
+interface Sides {
+  readonly left: number;
+  readonly right: number;
+}
+
+/**
  * The stage: one canvas, everything else over it.
  *
  * Absolute layers rather than a scrolling column, because a conversation that
@@ -1144,7 +1169,7 @@ function LiveStage({
 }: {
   readonly busy: boolean;
   readonly encounter: LiveEncounter | undefined;
-  readonly insets: { readonly bottom: number; readonly top: number };
+  readonly insets: Sides & { readonly bottom: number; readonly top: number };
   readonly languageOptions: readonly string[];
   readonly media: LiveMediaState;
   readonly medium: LiveMedium;
@@ -1295,6 +1320,12 @@ function LiveStage({
    * One handler with the order written out, rather than one per concern:
    * `BackHandler` answers listeners most-recent-first, and two effects racing
    * over mount order is how a Back closes the wrong thing.
+   *
+   * Held only while this tab is the one on screen. A tab stays mounted when
+   * somebody moves to another, and a listener registered for as long as the
+   * stage existed answered Back on Messages by stopping a search nobody could
+   * see — or by asking, over somebody else's screen, whether to leave a
+   * conversation.
    */
   const [confirmingLeave, setConfirmingLeave] = useState(false);
   useEffect(() => {
@@ -1302,33 +1333,35 @@ function LiveStage({
   }, [confirmingLeave, serverState]);
   const inEncounter = serverState === 'matched' && encounter !== undefined;
   const searching = serverState === 'searching';
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener(
-      'hardwareBackPress',
-      () => {
-        if (chatOpen) {
-          setChatOpen(false);
-          return true;
-        }
-        if (confirmingLeave) {
-          setConfirmingLeave(false);
-          return true;
-        }
-        if (inEncounter) {
-          setConfirmingLeave(true);
-          return true;
-        }
-        if (searching) {
-          onLeave();
-          return true;
-        }
-        return false;
-      },
-    );
-    return () => {
-      subscription.remove();
-    };
-  }, [chatOpen, confirmingLeave, inEncounter, onLeave, searching]);
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          if (chatOpen) {
+            setChatOpen(false);
+            return true;
+          }
+          if (confirmingLeave) {
+            setConfirmingLeave(false);
+            return true;
+          }
+          if (inEncounter) {
+            setConfirmingLeave(true);
+            return true;
+          }
+          if (searching) {
+            onLeave();
+            return true;
+          }
+          return false;
+        },
+      );
+      return () => {
+        subscription.remove();
+      };
+    }, [chatOpen, confirmingLeave, inEncounter, onLeave, searching]),
+  );
 
   const showBurst = useCallback((reaction: string, self: boolean) => {
     const id = mintUuid();
@@ -1337,6 +1370,21 @@ function LiveStage({
       setBursts((current) => current.filter((burst) => burst.id !== id));
     }, reactionMilliseconds);
   }, []);
+
+  /*
+   * Who has just arrived, said aloud.
+   *
+   * A match lands without anybody doing anything, and the pane that names the
+   * person mounts fresh with every encounter — which an Android live region
+   * does not announce, because nothing in it ever *changed*. So a reader heard
+   * nothing at all when a stranger appeared. The name is announced as it is
+   * shown, once per encounter, in the same words the screen uses.
+   */
+  const shownName = showing ? encounter.peer.displayName : undefined;
+  useEffect(() => {
+    if (shownName === undefined) return;
+    AccessibilityInfo.announceForAccessibility(shownName);
+  }, [encounterId, shownName]);
 
   const connection = encounter?.connection;
   const conversationId = connection?.conversationId;
@@ -1370,6 +1418,7 @@ function LiveStage({
       )}
       <LocalCamera
         bottom={aboveDock + previewLift}
+        insets={insets}
         media={media}
         medium={medium}
         pip={aboutSomebody}
@@ -1450,7 +1499,7 @@ function LiveStage({
       {showing ? (
         <PeerStrip
           encounter={encounter}
-          insetTop={insets.top}
+          insets={insets}
           onOpenPerson={onOpenPerson}
         />
       ) : null}
@@ -1460,6 +1509,7 @@ function LiveStage({
           bottom={aboveDock}
           conversationId={conversationId}
           displayName={encounter.peer.displayName}
+          insets={insets}
           onDismiss={() => {
             setCelebrated(true);
           }}
@@ -1467,7 +1517,12 @@ function LiveStage({
         />
       ) : null}
 
-      <NoticeLayer aboveDock={aboveDock} media={media} message={message} />
+      <NoticeLayer
+        aboveDock={aboveDock}
+        insets={insets}
+        media={media}
+        message={message}
+      />
 
       {/*
         The dock's own ground is a wash rather than a panel with a rule across
@@ -1483,7 +1538,13 @@ function LiveStage({
         onLayout={(event) => {
           setDockHeight(event.nativeEvent.layout.height);
         }}
-        style={styles.dock}
+        style={[
+          styles.dock,
+          {
+            paddingLeft: space[4] + insets.left,
+            paddingRight: space[4] + insets.right,
+          },
+        ]}
       >
         <Scrim
           direction="up"
@@ -1518,6 +1579,7 @@ function LiveStage({
         <LiveChat
           bottom={sheetFloor}
           encounter={encounter}
+          insets={insets}
           onBurst={showBurst}
           onClose={() => {
             setChatOpen(false);
@@ -1744,15 +1806,24 @@ function RemotePane({
  */
 function PeerStrip({
   encounter,
-  insetTop,
+  insets,
   onOpenPerson,
 }: {
   readonly encounter: LiveEncounter;
-  readonly insetTop: number;
+  readonly insets: Sides & { readonly top: number };
   readonly onOpenPerson: (personId: string) => void;
 }) {
   return (
-    <View style={[styles.strip, { paddingTop: insetTop + space[2] }]}>
+    <View
+      style={[
+        styles.strip,
+        {
+          paddingLeft: space[3] + insets.left,
+          paddingRight: space[3] + insets.right,
+          paddingTop: insets.top + space[2],
+        },
+      ]}
+    >
       <View
         style={[
           styles.connection,
@@ -1775,7 +1846,17 @@ function PeerStrip({
           name="link"
           size="sm"
         />
-        <Text tone="secondary" variant="caption">
+        {/*
+          A live region, so the other person pressing Connect is heard as well
+          as seen. Here rather than on the dock's Connect, which says the same
+          words and would say them twice.
+        */}
+        <Text
+          accessibilityLiveRegion="polite"
+          testID="live-connection-state"
+          tone="secondary"
+          variant="caption"
+        >
           {connectionCopy[encounter.connection.state] ?? 'Connect'}
         </Text>
       </View>
@@ -1990,17 +2071,29 @@ function ConnectedMoment({
   bottom,
   conversationId,
   displayName,
+  insets,
   onDismiss,
   onOpenConversation,
 }: {
   readonly bottom: number;
   readonly conversationId: string | undefined;
   readonly displayName: string;
+  readonly insets: Sides;
   readonly onDismiss: () => void;
   readonly onOpenConversation: (conversationId: string) => void;
 }) {
   return (
-    <View style={[styles.moment, { bottom }]} testID="live-connected-moment">
+    <View
+      style={[
+        styles.moment,
+        {
+          bottom,
+          left: space[3] + insets.left,
+          right: space[3] + insets.right,
+        },
+      ]}
+      testID="live-connected-moment"
+    >
       <View style={styles.momentMark}>
         <Icon color={color.statusPositive} name="link" size="sm" />
       </View>
@@ -2046,6 +2139,7 @@ function ConnectedMoment({
  */
 function LocalCamera({
   bottom,
+  insets,
   media,
   medium,
   pip,
@@ -2053,6 +2147,7 @@ function LocalCamera({
 }: {
   /** How far above the bottom the picture-in-picture sits. Measured, not guessed. */
   readonly bottom: number;
+  readonly insets: Sides;
   readonly media: LiveMediaState;
   readonly medium: LiveMedium;
   readonly pip: boolean;
@@ -2153,11 +2248,28 @@ function LocalCamera({
 
   return (
     <Animated.View
+      /*
+        A drag is the only way to move it, and a drag is not something a
+        screen reader can perform on a view. The same move is offered as the
+        view's own action, so the preview can be got out of the way of
+        whatever it is covering by anybody.
+      */
+      accessible
+      accessibilityActions={[
+        { label: 'Move to the other corner', name: 'activate' },
+      ]}
       accessibilityHint="Drag to move it to another corner"
       accessibilityLabel="Your camera"
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === 'activate') {
+          setCorner(corner === 'left' ? 'right' : 'left');
+        }
+      }}
       style={[
         styles.pip,
-        corner === 'left' ? styles.pipLeft : styles.pipRight,
+        corner === 'left'
+          ? { left: space[3] + insets.left }
+          : { right: space[3] + insets.right },
         { bottom, transform: drag.getTranslateTransform() },
       ]}
       testID="live-local"
@@ -2212,33 +2324,13 @@ function CameraScrim() {
       <Svg height="100%" width="100%">
         <Defs>
           <RadialGradient cx="50%" cy="46%" id="live-dim" r="68%">
-            <Stop
-              offset="0"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
-              stopOpacity={0.78}
-            />
-            <Stop
-              offset="1"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
-              stopOpacity={0.24}
-            />
+            <Stop offset="0" stopColor={scrimInk} stopOpacity={0.78} />
+            <Stop offset="1" stopColor={scrimInk} stopOpacity={0.24} />
           </RadialGradient>
           <LinearGradient id="live-edges" x1="0" x2="0" y1="0" y2="1">
-            <Stop
-              offset="0"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
-              stopOpacity={0.66}
-            />
-            <Stop
-              offset="0.42"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
-              stopOpacity={0.32}
-            />
-            <Stop
-              offset="1"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
-              stopOpacity={0.84}
-            />
+            <Stop offset="0" stopColor={scrimInk} stopOpacity={0.66} />
+            <Stop offset="0.42" stopColor={scrimInk} stopOpacity={0.32} />
+            <Stop offset="1" stopColor={scrimInk} stopOpacity={0.84} />
           </LinearGradient>
         </Defs>
         <Rect fill="url(#live-dim)" height="100%" width="100%" />
@@ -2424,12 +2516,12 @@ function Scrim({
           <LinearGradient id={id} x1="0" x2="0" y1="0" y2="1">
             <Stop
               offset="0"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopColor={scrimInk}
               stopOpacity={direction === 'down' ? opacity : 0}
             />
             <Stop
               offset="1"
-              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopColor={scrimInk}
               stopOpacity={direction === 'down' ? 0 : opacity}
             />
           </LinearGradient>
@@ -2514,7 +2606,9 @@ function Dock({
         <View style={styles.reactions} testID="live-reactions">
           {reactionOrder.map((reaction) => (
             <Pressable
-              accessibilityLabel={reaction}
+              // The glyph is the only thing on the control, and a bare code
+              // such as "clap" does not say pressing it sends anything.
+              accessibilityLabel={`Send ${reaction} reaction`}
               accessibilityRole="button"
               disabled={react.busy}
               key={reaction}
@@ -2744,10 +2838,12 @@ function Dock({
  */
 function NoticeLayer({
   aboveDock,
+  insets,
   media,
   message,
 }: {
   readonly aboveDock: number;
+  readonly insets: Sides;
   readonly media: LiveMediaState;
   readonly message: string | undefined;
 }) {
@@ -2758,7 +2854,14 @@ function NoticeLayer({
   return (
     <View
       pointerEvents="box-none"
-      style={[styles.notices, { bottom: aboveDock }]}
+      style={[
+        styles.notices,
+        {
+          bottom: aboveDock,
+          left: space[3] + insets.left,
+          right: space[3] + insets.right,
+        },
+      ]}
     >
       {message === undefined ? null : (
         <ErrorMessage testID="live-message">{message}</ErrorMessage>
@@ -2778,9 +2881,32 @@ function NoticeLayer({
           title="VELORA does not have your camera"
           tone="caution"
         >
-          {permission === 'blocked'
-            ? 'Android will not ask again, so it has to be turned on in Settings. Everything else works without it — you can still be matched, chat, and connect.'
-            : 'VELORA needs access to the camera so the person you meet can see you. Everything else works without it.'}
+          {permission === 'blocked' ? (
+            /*
+              The notice said Settings was the only way back and offered no way
+              there. The same control the photo picker gives for the same
+              answer from Android.
+            */
+            <Stack gap={2}>
+              <Text tone="secondary" variant="small">
+                Android will not ask again, so it has to be turned on in
+                Settings. Everything else works without it — you can still be
+                matched, chat, and connect.
+              </Text>
+              <Button
+                onPress={() => {
+                  void media.openSettings();
+                }}
+                size="small"
+                testID="live-permission-settings"
+                tone="secondary"
+              >
+                Open Settings
+              </Button>
+            </Stack>
+          ) : (
+            'VELORA needs access to the camera so the person you meet can see you. Everything else works without it.'
+          )}
         </Notice>
       )}
     </View>
@@ -2805,6 +2931,7 @@ function NoticeLayer({
 function LiveChat({
   bottom,
   encounter,
+  insets,
   onBurst,
   onClose,
   onMeasure,
@@ -2813,6 +2940,7 @@ function LiveChat({
 }: {
   readonly bottom: number;
   readonly encounter: LiveEncounter;
+  readonly insets: Sides;
   readonly onBurst: (reaction: string, self: boolean) => void;
   readonly onClose: () => void;
   /** Reports the sheet's measured height, so the preview can clear it. */
@@ -2921,7 +3049,14 @@ function LiveChat({
       onLayout={(event) => {
         onMeasure(event.nativeEvent.layout.height);
       }}
-      style={[styles.chat, { bottom }]}
+      style={[
+        styles.chat,
+        {
+          bottom,
+          paddingLeft: space[4] + insets.left,
+          paddingRight: space[4] + insets.right,
+        },
+      ]}
       testID="live-chat"
     >
       {/*
@@ -2963,6 +3098,13 @@ function LiveChat({
         ) : (
           messages.map((entry) => (
             <View
+              /*
+                Whose words these are, in words. Side and colour were the only
+                things that carried it, and neither reaches a reader — the
+                same fault the Inbox thread had, answered the same way.
+              */
+              accessible
+              accessibilityLabel={`${entry.self ? 'You' : encounter.peer.displayName} said: ${entry.body}`}
               key={entry.id}
               style={[styles.bubble, entry.self ? styles.bubbleSelf : null]}
               testID={`live-message-${String(entry.sequence)}`}
@@ -3167,6 +3309,12 @@ function invitationCopy(invitation: LiveInvitation): string {
 /** The preview's height, named once so the canvas can reserve exactly it. */
 const previewHeight = 148;
 
+/**
+ * What every wash over the camera is drawn in: the deepest ground the deployed
+ * palette has, and the light canvas in the local preview.
+ */
+const scrimInk = ivoryPreview ? color.canvas : color.canvasDeep;
+
 const styles = StyleSheet.create({
   broaden: {
     alignItems: 'center',
@@ -3225,7 +3373,6 @@ const styles = StyleSheet.create({
     gap: space[3],
     left: 0,
     maxHeight: '52%',
-    paddingHorizontal: space[4],
     paddingVertical: space[3],
     position: 'absolute',
     right: 0,
@@ -3272,7 +3419,6 @@ const styles = StyleSheet.create({
     gap: space[3],
     left: 0,
     paddingBottom: space[3],
-    paddingHorizontal: space[4],
     paddingTop: space[4],
     position: 'absolute',
     right: 0,
@@ -3389,10 +3535,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: space[3],
-    left: space[3],
     padding: space[3],
     position: 'absolute',
-    right: space[3],
   },
   momentBody: { flex: 1 },
   momentMark: {
@@ -3403,7 +3547,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 32,
   },
-  notices: { left: space[3], position: 'absolute', right: space[3] },
+  notices: { position: 'absolute' },
   peer: { alignItems: 'center', gap: space[3] },
   /* The ground the words get once there is a face behind them. */
   peerCarried: {
@@ -3472,8 +3616,6 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
   },
-  pipLeft: { left: space[3] },
-  pipRight: { right: space[3] },
   pref: {
     alignItems: 'center',
     backgroundColor: color.surface2,
@@ -3557,7 +3699,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     left: 0,
-    paddingHorizontal: space[3],
     position: 'absolute',
     right: 0,
     top: 0,

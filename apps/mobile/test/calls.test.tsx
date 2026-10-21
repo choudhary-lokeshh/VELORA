@@ -125,6 +125,20 @@ async function openCalls(state: MobileApiState = withMutualIntroduction()) {
   return { double, view };
 }
 
+/**
+ * Everything the screen rendered, as one searchable string.
+ *
+ * The list's pull-to-refresh control is an element, and the test renderer
+ * leaves it in the scroll view's props as well as rendering it. That element's
+ * owner is React's own bookkeeping — circular, and nothing a person sees — so
+ * it is the one key left out. Every rendered word and prop is still searched.
+ */
+function rendered(view: { toJSON: () => unknown }): string {
+  return JSON.stringify(view.toJSON(), (key, value: unknown) =>
+    key === '_owner' ? undefined : value,
+  );
+}
+
 /** Sends the app to the background and back, as the platform does. */
 async function foreground(): Promise<void> {
   await act(() => {
@@ -306,9 +320,9 @@ async function expectPlatformEnding(from: string): Promise<void> {
   expect(view.queryByTestId('call-end')).toBeNull();
   expect(view.queryByTestId('call-join')).toBeNull();
   expect(view.toJSON()).toBeTruthy();
-  const rendered = JSON.stringify(view.toJSON());
+  const output = rendered(view);
   for (const forbidden of ['blocked', 'report', 'enforcement']) {
-    expect(rendered).not.toContain(forbidden);
+    expect(output).not.toContain(forbidden);
   }
 }
 
@@ -433,7 +447,7 @@ describe('a credential is asked for, never kept', () => {
       ).toBe(true);
     });
 
-    expect(JSON.stringify(view.toJSON())).not.toContain('join-');
+    expect(rendered(view)).not.toContain('join-');
   });
 });
 

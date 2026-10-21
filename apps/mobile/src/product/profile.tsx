@@ -17,6 +17,7 @@ import {
   Card,
   Choice,
   Divider,
+  ErrorMessage,
   ErrorState,
   Field,
   Notice,
@@ -26,6 +27,7 @@ import {
   Text,
   TextField,
 } from '../design/primitives';
+import { space } from '../design/theme';
 import { ProfilePhotos } from './photos';
 import { MobileAiAssist } from './ai-assist';
 import {
@@ -60,6 +62,15 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
   const [languageDraft, setLanguageDraft] = useState<
     readonly string[] | undefined
   >(undefined);
+  /*
+   * A failed save, kept on the screen beside the control that failed.
+   *
+   * The toast alone was the whole report, and it lasts a few seconds over a
+   * form somebody is still looking at — often behind the keyboard they were
+   * typing with. The words they typed are still in the fields; this is what
+   * says they were not saved.
+   */
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
 
   // Held only once somebody types. Until then the server's value is what is
   // shown, so a profile edited on another device is not overwritten by a stale
@@ -152,6 +163,11 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                 testID="profile-ai"
               />
 
+              {saveError === undefined ? null : (
+                <ErrorMessage testID="profile-save-error">
+                  {saveError}
+                </ErrorMessage>
+              )}
               <Button
                 busy={busy}
                 disabled={
@@ -160,6 +176,7 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                 icon="check"
                 onPress={() => {
                   run(async () => {
+                    setSaveError(undefined);
                     const result = await api.saveProfile({
                       ...(about.trim().length === 0
                         ? {}
@@ -172,6 +189,7 @@ export function ProfileScreen({ onBack }: { readonly onBack: () => void }) {
                     });
                     const failure = failureMessage(result);
                     if (failure !== undefined) {
+                      setSaveError(failure);
                       toast.show(failure, 'critical');
                       return;
                     }
@@ -406,10 +424,10 @@ export function AvailabilityScreen({
                 style={{
                   alignItems: 'center',
                   flexDirection: 'row',
-                  gap: 12,
+                  gap: space[3],
                 }}
               >
-                <View style={{ flex: 1, gap: 4 }}>
+                <View style={{ flex: 1, gap: space[1] }}>
                   <Text variant="subheading" weight="semibold">
                     {availabilityLabels[view]}
                   </Text>
@@ -674,12 +692,12 @@ const styles = StyleSheet.create({
    * 200% text, and a horizontal strip that has to scroll hides the option
    * nobody knows is there.
    */
-  declarations: { gap: 8 },
+  declarations: { gap: space[2] },
   preference: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
-    paddingVertical: 12,
+    gap: space[3],
+    paddingVertical: space[3],
   },
-  preferenceBody: { flex: 1, gap: 4 },
+  preferenceBody: { flex: 1, gap: space[1] },
 });

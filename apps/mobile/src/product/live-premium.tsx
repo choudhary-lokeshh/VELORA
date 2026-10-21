@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
    * 200% text, and a horizontal strip that has to scroll hides the option
    * nobody knows is there.
    */
-  choices: { gap: 8, width: '100%' },
+  choices: { gap: space[2], width: '100%' },
   confirm: { gap: space[2], width: '100%' },
   grow: { flexShrink: 1 },
   heading: {

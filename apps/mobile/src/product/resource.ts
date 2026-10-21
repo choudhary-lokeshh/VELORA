@@ -140,6 +140,82 @@ export function useRevalidateOnForeground(revalidate: () => void): void {
 }
 
 /**
+ * The pages after the first, for a list whose first page is a resource.
+ *
+ * Every list here asked for one page and rendered only that page: the
+ * twenty-first conversation, introduction, block, or report existed on the
+ * server and nowhere on the phone, with nothing to say there was more. The
+ * first page stays the resource's, so a pull, a return to the foreground, and
+ * an action's reload all still re-read it. What this holds is everything after
+ * it, and it is dropped whenever the first page is read again — a cursor
+ * belongs to the read that produced it, and an answer to an older cursor that
+ * lands after a re-read is discarded rather than appended to the new list.
+ *
+ * A row that moved between pages while somebody was reading arrives twice,
+ * and `key` is what keeps it to one.
+ */
+export function useMorePages<
+  Page extends { readonly nextCursor?: string | undefined },
+  Item,
+>(
+  first: Page | undefined,
+  select: (page: Page) => readonly Item[],
+  key: (item: Item) => string,
+  read: (cursor: string) => Promise<ApiResult<Page>>,
+): {
+  readonly busy: boolean;
+  readonly error: string | undefined;
+  readonly items: readonly Item[];
+  /** Absent when the server said there is nothing after what is held. */
+  readonly more: (() => void) | undefined;
+} {
+  const [later, setLater] = useState<readonly Item[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const generation = useRef(0);
+  const paging = useSingleFlight();
+
+  useEffect(() => {
+    generation.current += 1;
+    setLater([]);
+    setError(undefined);
+    setCursor(first?.nextCursor);
+  }, [first]);
+
+  const from = cursor;
+  const more =
+    from === undefined
+      ? undefined
+      : () => {
+          const asked = generation.current;
+          paging.run(async () => {
+            const result = await read(from);
+            if (generation.current !== asked) return;
+            if (result.kind !== 'ok') {
+              setError(failureMessage(result) ?? 'That did not work.');
+              return;
+            }
+            setError(undefined);
+            setLater((held) => [...held, ...select(result.value)]);
+            setCursor(result.value.nextCursor);
+          });
+        };
+
+  const seen = new Set<string>();
+  const items = [
+    ...(first === undefined ? [] : select(first)),
+    ...later,
+  ].filter((item) => {
+    const id = key(item);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  return { busy: paging.busy, error, items, more };
+}
+
+/**
  * Runs one action at a time, whatever a fast finger does.
  *
  * A guard held in component state is not a guard: three taps in the same frame

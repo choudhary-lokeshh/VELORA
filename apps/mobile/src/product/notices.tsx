@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
 import { useApi, useToast } from '../frame/providers';
-import { Screen } from '../frame/shell';
+import { pullToRefresh, Screen } from '../frame/shell';
 import {
   Avatar,
   Button,
@@ -24,7 +24,7 @@ import {
   Text,
 } from '../design/primitives';
 import { Icon, type IconName } from '../design/icons';
-import { color, space } from '../design/theme';
+import { color, layout, radius, space } from '../design/theme';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { formatWhen } from './locale';
 import { useResource, useRevalidateOnForeground } from './resource';
@@ -220,6 +220,215 @@ export function NoticesScreen({
       });
   };
 
+  const showRows =
+    answered &&
+    !(notifications.error !== undefined && entries.length === 0) &&
+    !(people.error !== undefined && !peopleReady) &&
+    entries.length > 0;
+  const refreshing = notifications.loading && notifications.value !== undefined;
+  const inlineErrors =
+    (notifications.error !== undefined && entries.length > 0) ||
+    (people.error !== undefined && peopleReady) ? (
+      <View style={showRows ? styles.head : undefined}>
+        {notifications.error !== undefined && entries.length > 0 ? (
+          <View style={styles.inlineError}>
+            <ErrorMessage testID="notifications-refresh-failed">
+              {notifications.error}
+            </ErrorMessage>
+            {notifications.retryable ? (
+              <Button
+                onPress={notifications.reload}
+                size="small"
+                testID="notifications-refresh-retry"
+              >
+                Try again
+              </Button>
+            ) : null}
+          </View>
+        ) : null}
+
+        {people.error !== undefined && peopleReady ? (
+          <View style={styles.inlineError}>
+            <ErrorMessage testID="notification-people-refresh-failed">
+              {people.error}
+            </ErrorMessage>
+            {people.retryable ? (
+              <Button
+                onPress={people.reload}
+                size="small"
+                testID="notification-people-refresh-retry"
+              >
+                Try again
+              </Button>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    ) : null;
+  const list = (
+    <FlatList
+      data={showRows ? [...entries] : []}
+      ItemSeparatorComponent={Divider}
+      keyExtractor={(entry: NotificationEntry) => entry.id}
+      ListFooterComponent={
+        cursor === undefined ? null : (
+          <View style={styles.more}>
+            <Button
+              busy={loadingMore}
+              onPress={() => {
+                const from = cursor;
+                setLoadingMore(true);
+                void api
+                  .notifications({ cursor: from, pageSize })
+                  .then((result) => {
+                    if (result.kind !== 'ok') {
+                      toast.show(
+                        failureMessage(result) ?? 'That did not work.',
+                        'critical',
+                      );
+                      return;
+                    }
+                    setOlder((current) => [
+                      ...current,
+                      ...result.value.notifications,
+                    ]);
+                    setCursor(result.value.nextCursor);
+                  })
+                  .finally(() => {
+                    setLoadingMore(false);
+                  });
+              }}
+              size="small"
+              testID="notifications-more"
+            >
+              Load older
+            </Button>
+          </View>
+        )
+      }
+      renderItem={({ item }) => {
+        const look = notices[item.kind];
+        const fresh = item.readAt === undefined;
+        const person = people.value?.get(item.subjectId) ?? null;
+        const open =
+          person === null
+            ? undefined
+            : openerFor(item, onOpenConversation, onOpenIntroductions);
+        const available = person !== null && open !== undefined;
+        const mediaId = person?.media[0]?.id;
+        const label = available
+          ? look.label(person.displayName)
+          : 'This activity is no longer available.';
+        return (
+          <ListRow
+            /*
+              Unread was carried by weight and an ember mark, and neither is
+              spoken: every row read the same whether it was new or not. The
+              sentence's own full stop gives way to the time that follows it.
+            */
+            accessibilityLabel={`${fresh ? 'Unread. ' : ''}${label.replace(/\.$/u, '')}, ${formatWhen(item.createdAt)}`}
+            leading={
+              available ? (
+                <View style={styles.identity}>
+                  <Avatar
+                    displayName={person.displayName}
+                    seed={person.id}
+                    size="medium"
+                    source={
+                      mediaId === undefined ? undefined : portraits.get(mediaId)
+                    }
+                    testID={`notification-portrait-${item.id}`}
+                  />
+                  <View style={styles.kindMark}>
+                    <Icon
+                      color={fresh ? color.ember : color.textSecondary}
+                      name={look.icon}
+                      size="sm"
+                    />
+                  </View>
+                </View>
+              ) : (
+                <View
+                  style={[styles.mark, fresh ? styles.markFresh : undefined]}
+                >
+                  <Icon
+                    color={fresh ? color.ember : color.textTertiary}
+                    name="info"
+                    size="md"
+                  />
+                </View>
+              )
+            }
+            testID={`notification-${item.id}`}
+            {...(open === undefined
+              ? {}
+              : {
+                  onPress: () => {
+                    acknowledge([item.id]);
+                    open();
+                  },
+                })}
+            {...(!available && fresh
+              ? {
+                  trailing: (
+                    <Button
+                      onPress={() => {
+                        acknowledge([item.id]);
+                      }}
+                      size="small"
+                      testID={`notification-read-${item.id}`}
+                      tone="ghost"
+                    >
+                      Mark read
+                    </Button>
+                  ),
+                }
+              : {})}
+          >
+            <Text weight={fresh ? 'medium' : 'regular'}>{label}</Text>
+            <Text tone="tertiary" variant="caption">
+              {formatWhen(item.createdAt)}
+            </Text>
+          </ListRow>
+        );
+      }}
+      ListEmptyComponent={
+        !answered ? (
+          <Card>
+            <RowSkeleton rows={4} />
+          </Card>
+        ) : notifications.error !== undefined && entries.length === 0 ? (
+          <ErrorState
+            body={notifications.error}
+            testID="notifications-failed"
+            {...(notifications.retryable
+              ? { onRetry: notifications.reload }
+              : {})}
+          />
+        ) : people.error !== undefined && !peopleReady ? (
+          <ErrorState
+            body={people.error}
+            testID="notification-people-failed"
+            {...(people.retryable ? { onRetry: people.reload } : {})}
+          />
+        ) : (
+          <EmptyState
+            body="When somebody says yes to an introduction, sends you a message, or calls, it appears here."
+            icon="bell"
+            testID="notifications-empty"
+            title="Nothing yet"
+          />
+        )
+      }
+      ListHeaderComponent={inlineErrors}
+      onRefresh={notifications.reload}
+      refreshControl={pullToRefresh(notifications.reload, refreshing)}
+      refreshing={refreshing}
+      showsVerticalScrollIndicator={false}
+      testID="notification-rows"
+    />
+  );
+
   return (
     <Screen
       onRefresh={notifications.reload}
@@ -247,205 +456,36 @@ export function NoticesScreen({
         )
       }
     >
-      {notifications.error !== undefined && entries.length > 0 ? (
-        <View style={styles.inlineError}>
-          <ErrorMessage testID="notifications-refresh-failed">
-            {notifications.error}
-          </ErrorMessage>
-          {notifications.retryable ? (
-            <Button
-              onPress={notifications.reload}
-              size="small"
-              testID="notifications-refresh-retry"
-            >
-              Try again
-            </Button>
-          ) : null}
-        </View>
-      ) : null}
-
-      {people.error !== undefined && peopleReady ? (
-        <View style={styles.inlineError}>
-          <ErrorMessage testID="notification-people-refresh-failed">
-            {people.error}
-          </ErrorMessage>
-          {people.retryable ? (
-            <Button
-              onPress={people.reload}
-              size="small"
-              testID="notification-people-refresh-retry"
-            >
-              Try again
-            </Button>
-          ) : null}
-        </View>
-      ) : null}
-
-      {!answered ? (
-        <Card>
-          <RowSkeleton rows={4} />
+      {/*
+        The list scrolls on its own, so it carries the pull and every state that
+        is not a list. Outside it, an empty or failed read could not be pulled to
+        read again — the screen's own pull exists only where the screen scrolls.
+        The card is drawn only around rows, so a state that is not a list looks
+        as it always did.
+      */}
+      {showRows ? (
+        <Card
+          padded={false}
+          style={styles.listFrame}
+          testID="notification-list"
+        >
+          <View style={styles.rows}>{list}</View>
         </Card>
-      ) : notifications.error !== undefined && entries.length === 0 ? (
-        <ErrorState
-          body={notifications.error}
-          testID="notifications-failed"
-          {...(notifications.retryable
-            ? { onRetry: notifications.reload }
-            : {})}
-        />
-      ) : people.error !== undefined && !peopleReady ? (
-        <ErrorState
-          body={people.error}
-          testID="notification-people-failed"
-          {...(people.retryable ? { onRetry: people.reload } : {})}
-        />
-      ) : entries.length === 0 ? (
-        <EmptyState
-          body="When somebody says yes to an introduction, sends you a message, or calls, it appears here."
-          icon="bell"
-          testID="notifications-empty"
-          title="Nothing yet"
-        />
       ) : (
-        <Card padded={false} testID="notification-list">
-          <View style={styles.rows}>
-            <FlatList
-              data={[...entries]}
-              ItemSeparatorComponent={Divider}
-              keyExtractor={(entry: NotificationEntry) => entry.id}
-              ListFooterComponent={
-                cursor === undefined ? null : (
-                  <View style={styles.more}>
-                    <Button
-                      busy={loadingMore}
-                      onPress={() => {
-                        const from = cursor;
-                        setLoadingMore(true);
-                        void api
-                          .notifications({ cursor: from, pageSize })
-                          .then((result) => {
-                            if (result.kind !== 'ok') {
-                              toast.show(
-                                failureMessage(result) ?? 'That did not work.',
-                                'critical',
-                              );
-                              return;
-                            }
-                            setOlder((current) => [
-                              ...current,
-                              ...result.value.notifications,
-                            ]);
-                            setCursor(result.value.nextCursor);
-                          })
-                          .finally(() => {
-                            setLoadingMore(false);
-                          });
-                      }}
-                      size="small"
-                      testID="notifications-more"
-                    >
-                      Load older
-                    </Button>
-                  </View>
-                )
-              }
-              renderItem={({ item }) => {
-                const look = notices[item.kind];
-                const fresh = item.readAt === undefined;
-                const person = people.value?.get(item.subjectId) ?? null;
-                const open =
-                  person === null
-                    ? undefined
-                    : openerFor(item, onOpenConversation, onOpenIntroductions);
-                const available = person !== null && open !== undefined;
-                const mediaId = person?.media[0]?.id;
-                return (
-                  <ListRow
-                    leading={
-                      available ? (
-                        <View style={styles.identity}>
-                          <Avatar
-                            displayName={person.displayName}
-                            seed={person.id}
-                            size="medium"
-                            source={
-                              mediaId === undefined
-                                ? undefined
-                                : portraits.get(mediaId)
-                            }
-                            testID={`notification-portrait-${item.id}`}
-                          />
-                          <View style={styles.kindMark}>
-                            <Icon
-                              color={fresh ? color.ember : color.textSecondary}
-                              name={look.icon}
-                              size="sm"
-                            />
-                          </View>
-                        </View>
-                      ) : (
-                        <View
-                          style={[
-                            styles.mark,
-                            fresh ? styles.markFresh : undefined,
-                          ]}
-                        >
-                          <Icon
-                            color={fresh ? color.ember : color.textTertiary}
-                            name="info"
-                            size="md"
-                          />
-                        </View>
-                      )
-                    }
-                    testID={`notification-${item.id}`}
-                    {...(open === undefined
-                      ? {}
-                      : {
-                          onPress: () => {
-                            acknowledge([item.id]);
-                            open();
-                          },
-                        })}
-                    {...(!available && fresh
-                      ? {
-                          trailing: (
-                            <Button
-                              onPress={() => {
-                                acknowledge([item.id]);
-                              }}
-                              size="small"
-                              testID={`notification-read-${item.id}`}
-                              tone="ghost"
-                            >
-                              Mark read
-                            </Button>
-                          ),
-                        }
-                      : {})}
-                  >
-                    <Text weight={fresh ? 'medium' : 'regular'}>
-                      {available
-                        ? look.label(person.displayName)
-                        : 'This activity is no longer available.'}
-                    </Text>
-                    <Text tone="tertiary" variant="caption">
-                      {formatWhen(item.createdAt)}
-                    </Text>
-                  </ListRow>
-                );
-              }}
-              showsVerticalScrollIndicator={false}
-            />
-          </View>
-        </Card>
+        list
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  identity: { height: 44, position: 'relative', width: 44 },
+  /* The inline errors' room inside the card, where they head the rows. */
+  head: { paddingTop: space[3] },
+  identity: {
+    height: layout.avatarMedium,
+    position: 'relative',
+    width: layout.avatarMedium,
+  },
   inlineError: {
     alignItems: 'flex-start',
     gap: space[2],
@@ -455,7 +495,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: color.surface1,
     borderColor: color.borderStrong,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     borderWidth: 1,
     bottom: -3,
     height: 22,
@@ -464,17 +504,22 @@ const styles = StyleSheet.create({
     right: -4,
     width: 22,
   },
+  /*
+   * Sized to its rows, and no taller than the screen: a list longer than the
+   * screen scrolls inside the card rather than running off the bottom of it.
+   */
+  listFrame: { flexShrink: 1, minHeight: 0 },
   more: { alignItems: 'center', paddingVertical: space[4] },
   mark: {
     alignItems: 'center',
     backgroundColor: color.surface3,
-    borderRadius: 999,
-    height: 40,
+    borderRadius: radius.pill,
+    height: layout.controlHeightSmall,
     justifyContent: 'center',
-    width: 40,
+    width: layout.controlHeightSmall,
   },
   markFresh: { backgroundColor: color.emberWash },
-  rows: { paddingHorizontal: space[4] },
+  rows: { flexShrink: 1, minHeight: 0, paddingHorizontal: space[4] },
 });
 
 function dedupe(

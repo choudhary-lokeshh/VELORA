@@ -1,8 +1,9 @@
+import type { Conversation, ConversationList } from '@velora/consumer-client';
 import { useCallback } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
 import { useApi } from '../frame/providers';
-import { Screen } from '../frame/shell';
+import { pullToRefresh, Screen } from '../frame/shell';
 import {
   Button,
   Avatar,
@@ -10,15 +11,21 @@ import {
   Card,
   Divider,
   EmptyState,
+  ErrorMessage,
   ErrorState,
   ListRow,
   RowSkeleton,
+  Stack,
   Text,
 } from '../design/primitives';
 import { ivoryPreview, space } from '../design/theme';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { formatWhen } from './locale';
-import { useResource, useRevalidateOnForeground } from './resource';
+import {
+  useMorePages,
+  useResource,
+  useRevalidateOnForeground,
+} from './resource';
 
 /**
  * Every conversation somebody holds.
@@ -33,6 +40,9 @@ import { useResource, useRevalidateOnForeground } from './resource';
  */
 
 const pageSize = 20;
+
+const conversationsOf = (page: ConversationList) => page.conversations;
+const conversationKey = (row: Conversation) => row.id;
 
 export function MessagesScreen({
   onOpenIntroductions,
@@ -49,8 +59,14 @@ export function MessagesScreen({
   );
   const conversations = useResource(load);
   useRevalidateOnForeground(conversations.reload);
+  const pages = useMorePages(
+    conversations.value,
+    conversationsOf,
+    conversationKey,
+    async (cursor) => api.conversations({ cursor, pageSize }),
+  );
 
-  const rows = conversations.value?.conversations ?? [];
+  const rows = pages.items;
   const portraits = useMediaAddresses(
     portraitReferences(rows.map((row) => row.counterpart)),
     'avatar_small',
@@ -105,9 +121,33 @@ export function MessagesScreen({
               testID="conversation-rows"
               data={[...rows]}
               onRefresh={conversations.reload}
+              refreshControl={pullToRefresh(
+                conversations.reload,
+                conversations.loading,
+              )}
               refreshing={conversations.loading}
               ItemSeparatorComponent={Divider}
               keyExtractor={(row) => row.id}
+              ListFooterComponent={
+                pages.more === undefined ? null : (
+                  <Stack gap={2} style={styles.more}>
+                    <Button
+                      busy={pages.busy}
+                      onPress={pages.more}
+                      size="small"
+                      testID="conversations-more"
+                      tone="ghost"
+                    >
+                      Show more conversations
+                    </Button>
+                    {pages.error === undefined ? null : (
+                      <ErrorMessage testID="conversations-more-failed">
+                        {pages.error}
+                      </ErrorMessage>
+                    )}
+                  </Stack>
+                )
+              }
               renderItem={({ item }) => {
                 const unread = item.lastMessageSequence > item.lastReadSequence;
                 return (
@@ -167,5 +207,6 @@ export function MessagesScreen({
 
 const styles = StyleSheet.create({
   listFrame: { flex: 1, minHeight: 0 },
+  more: { paddingVertical: space[3] },
   rows: { flex: 1, paddingHorizontal: ivoryPreview ? 0 : space[4] },
 });

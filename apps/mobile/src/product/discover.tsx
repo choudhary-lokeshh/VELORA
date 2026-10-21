@@ -8,11 +8,17 @@ import {
   failureMessage as creatorFailureMessage,
   type PublicCreatorSummary,
 } from '@velora/creator-client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { useApi, useCreatorApi, useToast } from '../frame/providers';
-import { Screen } from '../frame/shell';
+import { pullToRefresh, Screen } from '../frame/shell';
 import {
   Actions,
   Avatar,
@@ -73,6 +79,11 @@ const emptyFeed: Feed = {
   cursor: undefined,
   exhausted: false,
 };
+
+/** The space between two cards, which was the list's own gap. */
+function Gap() {
+  return <View style={styles.gap} />;
+}
 
 /** Which half of Discover is being read. Kept in the address by the route. */
 export type DiscoverSection = 'people' | 'creators';
@@ -216,18 +227,12 @@ export function DiscoverScreen({
   );
   const availability = useResource(loadAvailability);
   const view = availabilityView(availability.value);
+  const refresh = () => {
+    void fill(emptyFeed);
+  };
 
-  return (
-    <Screen
-      onRefresh={() => {
-        void fill(emptyFeed);
-      }}
-      refreshing={loading && feed.candidates.length > 0}
-      scroll={false}
-      subtitle="People who are available to you right now."
-      testID="discover-screen"
-      title="Discover"
-    >
+  const header = (
+    <View>
       <View style={styles.sections}>
         <Segmented
           label="What to browse"
@@ -265,59 +270,90 @@ export function DiscoverScreen({
           </Button>
         </View>
       )}
+    </View>
+  );
 
+  return (
+    <Screen
+      onRefresh={() => {
+        void fill(emptyFeed);
+      }}
+      refreshing={loading && feed.candidates.length > 0}
+      scroll={false}
+      subtitle="People who are available to you right now."
+      testID="discover-screen"
+      title="Discover"
+    >
+      {/*
+        Both halves are one scrolling list, with the section control and the
+        availability notice at its head and every state that is not a list in
+        its place. Pinned above the list they took most of a phone at a large
+        text size and left the cards a sliver; outside it, "Nobody right now"
+        could not be pulled to look again, because the screen's own pull only
+        exists where the screen scrolls.
+      */}
       {section === 'creators' ? (
-        <CreatorsPane onOpenCreator={onOpenCreator} />
-      ) : loading && !answered ? (
-        <Card>
-          <RowSkeleton rows={3} />
-        </Card>
-      ) : error !== undefined && feed.candidates.length === 0 ? (
-        <ErrorState
-          body={error}
-          testID="discovery-failed"
-          {...(retryable
-            ? {
-                onRetry: () => {
-                  void fill(emptyFeed);
-                },
-              }
-            : {})}
-        />
-      ) : showEmpty ? (
-        <EmptyState
-          action={
-            <Button
-              icon="refresh"
-              onPress={() => {
-                void fill(emptyFeed);
-              }}
-              testID="discovery-look-again"
-            >
-              Look again
-            </Button>
-          }
-          body={
-            feed.exhausted
-              ? 'You have seen everybody available to you for now. People appear here when they make themselves available, so it is worth coming back.'
-              : 'Nobody is available to you right now. Being available yourself is what makes you visible to other people too.'
-          }
-          icon="compass"
-          testID="discovery-empty"
-          title={
-            feed.exhausted ? 'That is everybody for now' : 'Nobody right now'
-          }
-        />
+        <CreatorsPane header={header} onOpenCreator={onOpenCreator} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
           data={[...feed.candidates]}
+          ItemSeparatorComponent={Gap}
           keyExtractor={(candidate) => candidate.id}
+          ListEmptyComponent={
+            loading && !answered ? (
+              <Card>
+                <RowSkeleton rows={3} />
+              </Card>
+            ) : error !== undefined ? (
+              <ErrorState
+                body={error}
+                testID="discovery-failed"
+                {...(retryable
+                  ? {
+                      onRetry: () => {
+                        void fill(emptyFeed);
+                      },
+                    }
+                  : {})}
+              />
+            ) : showEmpty ? (
+              <EmptyState
+                action={
+                  <Button
+                    icon="refresh"
+                    onPress={() => {
+                      void fill(emptyFeed);
+                    }}
+                    testID="discovery-look-again"
+                  >
+                    Look again
+                  </Button>
+                }
+                body={
+                  feed.exhausted
+                    ? 'You have seen everybody available to you for now. People appear here when they make themselves available, so it is worth coming back.'
+                    : 'Nobody is available to you right now. Being available yourself is what makes you visible to other people too.'
+                }
+                icon="compass"
+                testID="discovery-empty"
+                title={
+                  feed.exhausted
+                    ? 'That is everybody for now'
+                    : 'Nobody right now'
+                }
+              />
+            ) : null
+          }
+          ListHeaderComponent={header}
           onEndReached={() => {
             if (feed.exhausted || feed.cursor === undefined || loading) return;
             void fill(feed);
           }}
           onEndReachedThreshold={0.6}
+          onRefresh={refresh}
+          refreshControl={pullToRefresh(refresh, loading && answered)}
+          refreshing={loading && answered}
           renderItem={({ item }) => (
             <CandidateCard
               busy={decision.busy}
@@ -363,8 +399,11 @@ export function DiscoverScreen({
  * in a building with no corridor.
  */
 function CreatorsPane({
+  header,
   onOpenCreator,
 }: {
+  /** The section control, which scrolls with whichever half is showing. */
+  readonly header: ReactElement;
   readonly onOpenCreator: (handle: string) => void;
 }) {
   const creators = useCreatorApi();
@@ -407,41 +446,35 @@ function CreatorsPane({
     });
   };
 
-  if (first.loading && first.value === undefined) {
-    return (
-      <Card>
-        <RowSkeleton rows={3} />
-      </Card>
-    );
-  }
-  if (first.error !== undefined && first.value === undefined) {
-    return (
-      <ErrorState
-        body={first.error}
-        testID="creator-directory-failed"
-        {...(first.retryable ? { onRetry: first.reload } : {})}
-      />
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        body="No creators have published a page yet. They appear here the moment one does."
-        icon="sparkle"
-        testID="creator-directory-empty"
-        title="No creators yet"
-      />
-    );
-  }
-
   return (
     <FlatList
       contentContainerStyle={styles.list}
       data={rows}
+      ItemSeparatorComponent={Gap}
       keyExtractor={(row) => row.handle}
+      ListEmptyComponent={
+        first.loading && first.value === undefined ? (
+          <Card>
+            <RowSkeleton rows={3} />
+          </Card>
+        ) : first.error !== undefined && first.value === undefined ? (
+          <ErrorState
+            body={first.error}
+            testID="creator-directory-failed"
+            {...(first.retryable ? { onRetry: first.reload } : {})}
+          />
+        ) : (
+          <EmptyState
+            body="No creators have published a page yet. They appear here the moment one does."
+            icon="sparkle"
+            testID="creator-directory-empty"
+            title="No creators yet"
+          />
+        )
+      }
       ListFooterComponent={
         cursor === undefined ? null : (
-          <Stack gap={2}>
+          <Stack gap={2} style={styles.more}>
             <Button
               busy={paging.busy}
               onPress={more}
@@ -459,6 +492,13 @@ function CreatorsPane({
           </Stack>
         )
       }
+      ListHeaderComponent={header}
+      onRefresh={first.reload}
+      refreshControl={pullToRefresh(
+        first.reload,
+        first.loading && first.value !== undefined,
+      )}
+      refreshing={first.loading && first.value !== undefined}
       renderItem={({ item }) => (
         <Pressable
           accessibilityLabel={`Open ${item.displayName}`}
@@ -690,7 +730,9 @@ const styles = StyleSheet.create({
     gap: space[4],
   },
   identityText: { flex: 1, gap: space[2] },
-  list: { gap: space[4], paddingBottom: space[6] },
+  gap: { height: space[4] },
+  list: { paddingBottom: space[6] },
+  more: { paddingTop: space[4] },
   open: {
     alignItems: 'flex-start',
     flex: 1,

@@ -1,5 +1,16 @@
-import { cleanup, fireEvent, waitFor } from '@testing-library/react-native';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react-native';
 import { maximumNotificationReadBatch } from '@velora/validation/notifications-bounds';
+import {
+  AccessibilityInfo,
+  AppState,
+  type AppStateStatus,
+  type NativeEventSubscription,
+} from 'react-native';
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { ConversationScreen } from '../src/product/conversation';
@@ -210,6 +221,38 @@ describe('discover', () => {
     expect(view.getByText('That is everybody for now')).toBeTruthy();
   });
 
+  it('looks again when the empty feed is pulled', async () => {
+    const state = admittedState();
+    state.candidates = [];
+    const { double, view } = await mount(
+      <DiscoverScreen
+        onOpenCreator={() => undefined}
+        onOpenPerson={() => undefined}
+        onOpenYou={() => undefined}
+        onSection={() => undefined}
+        section="people"
+      />,
+      state,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('discovery-empty')).toBeTruthy();
+    });
+    const before = double.calls.filter(
+      (call) => call.path === '/v1/discovery/candidates',
+    ).length;
+
+    // The empty state sits inside the list now, so the pull that the screen
+    // promised everywhere also works where there is nothing to scroll.
+    await fireEvent(view.getByTestId('discovery-list'), 'refresh');
+
+    await waitFor(() => {
+      expect(
+        double.calls.filter((call) => call.path === '/v1/discovery/candidates')
+          .length,
+      ).toBeGreaterThan(before);
+    });
+  });
+
   it('keeps the person on the feed when the decision is refused', async () => {
     const { double, view } = await mount(
       <DiscoverScreen
@@ -348,6 +391,44 @@ describe('messages', () => {
       ).toBeGreaterThan(before);
     });
   });
+  it('shows the conversations after the first page', async () => {
+    const state = admittedState();
+    const [seed] = state.conversations;
+    if (seed === undefined) throw new Error('fixture needs one');
+    state.conversations = Array.from({ length: 21 }, (_, index) => ({
+      ...seed,
+      counterpart: {
+        ...seed.counterpart,
+        displayName: `Person ${String(index + 1)}`,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      },
+      id: `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    }));
+    const { double, view } = await mount(
+      <MessagesScreen onOpen={nothing} onOpenIntroductions={nothing} />,
+      state,
+    );
+
+    // Twenty fit on the first page; the twenty-first existed on the server
+    // and nowhere on the phone, with nothing to say there was more.
+    await view.findByTestId('conversations-more');
+    const reads = () =>
+      double.calls.filter(
+        (call) =>
+          call.path === '/v1/messaging/conversations' && call.method === 'GET',
+      ).length;
+    const before = reads();
+    await fireEvent.press(view.getByTestId('conversations-more'));
+
+    // Gone only because the second page answered with nothing after it: a
+    // request without the cursor would have been the first page again, and
+    // offered more again.
+    await waitFor(() => {
+      expect(view.queryByTestId('conversations-more')).toBeNull();
+    });
+    expect(reads()).toBe(before + 1);
+  });
+
   it('marks a conversation unread from the sequences the server publishes', async () => {
     const state = admittedState();
     const conversation = state.conversations[0];
@@ -631,6 +712,66 @@ describe('notices', () => {
             call.path === '/v1/notifications/read' && call.method === 'POST',
         ),
       ).toHaveLength(1);
+    });
+  });
+
+  it('says which rows are unread, which weight and colour alone never did', async () => {
+    const state = admittedState();
+    state.notifications = [
+      {
+        conversationId,
+        createdAt: new Date().toISOString(),
+        id: 'n1',
+        kind: 'message_received',
+        subjectId: otherPersonId,
+      },
+      {
+        conversationId,
+        createdAt: new Date().toISOString(),
+        id: 'n2',
+        kind: 'introduction_mutual',
+        readAt: new Date().toISOString(),
+        subjectId: otherPersonId,
+      },
+    ];
+    const { view } = await mount(
+      <NoticesScreen
+        onOpenConversation={nothing}
+        onOpenIntroductions={nothing}
+      />,
+      state,
+    );
+
+    await waitFor(() => {
+      expect(
+        String(view.getByTestId('notification-n1').props.accessibilityLabel),
+      ).toMatch(/^Unread\. Robin sent you a message, \S/u);
+    });
+    expect(
+      String(view.getByTestId('notification-n2').props.accessibilityLabel),
+    ).not.toMatch(/Unread/u);
+  });
+
+  it('reads again when the empty list is pulled', async () => {
+    const { double, view } = await mount(
+      <NoticesScreen
+        onOpenConversation={nothing}
+        onOpenIntroductions={nothing}
+      />,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('notifications-empty')).toBeTruthy();
+    });
+    const reads = () =>
+      double.calls.filter(
+        (call) => call.path === '/v1/notifications' && call.method === 'GET',
+      ).length;
+    const before = reads();
+
+    await fireEvent(view.getByTestId('notification-rows'), 'refresh');
+
+    await waitFor(() => {
+      expect(reads()).toBeGreaterThan(before);
     });
   });
 
@@ -966,6 +1107,29 @@ describe('you', () => {
     expect(view.queryByTestId('media-delivery-blocked')).toBeNull();
   });
 
+  it('keeps a failed save on the screen beside Save, not only in a toast', async () => {
+    const { double, view } = await mount(<ProfileScreen onBack={nothing} />);
+    await waitFor(() => {
+      expect(view.getByTestId('profile-name')).toBeTruthy();
+    });
+    double.failNext('/v1/users/me/profile');
+
+    await fireEvent.changeText(view.getByTestId('profile-name'), 'Alex Moreau');
+    await fireEvent.press(view.getByTestId('profile-save'));
+
+    // A toast lasts seconds and sat behind the keyboard somebody was typing
+    // with. This stays until the next attempt, beside the control that failed.
+    expect(await view.findByTestId('profile-save-error')).toHaveTextContent(
+      /could not be reached/u,
+    );
+    expect(view.getByTestId('profile-name').props.value).toBe('Alex Moreau');
+
+    await fireEvent.press(view.getByTestId('profile-save'));
+    await waitFor(() => {
+      expect(view.queryByTestId('profile-save-error')).toBeNull();
+    });
+  });
+
   it('says photographs cannot be shown where the platform cannot deliver one', async () => {
     const state = admittedState();
     state.mediaDelivery = 'unavailable';
@@ -989,6 +1153,24 @@ describe('you', () => {
     // The identifier is never shown: it is an internal value, and a product
     // screen is not where one belongs.
     expect(view.queryByText(otherPersonId)).toBeNull();
+  });
+
+  it('shows the blocks after the first page', async () => {
+    const state = admittedState();
+    state.blocks = Array.from({ length: 21 }, (_, index) => ({
+      blockedId: `20000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      createdAt: new Date(Date.now() - index * 60_000).toISOString(),
+    }));
+    const { view } = await mount(<SafetyScreen onBack={nothing} />, state);
+    const last = state.blocks[20]?.blockedId ?? '';
+
+    await view.findByTestId('blocks-more');
+    expect(view.queryByTestId(`unblock-${last}`)).toBeNull();
+
+    await fireEvent.press(view.getByTestId('blocks-more'));
+
+    expect(await view.findByTestId(`unblock-${last}`)).toBeTruthy();
+    expect(view.queryByTestId('blocks-more')).toBeNull();
   });
 
   it('removes a block when asked, and says the other person is not told', async () => {
@@ -1801,6 +1983,76 @@ describe('what a reader is told on a phone', () => {
     // folded in or they reached nobody.
     expect(label).toContain('Open');
     expect(label.toLowerCase()).toContain('both speak');
+  });
+
+  it('announces what the other person says after the thread is open, and nothing else', async () => {
+    const foreground: ((status: AppStateStatus) => void)[] = [];
+    // Saved and put back by hand rather than with a spy: `mockRestore` leaves
+    // the platform mock with no implementation, and every later screen in this
+    // file that listens for a foreground then throws in its own cleanup.
+    const original = AppState.addEventListener.bind(AppState);
+    AppState.addEventListener = (type, handler): NativeEventSubscription => {
+      if (type === 'change') foreground.push(handler);
+      return { remove: () => undefined };
+    };
+    const announce = jest.mocked(AccessibilityInfo.announceForAccessibility);
+    announce.mockClear();
+    try {
+      const state = admittedState();
+      state.messages = [
+        {
+          body: 'Already here',
+          clientMessageId: 'seed-mobile-0001',
+          conversationId,
+          createdAt: new Date(Date.now() - 60_000).toISOString(),
+          id: '77777777-7777-4777-8777-000000000001',
+          senderId: otherPersonId,
+          sequence: 1,
+        },
+      ];
+      const { double, view } = await mount(
+        <ConversationScreen conversationId={conversationId} onBack={nothing} />,
+        state,
+      );
+      await view.findByLabelText('They said: Already here');
+      // The thread is no longer one live region re-read on every revalidation.
+      expect(view.getByTestId('messages').props.accessibilityLiveRegion).toBe(
+        undefined,
+      );
+
+      await fireEvent.changeText(view.getByTestId('message-input'), 'mine');
+      await fireEvent.press(view.getByTestId('message-send'));
+      await view.findByLabelText('You said: mine');
+
+      double.state.messages = [
+        ...double.state.messages,
+        {
+          body: 'Just arrived',
+          clientMessageId: 'peer-mobile-0002',
+          conversationId,
+          createdAt: new Date().toISOString(),
+          id: '77777777-7777-4777-8777-000000000005',
+          senderId: otherPersonId,
+          sequence: 5,
+        },
+      ];
+      await act(() => {
+        for (const listener of [...foreground]) listener('active');
+        return Promise.resolve();
+      });
+      await view.findByLabelText('They said: Just arrived');
+
+      // What was already there and what this person sent are read by reading
+      // the thread; only the other person arriving is announced.
+      await waitFor(() => {
+        expect(announce).toHaveBeenCalledWith('They said: Just arrived');
+      });
+      expect(announce.mock.calls.map(([said]) => said)).toEqual([
+        'They said: Just arrived',
+      ]);
+    } finally {
+      AppState.addEventListener = original;
+    }
   });
 
   it('says who said each message rather than which side it is on', async () => {

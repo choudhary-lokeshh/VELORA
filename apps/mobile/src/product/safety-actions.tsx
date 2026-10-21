@@ -1,5 +1,5 @@
 import { failureMessage } from '@velora/consumer-client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { mintUuid } from '../device/installation';
@@ -16,6 +16,7 @@ import {
   TextField,
 } from '../design/primitives';
 import { Sheet } from '../design/sheet';
+import { space } from '../design/theme';
 import { useSingleFlight } from './resource';
 
 /**
@@ -73,6 +74,23 @@ function clientReportId(): string {
 
 type Mode = 'menu' | 'block' | 'report' | 'report-and-block';
 
+/** What a sheet is handed so the request it starts outlives the sheet. */
+type Flight = ReturnType<typeof useSingleFlight>;
+
+/**
+ * The report a retry is still trying to file, and who it is about.
+ *
+ * Held by the menu rather than by the sheet, because the sheet is the thing
+ * somebody closes after a failure and opens again — and a fresh identifier on
+ * the reopened sheet turned a report whose answer was lost into two reports.
+ * Keyed on the person as well, so an identifier minted for one person is never
+ * reused for another.
+ */
+interface PendingReport {
+  readonly id: string;
+  readonly personId: string;
+}
+
 /**
  * One unobtrusive control beside a person, and everything safety behind it.
  *
@@ -89,6 +107,21 @@ export function PersonSafetyMenu({
   readonly person: Person;
 }) {
   const [mode, setMode] = useState<Mode | undefined>(undefined);
+  /*
+   * Owned here rather than by each sheet, so a block or a report in flight
+   * outlives the sheet that started it, and the sheet cannot be dismissed
+   * while it runs: closing it unmounted the request's owner and offered a
+   * second, unkeyed one on the way back in. The same rule the paid Live
+   * preference follows.
+   */
+  const action = useSingleFlight();
+  const pendingReport = useRef<PendingReport | undefined>(undefined);
+  const dismiss = () => {
+    if (!action.busy) setMode(undefined);
+  };
+  const finish = () => {
+    setMode(undefined);
+  };
 
   return (
     <>
@@ -159,21 +192,22 @@ export function PersonSafetyMenu({
 
       {mode === 'block' ? (
         <BlockSheet
+          action={action}
           onBlocked={onBlocked}
-          onClose={() => {
-            setMode(undefined);
-          }}
+          onClose={dismiss}
+          onDone={finish}
           person={person}
         />
       ) : null}
 
       {mode === 'report' || mode === 'report-and-block' ? (
         <ReportSheet
+          action={action}
           alsoBlock={mode === 'report-and-block'}
           {...(onBlocked === undefined ? {} : { onBlocked })}
-          onClose={() => {
-            setMode(undefined);
-          }}
+          onClose={dismiss}
+          onDone={finish}
+          pendingReport={pendingReport}
           person={person}
         />
       ) : null}
@@ -182,17 +216,24 @@ export function PersonSafetyMenu({
 }
 
 export function BlockSheet({
+  action,
   onBlocked,
   onClose,
+  onDone,
   person,
 }: {
+  /** The menu's, so the request outlives this sheet. */
+  readonly action: Flight;
   readonly onBlocked?: (() => void) | undefined;
+  /** Dismissal, which the owner refuses while a request is running. */
   readonly onClose: () => void;
+  /** Closing because the request succeeded, which is never refused. */
+  readonly onDone: () => void;
   readonly person: Person;
 }) {
   const api = useApi();
   const toast = useToast();
-  const { busy, run } = useSingleFlight();
+  const { busy, run } = action;
   const [error, setError] = useState<string | undefined>(undefined);
 
   return (
@@ -226,7 +267,7 @@ export function BlockSheet({
                 'positive',
               );
               onBlocked?.();
-              onClose();
+              onDone();
             });
           }}
           testID="block-confirm"
@@ -250,21 +291,31 @@ export function BlockSheet({
  * it was not would be worse than saying so.
  */
 export function ReportSheet({
+  action,
   alsoBlock = false,
   onBlocked,
   onClose,
+  onDone,
   onSubmitted,
+  pendingReport,
   person,
 }: {
+  /** The menu's, so the request outlives this sheet. */
+  readonly action: Flight;
   readonly alsoBlock?: boolean;
   readonly onBlocked?: (() => void) | undefined;
+  /** Dismissal, which the owner refuses while a request is running. */
   readonly onClose: () => void;
+  /** Closing because the report was taken, which is never refused. */
+  readonly onDone: () => void;
   readonly onSubmitted?: (() => void) | undefined;
+  /** The identifier a retry reuses until a report is taken. The menu's. */
+  readonly pendingReport: { current: PendingReport | undefined };
   readonly person: Person;
 }) {
   const api = useApi();
   const toast = useToast();
-  const { busy, run } = useSingleFlight();
+  const { busy, run } = action;
   const [reasonCode, setReasonCode] = useState<ReasonCode>('harassment');
   const [detail, setDetail] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
@@ -281,7 +332,7 @@ export function ReportSheet({
       }
     >
       <Stack gap={4}>
-        <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
+        <View accessibilityRole="radiogroup" style={{ gap: space[2] }}>
           <Text tone="secondary" variant="small" weight="medium">
             What is wrong?
           </Text>
@@ -358,9 +409,15 @@ export function ReportSheet({
           onPress={() => {
             run(async () => {
               setError(undefined);
-              // Generated once per submission. The server scopes it to the
-              // reporter, so a retry of the same submission is one report.
-              const reportId = clientReportId();
+              // Generated once per report, and reused by every retry until
+              // one is taken — including a retry from a sheet closed and
+              // opened again. The server answers a repeated identifier with
+              // the report it already holds, so a lost answer cannot become
+              // a second report.
+              const held = pendingReport.current;
+              const reportId =
+                held?.personId === person.id ? held.id : clientReportId();
+              pendingReport.current = { id: reportId, personId: person.id };
               const detailFields =
                 detail.trim().length === 0 ? {} : { detail: detail.trim() };
               if (alsoBlock) {
@@ -383,9 +440,10 @@ export function ReportSheet({
                     : `${person.displayName} is blocked. We could not take another report right now, and the block still stands.`,
                   reported ? 'positive' : 'neutral',
                 );
+                pendingReport.current = undefined;
                 onBlocked?.();
                 onSubmitted?.();
-                onClose();
+                onDone();
                 return;
               }
               const result = await api.report({
@@ -403,8 +461,9 @@ export function ReportSheet({
                 'Report received. They are not told who reported them.',
                 'positive',
               );
+              pendingReport.current = undefined;
               onSubmitted?.();
-              onClose();
+              onDone();
             });
           }}
           testID="report-submit"

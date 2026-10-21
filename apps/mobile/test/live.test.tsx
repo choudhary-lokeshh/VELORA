@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import type { ReactElement } from 'react';
-import { BackHandler } from 'react-native';
+import { AccessibilityInfo, BackHandler } from 'react-native';
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { LiveScreen } from '../src/product/live';
@@ -12,7 +12,20 @@ import {
   otherPersonId,
   type MobileApiState,
 } from './support/api-double';
+import { focus } from './support/focus';
 import { renderScreen } from './support/render';
+
+/*
+ * Live holds the hardware Back only while its tab is on screen, through Expo
+ * Router's focus effect — which needs a navigator this suite does not mount.
+ * `support/focus` stands in for it, with the same semantics.
+ */
+jest.mock('expo-router', () => ({
+  ...jest.requireActual<Record<string, unknown>>('expo-router'),
+  useFocusEffect: jest.requireActual<{ useFocusEffect: unknown }>(
+    './support/focus',
+  ).useFocusEffect,
+}));
 
 /**
  * Live discovery on Consumer Mobile.
@@ -31,6 +44,10 @@ import { renderScreen } from './support/render';
  */
 
 const noop = () => undefined;
+
+afterEach(() => {
+  focus.reset();
+});
 
 function liveState(
   overrides: Partial<MobileApiState['live']> = {},
@@ -588,5 +605,203 @@ describe('the hardware Back in an encounter', () => {
     // The door again, the way End reaches it: the server was told, and the
     // stage did not simply unmount around a running session.
     await screen.findByTestId('live-door');
+  });
+
+  it('leaves Back alone while another tab is on screen', async () => {
+    await mountLive(liveState());
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    // A tab stays mounted underneath another one. Its Back belonged to the
+    // screen on top, and answering it from here asked whether to leave a
+    // conversation over somebody else's screen.
+    await act(async () => {
+      focus.blur();
+      await Promise.resolve();
+    });
+    expect(backHandlers).toHaveLength(0);
+    expect(await pressBack()).toBe(false);
+    expect(screen.queryByTestId('live-leave-confirm')).toBeNull();
+
+    // Back on Live, it asks again exactly as before.
+    await act(async () => {
+      focus.regain();
+      await Promise.resolve();
+    });
+    expect(await pressBack()).toBe(true);
+    await screen.findByTestId('live-leave-confirm');
+  });
+});
+
+/**
+ * The Live safety sheets, under a slow network.
+ *
+ * The request is the thing that protects somebody, so it is the request that
+ * has to survive whatever the person does while it is out — and a retry after a
+ * lost answer has to be the same report, not a second one.
+ */
+describe('reporting from Live while the network is slow', () => {
+  async function toEndedSafety(): Promise<void> {
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+    await scenario('peer_next');
+    await screen.findByTestId('live-ended');
+    await press(`safety-menu-${otherPersonId}`);
+    await press('safety-open-report-and-block');
+    await screen.findByTestId('report-person');
+  }
+
+  it('keeps the sheet while a report is in flight, so it is sent once', async () => {
+    let release: () => void = noop;
+    const until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const double = await mountLive(liveState({ simulated: true }), {
+      hold: { path: '/v1/safety/reports/with-block', until },
+    });
+    await toEndedSafety();
+
+    await press('report-submit');
+    // Dismissing now would unmount the form that owns the request, and the
+    // sheet opened again would offer a second report with a new identifier.
+    await press('report-person-close');
+    await press('report-person-scrim');
+    expect(screen.getByTestId('report-person')).toBeTruthy();
+
+    await act(async () => {
+      release();
+      await until;
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('report-person')).toBeNull();
+    });
+    expect(
+      double.calls.filter(
+        (call) =>
+          call.method === 'POST' &&
+          call.path === '/v1/safety/reports/with-block',
+      ),
+    ).toHaveLength(1);
+    expect(double.state.reports).toHaveLength(1);
+  });
+
+  it('retries a lost report under the identifier it was first sent with', async () => {
+    const double = await mountLive(liveState({ simulated: true }));
+    await toEndedSafety();
+    double.failNext('/v1/safety/reports/with-block');
+
+    await press('report-submit');
+    await screen.findByTestId('report-error');
+    // Closed after the failure, which is allowed — nothing is in flight — and
+    // opened again from the same control.
+    await press('report-person-close');
+    await waitFor(() => {
+      expect(screen.queryByTestId('report-person')).toBeNull();
+    });
+    await press(`safety-menu-${otherPersonId}`);
+    await press('safety-open-report-and-block');
+    await press('report-submit');
+    await waitFor(() => {
+      expect(screen.queryByTestId('report-person')).toBeNull();
+    });
+
+    const sent = double.calls
+      .filter(
+        (call) =>
+          call.method === 'POST' &&
+          call.path === '/v1/safety/reports/with-block',
+      )
+      .map((call) => (call.body as { clientReportId: string }).clientReportId);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toBe(sent[0]);
+  });
+});
+
+/** What a screen reader is told on the stage, which is most of what it says. */
+describe('what a reader hears in Live', () => {
+  it('says who has arrived, and lets the connection be heard changing', async () => {
+    const announce = jest.mocked(AccessibilityInfo.announceForAccessibility);
+    announce.mockClear();
+    await mountLive(liveState());
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    // The same words the screen shows, once, when the person appears.
+    await waitFor(() => {
+      expect(announce).toHaveBeenCalledWith('Robin');
+    });
+    expect(
+      announce.mock.calls.filter(([said]) => said === 'Robin'),
+    ).toHaveLength(1);
+    expect(
+      screen.getByTestId('live-connection-state').props.accessibilityLiveRegion,
+    ).toBe('polite');
+  });
+
+  it('says whose words each chat line is, and what each reaction sends', async () => {
+    await mountLive(liveState({ simulated: true }));
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+    await scenario('peer_message');
+
+    await press('live-react');
+    expect(screen.getByLabelText('Send wave reaction')).toBeTruthy();
+    await press('live-react');
+
+    await press('live-toggle-chat');
+    await fireEvent.changeText(
+      await screen.findByTestId('live-chat-input'),
+      'hello there',
+    );
+    await press('live-chat-send');
+    expect(await screen.findByLabelText('You said: hello there')).toBeTruthy();
+    expect(
+      await screen.findByLabelText(
+        'Robin said: Hey — this is the local stand-in saying something back.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says what the language preference is set to, and what pressing it does', async () => {
+    await mountLive(liveState());
+    const chip = await screen.findByTestId('live-pref-language');
+    expect(chip.props.accessibilityLabel).toBe(
+      'Preferred language: Any language',
+    );
+    expect(chip.props.accessibilityHint).toBe('Changes to the next language');
+
+    await press('live-pref-language');
+    expect(
+      screen.getByTestId('live-pref-language').props.accessibilityLabel,
+    ).toMatch(/^Preferred language: (English|en)$/u);
+  });
+
+  it('moves the preview to the other corner without a drag', async () => {
+    await mountLive(liveState());
+    await screen.findByTestId('live-door');
+    await press('live-start-video');
+    await screen.findByTestId('live-peer-name');
+
+    const preview = screen.getByTestId('live-local');
+    expect(preview.props.accessibilityActions).toEqual([
+      { label: 'Move to the other corner', name: 'activate' },
+    ]);
+    expect(preview).toHaveStyle({ right: 12 });
+
+    // Invoked directly: the testing library declines every event on a view
+    // whose pan responder has not claimed a touch, and this one never does
+    // until a finger moves — which is the point of the action.
+    const activate = preview.props.onAccessibilityAction as (event: {
+      nativeEvent: { actionName: string };
+    }) => void;
+    await act(() => {
+      activate({ nativeEvent: { actionName: 'activate' } });
+      return Promise.resolve();
+    });
+    expect(screen.getByTestId('live-local')).toHaveStyle({ left: 12 });
   });
 });

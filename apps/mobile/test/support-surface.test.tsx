@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   screen,
@@ -11,6 +12,7 @@ import { AccountScreen } from '../src/product/you';
 import {
   admittedState,
   createMobileApiDouble,
+  holdingFetch,
   type MobileApiState,
 } from './support/api-double';
 import { renderScreen } from './support/render';
@@ -171,5 +173,56 @@ describe('closing an account', () => {
       expect(screen.queryByTestId('close-account-confirm')).toBeNull();
     });
     expect(double.state.closure).toBeNull();
+  });
+
+  it('stays on the confirmation while the closure is being asked for', async () => {
+    const double = createMobileApiDouble(admittedState());
+    const store = createInMemorySecureTokenStore();
+    await store.write({
+      accessToken: 'access-stored',
+      accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      installationId: 'installation-local-device',
+      refreshToken: 'refresh-stored',
+    });
+    let release: () => void = () => undefined;
+    const until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await renderScreen(
+      <AccountScreen onBack={() => undefined} />,
+      {
+        ...double,
+        fetch: holdingFetch(double.fetch, {
+          method: 'POST',
+          path: '/v1/users/me/closure',
+          until,
+        }),
+      },
+      { store },
+    );
+
+    await press('close-account');
+    await press('close-account-do');
+    // Closing the sheet now would leave the closure running with nothing on
+    // screen to say so, and the card behind it offering a second one.
+    expect(screen.getByTestId('close-account-keep')).toBeDisabled();
+    await press('close-account-keep');
+    await press('close-account-confirm-close');
+    await press('close-account-confirm-scrim');
+    expect(screen.getByTestId('close-account-confirm')).toBeTruthy();
+
+    await act(async () => {
+      release();
+      await until;
+    });
+    await waitFor(() => {
+      expect(double.state.closure?.status).toBe('deletion_pending');
+    });
+    expect(
+      double.calls.filter(
+        (call) =>
+          call.method === 'POST' && call.path === '/v1/users/me/closure',
+      ),
+    ).toHaveLength(1);
   });
 });

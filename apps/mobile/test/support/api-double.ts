@@ -444,6 +444,37 @@ export interface MobileApiDouble {
   readonly state: MobileApiState;
 }
 
+/**
+ * A `fetch` that holds one request in flight until the test lets it go.
+ *
+ * What a slow network does to a phone: the control has been pressed, the
+ * request has not answered, and whatever the person does next happens while
+ * it is still out. Matched on the method as well as the path, so holding a
+ * write never holds the read of the same address a screen makes on mount.
+ */
+export function holdingFetch(
+  fetch: typeof globalThis.fetch,
+  hold: {
+    readonly method: string;
+    readonly path: string;
+    readonly until: Promise<void>;
+  },
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    const request =
+      input instanceof Request
+        ? input
+        : new Request(input instanceof URL ? input.href : input, init);
+    if (
+      new URL(request.url).pathname === hold.path &&
+      request.method.toUpperCase() === hold.method
+    ) {
+      await hold.until;
+    }
+    return fetch(input, init);
+  };
+}
+
 export const ownAccountId = '11111111-1111-4111-8111-111111111111';
 export const otherPersonId = '22222222-2222-4222-8222-222222222222';
 export const secondPeerId = '77777777-7777-4777-8777-777777777777';
@@ -958,6 +989,23 @@ export function createMobileApiDouble(
     json(status, { code, correlationId: 'test', message: 'Request failed' });
 
   /**
+   * One page of a list, the way the server pages one: the page size asked
+   * for, and a cursor for as long as anything remains after it.
+   */
+  const page = <T>(url: URL, rows: readonly T[]) => {
+    const size = Number(url.searchParams.get('pageSize') ?? 20);
+    const cursor = url.searchParams.get('cursor');
+    const offset = cursor?.startsWith('offset-')
+      ? Number(cursor.slice('offset-'.length))
+      : 0;
+    const end = offset + size;
+    return {
+      ...(end < rows.length ? { nextCursor: `offset-${String(end)}` } : {}),
+      rows: rows.slice(offset, end),
+    };
+  };
+
+  /**
    * Never the token and never the installation. The contract publishes neither,
    * and echoing a token back would put a bearer credential into a response
    * body, a log, and a proxy cache.
@@ -1238,7 +1286,8 @@ export function createMobileApiDouble(
       return json(200, { suppressedUntil: iso(86_400_000) });
     }
     if (path === '/v1/discovery/introductions' && method === 'GET') {
-      return json(200, { introductions: state.introductions });
+      const { rows, ...rest } = page(url, state.introductions);
+      return json(200, { ...rest, introductions: rows });
     }
     /*
      * Signalling interest. The server records one signal per pair and only
@@ -1778,7 +1827,8 @@ export function createMobileApiDouble(
       return json(200, state.call);
     }
     if (path === '/v1/messaging/conversations' && method === 'GET') {
-      return json(200, { conversations: state.conversations });
+      const { rows, ...rest } = page(url, state.conversations);
+      return json(200, { ...rest, conversations: rows });
     }
     if (path === '/v1/messaging/conversations/read') {
       const input = body as { conversationId: string; sequence: number };
@@ -2021,7 +2071,8 @@ export function createMobileApiDouble(
     }
 
     if (path === '/v1/safety/blocks' && method === 'GET') {
-      return json(200, { blocks: state.blocks });
+      const { rows, ...rest } = page(url, state.blocks);
+      return json(200, { ...rest, blocks: rows });
     }
     if (path === '/v1/safety/blocks' && method === 'POST') {
       const input = body as { targetId: string };
@@ -2054,7 +2105,8 @@ export function createMobileApiDouble(
       return json(200, { appeals: state.appeals });
     }
     if (path === '/v1/safety/reports' && method === 'GET') {
-      return json(200, { nextCursor: undefined, reports: state.reports });
+      const { rows, ...rest } = page(url, state.reports);
+      return json(200, { ...rest, reports: rows });
     }
     if (path === '/v1/notifications/preferences' && method === 'GET') {
       return json(200, { preferences: state.notificationPreferences });

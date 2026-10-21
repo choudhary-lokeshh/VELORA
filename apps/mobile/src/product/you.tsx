@@ -32,7 +32,7 @@ import {
 import { Icon, type IconName } from '../design/icons';
 import { Sheet } from '../design/sheet';
 import type { YouSection } from '../frame/links';
-import { color, ivoryPreview, space } from '../design/theme';
+import { color, ivoryPreview, layout, radius, space } from '../design/theme';
 import { profileMediaLabels, profileMediaState } from '@velora/consumer-client';
 import { useResource, useSingleFlight } from './resource';
 import { InviteCard } from './invite';
@@ -528,8 +528,13 @@ function CloseAccountCard() {
 
       {confirming ? (
         <Sheet
+          /*
+            Not dismissable while the closure is being asked for. Closing the
+            sheet left the request running with nothing on screen to say so,
+            and a second tap on the card behind it was a second closure.
+          */
           onClose={() => {
-            setConfirming(false);
+            if (!busy) setConfirming(false);
           }}
           testID="close-account-confirm"
           title="Close your account for good?"
@@ -568,6 +573,7 @@ function CloseAccountCard() {
             Close my account
           </Button>
           <Button
+            disabled={busy}
             onPress={() => {
               setConfirming(false);
             }}
@@ -593,10 +599,10 @@ const styles = StyleSheet.create({
   mark: {
     alignItems: 'center',
     backgroundColor: color.surface3,
-    borderRadius: 999,
-    height: 40,
+    borderRadius: radius.pill,
+    height: layout.controlHeightSmall,
     justifyContent: 'center',
-    width: 40,
+    width: layout.controlHeightSmall,
   },
   rows: { paddingHorizontal: space[4] },
 });

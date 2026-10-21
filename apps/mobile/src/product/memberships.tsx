@@ -461,7 +461,7 @@ function Invitation({
                   });
                 }}
                 testID={`club-leave-confirm-${row.clubId}`}
-                tone="primary"
+                tone="danger"
               >
                 Leave the club
               </Button>

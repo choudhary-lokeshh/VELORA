@@ -9,6 +9,18 @@ import { useLiveTransport } from '../src/product/live-transport';
 import { admittedState, createMobileApiDouble } from './support/api-double';
 import { renderScreen } from './support/render';
 
+/*
+ * Live holds the hardware Back only while its tab is on screen, through Expo
+ * Router's focus effect — which needs a navigator this suite does not mount.
+ * `support/focus` stands in for it, with the same semantics.
+ */
+jest.mock('expo-router', () => ({
+  ...jest.requireActual<Record<string, unknown>>('expo-router'),
+  useFocusEffect: jest.requireActual<{ useFocusEffect: unknown }>(
+    './support/focus',
+  ).useFocusEffect,
+}));
+
 const noop = () => undefined;
 
 /**

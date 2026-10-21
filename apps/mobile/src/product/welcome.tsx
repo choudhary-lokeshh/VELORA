@@ -154,12 +154,7 @@ export function LaunchScreen() {
   return (
     <View style={styles.launch} testID="launch">
       <Wordmark />
-      <Text
-        accessibilityLiveRegion="polite"
-        style={styles.launchText}
-        tone="tertiary"
-        variant="caption"
-      >
+      <Text accessibilityLiveRegion="polite" tone="tertiary" variant="caption">
         Loading VELORA
       </Text>
     </View>
@@ -239,6 +234,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: space[6],
   },
-  launchText: { opacity: 0.8 },
   top: { gap: space[6] },
 });
