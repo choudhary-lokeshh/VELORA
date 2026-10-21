@@ -494,6 +494,58 @@ function permissionsPolicy(options: BrowserSecurityHeaderOptions): string {
   return `camera=${capture}, geolocation=(), microphone=${capture}`;
 }
 
+/**
+ * Where a development surface opened on `localhost` should send the browser.
+ *
+ * Local surfaces and the API are configured on `127.0.0.1`, and the browser
+ * treats `localhost` as a different site. A page opened there has its every
+ * call refused by CORS, which the surface can only report as "could not be
+ * reached", and a session cookie set for `127.0.0.1` would not reach it
+ * anyway. Admitting the alias as an origin would fix the first and not the
+ * second, so a development runtime sends the browser to the address that works.
+ *
+ * Only on a development runtime in a local or test environment; every other
+ * combination answers `undefined` and the request is served as it came.
+ */
+export function loopbackAliasRedirect(options: {
+  readonly appEnvironment: string | undefined;
+  readonly developmentRuntime: boolean;
+  /**
+   * The `Host` header the browser sent. Not the framework's parsed URL: a
+   * development server reports its own configured name there whatever the
+   * browser asked for, which would redirect `127.0.0.1` to itself forever.
+   */
+  readonly host: string | null;
+  /** Path and query, kept exactly. */
+  readonly pathAndQuery: string;
+}): string | undefined {
+  if (!options.developmentRuntime) return undefined;
+  if (options.appEnvironment !== 'local' && options.appEnvironment !== 'test') {
+    return undefined;
+  }
+  const match = /^localhost(?::(\d{1,5}))?$/iu.exec(options.host ?? '');
+  if (match === null) return undefined;
+  const port = match[1] === undefined ? '' : `:${match[1]}`;
+  return `http://127.0.0.1${port}${options.pathAndQuery}`;
+}
+
+/**
+ * The page that hands a browser from `localhost` to the loopback address.
+ *
+ * A page rather than a redirect status, because a development server rewrites
+ * the location of a redirect it believes points at itself into a relative one,
+ * which would send the browser back to `localhost` in a loop. A document it
+ * leaves alone. The address is escaped for an attribute and for text.
+ */
+export function loopbackAliasPage(target: string): string {
+  const escaped = target
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${escaped}"><title>Moving to 127.0.0.1</title></head><body><p>Local VELORA runs on <a href="${escaped}">${escaped}</a>, not localhost.</p></body></html>`;
+}
+
 export function browserSecurityHeaders(
   options: BrowserSecurityHeaderOptions,
 ): Readonly<Record<string, string>> {

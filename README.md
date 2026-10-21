@@ -95,9 +95,10 @@ waiting on its answer, three conversations, 400 coins, a club membership, and a
 paid membership. On Creator Studio it has a published page, a catalog, and a
 club with members, a paying member, and a gift. On Platform Admin it has super
 admin standing, which the local-test bootstrap gives every local operator
-session. Open the surfaces at `http://127.0.0.1:3000`, `:3001` and `:3002`, not
-`localhost`. The API admits only those origins, and a page on `localhost`
-cannot sign in. Use Chromium or Firefox, or run `bun run dev --domains` for
+session. The surfaces live at `http://127.0.0.1:3000`, `:3001` and `:3002`. The API
+admits only those origins, and a page on `localhost` could not sign in, so a
+development surface opened on `localhost` now hands the browser straight to the
+`127.0.0.1` address. Use Chromium or Firefox, or run `bun run dev --domains` for
 Safari, because WebKit does not keep a `Secure` session cookie over plain-HTTP
 loopback.
 

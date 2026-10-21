@@ -1,5 +1,7 @@
 import {
   browserSecurityHeaders,
+  loopbackAliasPage,
+  loopbackAliasRedirect,
   resolveSurfaceConfig,
 } from '@velora/config/client';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -72,6 +74,21 @@ function indexingDirective(pathname: string): string | undefined {
 }
 
 export function middleware(request: NextRequest): NextResponse {
+  // A development surface opened on `localhost` cannot reach the loopback API
+  // or keep its session, so it is sent to the address that can.
+  const alias = loopbackAliasRedirect({
+    appEnvironment: surfaceConfig()?.appEnvironment,
+    developmentRuntime: process.env.NODE_ENV === 'development',
+    host: request.headers.get('host'),
+    pathAndQuery: `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  });
+  // A page, not a redirect: the development server rewrites a redirect it
+  // thinks points at itself into a relative one, which loops on `localhost`.
+  if (alias !== undefined) {
+    return new NextResponse(loopbackAliasPage(alias), {
+      headers: { 'cache-control': 'no-store', 'content-type': 'text/html' },
+    });
+  }
   const response = NextResponse.next();
   for (const [name, value] of Object.entries(headers())) {
     response.headers.set(name, value);

@@ -6,6 +6,8 @@ import {
   browserSecurityHeaders,
   publicIndexingAllowed,
   loadClientConfig,
+  loopbackAliasPage,
+  loopbackAliasRedirect,
   loopbackApiBaseUrl,
   resolveSurfaceConfig,
 } from '../src/client.js';
@@ -953,6 +955,55 @@ describe('Next.js surface environment resolution', () => {
         VELORA_MEDIA_DELIVERY_ORIGIN: 'http://127.0.0.1:4000',
       }),
     ).toThrow('Staging/production media delivery origin cannot use localhost');
+  });
+});
+
+describe('loopback alias redirect', () => {
+  const redirect = (
+    host: string | null,
+    appEnvironment: string | undefined,
+    developmentRuntime = true,
+  ) =>
+    loopbackAliasRedirect({
+      appEnvironment,
+      developmentRuntime,
+      host,
+      pathAndQuery: '/sign-in?next=%2Fdiscover',
+    });
+
+  it('sends a local development page on localhost to 127.0.0.1, keeping the rest', () => {
+    expect(redirect('localhost:3000', 'local')).toBe(
+      'http://127.0.0.1:3000/sign-in?next=%2Fdiscover',
+    );
+    expect(redirect('LOCALHOST:3001', 'test')).toBe(
+      'http://127.0.0.1:3001/sign-in?next=%2Fdiscover',
+    );
+  });
+
+  it('leaves every other host alone, so it can never loop', () => {
+    for (const host of [
+      '127.0.0.1:3000',
+      'velora.test',
+      'localhost.evil.test:3000',
+      null,
+    ]) {
+      expect(redirect(host, 'local')).toBeUndefined();
+    }
+  });
+
+  it('never redirects a production build or a deployed environment', () => {
+    expect(redirect('localhost:3000', 'local', false)).toBeUndefined();
+    expect(redirect('localhost:3000', 'staging')).toBeUndefined();
+    expect(redirect('localhost:3000', 'production')).toBeUndefined();
+    expect(redirect('localhost:3000', undefined)).toBeUndefined();
+  });
+
+  it('hands over through a page whose address cannot break out of it', () => {
+    const page = loopbackAliasPage('http://127.0.0.1:3000/x?a="><script>');
+    expect(page).toContain(
+      'content="0;url=http://127.0.0.1:3000/x?a=&quot;&gt;&lt;script&gt;"',
+    );
+    expect(page).not.toContain('<script>');
   });
 });
 
