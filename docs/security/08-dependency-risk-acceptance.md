@@ -62,8 +62,9 @@ The gate fails when any of the following is true:
 - an acceptance has passed its expiry date;
 - an acceptance is malformed, or omits owner, decision date, expiry, dependency path, reachable workspaces, reachability, impact, compensating controls, review triggers, or remediation condition;
 - an acceptance uses a version range, wildcard package, or wildcard advisory identifier;
-- an acceptance's dependency chain is shorter than two exact package segments, contains a wildcard, or does not end at the accepted package;
-- **any** reported dependency path does not pass through the accepted chain;
+- an acceptance's dependency chain is shorter than two exact package segments, contains a wildcard, or does not end at the accepted package — or, where one advisory reaches the package through more than one parent and the record lists its chains, any listed chain fails that rule, the list is empty, or it repeats a chain;
+- **any** reported dependency path does not pass through an accepted chain;
+- a listed chain appears in no reported path while the audit's path report is complete (fewer than one hundred paths), because the record would then be broader than the risk;
 - **any** reported dependency path originates from a workspace the acceptance does not list;
 - the independently computed set of workspaces that can reach the package differs from the accepted set;
 - the audit reports no version or dependency-path evidence for an accepted advisory, so its reachability cannot be validated;
@@ -79,7 +80,7 @@ Stale acceptances fail deliberately. A register entry that no longer describes r
 
 Advisories below the `high` gate threshold that have no acceptance record are printed as `BELOW THRESHOLD` and do not fail the gate. They are still visible in raw evidence.
 
-The gate self-tests its own decision logic on every run. Probes cover audit execution failure, malformed and truncated audit output, missing metadata, inconsistent vulnerability counts, unknown high and critical advisories, wrong versions, wrong advisory identifiers, expired acceptances, stale acceptances, malformed acceptances, wildcard versions, wildcard and single-segment dependency chains, severity drift, an accepted path joined by a new runtime path, an accepted chain reached from an unaccepted workspace, missing findings, missing paths, over-long and boundary acceptance horizons, unknown workspaces, and contradicted or unavailable reachability verification. A missed probe fails the gate.
+The gate self-tests its own decision logic on every run. Probes cover audit execution failure, malformed and truncated audit output, missing metadata, inconsistent vulnerability counts, unknown high and critical advisories, wrong versions, wrong advisory identifiers, expired acceptances, stale acceptances, malformed acceptances, wildcard versions, wildcard and single-segment dependency chains, chain lists that cover every path, name an unreached chain, carry a single-segment chain, are empty or repeat a chain, severity drift, an accepted path joined by a new runtime path, an accepted chain reached from an unaccepted workspace, missing findings, missing paths, over-long and boundary acceptance horizons, unknown workspaces, and contradicted or unavailable reachability verification. A missed probe fails the gate.
 
 ### Maximum acceptance horizon
 
@@ -94,6 +95,8 @@ These are reported on every run and blocked from silent accumulation by remainin
 | Advisory | Package | Severity | Path | Remediation available |
 |---|---|---|---|---|
 | GHSA-67mh-4wv8-2f99 | `esbuild@0.18.20` | moderate | `apps__api>drizzle-kit>@esbuild-kit/esm-loader>@esbuild-kit/core-utils>esbuild` | Not directly. `drizzle-kit` pins the archived `@esbuild-kit` loader chain; the fix arrives when `drizzle-kit` moves to `tsx` or a patched loader. |
+| GHSA-vcc3-ghjq-m6fr | `decode-uri-component@0.2.2` | moderate | `apps__mobile>…>expo-router>query-string>decode-uri-component` | Not in range. `expo-router` pins `query-string@7.1.3`, which declares `decode-uri-component: ^0.2.2`; the patched `0.4.3` arrives with an `expo-router` release on `query-string@9`. |
+| GHSA-hp3w-g68c-fv3c | `sprintf-js@1.0.3` | moderate | `apps__mobile>…>js-yaml>argparse>sprintf-js` | Not in range. `argparse@1.0.10`, reached through Jest's `js-yaml@3`, declares `sprintf-js: ~1.0.2`; the patched `1.1.4` is outside it. |
 
 The esbuild advisory concerns its development server, which Velora never starts: `drizzle-kit` uses the loader for one-shot TypeScript transpilation during migration generation on a build host. It is recorded here for visibility, not accepted, and it does not gate the build.
 
@@ -117,6 +120,20 @@ Reassessed on 2026-08-28, because the Expo SDK 57 patch upgrade of that date fir
 
 Every reported dependency path must pass through `xcode>uuid`, and `@velora/mobile` must be the only workspace from which `uuid` is reachable.
 
+Renewed on 2026-10-21 after it expired on 2026-09-30 and failed the gate, which is the intended behaviour. This is a new owner decision with fresh upstream evidence, not an extension: `xcode@4.0.0` (published 2026-10-20) no longer depends on `uuid`, but `@expo/config-plugins` `57.0.10` (installed), `58.0.9` (`latest`) and the `58.x` canary line all still declare `xcode: ^3.0.1`, and the `3.x` nightly still declares `uuid: ^7.0.3`. Forcing `xcode@4` would be an override outside a declared range. The horizon is deliberately short because an Expo release adopting `xcode@4` is the expected remediation.
+
+### VRA-2026-004: Jest/Metro `braces`
+
+`micromatch@4.0.8` reaches `braces@3.0.3`, which GHSA-vfj7-8cjw-p6xm reports as exhausting the stack on deeply nested brace patterns. Verified on 2026-10-21: the advisory lists `<= 3.0.3` as vulnerable with no first patched version, and `3.0.3` is the latest release, so no upgrade or in-range pin exists.
+
+The pattern is the attacker's input. `micromatch` is reached through Jest (`@jest/core`, `@jest/transform`, `jest-config`, `jest-haste-map`, `jest-message-util`) and Metro's `metro-file-map`, which match repository-controlled test, transform and watch globs on a build or developer host. No Velora runtime path accepts a glob, and the package is not bundled into the app. `@velora/mobile` is the only workspace that reaches it.
+
+### VRA-2026-005: Expo CLI `node-forge`
+
+`node-forge@1.4.0` is reached through `@expo/cli` directly and through `@expo/code-signing-certificates`. GHSA-86w9-cpqp-85rv reports that RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements. Verified on 2026-10-21: the advisory lists `<= 1.4.0` as vulnerable with no first patched version, and `1.4.0` is the latest release.
+
+Within `@expo/cli`, the package serves `expo-updates` manifest code signing (`utils/codesigning`) and iOS device signing (`run/ios/codeSigning`). Velora installs no `expo-updates`, configures no update code signing, and generates no iOS project, so neither verification path runs. The CLI executes only on build and developer hosts, and `@velora/mobile` is the only workspace that reaches it. This is the first record to list two chains, because the advisory reaches the package through two parents and one chain cannot describe both. Each chain is held to the single-chain rule.
+
 ## Machine-readable acceptance records
 
 This block is the enforced source of truth. Editing it changes CI behaviour and requires the same review as any security control change.
@@ -129,11 +146,15 @@ This block is the enforced source of truth. Editing it changes CI behaviour and 
       "id": "VRA-2026-003",
       "risk": "expo-xcode-uuid",
       "package": "uuid",
-      "versions": ["7.0.3"],
+      "versions": [
+        "7.0.3"
+      ],
       "advisory": "GHSA-w5hq-g745-h8pq",
       "severity": "moderate",
       "dependencyPath": "xcode>uuid",
-      "reachableWorkspaces": ["@velora/mobile"],
+      "reachableWorkspaces": [
+        "@velora/mobile"
+      ],
       "reachability": "Build-time only, during Expo iOS project generation. The advisory requires a caller-supplied buffer in uuid v3/v5/v6; the observed caller invokes uuid.v4() without a buffer.",
       "impact": "Out-of-bounds buffer access during iOS project file generation on a build host. No deployed Velora runtime path and no user-controlled input.",
       "compensatingControls": [
@@ -143,11 +164,12 @@ This block is the enforced source of truth. Editing it changes CI behaviour and 
         "Acceptance expires automatically and any severity increase fails the gate."
       ],
       "owner": "Founder",
-      "decisionDate": "2026-08-13",
-      "expires": "2026-09-30",
+      "decisionDate": "2026-10-21",
+      "expires": "2026-12-15",
       "reviewTriggers": [
         "any Expo update",
         "any @expo/config-plugins update",
+        "an @expo/config-plugins release declaring xcode ^4",
         "any xcode package update",
         "any uuid update",
         "an upstream patched compatible release becomes available",
@@ -155,6 +177,80 @@ This block is the enforced source of truth. Editing it changes CI behaviour and 
         "before public beta or release"
       ],
       "remediation": "Adopt the first Expo/Xcode release whose declared dependency range admits uuid >= 11.1.1. Do not force an override outside the declared range.",
+      "status": "temporarily-accepted"
+    },
+    {
+      "id": "VRA-2026-004",
+      "risk": "jest-metro-braces",
+      "package": "braces",
+      "versions": [
+        "3.0.3"
+      ],
+      "advisory": "GHSA-vfj7-8cjw-p6xm",
+      "severity": "high",
+      "dependencyPath": "micromatch>braces",
+      "reachableWorkspaces": [
+        "@velora/mobile"
+      ],
+      "reachability": "Build and test hosts only. Jest and Metro's file map match repository-controlled glob patterns through micromatch; no Velora runtime path accepts a glob and the package is not bundled into the app.",
+      "impact": "Stack exhaustion, ending a test or bundling process on a build or developer host, if a deeply nested brace pattern were supplied. No deployed runtime path and no user-controlled input.",
+      "compensatingControls": [
+        "Glob patterns come only from repository configuration reviewed in pull requests.",
+        "The advisory remains visible in raw audit evidence on every CI run.",
+        "CI validates the exact package, version, advisory identifier, severity, every reported dependency path, and the independently computed set of workspaces that can reach the package; any drift fails the gate.",
+        "Acceptance expires automatically and any severity increase fails the gate."
+      ],
+      "owner": "Founder",
+      "decisionDate": "2026-10-21",
+      "expires": "2026-12-15",
+      "reviewTriggers": [
+        "any braces release",
+        "any micromatch release",
+        "any Jest or Metro update",
+        "new exploit or reachability information is published",
+        "before public beta or release"
+      ],
+      "remediation": "Adopt the first braces release that fixes GHSA-vfj7-8cjw-p6xm, or a micromatch/Jest/Metro release that no longer reaches braces 3.0.3.",
+      "status": "temporarily-accepted"
+    },
+    {
+      "id": "VRA-2026-005",
+      "risk": "expo-cli-node-forge",
+      "package": "node-forge",
+      "versions": [
+        "1.4.0"
+      ],
+      "advisory": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "dependencyPath": [
+        "@expo/cli>node-forge",
+        "@expo/code-signing-certificates>node-forge"
+      ],
+      "reachableWorkspaces": [
+        "@velora/mobile"
+      ],
+      "reachability": "Build and developer hosts only, inside Expo CLI. Its node-forge uses are expo-updates manifest code signing and iOS device signing; Velora installs no expo-updates, configures no update code signing and generates no iOS project, so neither verification path runs.",
+      "impact": "Acceptance of a forged PKCS#1 v1.5 signature by Expo CLI signature verification on a build host. No deployed runtime path, and the affected verification is not configured.",
+      "compensatingControls": [
+        "expo-updates is not installed and no update code-signing certificate is configured.",
+        "No iOS project is generated; the Android build verification asserts no iOS project exists.",
+        "The advisory remains visible in raw audit evidence on every CI run.",
+        "CI validates the exact package, version, advisory identifier, severity, every reported dependency path, and the independently computed set of workspaces that can reach the package; any drift fails the gate.",
+        "Acceptance expires automatically and any severity increase fails the gate."
+      ],
+      "owner": "Founder",
+      "decisionDate": "2026-10-21",
+      "expires": "2026-12-15",
+      "reviewTriggers": [
+        "any node-forge release",
+        "any Expo update",
+        "any @expo/cli or @expo/code-signing-certificates update",
+        "adding expo-updates or update code signing",
+        "generating an iOS project",
+        "new exploit or reachability information is published",
+        "before public beta or release"
+      ],
+      "remediation": "Adopt the first node-forge release that fixes GHSA-86w9-cpqp-85rv, or an Expo CLI release that no longer reaches node-forge 1.4.0.",
       "status": "temporarily-accepted"
     }
   ]

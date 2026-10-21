@@ -24,7 +24,6 @@ const exactVersionPattern = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u;
 const packageNamePattern = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/u;
 const requiredTextFields = [
   'risk',
-  'dependencyPath',
   'reachability',
   'impact',
   'remediation',
@@ -215,6 +214,20 @@ function isSpecificDependencyChain(chain, packageName) {
   );
 }
 
+// One chain, or an exact list of chains when one advisory reaches the package
+// through more than one parent. Anything else yields no chain and fails
+// validation, so a malformed field can never authorise a path.
+function recordedChains(dependencyPath) {
+  if (typeof dependencyPath === 'string') return [dependencyPath];
+  if (
+    Array.isArray(dependencyPath) &&
+    dependencyPath.every((chain) => typeof chain === 'string')
+  ) {
+    return dependencyPath;
+  }
+  return [];
+}
+
 function validateAcceptances(acceptances, workspaceRootTokens) {
   const failures = [];
   const seenIds = new Set();
@@ -272,11 +285,19 @@ function validateAcceptances(acceptances, workspaceRootTokens) {
       fail('versions must list exact versions without ranges or wildcards');
     }
     // A one-segment or wildcard path matches every dependency graph and would
-    // silently authorise an unreviewed reachability model.
-    if (!isSpecificDependencyChain(record.dependencyPath, record.package)) {
+    // silently authorise an unreviewed reachability model. A list is held to
+    // the same rule chain by chain, so it can never carry a chain a single
+    // record could not.
+    const chains = recordedChains(record.dependencyPath);
+    if (
+      chains.length === 0 ||
+      !chains.every((chain) => isSpecificDependencyChain(chain, record.package))
+    ) {
       fail(
-        'dependencyPath must be at least two exact package segments ending at the accepted package',
+        'dependencyPath must be at least two exact package segments ending at the accepted package, or a list of such chains',
       );
+    } else if (new Set(chains).size !== chains.length) {
+      fail('dependencyPath lists the same chain twice');
     }
     if (!isNonEmptyStringArray(record.reachableWorkspaces)) {
       fail('reachableWorkspaces must list at least one Velora workspace');
@@ -431,17 +452,32 @@ export function evaluateDependencySecurity({
         .map((workspace) => workspaceRootTokens.get(workspace))
         .filter((token) => token !== undefined),
     );
+    const chains = recordedChains(record.dependencyPath);
     const unauthorisedChains = [
       ...new Set(
         paths.filter(
-          (path) => !pathMatchesRecordedTail(path, record.dependencyPath),
+          (path) =>
+            !chains.some((chain) => pathMatchesRecordedTail(path, chain)),
         ),
       ),
     ];
     if (unauthorisedChains.length > 0) {
       rejectRecord(
-        `${String(unauthorisedChains.length)} reported dependency path(s) do not pass through the accepted chain ${record.dependencyPath}, including ${unauthorisedChains[0]}`,
+        `${String(unauthorisedChains.length)} reported dependency path(s) do not pass through the accepted chain(s) ${chains.join(', ')}, including ${unauthorisedChains[0]}`,
       );
+    }
+    // A listed chain nothing reaches any more makes the record broader than
+    // the risk it describes. Truncated evidence cannot prove a chain absent, so
+    // the check applies only to a complete path report.
+    if (paths.length < auditPathReportLimit) {
+      const unobservedChains = chains.filter(
+        (chain) => !paths.some((path) => pathMatchesRecordedTail(path, chain)),
+      );
+      if (unobservedChains.length > 0) {
+        rejectRecord(
+          `accepted chain(s) ${unobservedChains.join(', ')} appear in no reported path, so the recorded reachability model is stale`,
+        );
+      }
     }
     const unauthorisedRoots = [
       ...new Set(
@@ -925,6 +961,66 @@ function decisionProbes() {
       advisories: [baseAdvisory],
       expected: 'fail',
       name: 'wildcard dependency chain',
+    },
+    {
+      acceptances: [
+        {
+          ...baseRecord,
+          dependencyPath: ['metro>image-size', 'jimp>image-size'],
+        },
+      ],
+      advisories: [
+        {
+          ...baseAdvisory,
+          findings: [
+            {
+              paths: [
+                'apps__mobile>expo>@expo/cli>@expo/metro>metro>image-size',
+                'apps__mobile>expo>@expo/cli>jimp>image-size',
+              ],
+              version: '1.2.1',
+            },
+          ],
+        },
+      ],
+      expected: 'accepted',
+      name: 'two exact accepted chains covering every reported path',
+    },
+    {
+      acceptances: [
+        {
+          ...baseRecord,
+          dependencyPath: ['metro>image-size', 'jimp>image-size'],
+        },
+      ],
+      advisories: [baseAdvisory],
+      expected: 'fail',
+      name: 'accepted chain list naming a chain nothing reaches',
+    },
+    {
+      acceptances: [
+        { ...baseRecord, dependencyPath: ['metro>image-size', 'image-size'] },
+      ],
+      advisories: [baseAdvisory],
+      expected: 'fail',
+      name: 'chain list carrying a single-segment chain',
+    },
+    {
+      acceptances: [{ ...baseRecord, dependencyPath: [] }],
+      advisories: [baseAdvisory],
+      expected: 'fail',
+      name: 'empty chain list',
+    },
+    {
+      acceptances: [
+        {
+          ...baseRecord,
+          dependencyPath: ['metro>image-size', 'metro>image-size'],
+        },
+      ],
+      advisories: [baseAdvisory],
+      expected: 'fail',
+      name: 'chain list repeating a chain',
     },
     {
       acceptances: [baseRecord],
