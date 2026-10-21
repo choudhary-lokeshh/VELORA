@@ -15,7 +15,7 @@ import {
   RowSkeleton,
   Text,
 } from '../design/primitives';
-import { space } from '../design/tokens';
+import { ivoryPreview, space } from '../design/theme';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { formatWhen } from './locale';
 import { useResource, useRevalidateOnForeground } from './resource';
@@ -95,10 +95,17 @@ export function MessagesScreen({
           title="No conversations yet"
         />
       ) : (
-        <Card padded={false} testID="conversation-list">
+        <Card
+          padded={false}
+          style={styles.listFrame}
+          testID="conversation-list"
+        >
           <View style={styles.rows}>
             <FlatList
+              testID="conversation-rows"
               data={[...rows]}
+              onRefresh={conversations.reload}
+              refreshing={conversations.loading}
               ItemSeparatorComponent={Divider}
               keyExtractor={(row) => row.id}
               renderItem={({ item }) => {
@@ -159,5 +166,6 @@ export function MessagesScreen({
 }
 
 const styles = StyleSheet.create({
-  rows: { paddingHorizontal: space[4] },
+  listFrame: { flex: 1, minHeight: 0 },
+  rows: { flex: 1, paddingHorizontal: ivoryPreview ? 0 : space[4] },
 });

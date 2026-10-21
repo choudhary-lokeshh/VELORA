@@ -19,6 +19,8 @@ import { Icon, type IconName } from './icons';
 import { largeTextScale } from './text-scale';
 import {
   color,
+  ivoryPreview,
+  mediaInk,
   fontFamily,
   layout,
   letterSpacing,
@@ -29,15 +31,16 @@ import {
   tracking,
   type FontWeightName,
   type TextStyleName,
-} from './tokens';
+} from './theme';
 
 /**
  * The pieces every screen is built from.
  *
  * They exist so the product says the same true things the same way, and so a
  * screen cannot quietly invent a colour, a spacing value, or a touch target.
- * Everything here reads `./tokens`, which is NIGHT CURRENT, which the gate
- * proves identical to the Consumer Web stylesheet.
+ * Everything here reads the surface-local theme: the unchanged NIGHT CURRENT
+ * baseline or the explicit local/test Ivory review in ADR-0050. Both Consumer
+ * palettes have a Web/native parity assertion.
  *
  * Three rules run through the whole file:
  *
@@ -561,12 +564,14 @@ export function Card({
   children,
   onPress,
   padded = true,
+  style,
   testID,
   tone = 'surface1',
 }: {
   readonly children: ReactNode;
   readonly onPress?: () => void;
   readonly padded?: boolean;
+  readonly style?: StyleProp<ViewStyle>;
   readonly testID?: string | undefined;
   readonly tone?: 'surface1' | 'surface2';
 }) {
@@ -576,13 +581,18 @@ export function Card({
         styles.card,
         { backgroundColor: color[tone] },
         padded ? styles.cardPadded : undefined,
+        style,
       ]}
     >
       {children}
     </View>
   );
   if (onPress === undefined) {
-    return <View {...(testID === undefined ? {} : { testID })}>{body}</View>;
+    return (
+      <View style={style} {...(testID === undefined ? {} : { testID })}>
+        {body}
+      </View>
+    );
   }
   return (
     <Pressable
@@ -707,7 +717,10 @@ export function Avatar({
       {source === undefined ? (
         <View style={styles.avatarInitials}>
           <Text
-            style={{ fontSize: Math.round(points * 0.36) }}
+            style={{
+              color: ivoryPreview ? mediaInk : color.textPrimary,
+              fontSize: Math.round(points * 0.36),
+            }}
             tone="primary"
             variant="small"
             weight="semibold"
@@ -1240,9 +1253,9 @@ const styles = StyleSheet.create({
   card: {
     borderColor: color.borderHairline,
     borderRadius: radius.md,
-    borderWidth: 1,
+    borderWidth: ivoryPreview ? 0 : 1,
     overflow: 'hidden',
-    ...shadow[1],
+    ...(ivoryPreview ? {} : shadow[1]),
   },
   cardPadded: { padding: space[4] },
   choice: {

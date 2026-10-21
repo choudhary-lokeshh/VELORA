@@ -56,3 +56,7 @@ Phase 2 covers web-first creator identity, club, subscription, locked content, a
 `DECISION REQUIRED / LEGAL REVIEW REQUIRED`: creator criteria, reapplication/appeal, team roles, content taxonomy, pre/post moderation, offer/price changes, subscription/grace/cancellation, suspension impact, participant evidence, and payout readiness.
 
 See [Creator Studio](../surfaces/03-creator-studio.md), [creator product](../product/03-creator-private-clubs.md), [IDENTITY ASSURANCE](../domains/identity-assurance.md), [identity verification](identity-assurance-verification.md), [creator gates](../compliance/03-creator-content-gates.md), and [moderation operations](../operations/02-moderation-operations.md).
+
+### Local UI review
+
+The presentation refresh in [ADR-0050](../decisions/ADR-0050-local-product-design-refresh.md) preserves this lifecycle and its authorization, confirmation, failure and recovery rules. Visual selection is not admission, publication, approval or execution.

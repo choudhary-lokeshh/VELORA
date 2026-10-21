@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import { destinations } from '../../src/frame/navigation';
 import { TabBar, WithTabBarBelow } from '../../src/frame/shell';
 import { useTabSignals } from '../../src/frame/providers';
-import { color } from '../../src/design/tokens';
+import { color } from '../../src/design/theme';
 
 /**
  * The five destinations, as real routes.

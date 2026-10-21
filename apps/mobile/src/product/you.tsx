@@ -32,7 +32,7 @@ import {
 import { Icon, type IconName } from '../design/icons';
 import { Sheet } from '../design/sheet';
 import type { YouSection } from '../frame/links';
-import { color, space } from '../design/tokens';
+import { color, ivoryPreview, space } from '../design/theme';
 import { profileMediaLabels, profileMediaState } from '@velora/consumer-client';
 import { useResource, useSingleFlight } from './resource';
 import { InviteCard } from './invite';
@@ -113,6 +113,27 @@ const entries: readonly Entry[] = [
   },
 ];
 
+const menuGroups = [
+  { title: 'Your presence', ids: ['profile', 'availability'] },
+  { title: 'Clubs & coins', ids: ['memberships', 'gifts', 'wallet'] },
+  {
+    title: 'Preferences & support',
+    ids: ['notices', 'safety', 'help', 'account'],
+  },
+] as const;
+
+const compactCaptions: Partial<Readonly<Record<YouSection, string>>> = {
+  profile: 'Name, bio and languages',
+  availability: 'Choose when people can find you',
+  memberships: 'Your clubs and subscriptions',
+  gifts: 'Sent gifts and their status',
+  wallet: 'Balance and spending',
+  notices: 'Notification preferences',
+  safety: 'Blocks, reports and account standing',
+  help: 'Get help and follow your requests',
+  account: 'Devices, sign-out and account closure',
+};
+
 export function YouScreen({
   onOpen,
 }: {
@@ -189,7 +210,7 @@ export function YouScreen({
               <Avatar
                 displayName={person?.displayName ?? 'You'}
                 seed={current?.id ?? 'you'}
-                size="large"
+                size={ivoryPreview ? 'medium' : 'large'}
                 source={portrait}
                 testID="you-portrait"
               />
@@ -214,6 +235,15 @@ export function YouScreen({
                     {accountStandingLabels[accountStanding(current)]}
                   </Badge>
                 )}
+                {ivoryPreview && mediaState === 'ready' && !undeliverable ? (
+                  <Text
+                    testID="profile-media-state"
+                    tone="tertiary"
+                    variant="caption"
+                  >
+                    {stated}
+                  </Text>
+                ) : null}
               </View>
             </View>
           </Card>
@@ -229,41 +259,68 @@ export function YouScreen({
           refused for that reason, which is the one condition under which it is
           true.
         */}
-        <Notice testID="profile-media-state" title="Your photo">
-          {undeliverable
-            ? `${stated} This environment has no approved way to deliver an image, so it is stored and checked and shown nowhere — not yours and not anybody else's.`
-            : stated}
-        </Notice>
+        {ivoryPreview && mediaState === 'ready' && !undeliverable ? null : (
+          <Notice testID="profile-media-state" title="Your photo">
+            {undeliverable
+              ? `${stated} This environment has no approved way to deliver an image, so it is stored and checked and shown nowhere — not yours and not anybody else's.`
+              : stated}
+          </Notice>
+        )}
 
-        <Card padded={false} testID="you-menu">
-          <View style={styles.rows}>
-            {entries.map((entry, index) => (
-              <View key={entry.id}>
-                {index === 0 ? null : <Divider />}
-                <ListRow
-                  leading={
-                    <View style={styles.mark}>
-                      <Icon
-                        color={color.textSecondary}
-                        name={entry.icon}
-                        size="md"
-                      />
-                    </View>
-                  }
-                  onPress={() => {
-                    onOpen(entry.id);
-                  }}
-                  testID={`you-${entry.id}`}
+        <View testID="you-menu">
+          {(ivoryPreview
+            ? menuGroups
+            : [{ title: undefined, ids: entries.map((entry) => entry.id) }]
+          ).map((group) => (
+            <Stack gap={2} key={group.title ?? 'all'}>
+              {group.title === undefined ? null : (
+                <Text
+                  accessibilityRole="header"
+                  style={styles.groupTitle}
+                  variant="subheading"
+                  weight="semibold"
                 >
-                  <Text weight="medium">{entry.label}</Text>
-                  <Text tone="tertiary" variant="caption">
-                    {entry.caption}
-                  </Text>
-                </ListRow>
-              </View>
-            ))}
-          </View>
-        </Card>
+                  {group.title}
+                </Text>
+              )}
+              <Card padded={false}>
+                <View style={styles.rows}>
+                  {entries
+                    .filter((entry) =>
+                      (group.ids as readonly string[]).includes(entry.id),
+                    )
+                    .map((entry, index) => (
+                      <View key={entry.id}>
+                        {index === 0 ? null : <Divider />}
+                        <ListRow
+                          leading={
+                            <View style={styles.mark}>
+                              <Icon
+                                color={color.textSecondary}
+                                name={entry.icon}
+                                size="md"
+                              />
+                            </View>
+                          }
+                          onPress={() => {
+                            onOpen(entry.id);
+                          }}
+                          testID={`you-${entry.id}`}
+                        >
+                          <Text weight="medium">{entry.label}</Text>
+                          <Text tone="tertiary" variant="caption">
+                            {ivoryPreview
+                              ? (compactCaptions[entry.id] ?? entry.caption)
+                              : entry.caption}
+                          </Text>
+                        </ListRow>
+                      </View>
+                    ))}
+                </View>
+              </Card>
+            </Stack>
+          ))}
+        </View>
       </Stack>
     </Screen>
   );
@@ -526,6 +583,7 @@ function CloseAccountCard() {
 }
 
 const styles = StyleSheet.create({
+  groupTitle: { marginTop: space[5], paddingHorizontal: space[1] },
   identity: {
     alignItems: 'center',
     flexDirection: 'row',

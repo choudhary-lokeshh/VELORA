@@ -1,0 +1,221 @@
+/* Surface-local owner review. ADR-0050; WARM SIGNAL remains the deployed baseline. */
+:root[data-design-preview='editorial'] {
+  --canvas: #f1eee6;
+  --canvas-deep: #e9e4da;
+  --surface-1: #faf8f2;
+  --surface-2: #eae6dc;
+  --surface-3: #e0dbcf;
+  --surface-inset: #eae6dc;
+  --surface-overlay: rgb(23 37 26 / 62%);
+  --text-primary: #242a26;
+  --text-secondary: #566057;
+  --text-tertiary: #566057;
+  --text-on-accent: #faf8f2;
+  --ember: #324d43;
+  --ember-ink: #263e35;
+  --ember-deep: #263e35;
+  --ember-wash: rgb(50 77 67 / 8%);
+  --ember-wash-strong: rgb(50 77 67 / 14%);
+  --ember-line: rgb(50 77 67 / 32%);
+  --border-hairline: rgb(36 51 41 / 14%);
+  --border-soft: rgb(36 51 41 / 25%);
+  --border-strong: rgb(36 51 41 / 48%);
+  --focus-ring: #4a6a5b;
+  --shadow-1: 0 1px 2px rgb(23 37 26 / 4%);
+  --shadow-2: 0 8px 28px -8px rgb(23 37 26 / 10%);
+  --shadow-3: 0 24px 60px -20px rgb(23 37 26 / 24%);
+  --sidebar-width: 240px;
+  --content-max: 1320px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+}
+
+html[data-design-preview='editorial'] {
+  .s-shell {
+    background: var(--canvas);
+  }
+  .s-sidebar {
+    background: var(--canvas);
+    box-shadow: none;
+  }
+  .s-sidebar__brand {
+    color: var(--text-primary);
+  }
+  .s-sidebar__brand-text {
+    font-size: 1.25rem;
+    letter-spacing: 0.08em;
+  }
+  .s-sidebar__brand > svg {
+    display: none;
+  }
+  .s-sidebar__item {
+    border-radius: var(--radius-pill);
+  }
+  .s-sidebar__item[aria-current='page'] {
+    background: var(--ember);
+    color: var(--text-on-accent);
+  }
+  .s-sidebar__item:hover:not([aria-current='page']) {
+    background: var(--ember-wash);
+  }
+  .s-topbar,
+  .s-tabbar {
+    box-shadow: none;
+    background: var(--canvas);
+  }
+  .s-page-header {
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: var(--space-8);
+    gap: var(--space-4);
+  }
+  .s-page-header h1 {
+    font-size: clamp(2.25rem, 4vw, 3.75rem);
+    font-weight: 400;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+  }
+  .s-view__inner {
+    gap: var(--space-8);
+  }
+  .s-card {
+    box-shadow: none;
+    border-color: var(--border-hairline);
+  }
+  .s-card__head {
+    background: transparent;
+  }
+  .s-card--accent {
+    background: var(--ember-wash);
+    border-color: var(--ember-line);
+  }
+  .s-btn {
+    border-radius: var(--radius-pill);
+    box-shadow: none;
+  }
+  .s-control {
+    background: var(--surface-1);
+    border-radius: var(--radius-sm);
+  }
+  .s-segmented,
+  .s-subnav {
+    background: transparent;
+    padding: 0;
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 0;
+    gap: var(--space-4);
+  }
+  .s-segmented__item,
+  .s-subnav__item {
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    padding-inline: var(--space-2);
+  }
+  .s-segmented__item[aria-selected='true'],
+  .s-subnav__item[aria-current='page'] {
+    background: transparent;
+    border-bottom-color: var(--ember);
+    box-shadow: none;
+    color: var(--ember-ink);
+  }
+  .s-row {
+    padding-block: var(--space-5);
+  }
+  .s-metric {
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--border-soft);
+    border-radius: 0;
+    padding-left: var(--space-4);
+  }
+  .s-metric__value {
+    font-weight: 400;
+    font-size: 2.5rem;
+  }
+  .s-shortcut__mark {
+    border-radius: var(--radius-pill);
+    background: transparent;
+  }
+  .s-entry::before {
+    display: none;
+  }
+  .s-entry__brand {
+    justify-content: flex-start;
+    margin-bottom: var(--space-6);
+    color: var(--text-primary);
+  }
+  .s-entry__wordmark {
+    font-size: 1.75rem;
+    letter-spacing: 0.08em;
+  }
+  .s-empty__mark {
+    background: transparent;
+    border: 1px solid var(--border-soft);
+  }
+  [data-testid='home-counts'],
+  [data-testid='home-recent'],
+  [data-testid='home-shortcuts'] {
+    border-inline: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-testid='home-counts'] .s-grid {
+    gap: var(--space-6);
+  }
+  [data-testid='home-next-step'] {
+    padding: var(--space-6);
+  }
+  [data-testid='home-page'] {
+    background: var(--surface-1);
+  }
+  .s-view__inner > .s-split {
+    gap: var(--space-8);
+  }
+  .s-row,
+  .s-shortcut,
+  .s-btn {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease;
+  }
+  .s-btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+}
+
+@media (width >= 64rem) {
+  html[data-design-preview='editorial'] {
+    .s-sidebar {
+      padding: var(--space-8) var(--space-4);
+      gap: var(--space-12);
+    }
+    .s-sidebar__item {
+      min-height: 48px;
+      padding-inline: var(--space-4);
+    }
+    .s-view {
+      padding: var(--space-12) var(--space-12) var(--space-20);
+    }
+    .s-split:has([data-testid='home-counts']) {
+      grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    }
+    .s-entry__inner {
+      max-width: 34rem;
+    }
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-design-preview='editorial'] .s-page-header {
+    animation: s-editorial-enter 320ms ease-out;
+  }
+  @keyframes s-editorial-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

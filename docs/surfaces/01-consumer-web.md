@@ -12,6 +12,8 @@ Web does not own authorization, discovery eligibility, message truth, entitlemen
 
 ## Navigation and major screens
 
+The owner-selected Ivory / Olive local/test visual preview is bounded by the [ADR-0027 amendment](../decisions/ADR-0027-consumer-web-product-interface.md#amendment-2026-10-19-owner-selected-local-ivory--olive-preview): light palette throughout Consumer Web, wide horizontal navigation and one candidate at a time in Discover. It preserves the same destinations, routes, server order, admission and safety controls. Deployed environments retain NIGHT CURRENT pending an approved Figma handoff; this is not native Mobile work.
+
 Expected navigation groups are:
 
 - Public: landing, safety/help, legal notices, creator public pages where enabled, sign-in/signup.
@@ -137,3 +139,9 @@ A failed read is never rendered as an absence. The wallet, its history, the coin
 
 Live carries the other person's voice in an element of its own, mounted for the whole encounter, because the picture's element exists only while a picture is arriving. A peer whose camera is off is rendered as a portrait, a name, and a sentence saying so, in the same session, with everything else untouched.
 
+
+## Local design review — 2026-10-19
+
+The subsequent app-first Mobile review revises the shared preview neutral roles to white with light neutral support surfaces, mirrored here to retain Consumer Web/Mobile parity. Olive actions and semantic statuses remain. This palette revision is bounded by ADR-0050; it does not enable a deployed theme or import native navigation into Web.
+
+[ADR-0050](../decisions/ADR-0050-local-product-design-refresh.md) records the owner-requested full UI refresh for explicit local/test configuration on the development server; a production build, including the one the browser suite runs, serves the baseline. The preview changes layout, typography hierarchy, surface treatment, navigation presentation and interaction feedback within this client. Current product phase, published data, authorization, safety, provider refusals and confirmed outcomes remain authoritative. It adds no approved production theme or shared UI. Production Figma reconciliation remains `DESIGN REQUIRED`.

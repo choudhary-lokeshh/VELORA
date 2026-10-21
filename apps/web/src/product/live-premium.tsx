@@ -22,6 +22,7 @@ import {
 } from '../design/primitives';
 import { languageName, regionName } from './locale';
 import { useSingleFlight } from './resource';
+import { useIvoryPreview } from '../design/visual-preview-provider';
 
 /**
  * The paid matching preferences, and every rule that keeps them honest.
@@ -249,6 +250,7 @@ export function PremiumPreference({
   readonly languageOptions: readonly string[];
   readonly wallet: WalletView;
 }) {
+  const editorial = useIvoryPreview();
   const api = useApi();
   const action = useSingleFlight();
   const [draft, setDraft] = useState<LivePreferenceSelection>({});
@@ -351,10 +353,17 @@ export function PremiumPreference({
   const chosen = !isEmpty(selection);
   const affordable = available >= price;
   const summary = describeSelection(selection);
+  const Container = editorial ? 'details' : 'div';
 
   return (
-    <div className="v-live__premium" data-testid="live-premium">
-      <p className="v-small">
+    <Container className="v-live__premium" data-testid="live-premium">
+      {editorial ? (
+        <summary className="v-live__premium-disclosure">
+          Optional search preferences{' '}
+          <span className="v-caption v-muted">Coin prices and conditions</span>
+        </summary>
+      ) : null}
+      <p className={editorial ? 'v-visually-hidden' : 'v-small'}>
         <Icon name="globe" size="sm" /> <span>Narrow who you meet</span>
       </p>
       {/*
@@ -599,7 +608,7 @@ export function PremiumPreference({
           {wallet.message}
         </p>
       )}
-    </div>
+    </Container>
   );
 }
 

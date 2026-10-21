@@ -19,7 +19,7 @@ import {
   type Tone,
 } from '../design/primitives';
 import { Sheet } from '../design/sheet';
-import { color, space } from '../design/tokens';
+import { color, space } from '../design/theme';
 import { formatDate } from './locale';
 import { useResource, useSingleFlight } from './resource';
 import { PersonSafetyMenu } from './safety-actions';

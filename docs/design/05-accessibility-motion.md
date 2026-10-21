@@ -18,6 +18,8 @@ Do not use flashing, rapid animation, or sensory-only cues that can cause harm o
 
 ## Motion principles
 
+Consumer Mobile observes the system Reduce Motion / Remove animations setting, including changes while running. Until the initial setting is available, or if that read fails, presentation remains still. Root navigation and modal sheets avoid slides, live search omits decorative rings, and reactions retain their content without movement. This applies to both native appearances; it does not change call, payment, authorization or other domain state. See the [2026-10-19 audit](../evidence/impeccable-ui-audit-2026-10-19.md) for bounded validation.
+
 Motion communicates hierarchy, continuity, status, and feedback; it must not create pressure, fake progress, or obscure authoritative state. Respect reduced-motion preferences with no-loss alternatives. Essential time limits provide warning and extension where security/policy permits. Loading animation never implies completed payment, message delivery, entitlement, upload, or moderation action.
 
 Gesture-only actions require discoverable alternatives. Drag/drop, swipe, long press, hover, and complex canvas interactions need keyboard/touch alternatives appropriate to surface.

@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,13 +19,14 @@ import { largeTextScale } from '../design/text-scale';
 import { IconButton, Text, type TextTone } from '../design/primitives';
 import {
   color,
+  ivoryPreview,
   layout,
   letterSpacing,
   radius,
   space,
   text,
   tracking,
-} from '../design/tokens';
+} from '../design/theme';
 import { useKeyboardOverlap } from './keyboard';
 import { destinations, signalLabel } from './navigation';
 import { useToast, type ToastTone } from './providers';
@@ -122,9 +124,20 @@ export function Screen({
    * the sentence.
    */
   const large = PixelRatio.getFontScale() > largeTextScale;
+  const { width } = useWindowDimensions();
+  const contentWidth = ivoryPreview ? Math.min(width, 640) : width;
 
   const header = (
-    <View style={[styles.header, { paddingTop: insets.top + space[2] }]}>
+    <View
+      style={[
+        styles.header,
+        {
+          paddingTop: insets.top + space[2],
+          paddingLeft: insets.left + space[4],
+          paddingRight: insets.right + space[4],
+        },
+      ]}
+    >
       <View style={styles.headerRow}>
         {onBack === undefined ? null : (
           <IconButton
@@ -142,8 +155,8 @@ export function Screen({
         <View style={styles.headerTitles}>
           <Text
             accessibilityRole="header"
-            numberOfLines={large ? 2 : 1}
-            variant="title"
+            {...(large ? {} : { numberOfLines: 1 })}
+            variant={ivoryPreview ? 'subheading' : 'title'}
             weight="semibold"
           >
             {title}
@@ -151,7 +164,7 @@ export function Screen({
           {subtitle === undefined ? null : (
             <Text
               tone="secondary"
-              variant="small"
+              variant={ivoryPreview ? 'caption' : 'small'}
               {...(large ? {} : { numberOfLines: 2 })}
             >
               {subtitle}
@@ -170,6 +183,11 @@ export function Screen({
     paddingBottom:
       space[10] + (tabBarBelow ? 0 : insets.bottom) + keyboard.overlap,
     paddingHorizontal: space[4],
+    paddingLeft: space[4] + insets.left,
+    paddingRight: space[4] + insets.right,
+    ...(ivoryPreview
+      ? { alignSelf: 'center' as const, width: contentWidth }
+      : {}),
   };
 
   return (
@@ -184,6 +202,7 @@ export function Screen({
         <ScrollView
           contentContainerStyle={padding}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           style={styles.body}
           {...(onRefresh === undefined
             ? {}
@@ -230,10 +249,12 @@ export function PlainScreen({
         contentContainerStyle={{
           flexGrow: 1,
           paddingBottom: insets.bottom + space[10] + keyboard.overlap,
-          paddingHorizontal: space[5],
+          paddingLeft: space[5] + insets.left,
+          paddingRight: space[5] + insets.right,
           paddingTop: insets.top + space[8],
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         style={styles.body}
         {...(testID === undefined ? {} : { testID })}
       >
@@ -269,6 +290,7 @@ function washOpacity(token: string): string {
  * depth without affecting input or accessibility.
  */
 function Atmosphere() {
+  if (ivoryPreview) return null;
   return (
     <View
       accessibilityElementsHidden
@@ -417,6 +439,7 @@ export function TabBar({
                   testID={`tab-${destination.id}-signal`}
                 >
                   <Text
+                    scaleCapOverride={largeTextScale}
                     style={styles.tabSignalText}
                     tone="onAccent"
                     variant="micro"
@@ -429,6 +452,11 @@ export function TabBar({
             </View>
             <Text
               numberOfLines={1}
+              style={
+                ivoryPreview
+                  ? { maxWidth: '100%', textAlign: 'center' }
+                  : undefined
+              }
               /*
                * Five labels share one screen width, so this slot cannot grow
                * with the system setting the way body copy does. Uncapped, a
@@ -444,7 +472,11 @@ export function TabBar({
               variant="micro"
               weight={active ? 'semibold' : 'regular'}
             >
-              {destination.label}
+              {ivoryPreview && destination.id === 'introductions'
+                ? 'Intros'
+                : ivoryPreview && destination.id === 'messages'
+                  ? 'Chats'
+                  : destination.label}
             </Text>
           </Pressable>
         );
@@ -522,10 +554,10 @@ const styles = StyleSheet.create({
   },
   body: { flex: 1 },
   header: {
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.canvas : color.surfaceOverlay,
     borderBottomColor: color.borderHairline,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: space[3],
+    borderBottomWidth: ivoryPreview ? 0 : StyleSheet.hairlineWidth,
+    paddingBottom: ivoryPreview ? space[5] : space[3],
     paddingHorizontal: space[4],
   },
   headerRow: {
@@ -538,6 +570,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: space[2],
     minHeight: layout.headerHeight,
+    ...(ivoryPreview
+      ? ({ alignSelf: 'center', maxWidth: 608, width: '100%' } as const)
+      : {}),
   },
   headerTitles: { flex: 1, gap: space[1] },
   screen: { backgroundColor: color.canvas, flex: 1 },
@@ -555,9 +590,11 @@ const styles = StyleSheet.create({
     minHeight: space[8],
     minWidth: space[12],
   },
-  tabIconActive: { backgroundColor: color.emberWash },
+  tabIconActive: {
+    backgroundColor: ivoryPreview ? color.emberWashStrong : color.emberWash,
+  },
   tabBar: {
-    backgroundColor: color.canvasDeep,
+    backgroundColor: ivoryPreview ? color.canvas : color.canvasDeep,
     borderTopColor: color.borderHairline,
     borderTopWidth: layout.hairline,
     flexDirection: 'row',

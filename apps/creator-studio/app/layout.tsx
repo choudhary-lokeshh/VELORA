@@ -6,6 +6,7 @@ import './globals.css';
 import { resolveApiBaseUrl } from '../src/api';
 import { StudioProviders, ToastProvider } from '../src/app/providers';
 import { Toaster } from '../src/app/shell';
+import { workspacePreviewEnabled } from '../src/design/visual-preview';
 
 /**
  * The document, and the three things only it can supply.
@@ -66,6 +67,7 @@ export default function RootLayout({
   return (
     <html
       className={`${interfaceFont.variable} ${editorialFont.variable}`}
+      data-design-preview={workspacePreviewEnabled() ? 'editorial' : undefined}
       lang="en"
     >
       <body>

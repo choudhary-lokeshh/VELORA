@@ -22,6 +22,7 @@ import { useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { PersonSafetyMenu } from './safety-actions';
 import { useResource, useSingleFlight } from './resource';
+import { useIvoryPreview } from '../design/visual-preview-provider';
 
 /**
  * One person, as a page.
@@ -41,6 +42,7 @@ import { useResource, useSingleFlight } from './resource';
  * nothing to show rather than guessing which it was.
  */
 export function PersonPage({ personId }: { readonly personId: string }) {
+  const ivory = useIvoryPreview();
   const api = useApi();
   // This page's heading is a name laid over a photograph rather than a
   // `PageHeader`, so it offers itself to the shell directly. Without that the
@@ -155,97 +157,131 @@ export function PersonPage({ personId }: { readonly personId: string }) {
   const cover = addresses.get(images[0]?.id ?? '');
 
   return (
-    <article className="v-stack v-stack--6" data-testid={`person-${shown.id}`}>
+    <article
+      className="v-stack v-stack--6 v-person-detail"
+      data-testid={`person-${shown.id}`}
+    >
       {person.error === undefined ? null : (
         <ErrorMessage testId="person-failed">{person.error}</ErrorMessage>
       )}
-
-      <div
-        className={`v-person-hero v-avatar--tone-${String(toneOf(shown.id))}`}
-      >
-        {cover === undefined ? (
-          <span aria-hidden="true" className="v-person__portrait-mark">
-            {initialsOf(shown.displayName)}
-          </span>
-        ) : (
-          /* A plain element rather than the framework's optimised one: the
+      <div className="v-person-detail__layout">
+        <div
+          className={`v-person-hero v-avatar--tone-${String(toneOf(shown.id))}`}
+        >
+          {cover === undefined ? (
+            <span aria-hidden="true" className="v-person__portrait-mark">
+              {initialsOf(shown.displayName)}
+            </span>
+          ) : (
+            /* A plain element rather than the framework's optimised one: the
              address is issued per request and viewer-scoped. */
-          <img
-            alt=""
-            className="v-person__portrait-image"
-            data-testid="person-portrait"
-            src={cover}
-          />
-        )}
-        <div className="v-person__identity">
-          <h1 className="v-title v-wrap" ref={heading}>
-            {shown.displayName}
-          </h1>
-          <div className="v-inline v-inline--tight">
-            {region === undefined ? null : <Chip>{region}</Chip>}
-            {shown.sharedLanguages.length === 0 ? null : (
-              <Chip>Both speak {languageNames(shown.sharedLanguages)}</Chip>
-            )}
-          </div>
+            <img
+              alt=""
+              className="v-person__portrait-image"
+              data-testid="person-portrait"
+              src={cover}
+            />
+          )}
+          {ivory ? null : (
+            <div className="v-person__identity">
+              <h1 className="v-title v-wrap" ref={heading}>
+                {shown.displayName}
+              </h1>
+              <div className="v-inline v-inline--tight">
+                {region === undefined ? null : <Chip>{region}</Chip>}
+                {shown.sharedLanguages.length === 0 ? null : (
+                  <Chip>Both speak {languageNames(shown.sharedLanguages)}</Chip>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
 
-      {shown.bio === undefined ? (
-        <p className="v-small v-quiet">No bio yet.</p>
-      ) : (
-        <p className="v-body v-measure v-wrap" data-testid="person-bio">
-          {shown.bio}
-        </p>
-      )}
+        {ivory ? (
+          <div className="v-person-detail__heading">
+            <p className="v-label">A new conversation starts here</p>
+            <h1 className="v-title v-wrap" ref={heading}>
+              {shown.displayName}
+            </h1>
+            <p className="v-body v-quiet">
+              {[
+                region,
+                shown.sharedLanguages.length === 0
+                  ? undefined
+                  : `Both speak ${languageNames(shown.sharedLanguages)}`,
+              ]
+                .filter(Boolean)
+                .join(' / ')}
+            </p>
+          </div>
+        ) : null}
 
-      {images.length < 2 ? null : (
-        <ul className="v-person-gallery" data-testid="person-gallery">
-          {images.slice(1).map((image) => {
-            const address = addresses.get(image.id);
-            return address === undefined ? null : (
-              <li key={image.id}>
-                {/* Same reasoning as the hero above. */}
-                <img alt="" className="v-person-gallery__image" src={address} />
-              </li>
-            );
-          })}
-        </ul>
-      )}
+        {shown.bio === undefined ? (
+          <p className="v-small v-quiet v-person-detail__biography">
+            No bio yet.
+          </p>
+        ) : (
+          <p
+            className="v-body v-measure v-wrap v-person-detail__biography"
+            data-testid="person-bio"
+          >
+            {shown.bio}
+          </p>
+        )}
 
-      <div className="v-person__actions">
-        <Button
-          data-testid="person-pass"
-          disabled={decision.busy}
-          onClick={() => {
-            decide(
-              async () => api.pass(shown.id),
-              'Passed. They are not told, and you will not see them for a while.',
-            );
-          }}
-          tone="secondary"
-        >
-          Pass
-        </Button>
-        <Button
-          data-testid="person-signal"
-          disabled={decision.busy}
-          icon="heart"
-          onClick={() => {
-            decide(
-              async () => api.signalIntroduction(shown.id),
-              'Interest sent. They only hear about it if they say yes too.',
-            );
-          }}
-          tone="primary"
-        >
-          Interested
-        </Button>
-        <PersonSafetyMenu
-          onBlocked={() => {
-            setGone(true);
-          }}
-          person={{ displayName: shown.displayName, id: shown.id }}
-        />
+        {images.length < 2 ? null : (
+          <ul className="v-person-gallery" data-testid="person-gallery">
+            {images.slice(1).map((image) => {
+              const address = addresses.get(image.id);
+              return address === undefined ? null : (
+                <li key={image.id}>
+                  {/* Same reasoning as the hero above. */}
+                  <img
+                    alt=""
+                    className="v-person-gallery__image"
+                    src={address}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="v-person__actions">
+          <Button
+            data-testid="person-pass"
+            disabled={decision.busy}
+            onClick={() => {
+              decide(
+                async () => api.pass(shown.id),
+                'Passed. They are not told, and you will not see them for a while.',
+              );
+            }}
+            tone="secondary"
+          >
+            Pass
+          </Button>
+          <Button
+            data-testid="person-signal"
+            disabled={decision.busy}
+            icon="heart"
+            onClick={() => {
+              decide(
+                async () => api.signalIntroduction(shown.id),
+                'Interest sent. They only hear about it if they say yes too.',
+              );
+            }}
+            tone="primary"
+          >
+            Interested
+          </Button>
+          <PersonSafetyMenu
+            onBlocked={() => {
+              setGone(true);
+            }}
+            person={{ displayName: shown.displayName, id: shown.id }}
+          />
+        </div>
       </div>
     </article>
   );

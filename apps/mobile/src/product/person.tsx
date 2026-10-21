@@ -19,7 +19,7 @@ import {
   Stack,
   Text,
 } from '../design/primitives';
-import { radius, space } from '../design/tokens';
+import { radius, space } from '../design/theme';
 import { useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { useResource, useSingleFlight } from './resource';

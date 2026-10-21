@@ -11,7 +11,8 @@ import { failureMessage, isOk } from '@velora/consumer-client';
 import { useApi } from '../frame/providers';
 import { Icon } from '../design/icons';
 import { Button, Choice, Text, TextField } from '../design/primitives';
-import { color, radius, space } from '../design/tokens';
+import { color, ivoryPreview, radius, space } from '../design/theme';
+import { Sheet } from '../design/sheet';
 import { languageName, regionName } from './locale';
 import { useSingleFlight } from './resource';
 
@@ -209,6 +210,63 @@ export function PremiumPreference({
   onOpenWallet,
   wallet,
 }: {
+  readonly languageOptions: readonly string[];
+  readonly onOpenWallet: () => void;
+  readonly wallet: WalletView;
+}) {
+  const [open, setOpen] = useState(false);
+  // Owned here rather than by the form, so a hold in flight outlives the sheet
+  // and the sheet cannot be dismissed into a second, unkeyed hold.
+  const action = useSingleFlight();
+  const held = wallet.state?.livePreference;
+  useEffect(() => {
+    if (held !== undefined) setOpen(false);
+  }, [held]);
+  const form = (
+    <PremiumPreferenceForm
+      action={action}
+      languageOptions={languageOptions}
+      onOpenWallet={onOpenWallet}
+      wallet={wallet}
+    />
+  );
+  if (!ivoryPreview || held !== undefined) return form;
+  if (wallet.state?.enabled !== true) return null;
+  return (
+    <>
+      <Button
+        icon="settings"
+        onPress={() => {
+          setOpen(true);
+        }}
+        testID="live-premium-open"
+        tone="secondary"
+        wide
+      >
+        Search preferences · Coins
+      </Button>
+      {open ? (
+        <Sheet
+          onClose={() => {
+            if (!action.busy) setOpen(false);
+          }}
+          testID="live-premium-sheet"
+          title="Search preferences"
+        >
+          {form}
+        </Sheet>
+      ) : null}
+    </>
+  );
+}
+
+function PremiumPreferenceForm({
+  action,
+  languageOptions,
+  onOpenWallet,
+  wallet,
+}: {
+  readonly action: ReturnType<typeof useSingleFlight>;
   /** The caller's own languages. A preference cannot name one they lack. */
   readonly languageOptions: readonly string[];
   /** Where coins are held and bought, for the balance that is short. */
@@ -216,7 +274,6 @@ export function PremiumPreference({
   readonly wallet: WalletView;
 }) {
   const api = useApi();
-  const action = useSingleFlight();
   const [draft, setDraft] = useState<LivePreferenceSelection>({});
   const [region, setRegion] = useState('');
   const [confirming, setConfirming] = useState(false);

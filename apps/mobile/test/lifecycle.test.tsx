@@ -145,6 +145,22 @@ async function foreground(): Promise<void> {
 }
 
 describe('launch', () => {
+  it('keeps local sign-in disclosure accessible without starting authentication', async () => {
+    const { view, double } = await launch({ signedIn: false });
+    await waitFor(() => {
+      expect(view.getByTestId('welcome-screen')).toBeTruthy();
+    });
+    // Visible in both appearances: the disclosure is what this sign-in is.
+    expect(view.getByTestId('sign-in-development')).toHaveTextContent(
+      /it grants nothing outside this environment/u,
+    );
+    expect(view.getByText(/nobody is told you passed/u)).toBeTruthy();
+    expect(
+      double.calls.some(
+        (call) => call.path === '/v1/auth/local/mobile-sessions',
+      ),
+    ).toBe(false);
+  });
   it('restores a stored session on a cold launch without anybody signing in', async () => {
     const { double, view } = await launch();
     await waitFor(() => {

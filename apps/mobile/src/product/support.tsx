@@ -19,7 +19,7 @@ import {
   TextField,
   type Tone,
 } from '../design/primitives';
-import { space } from '../design/tokens';
+import { space } from '../design/theme';
 import { mintUuid } from '../device/installation';
 import { useApi, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';

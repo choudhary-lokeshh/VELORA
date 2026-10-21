@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import './globals.css';
+import { consolePreviewEnabled } from '../src/design/visual-preview';
 import { resolveApiBaseUrl, resolveAppEnvironment } from '../src/api';
 import { AdminProviders, ToastProvider } from '../src/app/providers';
 import { Toaster } from '../src/app/shell';
@@ -67,6 +68,7 @@ export default function RootLayout({
   return (
     <html
       className={`${interfaceFont.variable} ${monoFont.variable}`}
+      data-design-preview={consolePreviewEnabled() ? 'console' : undefined}
       lang="en"
     >
       <body>

@@ -29,7 +29,8 @@ import {
   Stack,
   Text,
 } from '../design/primitives';
-import { color, space } from '../design/tokens';
+import { color, ivoryPreview, space } from '../design/theme';
+import { Portrait } from '../design/portrait';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { useResource, useSingleFlight } from './resource';
@@ -515,8 +516,9 @@ function CandidateCard({
   readonly portrait: string | undefined;
 }) {
   const region = regionName(candidate.region);
+  const Container = ivoryPreview ? View : Card;
   return (
-    <Card testID={`candidate-${candidate.id}`}>
+    <Container testID={`candidate-${candidate.id}`}>
       <Stack gap={4}>
         <View style={styles.identity}>
           {/*
@@ -554,26 +556,39 @@ function CandidateCard({
             <Avatar
               displayName={candidate.displayName}
               seed={candidate.id}
-              size="large"
+              size={ivoryPreview ? 'medium' : 'large'}
               source={portrait}
               testID={`candidate-portrait-${candidate.id}`}
             />
             <View style={styles.identityText}>
               <Text
                 accessibilityRole="header"
-                variant="heading"
+                variant={ivoryPreview ? 'subheading' : 'heading'}
                 weight="semibold"
               >
                 {candidate.displayName}
               </Text>
-              <Inline gap={2} wrap>
-                {region === undefined ? null : <Chip>{region}</Chip>}
-                {candidate.sharedLanguages.length === 0 ? null : (
-                  <Chip>
-                    {`Both speak ${languageNames(candidate.sharedLanguages)}`}
-                  </Chip>
-                )}
-              </Inline>
+              {ivoryPreview ? (
+                <Text tone="secondary" variant="caption">
+                  {[
+                    region,
+                    candidate.sharedLanguages.length === 0
+                      ? undefined
+                      : `Both speak ${languageNames(candidate.sharedLanguages)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              ) : (
+                <Inline gap={2} wrap>
+                  {region === undefined ? null : <Chip>{region}</Chip>}
+                  {candidate.sharedLanguages.length === 0 ? null : (
+                    <Chip>
+                      {`Both speak ${languageNames(candidate.sharedLanguages)}`}
+                    </Chip>
+                  )}
+                </Inline>
+              )}
             </View>
           </Pressable>
           {/*
@@ -589,6 +604,20 @@ function CandidateCard({
           />
         </View>
 
+        {ivoryPreview ? (
+          <Pressable
+            accessibilityLabel={`Open ${candidate.displayName}`}
+            accessibilityRole="button"
+            onPress={onOpen}
+          >
+            <Portrait
+              displayName={candidate.displayName}
+              source={portrait}
+              testID={`candidate-editorial-portrait-${candidate.id}`}
+            />
+          </Pressable>
+        ) : null}
+
         {candidate.bio === undefined ? (
           <Text tone="tertiary" variant="small">
             No bio yet.
@@ -599,7 +628,7 @@ function CandidateCard({
           </Text>
         )}
 
-        <View style={styles.actions}>
+        <View style={ivoryPreview ? styles.feedActions : styles.actions}>
           <Actions>
             <Button
               disabled={busy}
@@ -623,11 +652,16 @@ function CandidateCard({
           </Actions>
         </View>
       </Stack>
-    </Card>
+    </Container>
   );
 }
 
 const styles = StyleSheet.create({
+  feedActions: {
+    paddingBottom: space[5],
+    borderBottomColor: color.borderHairline,
+    borderBottomWidth: 1,
+  },
   creatorBody: {
     flex: 1,
     minWidth: 0,

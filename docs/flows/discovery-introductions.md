@@ -34,4 +34,12 @@ A pass is private and expiring, is never disclosed to the other person, and prod
 
 ## Phase/cross-references
 
+The [ADR-0027 local/test Ivory preview](../decisions/ADR-0027-consumer-web-product-interface.md#amendment-2026-10-19-owner-selected-local-ivory--olive-preview) presents the first remaining loaded candidate rather than a grid. The existing server order and cursor walk remain authoritative; only a confirmed decision removes a candidate, and a refused or failed decision must not advance the visible person. This is presentation only and introduces no introduction state or API change.
+
 V1. Phase 2 premium priority; Phase 3 advanced filters/paid visibility. Signal expiry is decided; `DECISION REQUIRED`: decline/reappearance policy. See [DISCOVERY](../domains/discovery.md), [MESSAGING](../domains/messaging.md), [Trust & Safety](../domains/trust-safety.md), [consumer product](../product/02-consumer-product.md).
+
+### Local UI review
+
+The presentation refresh in [ADR-0050](../decisions/ADR-0050-local-product-design-refresh.md) preserves this lifecycle and its authorization, confirmation, failure and recovery rules. Visual selection is not admission, publication, approval or execution.
+
+The app-first native preview presents each candidate as an open feed item: identity and published context, authorised portrait, biography and the existing decisions. It adds no message, ranking, story, presence or introduction outcome. Safety remains scoped to that same person.

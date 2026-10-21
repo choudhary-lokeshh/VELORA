@@ -24,7 +24,7 @@ import {
   Stack,
   Text,
 } from '../design/primitives';
-import { color, space } from '../design/tokens';
+import { color, space } from '../design/theme';
 import {
   useResource,
   useRevalidateOnForeground,

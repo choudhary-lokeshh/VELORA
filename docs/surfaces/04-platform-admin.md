@@ -151,3 +151,7 @@ The access page therefore is the surface rather than a placeholder. It states bo
 In a deployed environment it offers **no sign-in form**. No route would accept one, a form that always fails is worse than an explanation, and on this surface it would be a control inviting somebody to try to get in. The one control it offers there is signing out, which is real: somebody may be carrying a consumer session on this origin and be better off without it. In local and test a clearly labelled development panel appears beside the refusal rather than in place of it, and it collects an identity subject rather than a credential.
 
 Both conditions are recorded in [DECISIONS_REQUIRED](../decisions/DECISIONS_REQUIRED.md) as a privileged authenticator provider choice and an approval policy, alongside the role and scope matrix the console asserts nothing about.
+
+## Local design review — 2026-10-19
+
+[ADR-0050](../decisions/ADR-0050-local-product-design-refresh.md) records the owner-requested full UI refresh for explicit local/test configuration on the development server; a production build, including the one the browser suite runs, serves the baseline. The preview changes layout, typography hierarchy, surface treatment, navigation presentation and interaction feedback within this client. Current product phase, published data, authorization, safety, provider refusals and confirmed outcomes remain authoritative. It adds no approved production theme or shared UI. Production Figma reconciliation remains `DESIGN REQUIRED`.

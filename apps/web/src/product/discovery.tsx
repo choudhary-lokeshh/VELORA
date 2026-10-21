@@ -23,6 +23,7 @@ import { portraitReferences, useMediaAddresses } from './imagery';
 import { languageNames, regionName } from './locale';
 import { PersonSafetyMenu } from './safety-actions';
 import { useResource, useSingleFlight } from './resource';
+import { useIvoryPreview } from '../design/visual-preview-provider';
 
 /**
  * Social Discovery: the people section of Discover.
@@ -71,6 +72,7 @@ const emptyFeed: FeedState = {
 };
 
 export function Discovery() {
+  const ivory = useIvoryPreview();
   const api = useApi();
   const toast = useToast();
   const [feed, setFeed] = useState<FeedState>(emptyFeed);
@@ -199,7 +201,7 @@ export function Discovery() {
   // One exchange for the whole page. Each card draws its identity mark first
   // and takes the photograph when it arrives, so nothing waits on this.
   const portraits = useMediaAddresses(
-    portraitReferences(feed.candidates),
+    portraitReferences(ivory ? feed.candidates.slice(0, 1) : feed.candidates),
     'display',
   );
 
@@ -292,37 +294,45 @@ export function Discovery() {
       ) : null}
 
       {feed.candidates.length === 0 ? null : (
-        <ul className="v-deck" data-testid="discovery-candidates">
-          {feed.candidates.map((candidate) => (
-            <li key={candidate.id}>
-              <CandidateCard
-                busy={busy}
-                candidate={candidate}
-                portrait={portraits.get(candidate.media[0]?.id ?? '')}
-                onBlocked={() => {
-                  drop(candidate.id);
-                }}
-                onPass={() => {
-                  decide(
-                    candidate.id,
-                    async () => api.pass(candidate.id),
-                    'Passed. They are not told, and you will not see them for a while.',
-                  );
-                }}
-                onSignal={() => {
-                  decide(
-                    candidate.id,
-                    async () => api.signalIntroduction(candidate.id),
-                    'Interest sent. They only hear about it if they say yes too.',
-                  );
-                }}
-              />
-            </li>
-          ))}
+        <ul
+          className={ivory ? 'v-discovery-stage' : 'v-deck'}
+          data-testid="discovery-candidates"
+        >
+          {(ivory ? feed.candidates.slice(0, 1) : feed.candidates).map(
+            (candidate) => (
+              <li key={candidate.id}>
+                <CandidateCard
+                  busy={busy}
+                  candidate={candidate}
+                  editorial={ivory}
+                  portrait={portraits.get(candidate.media[0]?.id ?? '')}
+                  onBlocked={() => {
+                    drop(candidate.id);
+                  }}
+                  onPass={() => {
+                    decide(
+                      candidate.id,
+                      async () => api.pass(candidate.id),
+                      'Passed. They are not told, and you will not see them for a while.',
+                    );
+                  }}
+                  onSignal={() => {
+                    decide(
+                      candidate.id,
+                      async () => api.signalIntroduction(candidate.id),
+                      'Interest sent. They only hear about it if they say yes too.',
+                    );
+                  }}
+                />
+              </li>
+            ),
+          )}
         </ul>
       )}
 
-      {feed.exhausted || feed.cursor === undefined ? null : (
+      {feed.exhausted ||
+      feed.cursor === undefined ||
+      (ivory && feed.candidates.length > 0) ? null : (
         <div className="v-continue">
           <Button
             busy={loading}
@@ -342,6 +352,7 @@ export function Discovery() {
 function CandidateCard({
   busy,
   candidate,
+  editorial = false,
   onBlocked,
   onPass,
   onSignal,
@@ -349,18 +360,23 @@ function CandidateCard({
 }: {
   readonly busy: boolean;
   readonly candidate: DiscoveryCandidate;
+  readonly editorial?: boolean;
   readonly onBlocked: () => void;
   readonly onPass: () => void;
   readonly onSignal: () => void;
   /** A short-lived address, or nothing to show. Never explained either way. */
   readonly portrait: string | undefined;
 }) {
+  const [failedPortrait, setFailedPortrait] = useState<string | undefined>();
   const region = regionName(candidate.region);
   // The feed this person was opened from, so leaving them returns to it rather
   // than to whatever Discover happens to show on a fresh visit.
   const from = addressOf(usePathname(), useSearchParams());
   return (
-    <article className="v-person" data-testid={`candidate-${candidate.id}`}>
+    <article
+      className={`v-person${editorial ? ' v-person--editorial' : ''}`}
+      data-testid={`candidate-${candidate.id}`}
+    >
       <Link
         aria-label={`Open ${candidate.displayName}`}
         className={`v-person__portrait v-avatar--tone-${String(
@@ -369,7 +385,7 @@ function CandidateCard({
         data-testid={`candidate-open-${candidate.id}`}
         href={nestedHref(`/people/${candidate.id}`, from)}
       >
-        {portrait === undefined ? (
+        {portrait === undefined || portrait === failedPortrait ? (
           <span aria-hidden="true" className="v-person__portrait-mark">
             {initialsOf(candidate.displayName)}
           </span>
@@ -382,6 +398,9 @@ function CandidateCard({
             className="v-person__portrait-image"
             data-testid={`candidate-portrait-${candidate.id}`}
             src={portrait}
+            onError={() => {
+              setFailedPortrait(portrait);
+            }}
           />
         )}
         <div className="v-person__identity">
@@ -396,6 +415,20 @@ function CandidateCard({
       </Link>
 
       <div className="v-person__body">
+        {editorial ? (
+          <div className="v-discovery-story">
+            <p className="v-label">Less scrolling. More curiosity.</p>
+            <h2 className="v-discovery-story__title">
+              Find your kind of conversation.
+            </h2>
+            <p className="v-body v-quiet">
+              A shared language is a place to start. The rest is up to you.
+            </p>
+            <p className="v-label v-discovery-story__bio-label">
+              In their words
+            </p>
+          </div>
+        ) : null}
         {candidate.bio === undefined ? (
           <p className="v-small v-quiet">No bio yet.</p>
         ) : (
@@ -425,6 +458,11 @@ function CandidateCard({
             person={{ displayName: candidate.displayName, id: candidate.id }}
           />
         </div>
+        {editorial ? (
+          <p className="v-caption v-quiet">
+            Messaging starts after a mutual hello. Passing stays private.
+          </p>
+        ) : null}
       </div>
     </article>
   );

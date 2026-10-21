@@ -7,11 +7,12 @@ import type {
 import { failureMessage, isOk, isRetryable } from '@velora/consumer-client';
 import { maximumMessageBodyCharacters } from '@velora/validation/messaging-bounds';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { mintUuid } from '../device/installation';
 import { useApi, useSession, useToast } from '../frame/providers';
 import { Screen } from '../frame/shell';
+import { largeTextScale } from '../design/text-scale';
 import {
   Button,
   Card,
@@ -26,7 +27,7 @@ import {
   Text,
   TextField,
 } from '../design/primitives';
-import { color, layout, radius, space } from '../design/tokens';
+import { color, layout, radius, space } from '../design/theme';
 import { formatWhen } from './locale';
 import {
   useResource,
@@ -301,11 +302,15 @@ function Thread({
 
   const body = draft.trim();
   const tooLong = draft.length > maximumMessageBodyCharacters;
+  const { fontScale } = useWindowDimensions();
+  // With no virtualised thread to preserve, let enlarged empty/error content
+  // scroll rather than pushing the composer below an unscrollable frame.
+  const scrollEmpty = fontScale > largeTextScale && messages.length === 0;
 
   return (
     <Screen
       onBack={onBack}
-      scroll={false}
+      scroll={scrollEmpty}
       subtitle={closed ? 'Closed. You can still read it.' : undefined}
       testID="conversation-screen"
       title={conversation.counterpart.displayName}

@@ -55,8 +55,16 @@ Use synthetic/redacted sample data. Do not place real passwords, tokens, payment
 
 ## Open design decisions
 
+The owner-selected 2026-10-19 Pen.dev Ivory / Olive exploration has a local/test Consumer Web implementation exception bounded by the [ADR-0027 amendment](../decisions/ADR-0027-consumer-web-product-interface.md#amendment-2026-10-19-owner-selected-local-ivory--olive-preview). Its canvas frames are review references only. This does not approve a production light theme or replace this file's approved Figma checkpoint.
+
 `DESIGN REQUIRED`: full component/system pages, production screen set, remaining exact tokens, component ownership, approval roles beyond the current checkpoint, branching/version process, developer handoff method, design QA workflow, prototype testing process, and archival policy.
 
 ## Cross-references
 
 See [design principles](01-design-principles.md), [design-system contract](02-design-system-contract.md), [screen states](06-screen-state-requirements.md), [AGENTS](../../AGENTS.md), and [product phases](../product/01-product-phases.md).
+
+## Local design review — 2026-10-19
+
+The owner's later app-first replacement request revises the Consumer preview to white/olive and changes native entry/feed composition under ADR-0050. It remains a local/test review exception. The historical Ivory exploration is not newly promoted to a production Figma handoff by this replacement.
+
+[ADR-0050](../decisions/ADR-0050-local-product-design-refresh.md) records the owner-requested full UI refresh for explicit local/test configuration; browser surfaces show it only on the development server. The preview changes layout, typography hierarchy, surface treatment, navigation presentation and interaction feedback within each of the four separate clients. Current product phase, published data, authorization, safety, provider refusals and confirmed outcomes remain authoritative. It adds no approved production theme or shared UI. Production Figma reconciliation remains `DESIGN REQUIRED`.

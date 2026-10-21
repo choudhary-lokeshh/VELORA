@@ -102,6 +102,18 @@ The product-owner Phase 8 brief asks NIGHT CURRENT to become richer without beco
 
 The earlier decision to reserve the strongest atmospheric wash for the public entry is narrowed rather than discarded. The public entry remains the strongest expression. The signed-in shell uses a quieter wash behind its content, while conversations and media retain opaque surfaces so decoration never competes with comprehension. Reduced-motion, contrast, focus, and responsive behavior remain unchanged.
 
+## Amendment 2026-10-19: owner-selected local Ivory / Olive preview
+
+The owner selected the Pen.dev Ivory / Olive exploration and requested a working localhost implementation. This authorizes a **local/test Consumer Web visual preview**, not a replacement of the approved Master or a production light theme. The five selected canvas frames are `kK1tT` (Discover), `N6e5B` (narrow browser), `ca5zO` (person), `Z3Rn29` (states), and `cU4Dt` (controls). They are owner-selected exploration references, not an approved Figma handoff.
+
+The preview uses warm ivory `#F1EEE6`, deep olive `#324D43`, IBM Plex Sans, horizontal navigation on a wide browser, and one candidate at a time in the existing server order. On narrow browsers the existing six-destination bottom navigation remains. All Consumer Web routes receive the local preview palette; Creator Studio, Admin, native Mobile and shared design tokens do not. NIGHT CURRENT and its Web/Mobile parity gate remain intact as the deployed baseline.
+
+The server selects the preview only from an explicitly declared, validated local/test application environment on the development server. A missing value, staging, production and every production build — including the one the browser suite runs — render NIGHT CURRENT (reconciled under ADR-0050 on 2026-10-21). No query, account field, stored preference, or provider selector enables this preview. No new configuration variable or dependency is introduced. The styling lives in a surface-local preview stylesheet rather than changing the locked baseline token file.
+
+The discovery preview changes composition, not eligibility, ranking, pagination or signal semantics. A confirmed pass/signal advances to the next loaded candidate; a pending or failed request does not. Loading, empty, retry, unavailable-photo, profile-detail, report/block and mutual-introduction states continue using existing authorized services. Canvas names, biographies and generated imagery must never be injected as real product data.
+
+`DESIGN REQUIRED`: approved Figma handoff, native Mobile direction and any deployed enablement. The preview does not enable gated capabilities. Validation requires the Consumer surface tests, preview environment-refusal and candidate-transition regressions, typecheck/build, visual responsive checks and the unchanged design-parity gate.
+
 ## Cross-references
 
 [Design principles](../design/01-design-principles.md), [design-system contract](../design/02-design-system-contract.md), [Figma source of truth](../design/03-figma-source-of-truth.md), [responsive rules](../design/04-responsive-platform-rules.md), [accessibility and motion](../design/05-accessibility-motion.md), [screen states](../design/06-screen-state-requirements.md), [Consumer Web surface](../surfaces/01-consumer-web.md), [ADR-0004](ADR-0004-client-frameworks.md), [ADR-0015](ADR-0015-shared-design-token-boundary.md), and the [Consumer Web freeze report](../architecture/18-consumer-web-freeze-report.md).

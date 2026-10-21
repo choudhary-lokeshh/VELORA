@@ -7,6 +7,7 @@ import type { LiveWindow } from '@velora/consumer-client';
 import { Icon, type IconName } from '../design/icons';
 import { ButtonLink } from '../design/primitives';
 import { LiveWindows } from './live-windows';
+import { useIvoryPreview } from '../design/visual-preview-provider';
 
 /**
  * The public entry.
@@ -64,6 +65,7 @@ export function Landing({
    */
   readonly liveWindows?: readonly LiveWindow[];
 }) {
+  const editorial = useIvoryPreview();
   return (
     <div className="v-landing">
       {/*
@@ -87,6 +89,14 @@ export function Landing({
       </header>
 
       <main className="v-landing__hero" id="main">
+        {editorial ? (
+          <div aria-hidden="true" className="v-landing__mobile-art" />
+        ) : null}
+        {editorial ? (
+          <span className="v-landing__art-caption">
+            Illustrative brand artwork
+          </span>
+        ) : null}
         <div className="v-landing__copy">
           <p className="v-label v-accent">Adults only</p>
           {/*
@@ -97,7 +107,9 @@ export function Landing({
             a promise instead of as a riddle.
           */}
           <h1 className="v-display v-wrap">
-            Meet new people, one live conversation at a time.
+            {editorial
+              ? 'A little hello. A real connection.'
+              : 'Meet new people, one live conversation at a time.'}
           </h1>
           <p className="v-landing__lede">
             VELORA puts two adults in a conversation only when both of them want

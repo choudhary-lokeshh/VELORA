@@ -37,7 +37,7 @@ import {
   Text,
 } from '../design/primitives';
 import { Icon } from '../design/icons';
-import { color, space } from '../design/tokens';
+import { color, space } from '../design/theme';
 import { useMediaAddresses } from './imagery';
 
 /**

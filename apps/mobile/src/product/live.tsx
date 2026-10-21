@@ -21,6 +21,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
   type StyleProp,
   type ViewStyle,
@@ -52,14 +53,18 @@ import {
   Text,
 } from '../design/primitives';
 import { portraitReferences, useMediaAddresses } from './imagery';
+import { useReducedMotion } from '../design/reduced-motion';
+import { largeTextScale } from '../design/text-scale';
 import {
   color,
+  ivoryPreview,
   layout,
   radius,
   space,
   text as textScale,
-} from '../design/tokens';
+} from '../design/theme';
 import { useKeyboardOverlap } from '../frame/keyboard';
+import { Wordmark } from '../frame/shell';
 import { signalLabel } from '../frame/navigation';
 import { useApi } from '../frame/providers';
 import { mintUuid } from '../device/installation';
@@ -507,11 +512,16 @@ function LiveDoor({
     (invitation) =>
       invitation.direction === 'incoming' && invitation.state === 'pending',
   );
+  const { fontScale } = useWindowDimensions();
+  const [showGuide, setShowGuide] = useState(false);
 
   return (
     <ScrollView
       contentContainerStyle={[
         styles.door,
+        ivoryPreview
+          ? { alignSelf: 'center', maxWidth: 640, width: '100%' }
+          : null,
         mode === 'choose' ? styles.doorChoosing : null,
         { paddingTop: insetTop + space[4] },
       ]}
@@ -525,7 +535,7 @@ function LiveDoor({
         ember bloom off the top says something happens here without becoming the
         neon this product is explicitly not.
       */}
-      <DoorGlow />
+      {ivoryPreview ? <Wordmark /> : <DoorGlow />}
 
       <Segmented<Mode>
         label="How to meet somebody"
@@ -549,17 +559,25 @@ function LiveDoor({
 
       {mode === 'instant' ? (
         <>
-          <View style={styles.doorHero}>
-            <View style={styles.doorMark}>
-              <Icon color={color.ember} name="live" size="lg" />
-            </View>
-            <Text variant="display" weight="bold">
+          <View
+            style={[
+              styles.doorHero,
+              ivoryPreview ? styles.previewDoorHero : undefined,
+            ]}
+          >
+            {ivoryPreview ? null : (
+              <View style={styles.doorMark}>
+                <Icon color={color.ember} name="live" size="lg" />
+              </View>
+            )}
+            <Text variant={ivoryPreview ? 'heading' : 'display'} weight="bold">
               Meet someone
             </Text>
             {explained ? null : (
               <Text style={styles.centred} tone="secondary" variant="body">
-                One other person who is here right now. Talk for as long as it
-                is good, and move on whenever you like.
+                {ivoryPreview
+                  ? 'One person. A conversation at your pace.'
+                  : 'One other person who is here right now. Talk for as long as it is good, and move on whenever you like.'}
               </Text>
             )}
           </View>
@@ -571,34 +589,61 @@ function LiveDoor({
             seen, so the quieter way in stays a control of its own rather than a
             setting on this one.
           */}
-          <Stack gap={2}>
-            <Button
-              busy={busy}
-              icon="video"
-              onPress={() => {
-                onStart('video');
-              }}
-              size="large"
-              testID="live-start-video"
-              tone="primary"
-              wide
+          {ivoryPreview ? (
+            <Text tone="secondary" variant="small">
+              Start opens your camera. Choose Voice only to keep it off.
+            </Text>
+          ) : null}
+          <View
+            style={
+              ivoryPreview && fontScale <= largeTextScale
+                ? styles.previewDoorActions
+                : { gap: space[2] }
+            }
+          >
+            <View
+              style={
+                ivoryPreview && fontScale <= largeTextScale
+                  ? { flex: 1 }
+                  : undefined
+              }
             >
-              Start
-            </Button>
-            <Button
-              disabled={busy}
-              icon="phone"
-              onPress={() => {
-                onStart('voice');
-              }}
-              size="small"
-              testID="live-start-voice"
-              tone="ghost"
-              wide
+              <Button
+                busy={busy}
+                icon="video"
+                onPress={() => {
+                  onStart('video');
+                }}
+                size="large"
+                testID="live-start-video"
+                tone="primary"
+                wide
+              >
+                Start
+              </Button>
+            </View>
+            <View
+              style={
+                ivoryPreview && fontScale <= largeTextScale
+                  ? { flex: 1 }
+                  : undefined
+              }
             >
-              Voice only
-            </Button>
-          </Stack>
+              <Button
+                disabled={busy}
+                icon="phone"
+                onPress={() => {
+                  onStart('voice');
+                }}
+                size={ivoryPreview ? 'large' : 'small'}
+                testID="live-start-voice"
+                tone={ivoryPreview ? 'secondary' : 'ghost'}
+                wide
+              >
+                Voice only
+              </Button>
+            </View>
+          </View>
 
           <PreferenceControls
             languageOptions={languageOptions}
@@ -613,7 +658,44 @@ function LiveDoor({
             read as documentation, which is the one thing a live-social door must
             not be. It appears on the first launch and never again.
           */}
-          {explained ? null : (
+          {ivoryPreview ? (
+            <Button
+              icon="shield"
+              onPress={() => {
+                setShowGuide(true);
+              }}
+              testID="live-guide-open"
+              tone="ghost"
+            >
+              How Live works
+            </Button>
+          ) : null}
+          {ivoryPreview && showGuide ? (
+            <Sheet
+              onClose={() => {
+                setShowGuide(false);
+              }}
+              testID="live-guide"
+              title="How Live works"
+            >
+              <Text>
+                Your camera opens only when you press Start. Voice only keeps it
+                off.
+              </Text>
+              <Text>
+                VELORA finds somebody in Instant. Choose lets you request a
+                meeting. Connect counts only if you both press it.
+              </Text>
+              <Text>
+                Leave whenever you like. Safety controls stay beside the person.
+              </Text>
+              <Text>
+                Nothing is recorded. VELORA stores no video, audio, or
+                transcript of a live session.
+              </Text>
+            </Sheet>
+          ) : null}
+          {explained || ivoryPreview ? null : (
             <Stack gap={3}>
               <Inline gap={3}>
                 <Icon color={color.ember} name="camera" size="sm" />
@@ -1991,6 +2073,7 @@ function LocalCamera({
   const [corner, setCorner] = useState<'left' | 'right'>('right');
   const drag = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const offset = useRef({ x: 0, y: 0 });
+  const reducedMotion = useReducedMotion();
 
   const responder = useMemo(
     () =>
@@ -2009,13 +2092,19 @@ function LocalCamera({
           const moved = offset.current.x + gesture.dx;
           setCorner(moved < -40 ? 'left' : moved > 40 ? 'right' : corner);
           offset.current = { x: 0, y: 0 };
-          Animated.spring(drag, {
-            toValue: { x: 0, y: 0 },
-            useNativeDriver: false,
-          }).start();
+          if (reducedMotion) drag.setValue({ x: 0, y: 0 });
+          else
+            Animated.spring(drag, {
+              toValue: { x: 0, y: 0 },
+              useNativeDriver: false,
+            }).start();
+        },
+        onPanResponderTerminate: () => {
+          drag.stopAnimation();
+          drag.setValue({ x: 0, y: 0 });
         },
       }),
-    [corner, drag],
+    [corner, drag, reducedMotion],
   );
 
   if (!pip) {
@@ -2123,13 +2212,33 @@ function CameraScrim() {
       <Svg height="100%" width="100%">
         <Defs>
           <RadialGradient cx="50%" cy="46%" id="live-dim" r="68%">
-            <Stop offset="0" stopColor="#070508" stopOpacity={0.78} />
-            <Stop offset="1" stopColor="#070508" stopOpacity={0.24} />
+            <Stop
+              offset="0"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopOpacity={0.78}
+            />
+            <Stop
+              offset="1"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopOpacity={0.24}
+            />
           </RadialGradient>
           <LinearGradient id="live-edges" x1="0" x2="0" y1="0" y2="1">
-            <Stop offset="0" stopColor="#070508" stopOpacity={0.66} />
-            <Stop offset="0.42" stopColor="#070508" stopOpacity={0.32} />
-            <Stop offset="1" stopColor="#070508" stopOpacity={0.84} />
+            <Stop
+              offset="0"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopOpacity={0.66}
+            />
+            <Stop
+              offset="0.42"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopOpacity={0.32}
+            />
+            <Stop
+              offset="1"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
+              stopOpacity={0.84}
+            />
           </LinearGradient>
         </Defs>
         <Rect fill="url(#live-dim)" height="100%" width="100%" />
@@ -2177,14 +2286,20 @@ function ReactionBurst({
   readonly self: boolean;
 }) {
   const rise = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    Animated.timing(rise, {
+    if (reducedMotion) return;
+    const animation = Animated.timing(rise, {
       duration: reactionMilliseconds,
       toValue: 1,
       useNativeDriver: true,
-    }).start();
-  }, [rise]);
+    });
+    animation.start();
+    return () => {
+      animation.stop();
+    };
+  }, [rise, reducedMotion]);
 
   return (
     <Animated.Text
@@ -2192,18 +2307,22 @@ function ReactionBurst({
         styles.burst,
         self ? styles.burstSelf : null,
         {
-          opacity: rise.interpolate({
-            inputRange: [0, 0.15, 0.8, 1],
-            outputRange: [0, 1, 1, 0],
-          }),
-          transform: [
-            {
-              translateY: rise.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -180],
+          opacity: reducedMotion
+            ? 1
+            : rise.interpolate({
+                inputRange: [0, 0.15, 0.8, 1],
+                outputRange: [0, 1, 1, 0],
               }),
-            },
-          ],
+          transform: reducedMotion
+            ? []
+            : [
+                {
+                  translateY: rise.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -180],
+                  }),
+                },
+              ],
         },
       ]}
     >
@@ -2220,11 +2339,16 @@ function ReactionBurst({
  * was what this was, and on a device over a live camera it was invisible.
  */
 function Pulse() {
+  const reducedMotion = useReducedMotion();
   return (
     <View style={styles.pulse}>
-      <PulseRing delay={0} />
-      <PulseRing delay={900} />
-      <PulseRing delay={1800} />
+      {reducedMotion ? null : (
+        <>
+          <PulseRing delay={0} />
+          <PulseRing delay={900} />
+          <PulseRing delay={1800} />
+        </>
+      )}
       <View style={styles.pulseCore}>
         <Icon color={color.ember} name="live" size="md" />
       </View>
@@ -2300,12 +2424,12 @@ function Scrim({
           <LinearGradient id={id} x1="0" x2="0" y1="0" y2="1">
             <Stop
               offset="0"
-              stopColor="#070508"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
               stopOpacity={direction === 'down' ? opacity : 0}
             />
             <Stop
               offset="1"
-              stopColor="#070508"
+              stopColor={ivoryPreview ? color.canvas : '#070508'}
               stopOpacity={direction === 'down' ? 0 : opacity}
             />
           </LinearGradient>
@@ -3046,7 +3170,7 @@ const previewHeight = 148;
 const styles = StyleSheet.create({
   broaden: {
     alignItems: 'center',
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderColor: color.borderHairline,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -3093,7 +3217,7 @@ const styles = StyleSheet.create({
    * talking to.
    */
   chat: {
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderTopColor: color.borderHairline,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
@@ -3125,7 +3249,7 @@ const styles = StyleSheet.create({
   },
   connection: {
     alignItems: 'center',
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderColor: color.borderHairline,
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -3143,6 +3267,7 @@ const styles = StyleSheet.create({
     borderColor: color.emberLine,
   },
   dock: {
+    backgroundColor: ivoryPreview ? color.surface1 : 'transparent',
     bottom: 0,
     gap: space[3],
     left: 0,
@@ -3191,7 +3316,7 @@ const styles = StyleSheet.create({
   },
   /* A control on the picture, rather than a glyph floating on it. */
   control: {
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderColor: color.borderHairline,
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -3222,6 +3347,12 @@ const styles = StyleSheet.create({
     top: 0,
   },
   doorHero: { alignItems: 'center', gap: space[4] },
+  previewDoorHero: {
+    alignItems: 'flex-start',
+    gap: space[2],
+    paddingTop: space[4],
+  },
+  previewDoorActions: { flexDirection: 'row', gap: space[3] },
   doorMark: {
     alignItems: 'center',
     backgroundColor: color.emberWashStrong,
@@ -3236,7 +3367,7 @@ const styles = StyleSheet.create({
   flowQuiet: { flex: 1 },
   flowRow: { flexDirection: 'row', gap: space[2] },
   localBadge: {
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderRadius: radius.pill,
     left: space[2],
     padding: space[1],
@@ -3252,7 +3383,7 @@ const styles = StyleSheet.create({
   },
   moment: {
     alignItems: 'center',
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderColor: color.statusPositive,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -3276,7 +3407,7 @@ const styles = StyleSheet.create({
   peer: { alignItems: 'center', gap: space[3] },
   /* The ground the words get once there is a face behind them. */
   peerCarried: {
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderRadius: radius.lg,
     paddingHorizontal: space[4],
     paddingVertical: space[3],
@@ -3380,7 +3511,7 @@ const styles = StyleSheet.create({
   },
   scenarioToggle: {
     alignSelf: 'flex-start',
-    backgroundColor: color.surfaceOverlay,
+    backgroundColor: ivoryPreview ? color.surface1 : color.surfaceOverlay,
     borderRadius: radius.pill,
     paddingHorizontal: space[3],
     paddingVertical: space[1],
@@ -3421,6 +3552,7 @@ const styles = StyleSheet.create({
   stage: { backgroundColor: color.canvasDeep, flex: 1 },
   step: { flex: 1 },
   strip: {
+    backgroundColor: ivoryPreview ? color.surface1 : 'transparent',
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',

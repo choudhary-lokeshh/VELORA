@@ -73,3 +73,7 @@ Received gifts draws the silhouette BILLING publishes rather than the first lett
 ## Security, phase, and authority
 
 Follow [Creator Private Clubs](../product/03-creator-private-clubs.md), [creator lifecycle](../flows/creator-lifecycle-content.md), [media security](../security/04-media-upload-delivery.md), and [creator compliance gates](../compliance/03-creator-content-gates.md). Phase 2 is web-first creator/club pilot; analytics, payouts, and creator AI are Phase 3. Mature/explicit content remains Conditional / Compliance-Gated.
+
+## Local design review — 2026-10-19
+
+[ADR-0050](../decisions/ADR-0050-local-product-design-refresh.md) records the owner-requested full UI refresh for explicit local/test configuration on the development server; a production build, including the one the browser suite runs, serves the baseline. The preview changes layout, typography hierarchy, surface treatment, navigation presentation and interaction feedback within this client. Current product phase, published data, authorization, safety, provider refusals and confirmed outcomes remain authoritative. It adds no approved production theme or shared UI. Production Figma reconciliation remains `DESIGN REQUIRED`.

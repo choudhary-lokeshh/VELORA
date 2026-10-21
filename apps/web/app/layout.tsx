@@ -8,6 +8,8 @@ import { ToastProvider, VeloraProviders } from '../src/app/providers';
 import { Toaster } from '../src/app/shell';
 import { AcquisitionCapture } from '../src/product/acquisition-capture';
 import { resolvePublicSite } from '../src/seo/site';
+import { ivoryPreviewEnabled } from '../src/design/visual-preview';
+import { VisualPreviewProvider } from '../src/design/visual-preview-provider';
 
 /**
  * The document, and the three things only it can supply.
@@ -64,29 +66,39 @@ export function generateMetadata(): Metadata {
   };
 }
 
-export const viewport: Viewport = {
-  colorScheme: 'dark',
-  themeColor: '#0c0a0c',
-  viewportFit: 'cover',
-  width: 'device-width',
-  initialScale: 1,
-};
+export function generateViewport(): Viewport {
+  const ivory = ivoryPreviewEnabled();
+  return {
+    colorScheme: ivory ? 'light' : 'dark',
+    themeColor: ivory ? '#ffffff' : '#0c0a0c',
+    viewportFit: 'cover',
+    width: 'device-width',
+    initialScale: 1,
+  };
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
+  const ivory = ivoryPreviewEnabled();
   return (
-    <html className={interfaceFont.variable} lang="en">
+    <html
+      className={interfaceFont.variable}
+      data-design-preview={ivory ? 'ivory' : undefined}
+      lang="en"
+    >
       <body>
-        <ToastProvider>
-          <VeloraProviders apiBaseUrl={resolveApiBaseUrl()}>
-            {children}
-            <Toaster />
-            {/* Draws nothing. It notes where somebody arrived from, once, so a
+        <VisualPreviewProvider enabled={ivory}>
+          <ToastProvider>
+            <VeloraProviders apiBaseUrl={resolveApiBaseUrl()}>
+              {children}
+              <Toaster />
+              {/* Draws nothing. It notes where somebody arrived from, once, so a
                 shared link is still attributable when they sign up later. */}
-            <AcquisitionCapture />
-          </VeloraProviders>
-        </ToastProvider>
+              <AcquisitionCapture />
+            </VeloraProviders>
+          </ToastProvider>
+        </VisualPreviewProvider>
       </body>
     </html>
   );

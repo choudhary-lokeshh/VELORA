@@ -17,7 +17,7 @@ import {
   Text,
   type Tone,
 } from '../design/primitives';
-import { color, radius, space } from '../design/tokens';
+import { color, radius, space } from '../design/theme';
 import { formatPrice } from './commerce';
 import { GiftArt } from './gift-art';
 import { formatDate } from './locale';

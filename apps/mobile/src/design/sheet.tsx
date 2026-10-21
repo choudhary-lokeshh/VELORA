@@ -10,8 +10,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useKeyboardOverlap } from '../frame/keyboard';
+import { useReducedMotion } from './reduced-motion';
 import { IconButton, Text } from './primitives';
-import { color, layout, radius, space } from './tokens';
+import { color, layout, radius, space } from './theme';
 
 /**
  * A bottom sheet, which is what a dialog is on a phone.
@@ -43,6 +44,7 @@ export function Sheet({
   readonly title: string;
 }) {
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   /*
    * The keyboard, measured against the sheet itself.
    *
@@ -62,7 +64,7 @@ export function Sheet({
   };
   return (
     <Modal
-      animationType="slide"
+      animationType={reducedMotion ? 'none' : 'slide'}
       onRequestClose={close}
       statusBarTranslucent
       transparent
@@ -83,6 +85,8 @@ export function Sheet({
             {
               paddingBottom:
                 Math.max(insets.bottom, space[4]) + keyboard.overlap,
+              paddingLeft: space[4] + insets.left,
+              paddingRight: space[4] + insets.right,
             },
           ]}
         >
@@ -106,6 +110,7 @@ export function Sheet({
           <ScrollView
             contentContainerStyle={styles.body}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           >
             {children}
           </ScrollView>

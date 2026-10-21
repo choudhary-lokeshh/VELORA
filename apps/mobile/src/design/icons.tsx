@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { color, icon as iconScale } from './tokens';
+import { color, icon as iconScale } from './theme';
 
 /**
  * The icon set, drawn rather than depended on — and the same set Consumer Web

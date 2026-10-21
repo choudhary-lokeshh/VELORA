@@ -26,7 +26,7 @@ import {
   TextField,
 } from '../design/primitives';
 import { Sheet } from '../design/sheet';
-import { space } from '../design/tokens';
+import { space } from '../design/theme';
 import {
   cadenceLabels,
   formatPrice,

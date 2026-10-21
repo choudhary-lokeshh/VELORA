@@ -25,7 +25,7 @@ import {
   Stack,
   Text,
 } from '../design/primitives';
-import { radius, space } from '../design/tokens';
+import { radius, space } from '../design/theme';
 import { cadenceLabels, formatPrice, membershipSourceLabels } from './commerce';
 import { useMediaAddresses } from './imagery';
 import { formatDate } from './locale';

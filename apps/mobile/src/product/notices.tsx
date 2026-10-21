@@ -24,7 +24,7 @@ import {
   Text,
 } from '../design/primitives';
 import { Icon, type IconName } from '../design/icons';
-import { color, space } from '../design/tokens';
+import { color, space } from '../design/theme';
 import { portraitReferences, useMediaAddresses } from './imagery';
 import { formatWhen } from './locale';
 import { useResource, useRevalidateOnForeground } from './resource';

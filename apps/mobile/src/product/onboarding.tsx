@@ -29,7 +29,7 @@ import {
   Text,
   TextField,
 } from '../design/primitives';
-import { color, radius, space } from '../design/tokens';
+import { color, radius, space } from '../design/theme';
 import { languageName, regionName } from './locale';
 import { ProfilePhotos } from './photos';
 import { useSingleFlight } from './resource';

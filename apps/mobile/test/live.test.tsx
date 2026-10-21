@@ -4,6 +4,7 @@ import { BackHandler } from 'react-native';
 
 import { createInMemorySecureTokenStore } from '../src/auth/secure-storage';
 import { LiveScreen } from '../src/product/live';
+import { ivoryPreview } from '../src/design/theme';
 import {
   admittedState,
   createMobileApiDouble,
@@ -65,9 +66,29 @@ async function mountLive(
   handlers: {
     readonly onOpenConversation?: (conversationId: string) => void;
     readonly onOpenPerson?: (personId: string) => void;
+    readonly revealPremium?: boolean;
+    /** Holds one request in flight until the test releases it. */
+    readonly hold?: {
+      readonly path: string;
+      readonly until: Promise<void>;
+    };
   } = {},
 ): Promise<ReturnType<typeof createMobileApiDouble>> {
   const double = createMobileApiDouble(state);
+  const hold = handlers.hold;
+  const fetchImplementation: typeof globalThis.fetch =
+    hold === undefined
+      ? double.fetch
+      : async (input, init) => {
+          const address =
+            input instanceof Request
+              ? input.url
+              : input instanceof URL
+                ? input.href
+                : input;
+          if (new URL(address).pathname === hold.path) await hold.until;
+          return double.fetch(input, init);
+        };
   const store = createInMemorySecureTokenStore();
   await store.write({
     accessToken: 'access-stored',
@@ -83,7 +104,19 @@ async function mountLive(
       onOpenWallet={noop}
     />
   );
-  await renderScreen(element, double, { store });
+  await renderScreen(
+    element,
+    { ...double, fetch: fetchImplementation },
+    { store },
+  );
+  if (
+    ivoryPreview &&
+    handlers.revealPremium !== false &&
+    state.wallet.enabled &&
+    state.wallet.livePreference === undefined
+  ) {
+    await fireEvent.press(await screen.findByTestId('live-premium-open'));
+  }
   // Returned so a test can assert what the surface actually asked the server
   // for, rather than only what it rendered afterwards.
   return double;
@@ -334,6 +367,58 @@ describe('the platform gate', () => {
 });
 
 describe('the paid matching preference', () => {
+  it('keeps optional paid choices behind a reversible native sheet in the preview', async () => {
+    const double = await mountLive(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+      { revealPremium: false },
+    );
+    if (!ivoryPreview) {
+      expect(await screen.findByTestId('live-premium')).toBeTruthy();
+      return;
+    }
+    const open = await screen.findByTestId('live-premium-open');
+    const commands = double.calls.filter(
+      (call) => call.method === 'POST',
+    ).length;
+    expect(screen.queryByTestId('live-premium-gender-woman')).toBeNull();
+    await fireEvent.press(open);
+    expect(await screen.findByTestId('live-premium-gender-woman')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('live-premium-sheet-close'));
+    expect(screen.queryByTestId('live-premium-gender-woman')).toBeNull();
+    expect(double.calls.filter((call) => call.method === 'POST')).toHaveLength(
+      commands,
+    );
+  });
+  it('keeps the sheet open while a hold is in flight, so it is sent once', async () => {
+    if (!ivoryPreview) return;
+    let release: () => void = noop;
+    const until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const double = await mountLive(
+      walletState({ balance: { available: '100', reserved: '0' } }),
+      { hold: { path: '/v1/wallet/live-preference', until } },
+    );
+    await press('live-premium-gender-woman');
+    await press('live-premium-review');
+    await press('live-premium-activate');
+    // Dismissing now would unmount the form that owns the request, and a
+    // reopened form would offer a second hold the server sees as new.
+    await press('live-premium-sheet-close');
+    expect(screen.getByTestId('live-premium-sheet')).toBeTruthy();
+
+    await act(async () => {
+      release();
+      await until;
+    });
+    expect(await screen.findByTestId('live-premium-active')).toBeTruthy();
+    expect(
+      double.calls.filter(
+        (call) =>
+          call.method === 'POST' && call.path === '/v1/wallet/live-preference',
+      ),
+    ).toHaveLength(1);
+  });
   it('is absent entirely where this environment has no coins', async () => {
     await mountLive(liveState());
     await screen.findByTestId('live-door');
@@ -404,6 +489,7 @@ describe('the paid matching preference', () => {
     expect(active).toHaveTextContent(/held, not spent/u);
 
     await press('live-premium-cancel');
+    if (ivoryPreview) await press('live-premium-open');
     await screen.findByTestId('live-premium');
     // In full, and the balance rendered is the server's answer rather than a
     // delta this surface applied.

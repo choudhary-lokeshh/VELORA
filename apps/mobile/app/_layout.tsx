@@ -8,8 +8,9 @@ import { LinkRouter } from '../src/frame/link-router';
 import { NotificationRuntime } from '../src/frame/notification-runtime';
 import { ConsumerProviders } from '../src/frame/providers';
 import { Toaster } from '../src/frame/shell';
-import { color } from '../src/design/tokens';
+import { color, ivoryPreview } from '../src/design/theme';
 import { useInterfaceTypeface } from '../src/design/typeface';
+import { useReducedMotion } from '../src/design/reduced-motion';
 import { LaunchScreen } from '../src/product/welcome';
 
 /**
@@ -22,25 +23,26 @@ import { LaunchScreen } from '../src/product/welcome';
  *
  * `SafeAreaProvider` is above everything because a notch and a home indicator
  * are not a screen's problem to solve individually, and `StatusBar` is set
- * light because this surface is dark only — the approved Consumer expression is
- * tonal dark and there is no light theme to switch between.
+ * light for the deployed dark expression and dark for the explicit local/test
+ * Ivory review in ADR-0050.
  */
 export default function RootLayout() {
   const typeface = useInterfaceTypeface();
+  const reducedMotion = useReducedMotion();
 
   if (!typeface.ready) return <LaunchScreen />;
 
   return (
     <SafeAreaProvider>
       <View style={{ backgroundColor: color.canvas, flex: 1 }}>
-        <StatusBar style="light" />
+        <StatusBar style={ivoryPreview ? 'dark' : 'light'} />
         <ConsumerProviders unavailable={<UnavailableScreen />}>
           <NotificationRuntime />
           <LinkRouter />
           <ConsumerGate>
             <Stack
               screenOptions={{
-                animation: 'slide_from_right',
+                animation: reducedMotion ? 'none' : 'slide_from_right',
                 contentStyle: { backgroundColor: color.canvas },
                 headerShown: false,
               }}

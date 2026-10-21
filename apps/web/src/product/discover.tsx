@@ -8,6 +8,7 @@ import { PageHeader, Segmented } from '../design/primitives';
 import { CreatorDirectory } from './creators';
 import { Discovery } from './discovery';
 import { LiveWindows } from './live-windows';
+import { useIvoryPreview } from '../design/visual-preview-provider';
 
 /**
  * The Discover destination, and the two things somebody can browse from it.
@@ -74,10 +75,15 @@ export function Discover({
   const router = useRouter();
   const requested = parameters.get('show');
   const section: Section = requested === 'creators' ? 'creators' : 'people';
+  const ivory = useIvoryPreview();
 
   return (
     <>
-      <PageHeader lede={ledeFor[section]} title="Discover" />
+      {ivory && section === 'people' ? (
+        <h1 className="v-visually-hidden">Discover</h1>
+      ) : (
+        <PageHeader lede={ledeFor[section]} title="Discover" />
+      )}
 
       {liveWindows.length === 0 ? null : (
         <div className="v-lede-gap">

@@ -11,7 +11,7 @@ import {
   Text,
   TextField,
 } from '../design/primitives';
-import { color, space } from '../design/tokens';
+import { color, ivoryPreview, space } from '../design/theme';
 
 /**
  * The first screen, and signing in.
@@ -48,7 +48,7 @@ export function WelcomeScreen() {
 
   return (
     <PlainScreen testID="welcome-screen">
-      <View style={styles.fill}>
+      <View style={[styles.fill, ivoryPreview ? styles.appEntry : undefined]}>
         <View style={styles.top}>
           {/*
             One mark, not two. The wordmark already carries the sparkle, and a
@@ -58,7 +58,9 @@ export function WelcomeScreen() {
           <Wordmark />
           <Stack gap={3}>
             <Text variant="display" weight="bold">
-              Meet fewer people, properly.
+              {ivoryPreview
+                ? 'Meet someone new.'
+                : 'Meet fewer people, properly.'}
             </Text>
             <Text tone="secondary">
               VELORA introduces two people only when both have said yes. Nothing
@@ -226,6 +228,7 @@ export function AccountUnreadableScreen({
 }
 
 const styles = StyleSheet.create({
+  appEntry: { flex: 0, gap: space[8], justifyContent: 'flex-start' },
   fill: { flex: 1, gap: space[8], justifyContent: 'space-between' },
   form: { paddingBottom: space[4] },
   launch: {

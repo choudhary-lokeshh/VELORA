@@ -24,6 +24,7 @@ import {
   type MobileApiState,
 } from './support/api-double';
 import { renderScreen } from './support/render';
+import { ivoryPreview } from '../src/design/theme';
 
 /**
  * The Consumer Mobile screens, driven through the generated client against a
@@ -108,15 +109,22 @@ describe('discover', () => {
       expect(view.getByTestId(`candidate-${otherPersonId}`)).toBeTruthy();
     });
     expect(view.getByText('Robin')).toBeTruthy();
-    expect(view.getByText('Spain')).toBeTruthy();
+    // The preview joins region and shared languages on one line; both stay
+    // anchored so neither can drift into a substring match.
+    expect(
+      view.getByText(ivoryPreview ? /^Spain · Both speak \S/u : 'Spain'),
+    ).toBeTruthy();
     // Hidden elements included deliberately: the photograph is removed from the
     // accessibility tree because the person's name is already text beside it,
     // so a default query would never see it however well it renders.
     await waitFor(() => {
       expect(
-        view.getByTestId(`candidate-portrait-${otherPersonId}`, {
-          includeHiddenElements: true,
-        }),
+        view.getByTestId(
+          `${ivoryPreview ? 'candidate-editorial-portrait' : 'candidate-portrait'}-${otherPersonId}`,
+          {
+            includeHiddenElements: true,
+          },
+        ),
       ).toBeTruthy();
     });
   });
@@ -319,6 +327,27 @@ describe('introductions', () => {
 });
 
 describe('messages', () => {
+  it('refreshes the durable preview from the conversation list', async () => {
+    const state = admittedState();
+    const { view, double } = await mount(
+      <MessagesScreen onOpen={nothing} onOpenIntroductions={nothing} />,
+      state,
+    );
+    await waitFor(() => {
+      expect(view.getByTestId('conversation-rows')).toBeTruthy();
+    });
+    const before = double.calls.filter(
+      (call) => call.path === '/v1/messaging/conversations',
+    ).length;
+    await fireEvent(view.getByTestId('conversation-rows'), 'refresh');
+    await waitFor(() => {
+      expect(
+        double.calls.filter(
+          (call) => call.path === '/v1/messaging/conversations',
+        ).length,
+      ).toBeGreaterThan(before);
+    });
+  });
   it('marks a conversation unread from the sequences the server publishes', async () => {
     const state = admittedState();
     const conversation = state.conversations[0];
@@ -784,6 +813,30 @@ describe('notices', () => {
 });
 
 describe('you', () => {
+  it('keeps every account destination reachable in the grouped menu', async () => {
+    const open = jest.fn();
+    const { view } = await mount(<YouScreen onOpen={open} />);
+    for (const id of [
+      'profile',
+      'availability',
+      'memberships',
+      'gifts',
+      'wallet',
+      'notices',
+      'safety',
+      'help',
+      'account',
+    ]) {
+      await fireEvent.press(view.getByTestId(`you-${id}`));
+      expect(open).toHaveBeenLastCalledWith(id);
+    }
+    if (ivoryPreview) {
+      expect(view.getByRole('header', { name: 'Your presence' })).toBeTruthy();
+      expect(
+        view.getByRole('header', { name: 'Preferences & support' }),
+      ).toBeTruthy();
+    }
+  });
   it('keeps an AI bio suggestion on-device until the person saves', async () => {
     const { double, view } = await mount(<ProfileScreen onBack={nothing} />);
     await waitFor(() => {

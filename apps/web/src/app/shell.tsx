@@ -12,6 +12,7 @@ import {
 
 import { Icon } from '../design/icons';
 import { Avatar } from '../design/primitives';
+import { useIvoryPreview } from '../design/visual-preview-provider';
 import { PageHeadingWatcher } from './page-heading';
 import {
   addressOf,
@@ -99,6 +100,7 @@ export function AppShell({
   const router = useRouter();
   const account = useAccount();
   const feeds = useFeeds();
+  const ivory = useIvoryPreview();
   const displayName = account.profile.value?.displayName ?? 'Your account';
   const back = backTarget(pathname, parameters.get('from'));
   const backName = back === undefined ? undefined : destinationName(back);
@@ -232,6 +234,11 @@ export function AppShell({
         <header
           className={`v-topbar${back === undefined ? ' v-topbar--bare' : ''}`}
         >
+          {ivory && back === undefined ? (
+            <Link className="v-preview-brand" href="/live">
+              VELORA
+            </Link>
+          ) : null}
           {/*
             The browser's own Back still works; this is for the hand holding the
             phone, which is nowhere near it, and for the window where nothing
